@@ -19,24 +19,52 @@ export default async function handler(req, res) {
         role: 'user',
         content: `Extraé las transacciones de este extracto bancario argentino${cardName && cardName !== 'auto' ? ` de la tarjeta "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
 
-{"tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","monto":59900.01,"moneda":"ARS","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":"GALLO PROT FLORENCIA"}]}
+{"tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"monto":59900.01,"moneda":"ARS","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":"GALLO PROT FLORENCIA"}]}
 
-Reglas:
-- tarjeta_detectada: nombre corto del banco y tipo de tarjeta detectado en el extracto (ej: "Mastercard Galicia", "Amex", "Visa BBVA")
+Reglas de categoría y subcategoría:
+- tarjeta_detectada: nombre corto del banco y tipo de tarjeta (ej: "Mastercard Galicia", "Amex", "Visa BBVA")
 - NO incluir pagos recibidos (SU PAGO, "Gracias por su pago", pagos al resumen)
 - nombre_limpio: nombre legible. Si es críptico, igual al original.
-- categoria_sugerida: Casa, Alimentación, Transporte, Salud, Educación, Ropa, Entretenimiento, Suscripciones, Trabajo, Ingresos, Débitos, A Identificar
-- AXION/YPF/SHELL/COMBUSTIBLE/peajes/AUTOPISTA → Transporte
-- COTO/DISCO/INC SA/supermercados → Alimentación
-- OSDE/COOP.TEL/médicos/farmacia → Salud
-- NETFLIX/CANVA/APPLE.COM → Suscripciones
-- PEDIDOSYA/UBER/restaurantes/sushi → Entretenimiento
-- Percepciones/impuestos/sellos/INTERESES → Débitos
-- COLEGIO/educación → Educación
-- Todo lo demás críptico → A Identificar
 - es_credito: true solo para devoluciones o reintegros reales
 - Para cuotas: completar cuotas_total, cuota_numero y monto_total_cuotas
 - titular: nombre del titular de la tarjeta
+
+Categorías y subcategorías permitidas:
+- Casa → subcategorías: Alquiler, Hipoteca, Luz, Gas, Internet, Expensas, Supermercado (compras grandes de hogar)
+- Alimentación → subcategorías: Supermercado, Delivery
+- Transporte → subcategorías: Nafta, Auto, Transporte público, Uber/Cabify
+- Salud → subcategorías: Obra social, Médicos, Farmacia
+- Educación → subcategorías: Colegio, Universidad, Cursos
+- Ropa → sin subcategoría
+- Entretenimiento → subcategorías: Salidas
+- Suscripciones → sin subcategoría
+- Trabajo → subcategorías: Freelance, Negocio propio, Insumos, Monotributo, Empleada
+- Ingresos → subcategorías: Sueldo, Freelance
+- Débitos → subcategorías: Impuestos, Percepciones, Intereses
+- A Identificar → sin subcategoría
+
+Reglas de asignación:
+- AXION/YPF/SHELL/COMBUSTIBLE → Transporte, subcategoría: Nafta
+- Peajes/AUTOPISTA/CORREDORES VIALES/TELEPEAJE → Transporte, subcategoría: Auto
+- UBER/CABIFY/PAYU*AR*UBER → Transporte, subcategoría: Uber/Cabify
+- COTO/DISCO/INC SA/JUMBO/supermercados presenciales → Alimentación, subcategoría: Supermercado
+- PEDIDOSYA/RAPPI/delivery → Alimentación, subcategoría: Delivery
+- Restaurantes/bares/sushi/cantina/pizzería → Entretenimiento, subcategoría: Salidas
+- OSDE/obra social/prepaga → Salud, subcategoría: Obra social
+- Médicos/clínicas/laboratorios → Salud, subcategoría: Médicos
+- Farmacia/droguería → Salud, subcategoría: Farmacia
+- COLEGIO/escuela → Educación, subcategoría: Colegio
+- Universidad → Educación, subcategoría: Universidad
+- Cursos/capacitación → Educación, subcategoría: Cursos
+- NETFLIX/SPOTIFY/CANVA/APPLE.COM/Disney → Suscripciones
+- EDENOR/METROGAS/luz/gas → Casa, subcategoría: Luz o Gas
+- Internet/telefonía → Casa, subcategoría: Internet
+- Expensas/administración → Casa, subcategoría: Expensas
+- Alquiler → Casa, subcategoría: Alquiler
+- Percepciones/PERCEPCION → Débitos, subcategoría: Percepciones
+- Impuesto/sellos/IVA → Débitos, subcategoría: Impuestos
+- Intereses compensatorios → Débitos, subcategoría: Intereses
+- Todo lo demás críptico → A Identificar, subcategoria_sugerida: null
 
 EXTRACTO:
 ${pdfText}`
