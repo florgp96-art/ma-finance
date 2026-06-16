@@ -124,6 +124,7 @@ export default function Dashboard() {
     setConfirmDelete(null)
     if (selectedAccount?.id === accountId) setSelectedAccount(null)
     fetchAccounts()
+    fetchTotales()
     setLoading(false)
   }
 
@@ -262,11 +263,11 @@ export default function Dashboard() {
         fecha: t.fecha,
         nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
         detalle: t.nombre_original,
-        monto: t.monto,
+        monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
         moneda: t.moneda,
         cuotas_total: t.cuotas_total,
         cuota_numero: t.cuota_numero,
-        tipo: t.es_credito ? 'ingreso' : 'gasto',
+        tipo: 'gasto',
         category_id: categoryId,
         subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
         estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
