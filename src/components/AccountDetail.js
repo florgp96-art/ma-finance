@@ -375,9 +375,9 @@ export default function AccountDetail({ account, refreshKey }) {
                     {tx.moneda || 'ARS'}
                   </span>
                 </td>
-                <td style={{...styles.td, textAlign:'right', fontWeight:'600',
-                  color: tx.tipo === 'ingreso' ? '#27AE60' : '#2d2d2d'}}>
-                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace:'nowrap',
+  color: tx.tipo === 'ingreso' ? '#27AE60' : '#2d2d2d'}}>
+  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
                   <td style={styles.td}>

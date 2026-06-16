@@ -62,6 +62,8 @@ Reglas de asignación:
 - Internet/telefonía → Casa, subcategoría: Internet
 - Expensas/administración → Casa, subcategoría: Expensas
 - Alquiler → Casa, subcategoría: Alquiler
+- ROSMINOYCIASA/ROSMINO → Comida, subcategoría: Supermercado
+- STB/STARBUCKS → Entretenimiento, subcategoría: Salidas
 - Percepciones/PERCEPCION → Débitos, subcategoría: Percepciones
 - Impuesto/sellos/IVA → Débitos, subcategoría: Impuestos
 - Intereses compensatorios → Débitos, subcategoría: Intereses
