@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
 import AccountDetail from '../components/AccountDetail'
+import logo from '../assets/logo.svg'
 
 const PROCESSING_MSGS = [
   { icon: '📄', title: 'Leyendo el extracto...', desc: 'Procesando las páginas del PDF' },
@@ -18,17 +19,11 @@ export default function Dashboard() {
   const [selectedAccount, setSelectedAccount] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Modal agregar tarjeta
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
-
-  // Modal editar tarjeta
   const [editAccount, setEditAccount] = useState(null)
-
-  // Modal eliminar tarjeta
   const [confirmDelete, setConfirmDelete] = useState(null)
 
-  // Carga de extracto
   const [archivo, setArchivo] = useState(null)
   const [showUpload, setShowUpload] = useState(false)
   const [uploadDragOver, setUploadDragOver] = useState(false)
@@ -40,11 +35,8 @@ export default function Dashboard() {
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
 
-  // Mensajes rotativos
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
-
-  // Totales del mes
   const [totales, setTotales] = useState({ gastos: 0, ingresos: 0 })
 
   useEffect(() => { fetchAccounts(); fetchTotales() }, [])
@@ -93,11 +85,7 @@ export default function Dashboard() {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('accounts').insert({
-      user_id: user.id,
-      nombre: newAccount.nombre,
-      tipo: newAccount.tipo,
-    })
+    await supabase.from('accounts').insert({ user_id: user.id, nombre: newAccount.nombre, tipo: newAccount.tipo })
     setNewAccount({ nombre: '', tipo: 'credito' })
     setShowAddAccount(false)
     fetchAccounts()
@@ -107,10 +95,7 @@ export default function Dashboard() {
   const handleEditAccount = async (e) => {
     e.preventDefault()
     setLoading(true)
-    await supabase.from('accounts').update({
-      nombre: editAccount.nombre,
-      tipo: editAccount.tipo,
-    }).eq('id', editAccount.id)
+    await supabase.from('accounts').update({ nombre: editAccount.nombre, tipo: editAccount.tipo }).eq('id', editAccount.id)
     setEditAccount(null)
     fetchAccounts()
     setLoading(false)
@@ -177,11 +162,8 @@ export default function Dashboard() {
   }
 
   const handleConfirmMatch = () => {
-    if (statementData.adicionales && statementData.adicionales.length > 0) {
-      setStep('adicionales')
-    } else {
-      setStep('preview')
-    }
+    if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
+    else setStep('preview')
   }
 
   const handleCreateNewForUpload = async (e) => {
@@ -189,18 +171,13 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { data: account } = await supabase.from('accounts').insert({
-      user_id: user.id,
-      nombre: newAccountForUpload.nombre,
-      tipo: newAccountForUpload.tipo,
+      user_id: user.id, nombre: newAccountForUpload.nombre, tipo: newAccountForUpload.tipo,
     }).select().single()
     setTargetAccount(account)
     fetchAccounts()
     setLoading(false)
-    if (statementData.adicionales && statementData.adicionales.length > 0) {
-      setStep('adicionales')
-    } else {
-      setStep('preview')
-    }
+    if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
+    else setStep('preview')
   }
 
   const handleConfirmAdicionales = (separar) => {
@@ -214,19 +191,13 @@ export default function Dashboard() {
     const account = targetAccount
 
     const { data: categorias } = await supabase.from('categories').select('id, nombre')
-    const getCategoryId = (categoriaSugerida) => {
-      if (!categorias || !categoriaSugerida) return null
-      const match = categorias.find(c => c.nombre.toLowerCase() === categoriaSugerida.toLowerCase())
-      return match ? match.id : null
+    const getCategoryId = (cat) => {
+      if (!categorias || !cat) return null
+      return categorias.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null
     }
 
-    // Verificar duplicado
     const { data: existing } = await supabase.from('statements')
-      .select('id')
-      .eq('account_id', account.id)
-      .eq('periodo', statementData.periodo)
-      .single()
-
+      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).single()
     if (existing) {
       alert(`Ya cargaste el extracto de ${statementData.periodo} para esta tarjeta.`)
       setLoading(false)
@@ -234,41 +205,27 @@ export default function Dashboard() {
     }
 
     const { data: statement } = await supabase.from('statements').insert({
-      user_id: user.id,
-      account_id: account.id,
-      nombre_archivo: archivo.name,
-      periodo: statementData.periodo,
-      fecha_desde: null,
-      fecha_hasta: statementData.fecha_facturacion,
-      total_resumen: statementData.total_pesos,
-      estado: 'completo'
+      user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
+      periodo: statementData.periodo, fecha_desde: null,
+      fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
     }).select().single()
 
     const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
-    const getSubcategoryId = (subcategoriaSugerida, categoryId) => {
-      if (!subcategorias || !subcategoriaSugerida || !categoryId) return null
-      const match = subcategorias.find(s =>
-        s.nombre.toLowerCase() === subcategoriaSugerida.toLowerCase() &&
-        s.category_id === categoryId
-      )
-      return match ? match.id : null
+    const getSubcategoryId = (sub, catId) => {
+      if (!subcategorias || !sub || !catId) return null
+      return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
 
     const transacciones = statementData.transacciones.map(t => {
       const categoryId = getCategoryId(t.categoria_sugerida)
       return {
-        user_id: user.id,
-        account_id: account.id,
-        statement_id: statement.id,
+        user_id: user.id, account_id: account.id, statement_id: statement.id,
         fecha: t.fecha,
         nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
         detalle: t.nombre_original,
         monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
-        moneda: t.moneda,
-        cuotas_total: t.cuotas_total,
-        cuota_numero: t.cuota_numero,
-        tipo: 'gasto',
-        category_id: categoryId,
+        moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
+        tipo: 'gasto', category_id: categoryId,
         subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
         estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
         es_manual: false
@@ -292,41 +249,35 @@ export default function Dashboard() {
     else alert('Solo se aceptan archivos PDF')
   }
 
-  const tipoLabel = (tipo) => {
-    if (tipo === 'credito') return 'Crédito'
-    if (tipo === 'debito') return 'Débito'
-    return 'Efectivo'
-  }
-
-  const formatMonto = (monto) => {
-    return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
-  }
-
+  const tipoLabel = (tipo) => tipo === 'credito' ? 'Crédito' : tipo === 'debito' ? 'Débito' : 'Efectivo'
+  const formatMonto = (monto) => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
   const currentMsg = PROCESSING_MSGS[msgIndex]
 
   return (
     <>
       <div style={styles.container}>
         <div style={styles.header}>
-          <img src={require('../assets/logo.svg')} alt="Moms Assist Finance" style={styles.logoImg} />
+          <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
           <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
 
         <div style={styles.content}>
-          <div style={styles.summaryCards}>
-            <div style={styles.summaryCard}>
-              <p style={styles.cardLabel}>Total del Mes</p>
-              <p style={styles.cardValue}>$ {formatMonto(totales.gastos - totales.ingresos)}</p>
+          {accounts.length > 0 && (
+            <div style={styles.summaryCards}>
+              <div style={styles.summaryCard}>
+                <p style={styles.cardLabel}>Total del Mes</p>
+                <p style={styles.cardValue}>$ {formatMonto(totales.gastos - totales.ingresos)}</p>
+              </div>
+              <div style={styles.summaryCard}>
+                <p style={styles.cardLabel}>Gastos</p>
+                <p style={styles.cardValue}>$ {formatMonto(totales.gastos)}</p>
+              </div>
+              <div style={styles.summaryCard}>
+                <p style={styles.cardLabel}>Ingresos</p>
+                <p style={styles.cardValue}>$ {formatMonto(totales.ingresos)}</p>
+              </div>
             </div>
-            <div style={styles.summaryCard}>
-              <p style={styles.cardLabel}>Gastos</p>
-              <p style={styles.cardValue}>$ {formatMonto(totales.gastos)}</p>
-            </div>
-            <div style={styles.summaryCard}>
-              <p style={styles.cardLabel}>Ingresos</p>
-              <p style={styles.cardValue}>$ {formatMonto(totales.ingresos)}</p>
-            </div>
-          </div>
+          )}
 
           <div style={styles.uploadBanner}>
             <div>
@@ -343,7 +294,6 @@ export default function Dashboard() {
               <h2 style={styles.sectionTitle}>Tarjetas y Cuentas</h2>
               <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>+ Agregar</button>
             </div>
-
             {accounts.length === 0 ? (
               <div style={styles.empty}>
                 <p>Todavía no agregaste ninguna tarjeta. Usá "Cargar PDF" para empezar.</p>
@@ -358,8 +308,8 @@ export default function Dashboard() {
                     <div style={styles.accountCardHeader}>
                       <p style={styles.accountType}>💳 {tipoLabel(acc.tipo)}</p>
                       <div style={styles.accountActions}>
-                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }} title="Editar">✏️</button>
-                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setConfirmDelete(acc.id) }} title="Eliminar">🗑️</button>
+                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
+                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setConfirmDelete(acc.id) }}>🗑️</button>
                       </div>
                     </div>
                     <p style={styles.accountName}>{acc.nombre}</p>
@@ -369,20 +319,15 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* DETALLE DE TARJETA */}
           {selectedAccount && (
             <div style={styles.section}>
-              <h2 style={{...styles.sectionTitle, marginBottom: '24px'}}>
-                📊 {selectedAccount.nombre}
-              </h2>
+              <h2 style={{...styles.sectionTitle, marginBottom: '24px'}}>📊 {selectedAccount.nombre}</h2>
               <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
             </div>
           )}
-
         </div>
       </div>
 
-      {/* MODAL AGREGAR TARJETA */}
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '400px'}}>
@@ -396,8 +341,7 @@ export default function Dashboard() {
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Tipo</label>
-                <select style={styles.input} value={newAccount.tipo}
-                  onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}>
+                <select style={styles.input} value={newAccount.tipo} onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}>
                   <option value="credito">💳 Tarjeta de crédito</option>
                   <option value="debito">🏦 Débito / Cuenta bancaria</option>
                 </select>
@@ -411,7 +355,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL EDITAR TARJETA */}
       {editAccount && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '400px'}}>
@@ -424,8 +367,7 @@ export default function Dashboard() {
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Tipo</label>
-                <select style={styles.input} value={editAccount.tipo}
-                  onChange={(e) => setEditAccount({...editAccount, tipo: e.target.value})}>
+                <select style={styles.input} value={editAccount.tipo} onChange={(e) => setEditAccount({...editAccount, tipo: e.target.value})}>
                   <option value="credito">💳 Tarjeta de crédito</option>
                   <option value="debito">🏦 Débito / Cuenta bancaria</option>
                 </select>
@@ -439,7 +381,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL CONFIRMAR ELIMINACIÓN */}
       {confirmDelete && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '380px'}}>
@@ -458,7 +399,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL CARGA DE EXTRACTO */}
       {showUpload && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
@@ -474,17 +414,9 @@ export default function Dashboard() {
                   onClick={() => document.getElementById('uploadInput').click()}
                 >
                   {archivo ? (
-                    <>
-                      <p style={styles.dropzoneIcon}>✅</p>
-                      <p style={styles.dropzoneText}>{archivo.name}</p>
-                      <p style={styles.dropzoneHint}>Clickeá para cambiar</p>
-                    </>
+                    <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{archivo.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
                   ) : (
-                    <>
-                      <p style={styles.dropzoneIcon}>📄</p>
-                      <p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p>
-                      <p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p>
-                    </>
+                    <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p></>
                   )}
                 </div>
                 <input id="uploadInput" type="file" accept=".pdf" style={{display:'none'}}
@@ -514,18 +446,14 @@ export default function Dashboard() {
             {step === 'match' && matchedAccount && (
               <>
                 <h3 style={styles.modalTitle}>Tarjeta detectada ✅</h3>
-                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>
-                  Encontramos que este extracto pertenece a:
-                </p>
+                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>Encontramos que este extracto pertenece a:</p>
                 <div style={styles.matchCard}>
                   <p style={styles.matchCardType}>💳 {tipoLabel(matchedAccount.tipo)}</p>
                   <p style={styles.matchCardName}>{matchedAccount.nombre}</p>
                 </div>
                 <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px', textAlign: 'center'}}>¿Es correcto?</p>
                 <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => { setStep('new_account'); setNewAccountForUpload({ nombre: suggestedName, tipo: 'credito' }) }}>
-                    No, es otra
-                  </button>
+                  <button style={styles.cancelBtn} onClick={() => { setStep('new_account'); setNewAccountForUpload({ nombre: suggestedName, tipo: 'credito' }) }}>No, es otra</button>
                   <button style={styles.saveBtn} onClick={handleConfirmMatch}>Sí, continuar</button>
                 </div>
               </>
@@ -534,9 +462,7 @@ export default function Dashboard() {
             {step === 'new_account' && (
               <>
                 <h3 style={styles.modalTitle}>¿Crear nueva tarjeta?</h3>
-                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>
-                  No encontramos esta tarjeta en tu lista. ¿Querés crearla?
-                </p>
+                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>No encontramos esta tarjeta en tu lista. ¿Querés crearla?</p>
                 <form onSubmit={handleCreateNewForUpload}>
                   <div style={styles.field}>
                     <label style={styles.label}>Nombre</label>
@@ -565,9 +491,7 @@ export default function Dashboard() {
                 <h3 style={styles.modalTitle}>Detectamos adicionales 👥</h3>
                 <p style={styles.stepSubtitle}>En este extracto encontramos gastos de otras personas:</p>
                 <div style={styles.adicionalesList}>
-                  {statementData.adicionales.map((a, i) => (
-                    <div key={i} style={styles.adicionalItem}>👤 {a}</div>
-                  ))}
+                  {statementData.adicionales.map((a, i) => <div key={i} style={styles.adicionalItem}>👤 {a}</div>)}
                 </div>
                 <p style={styles.stepQuestion}>¿Cómo querés ver estos gastos?</p>
                 <div style={styles.opcionesGrid}>
@@ -589,45 +513,24 @@ export default function Dashboard() {
               <>
                 <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
                 <div style={styles.previewStats}>
-                  <div style={styles.previewStat}>
-                    <span style={styles.previewStatLabel}>Período</span>
-                    <span style={styles.previewStatValue}>{statementData.periodo}</span>
-                  </div>
-                  <div style={styles.previewStat}>
-                    <span style={styles.previewStatLabel}>Total ARS</span>
-                    <span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span>
-                  </div>
-                  <div style={styles.previewStat}>
-                    <span style={styles.previewStatLabel}>Vencimiento</span>
-                    <span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span>
-                  </div>
-                  <div style={styles.previewStat}>
-                    <span style={styles.previewStatLabel}>Transacciones</span>
-                    <span style={styles.previewStatValue}>{statementData.transacciones.length}</span>
-                  </div>
+                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
+                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
+                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>
+                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Transacciones</span><span style={styles.previewStatValue}>{statementData.transacciones.length}</span></div>
                 </div>
                 <div style={styles.transactionsList}>
                   {statementData.transacciones.slice(0, 10).map((t, i) => (
                     <div key={i} style={styles.transactionItem}>
                       <div style={styles.transactionLeft}>
-                        <p style={styles.transactionName}>
-                          {t.nombre_limpio || t.nombre_original}
-                          {t.nombre_limpio === t.nombre_original && <span> ❓</span>}
-                        </p>
-                        <p style={styles.transactionDetail}>
-                          {t.fecha} · {t.categoria_sugerida}
-                          {t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}
-                          {separarAdicionales && t.titular && ` · ${t.titular}`}
-                        </p>
+                        <p style={styles.transactionName}>{t.nombre_limpio || t.nombre_original}{t.nombre_limpio === t.nombre_original && <span> ❓</span>}</p>
+                        <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                       </div>
                       <p style={{...styles.transactionMonto, color: t.es_credito ? '#27AE60' : '#2d2d2d'}}>
                         {t.es_credito ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(t.monto)}
                       </p>
                     </div>
                   ))}
-                  {statementData.transacciones.length > 10 && (
-                    <p style={styles.moreTransactions}>+ {statementData.transacciones.length - 10} transacciones más</p>
-                  )}
+                  {statementData.transacciones.length > 10 && <p style={styles.moreTransactions}>+ {statementData.transacciones.length - 10} transacciones más</p>}
                 </div>
                 {statementData.transacciones.some(t => t.categoria_sugerida === 'A Identificar') && (
                   <div style={styles.warningBox}>
@@ -636,13 +539,10 @@ export default function Dashboard() {
                 )}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setStep('upload')}>← Atrás</button>
-                  <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>
-                    {loading ? 'Guardando...' : 'Confirmar y guardar'}
-                  </button>
+                  <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>{loading ? 'Guardando...' : 'Confirmar y guardar'}</button>
                 </div>
               </>
             )}
-
           </div>
         </div>
       )}
@@ -653,14 +553,14 @@ export default function Dashboard() {
 const styles = {
   container: { minHeight: '100vh', backgroundColor: '#f8f6f3', fontFamily: 'Arial, sans-serif' },
   header: {
-    backgroundColor: 'white', padding: '16px 32px',
+    backgroundColor: '#6B7BB8', padding: '12px 32px',
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
   },
-   logoImg: { height: '48px', objectFit: 'contain' },
+  logoImg: { height: '52px', objectFit: 'contain' },
   logoutBtn: {
-    padding: '8px 16px', backgroundColor: 'white', color: '#9B59B6',
-    border: '2px solid #9B59B6', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
+    padding: '8px 16px', backgroundColor: 'transparent', color: 'white',
+    border: '2px solid white', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
   },
   content: { maxWidth: '960px', margin: '32px auto', padding: '0 24px' },
   summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
@@ -676,117 +576,67 @@ const styles = {
   uploadBannerTitle: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', margin: '0 0 4px 0' },
   uploadBannerDesc: { fontSize: '13px', color: '#888', margin: 0 },
   uploadBannerBtn: {
-    padding: '10px 20px', backgroundColor: '#9B59B6', color: 'white',
+    padding: '10px 20px', backgroundColor: '#6B7BB8', color: 'white',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600',
     whiteSpace: 'nowrap', marginLeft: '16px'
   },
   section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  addBtn: {
-    padding: '8px 16px', backgroundColor: '#9B59B6', color: 'white',
-    border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
-  },
+  addBtn: { padding: '8px 16px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
   empty: { textAlign: 'center', padding: '40px', color: '#888' },
-  addBtnLarge: {
-    marginTop: '16px', padding: '12px 24px', backgroundColor: '#9B59B6', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600'
-  },
   accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
-  accountCard: {
-    backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px',
-    border: '1px solid #ede8f5', cursor: 'pointer', transition: 'all 0.2s'
-  },
-  accountCardSelected: { border: '2px solid #9B59B6', backgroundColor: '#f5eefb' },
+  accountCard: { backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px', border: '1px solid #ede8f5', cursor: 'pointer', transition: 'all 0.2s' },
+  accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#eef0f8' },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
-  accountType: { fontSize: '12px', color: '#9B59B6', margin: 0, fontWeight: '600' },
+  accountType: { fontSize: '12px', color: '#6B7BB8', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   accountActions: { display: 'flex', gap: '4px' },
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px', opacity: 0.8 },
-  overlay: {
-    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
-    alignItems: 'center', justifyContent: 'center', zIndex: 1000
-  },
-  modal: {
-    backgroundColor: 'white', borderRadius: '16px', padding: '32px',
-    width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-    maxHeight: '90vh', overflowY: 'auto'
-  },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
   modalTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
   field: { marginBottom: '16px' },
   label: { display: 'block', fontSize: '14px', fontWeight: '500', color: '#444', marginBottom: '6px' },
-  input: {
-    width: '100%', padding: '11px', borderRadius: '10px',
-    border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box'
-  },
-  dropzone: {
-    border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '40px',
-    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: '#fafafa',
-    marginBottom: '16px'
-  },
-  dropzoneActive: { borderColor: '#9B59B6', backgroundColor: '#f5eefb' },
+  input: { width: '100%', padding: '11px', borderRadius: '10px', border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
+  dropzone: { border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: '#fafafa', marginBottom: '16px' },
+  dropzoneActive: { borderColor: '#6B7BB8', backgroundColor: '#eef0f8' },
   dropzoneDone: { borderColor: '#27AE60', backgroundColor: '#f0faf5' },
   dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
   dropzoneText: { fontSize: '14px', color: '#444', margin: '0 0 4px 0', fontWeight: '500' },
   dropzoneHint: { fontSize: '12px', color: '#aaa', margin: 0 },
   modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
-  cancelBtn: {
-    flex: 1, padding: '12px', backgroundColor: 'white', color: '#9B59B6',
-    border: '2px solid #9B59B6', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
-  },
-  saveBtn: {
-    flex: 1, padding: '12px', backgroundColor: '#9B59B6', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
-  },
+  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
+  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
   processingContainer: { textAlign: 'center', padding: '20px 0' },
   processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
   processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
   processingText: { fontSize: '14px', color: '#888', margin: '0 0 24px 0' },
   processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
-  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#e0d0f0' },
-  dotActive: { backgroundColor: '#9B59B6' },
-  matchCard: {
-    backgroundColor: '#f5eefb', borderRadius: '12px', padding: '20px',
-    textAlign: 'center', marginBottom: '16px', border: '2px solid #ede8f5'
-  },
-  matchCardType: { fontSize: '12px', color: '#9B59B6', margin: '0 0 6px 0', fontWeight: '600' },
+  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#d0d5ee' },
+  dotActive: { backgroundColor: '#6B7BB8' },
+  matchCard: { backgroundColor: '#eef0f8', borderRadius: '12px', padding: '20px', textAlign: 'center', marginBottom: '16px', border: '2px solid #d0d5ee' },
+  matchCardType: { fontSize: '12px', color: '#6B7BB8', margin: '0 0 6px 0', fontWeight: '600' },
   matchCardName: { fontSize: '22px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
   adicionalesList: { marginBottom: '20px' },
-  adicionalItem: {
-    padding: '10px 14px', backgroundColor: '#f5eefb', borderRadius: '8px',
-    marginBottom: '8px', fontSize: '14px', color: '#6C3483', fontWeight: '500'
-  },
+  adicionalItem: { padding: '10px 14px', backgroundColor: '#eef0f8', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#4a5a9a', fontWeight: '500' },
   stepQuestion: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', marginBottom: '16px' },
   opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  opcionBtn: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px',
-    backgroundColor: 'white', cursor: 'pointer', gap: '4px'
-  },
+  opcionBtn: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px', backgroundColor: 'white', cursor: 'pointer', gap: '4px' },
   opcionIcon: { fontSize: '28px' },
   opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
   opcionDesc: { fontSize: '12px', color: '#888' },
   previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
-  previewStat: {
-    backgroundColor: '#f8f6f3', borderRadius: '10px', padding: '12px',
-    display: 'flex', flexDirection: 'column', gap: '4px'
-  },
+  previewStat: { backgroundColor: '#f8f6f3', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
   previewStatValue: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d' },
   transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
-  transactionItem: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 0', borderBottom: '1px solid #f0f0f0'
-  },
+  transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
   transactionLeft: { flex: 1, paddingRight: '12px' },
   transactionName: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d', margin: '0 0 2px 0' },
   transactionDetail: { fontSize: '12px', color: '#aaa', margin: 0 },
   transactionMonto: { fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' },
-  moreTransactions: { fontSize: '13px', color: '#9B59B6', textAlign: 'center', padding: '8px 0' },
-  warningBox: {
-    backgroundColor: '#fff8e1', border: '1px solid #ffe082',
-    borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px'
-  }
+  moreTransactions: { fontSize: '13px', color: '#6B7BB8', textAlign: 'center', padding: '8px 0' },
+  warningBox: { backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px' }
 }
