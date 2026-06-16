@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
+import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -10,6 +11,9 @@ export default function Dashboard() {
   const [archivo, setArchivo] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [step, setStep] = useState('form') // form | processing | preview | adicionales
+  const [statementData, setStatementData] = useState(null)
+  const [separarAdicionales, setSepararAdicionales] = useState(null)
 
   useEffect(() => { fetchAccounts() }, [])
 
@@ -27,17 +31,78 @@ export default function Dashboard() {
   const handleAddAccount = async (e) => {
     e.preventDefault()
     if (!archivo) { alert('Por favor cargá el extracto PDF'); return }
+    
+    setStep('processing')
+    setLoading(true)
+
+    try {
+      const pdfText = await extractTextFromPDF(archivo)
+      const result = await analyzeStatementWithClaude(pdfText, newAccount.nombre)
+      setStatementData(result)
+
+      if (result.adicionales && result.adicionales.length > 0) {
+        setStep('adicionales')
+      } else {
+        setStep('preview')
+      }
+    } catch (err) {
+      alert('Error procesando el PDF: ' + err.message)
+      setStep('form')
+    }
+    setLoading(false)
+  }
+
+  const handleConfirmAdicionales = (separar) => {
+    setSepararAdicionales(separar)
+    setStep('preview')
+  }
+
+  const handleConfirmTransactions = async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    await supabase.from('accounts').insert({
+    // Crear cuenta
+    const { data: account } = await supabase.from('accounts').insert({
       user_id: user.id,
       nombre: newAccount.nombre,
       tipo: newAccount.tipo,
-    })
+    }).select().single()
+
+    // Crear extracto
+    const { data: statement } = await supabase.from('statements').insert({
+      user_id: user.id,
+      account_id: account.id,
+      nombre_archivo: archivo.name,
+      periodo: statementData.periodo,
+      fecha_desde: null,
+      fecha_hasta: statementData.fecha_facturacion,
+      total_resumen: statementData.total_pesos,
+      estado: 'completo'
+    }).select().single()
+
+    // Insertar transacciones
+    const transacciones = statementData.transacciones.map(t => ({
+      user_id: user.id,
+      account_id: account.id,
+      statement_id: statement.id,
+      fecha: t.fecha,
+      nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+      detalle: t.nombre_original,
+      monto: t.monto,
+      moneda: t.moneda,
+      cuotas_total: t.cuotas_total,
+      cuota_numero: t.cuota_numero,
+      tipo: t.es_credito ? 'ingreso' : 'gasto',
+      estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+      es_manual: false
+    }))
+
+    await supabase.from('transactions').insert(transacciones)
 
     setNewAccount({ nombre: '', tipo: 'credito' })
     setArchivo(null)
+    setStatementData(null)
+    setStep('form')
     setShowAddAccount(false)
     fetchAccounts()
     setLoading(false)
@@ -55,6 +120,10 @@ export default function Dashboard() {
     if (tipo === 'credito') return '💳 Crédito'
     if (tipo === 'debito') return '🏦 Débito'
     return '💵 Efectivo'
+  }
+
+  const formatMonto = (monto) => {
+    return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
   }
 
   return (
@@ -85,7 +154,7 @@ export default function Dashboard() {
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Mis tarjetas y cuentas</h2>
               {accounts.length > 0 && (
-                <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>
+                <button style={styles.addBtn} onClick={() => { setShowAddAccount(true); setStep('form') }}>
                   + Agregar
                 </button>
               )}
@@ -94,7 +163,7 @@ export default function Dashboard() {
             {accounts.length === 0 ? (
               <div style={styles.empty}>
                 <p>Todavía no agregaste ninguna tarjeta.</p>
-                <button style={styles.addBtnLarge} onClick={() => setShowAddAccount(true)}>
+                <button style={styles.addBtnLarge} onClick={() => { setShowAddAccount(true); setStep('form') }}>
                   + Agregar mi primera tarjeta
                 </button>
               </div>
@@ -115,84 +184,195 @@ export default function Dashboard() {
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Agregar tarjeta</h3>
 
-            <form onSubmit={handleAddAccount}>
-              <div style={styles.field}>
-                <label style={styles.label}>Nombre de la tarjeta</label>
-                <input
-                  style={styles.input}
-                  value={newAccount.nombre}
-                  onChange={(e) => setNewAccount({...newAccount, nombre: e.target.value})}
-                  placeholder="Ej: AMEX, Visa Galicia, Mastercard BBVA"
-                  required
-                />
+            {/* STEP: FORM */}
+            {step === 'form' && (
+              <>
+                <h3 style={styles.modalTitle}>Agregar tarjeta</h3>
+                <form onSubmit={handleAddAccount}>
+                  <div style={styles.field}>
+                    <label style={styles.label}>Nombre de la tarjeta</label>
+                    <input
+                      style={styles.input}
+                      value={newAccount.nombre}
+                      onChange={(e) => setNewAccount({...newAccount, nombre: e.target.value})}
+                      placeholder="Ej: AMEX, Visa Galicia, Mastercard BBVA"
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.field}>
+                    <label style={styles.label}>Tipo</label>
+                    <select
+                      style={styles.input}
+                      value={newAccount.tipo}
+                      onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}
+                    >
+                      <option value="credito">💳 Tarjeta de crédito</option>
+                      <option value="debito">🏦 Débito / Cuenta bancaria</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.field}>
+                    <label style={styles.label}>Extracto del banco (PDF)</label>
+                    <div
+                      style={{
+                        ...styles.dropzone,
+                        ...(dragOver ? styles.dropzoneActive : {}),
+                        ...(archivo ? styles.dropzoneDone : {})
+                      }}
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      onClick={() => document.getElementById('fileInput').click()}
+                    >
+                      {archivo ? (
+                        <>
+                          <p style={styles.dropzoneIcon}>✅</p>
+                          <p style={styles.dropzoneText}>{archivo.name}</p>
+                          <p style={styles.dropzoneHint}>Clickeá para cambiar</p>
+                        </>
+                      ) : (
+                        <>
+                          <p style={styles.dropzoneIcon}>📄</p>
+                          <p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p>
+                          <p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      id="fileInput"
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => { if (e.target.files[0]) setArchivo(e.target.files[0]) }}
+                    />
+                  </div>
+
+                  <div style={styles.modalButtons}>
+                    <button type="button" style={styles.cancelBtn}
+                      onClick={() => { setShowAddAccount(false); setArchivo(null) }}>
+                      Cancelar
+                    </button>
+                    <button type="submit" style={styles.saveBtn} disabled={loading}>
+                      {loading ? 'Procesando...' : 'Guardar y procesar'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+
+            {/* STEP: PROCESSING */}
+            {step === 'processing' && (
+              <div style={styles.processingContainer}>
+                <p style={styles.processingIcon}>🤖</p>
+                <h3 style={styles.processingTitle}>Analizando tu extracto...</h3>
+                <p style={styles.processingText}>La IA está leyendo y clasificando tus transacciones. Esto puede tardar unos segundos.</p>
+                <div style={styles.loader} />
               </div>
+            )}
 
-              <div style={styles.field}>
-                <label style={styles.label}>Tipo</label>
-                <select
-                  style={styles.input}
-                  value={newAccount.tipo}
-                  onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}
-                >
-                  <option value="credito">💳 Tarjeta de crédito</option>
-                  <option value="debito">🏦 Débito / Cuenta bancaria</option>
-                </select>
-              </div>
+            {/* STEP: ADICIONALES */}
+            {step === 'adicionales' && statementData && (
+              <>
+                <h3 style={styles.modalTitle}>Detectamos adicionales 👥</h3>
+                <p style={styles.stepSubtitle}>
+                  En este extracto encontramos gastos de otras personas:
+                </p>
+                <div style={styles.adicionalesList}>
+                  {statementData.adicionales.map((a, i) => (
+                    <div key={i} style={styles.adicionalItem}>👤 {a}</div>
+                  ))}
+                </div>
+                <p style={styles.stepQuestion}>¿Cómo querés ver estos gastos?</p>
+                <div style={styles.opcionesGrid}>
+                  <button style={styles.opcionBtn} onClick={() => handleConfirmAdicionales(true)}>
+                    <span style={styles.opcionIcon}>📊</span>
+                    <span style={styles.opcionTitle}>Separados por persona</span>
+                    <span style={styles.opcionDesc}>Ver cuánto gastó cada uno</span>
+                  </button>
+                  <button style={styles.opcionBtn} onClick={() => handleConfirmAdicionales(false)}>
+                    <span style={styles.opcionIcon}>📋</span>
+                    <span style={styles.opcionTitle}>Todo junto</span>
+                    <span style={styles.opcionDesc}>Como gastos propios</span>
+                  </button>
+                </div>
+              </>
+            )}
 
-              <div style={styles.field}>
-                <label style={styles.label}>Extracto del banco (PDF)</label>
-                <div
-                  style={{
-                    ...styles.dropzone,
-                    ...(dragOver ? styles.dropzoneActive : {}),
-                    ...(archivo ? styles.dropzoneDone : {})
-                  }}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={handleDrop}
-                  onClick={() => document.getElementById('fileInput').click()}
-                >
-                  {archivo ? (
-                    <>
-                      <p style={styles.dropzoneIcon}>✅</p>
-                      <p style={styles.dropzoneText}>{archivo.name}</p>
-                      <p style={styles.dropzoneHint}>Clickeá para cambiar</p>
-                    </>
-                  ) : (
-                    <>
-                      <p style={styles.dropzoneIcon}>📄</p>
-                      <p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p>
-                      <p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p>
-                    </>
+            {/* STEP: PREVIEW */}
+            {step === 'preview' && statementData && (
+              <>
+                <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
+                <div style={styles.previewStats}>
+                  <div style={styles.previewStat}>
+                    <span style={styles.previewStatLabel}>Período</span>
+                    <span style={styles.previewStatValue}>{statementData.periodo}</span>
+                  </div>
+                  <div style={styles.previewStat}>
+                    <span style={styles.previewStatLabel}>Total ARS</span>
+                    <span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span>
+                  </div>
+                  <div style={styles.previewStat}>
+                    <span style={styles.previewStatLabel}>Vencimiento</span>
+                    <span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span>
+                  </div>
+                  <div style={styles.previewStat}>
+                    <span style={styles.previewStatLabel}>Transacciones</span>
+                    <span style={styles.previewStatValue}>{statementData.transacciones.length}</span>
+                  </div>
+                </div>
+
+                <div style={styles.transactionsList}>
+                  {statementData.transacciones.slice(0, 10).map((t, i) => (
+                    <div key={i} style={{
+                      ...styles.transactionItem,
+                      ...(t.estado === 'a_identificar' ? styles.transactionUnknown : {})
+                    }}>
+                      <div style={styles.transactionLeft}>
+                        <p style={styles.transactionName}>
+                          {t.nombre_limpio || t.nombre_original}
+                          {t.nombre_limpio === t.nombre_original && 
+                            <span style={styles.unknownBadge}> ❓</span>}
+                        </p>
+                        <p style={styles.transactionDetail}>
+                          {t.fecha} · {t.categoria_sugerida}
+                          {t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}
+                          {separarAdicionales && t.titular && ` · ${t.titular}`}
+                        </p>
+                      </div>
+                      <p style={{
+                        ...styles.transactionMonto,
+                        color: t.es_credito ? '#27AE60' : '#2d2d2d'
+                      }}>
+                        {t.es_credito ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(t.monto)}
+                      </p>
+                    </div>
+                  ))}
+                  {statementData.transacciones.length > 10 && (
+                    <p style={styles.moreTransactions}>
+                      + {statementData.transacciones.length - 10} transacciones más
+                    </p>
                   )}
                 </div>
-                <input
-                  id="fileInput"
-                  type="file"
-                  accept=".pdf"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const file = e.target.files[0]
-                    if (file) setArchivo(file)
-                  }}
-                />
-              </div>
 
-              <div style={styles.modalButtons}>
-                <button
-                  type="button"
-                  style={styles.cancelBtn}
-                  onClick={() => { setShowAddAccount(false); setArchivo(null) }}
-                >
-                  Cancelar
-                </button>
-                <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Procesando...' : 'Guardar y procesar'}
-                </button>
-              </div>
-            </form>
+                {statementData.transacciones.some(t => t.nombre_limpio === t.nombre_original) && (
+                  <div style={styles.warningBox}>
+                    ❓ Hay {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length} transacciones sin identificar. Podrás nombrarlas después.
+                  </div>
+                )}
+
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => setStep('form')}>
+                    ← Atrás
+                  </button>
+                  <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>
+                    {loading ? 'Guardando...' : 'Confirmar y guardar'}
+                  </button>
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}
@@ -230,10 +410,7 @@ const styles = {
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600'
   },
   accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
-  accountCard: {
-    backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px',
-    border: '1px solid #ede8f5'
-  },
+  accountCard: { backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px', border: '1px solid #ede8f5' },
   accountType: { fontSize: '12px', color: '#9B59B6', margin: '0 0 6px 0', fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   overlay: {
@@ -243,7 +420,7 @@ const styles = {
   },
   modal: {
     backgroundColor: 'white', borderRadius: '16px', padding: '32px',
-    width: '100%', maxWidth: '480px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+    width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
     maxHeight: '90vh', overflowY: 'auto'
   },
   modalTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
@@ -255,8 +432,7 @@ const styles = {
   },
   dropzone: {
     border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '32px',
-    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
-    backgroundColor: '#fafafa'
+    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: '#fafafa'
   },
   dropzoneActive: { borderColor: '#9B59B6', backgroundColor: '#f5eefb' },
   dropzoneDone: { borderColor: '#27AE60', backgroundColor: '#f0faf5' },
@@ -271,5 +447,57 @@ const styles = {
   saveBtn: {
     flex: 1, padding: '12px', backgroundColor: '#9B59B6', color: 'white',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
+  },
+  processingContainer: { textAlign: 'center', padding: '20px 0' },
+  processingIcon: { fontSize: '48px', margin: '0 0 16px 0' },
+  processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
+  processingText: { fontSize: '14px', color: '#888', margin: '0 0 24px 0' },
+  loader: {
+    width: '40px', height: '40px', border: '4px solid #f0e6fa',
+    borderTop: '4px solid #9B59B6', borderRadius: '50%',
+    animation: 'spin 1s linear infinite', margin: '0 auto'
+  },
+  stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
+  adicionalesList: { marginBottom: '20px' },
+  adicionalItem: {
+    padding: '10px 14px', backgroundColor: '#f5eefb', borderRadius: '8px',
+    marginBottom: '8px', fontSize: '14px', color: '#6C3483', fontWeight: '500'
+  },
+  stepQuestion: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', marginBottom: '16px' },
+  opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  opcionBtn: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px',
+    backgroundColor: 'white', cursor: 'pointer', transition: 'all 0.2s',
+    gap: '4px'
+  },
+  opcionIcon: { fontSize: '28px' },
+  opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
+  opcionDesc: { fontSize: '12px', color: '#888' },
+  previewStats: {
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px'
+  },
+  previewStat: {
+    backgroundColor: '#f8f6f3', borderRadius: '10px', padding: '12px',
+    display: 'flex', flexDirection: 'column', gap: '4px'
+  },
+  previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
+  previewStatValue: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d' },
+  transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
+  transactionItem: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '10px 0', borderBottom: '1px solid #f0f0f0'
+  },
+  transactionUnknown: { opacity: 0.7 },
+  transactionLeft: { flex: 1, paddingRight: '12px' },
+  transactionName: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d', margin: '0 0 2px 0' },
+  transactionDetail: { fontSize: '12px', color: '#aaa', margin: 0 },
+  transactionMonto: { fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' },
+  unknownBadge: { fontSize: '12px' },
+  moreTransactions: { fontSize: '13px', color: '#9B59B6', textAlign: 'center', padding: '8px 0' },
+  warningBox: {
+    backgroundColor: '#fff8e1', border: '1px solid #ffe082',
+    borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404',
+    marginBottom: '16px'
   }
 }
