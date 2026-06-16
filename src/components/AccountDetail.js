@@ -18,6 +18,8 @@ const CATEGORY_COLORS = {
   'A Identificar': '#E74C3C',
 }
 
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
 const formatMonto = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
 
@@ -25,6 +27,11 @@ const formatMontoFull = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : '$'
+
+const mesLabel = (yearMonth) => {
+  const [year, month] = yearMonth.split('-')
+  return `${MESES[parseInt(month) - 1]} ${year}`
+}
 
 export default function AccountDetail({ account, refreshKey }) {
   const [transactions, setTransactions] = useState([])
@@ -38,6 +45,7 @@ export default function AccountDetail({ account, refreshKey }) {
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
+  const [selectedMes, setSelectedMes] = useState(null)
 
   useEffect(() => {
     if (account) fetchData()
@@ -58,12 +66,22 @@ export default function AccountDetail({ account, refreshKey }) {
         .eq('account_id', account.id)
         .order('fecha_hasta', { ascending: true }),
     ])
-    setTransactions(txRes.data || [])
+    const txs = txRes.data || []
+    setTransactions(txs)
     setCategories(catRes.data || [])
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
+
+    // Seleccionar el mes más reciente por defecto
+    if (txs.length > 0) {
+      const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+      setSelectedMes(meses[0])
+    }
     setLoading(false)
   }
+
+  // Meses disponibles a partir de las transacciones
+  const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
 
   const filteredSubcats = () => {
     const catObj = categories.find(c => c.nombre === editCategoria)
@@ -134,14 +152,13 @@ export default function AccountDetail({ account, refreshKey }) {
     total: Number(s.total_resumen) || 0
   }))
 
-  const lastStatement = statements[statements.length - 1]
-  const lastMonthTxs = lastStatement
-    ? transactions.filter(t => t.statement_id === lastStatement.id && t.tipo === 'gasto')
+  // Transacciones del mes seleccionado
+  const mesTxs = selectedMes
+    ? transactions.filter(t => t.fecha?.startsWith(selectedMes) && t.tipo === 'gasto')
     : []
 
-  // Separar donut por moneda
-  const lastMonthARS = lastMonthTxs.filter(t => t.moneda === 'ARS')
-  const lastMonthUSD = lastMonthTxs.filter(t => t.moneda === 'USD')
+  const mesARS = mesTxs.filter(t => t.moneda === 'ARS')
+  const mesUSD = mesTxs.filter(t => t.moneda === 'USD')
 
   const buildDonutData = (txList) => Object.entries(
     txList.reduce((acc, t) => {
@@ -151,8 +168,8 @@ export default function AccountDetail({ account, refreshKey }) {
     }, {})
   ).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
 
-  const donutARS = buildDonutData(lastMonthARS)
-  const donutUSD = buildDonutData(lastMonthUSD)
+  const donutARS = buildDonutData(mesARS)
+  const donutUSD = buildDonutData(mesUSD)
 
   const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
   const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
@@ -246,11 +263,21 @@ export default function AccountDetail({ account, refreshKey }) {
         </div>
       )}
 
-      {(donutARS.length > 0 || donutUSD.length > 0) && (
+      {mesesDisponibles.length > 0 && (
         <div style={styles.chartSection}>
-          <h3 style={styles.chartTitle}>🍩 Gastos del último mes por categoría</h3>
+          <div style={styles.donutHeader}>
+            <h3 style={{...styles.chartTitle, margin: 0}}>🍩 Gastos de:</h3>
+            <select style={styles.mesSelector} value={selectedMes || ''} onChange={e => setSelectedMes(e.target.value)}>
+              {mesesDisponibles.map(m => (
+                <option key={m} value={m}>{mesLabel(m)}</option>
+              ))}
+            </select>
+          </div>
           {donutARS.length > 0 && renderDonut(donutARS, 'ARS')}
           {donutUSD.length > 0 && renderDonut(donutUSD, 'USD')}
+          {donutARS.length === 0 && donutUSD.length === 0 && (
+            <p style={{color:'#aaa', fontSize:'14px'}}>Sin gastos en este mes.</p>
+          )}
         </div>
       )}
 
@@ -370,6 +397,11 @@ const styles = {
   loading: { padding: '24px', color: '#888', fontSize: '14px' },
   chartSection: { marginBottom: '32px' },
   chartTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 16px 0' },
+  donutHeader: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
+  mesSelector: {
+    padding: '6px 12px', borderRadius: '8px', border: '1px solid #e0e0e0',
+    fontSize: '14px', color: '#2d2d2d', backgroundColor: 'white', cursor: 'pointer', outline: 'none'
+  },
   donutBlock: { marginBottom: '24px' },
   donutSubtitle: { fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 12px 0' },
   donutContainer: { display: 'flex', alignItems: 'center', gap: '16px' },
