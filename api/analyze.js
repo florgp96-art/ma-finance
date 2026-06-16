@@ -37,6 +37,7 @@ Categorías y subcategorías permitidas:
 - Educación → subcategorías: Colegio, Universidad, Cursos
 - Ropa → sin subcategoría
 - Entretenimiento → subcategorías: Salidas
+- Personal → subcategorías: Regalos, Cumpleaños, Fiestas, Tramites, Peluqueria, Varios
 - Suscripciones → sin subcategoría
 - Trabajo → subcategorías: Freelance, Negocio propio, Insumos, Monotributo, Empleada
 - Ingresos → subcategorías: Sueldo, Freelance, Alquileres, Inversiones, Otros
