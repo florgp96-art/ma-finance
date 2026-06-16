@@ -1,29 +1,13 @@
-import * as pdfjsLib from 'pdfjs-dist'
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end()
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+  const { pdfText, cardName } = req.body
 
-export async function extractTextFromPDF(file) {
-  const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-
-  let fullText = ''
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const textContent = await page.getTextContent()
-    const pageText = textContent.items.map(item => item.str).join(' ')
-    fullText += `\n--- Página ${i} ---\n${pageText}`
-  }
-
-  return fullText
-}
-
-export async function analyzeStatementWithClaude(pdfText, cardName) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.REACT_APP_CLAUDE_API_KEY,
+      'x-api-key': process.env.CLAUDE_API_KEY,
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
@@ -62,18 +46,18 @@ Analizá este extracto de la tarjeta "${cardName}" y devolvé SOLO un JSON váli
 }
 
 Reglas importantes:
-- "nombre_limpio": nombre legible del comercio. Si es críptico (ej: MERPAGO*SUPERMERCADO, códigos raros), dejarlo igual al original.
-- "categoria_sugerida": usar solo estas categorías: Casa, Alimentación, Transporte, Salud, Educación, Ropa, Entretenimiento, Suscripciones, Trabajo, Ingresos, Débitos, A Identificar
+- "nombre_limpio": nombre legible del comercio. Si es críptico, dejarlo igual al original.
+- "categoria_sugerida": Casa, Alimentación, Transporte, Salud, Educación, Ropa, Entretenimiento, Suscripciones, Trabajo, Ingresos, Débitos, A Identificar
 - Para AXION, YPF, SHELL, peajes → Transporte
 - Para COTO, INC SA, supermercados → Alimentación
 - Para OSDE, médicos → Salud
-- Para NETFLIX, CANVA, suscripciones → Suscripciones
+- Para NETFLIX, CANVA → Suscripciones
 - Para PEDIDOSYA, restaurantes → Entretenimiento
 - Para percepciones, impuestos, sellos → Débitos
 - Para todo lo demás críptico → A Identificar
-- "es_credito": true solo para pagos recibidos (dice CR o "Gracias por su pago")
+- "es_credito": true solo para pagos recibidos
 - Para cuotas: completar cuotas_total, cuota_numero y monto_total_cuotas
-- "titular": nombre de la persona titular de ese gasto (puede ser adicional)
+- "titular": nombre de la persona titular del gasto
 
 EXTRACTO:
 ${pdfText}`
@@ -82,13 +66,5 @@ ${pdfText}`
   })
 
   const data = await response.json()
-  const text = data.content[0].text
-
-  try {
-    const clean = text.replace(/```json|```/g, '').trim()
-    return JSON.parse(clean)
-  } catch (e) {
-    console.error('Error parsing Claude response:', text)
-    throw new Error('No se pudo procesar el extracto')
-  }
+  res.status(200).json(data)
 }
