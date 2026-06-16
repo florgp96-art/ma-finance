@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
+
+const PROCESSING_MSGS = [
+  { icon: '📄', title: 'Leyendo el extracto...', desc: 'Procesando las páginas del PDF' },
+  { icon: '🔍', title: 'Identificando transacciones...', desc: 'Encontrando cada compra y pago' },
+  { icon: '🏷️', title: 'Clasificando gastos...', desc: 'Asignando categorías automáticamente' },
+  { icon: '✨', title: 'Casi listo...', desc: 'Preparando el resumen final' },
+]
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -22,15 +29,31 @@ export default function Dashboard() {
   const [archivo, setArchivo] = useState(null)
   const [showUpload, setShowUpload] = useState(false)
   const [uploadDragOver, setUploadDragOver] = useState(false)
-  const [step, setStep] = useState('upload') // upload | processing | match | new_account | adicionales | preview
+  const [step, setStep] = useState('upload')
   const [statementData, setStatementData] = useState(null)
-  const [matchedAccount, setMatchedAccount] = useState(null) // cuenta detectada
-  const [suggestedName, setSuggestedName] = useState('') // nombre sugerido si no hay match
+  const [matchedAccount, setMatchedAccount] = useState(null)
+  const [suggestedName, setSuggestedName] = useState('')
   const [newAccountForUpload, setNewAccountForUpload] = useState({ nombre: '', tipo: 'credito' })
   const [separarAdicionales, setSepararAdicionales] = useState(null)
-  const [targetAccount, setTargetAccount] = useState(null) // cuenta final donde guardar
+  const [targetAccount, setTargetAccount] = useState(null)
+
+  // Mensajes rotativos
+  const [msgIndex, setMsgIndex] = useState(0)
+  const msgInterval = useRef(null)
 
   useEffect(() => { fetchAccounts() }, [])
+
+  useEffect(() => {
+    if (step === 'processing') {
+      setMsgIndex(0)
+      msgInterval.current = setInterval(() => {
+        setMsgIndex(i => (i + 1) % PROCESSING_MSGS.length)
+      }, 3000)
+    } else {
+      clearInterval(msgInterval.current)
+    }
+    return () => clearInterval(msgInterval.current)
+  }, [step])
 
   const fetchAccounts = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -43,7 +66,6 @@ export default function Dashboard() {
     navigate('/login')
   }
 
-  // ─── AGREGAR TARJETA (sin extracto) ───
   const handleAddAccount = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -59,7 +81,6 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  // ─── EDITAR TARJETA ───
   const handleEditAccount = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -72,7 +93,6 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  // ─── ELIMINAR TARJETA ───
   const handleDeleteAccount = async (accountId) => {
     setLoading(true)
     await supabase.from('transactions').delete().eq('account_id', accountId)
@@ -83,7 +103,6 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  // ─── CARGA DE EXTRACTO ───
   const resetUpload = () => {
     setArchivo(null)
     setStep('upload')
@@ -93,18 +112,16 @@ export default function Dashboard() {
     setTargetAccount(null)
     setSepararAdicionales(null)
     setNewAccountForUpload({ nombre: '', tipo: 'credito' })
+    setMsgIndex(0)
   }
 
   const findMatchingAccount = (statementResult) => {
-    // Intentar detectar a qué tarjeta pertenece el extracto
     const cardNombre = statementResult.tarjeta_detectada || ''
     if (!cardNombre || accounts.length === 0) return null
-
     const cardLower = cardNombre.toLowerCase()
     return accounts.find(acc => {
       const accLower = acc.nombre.toLowerCase()
       return cardLower.includes(accLower) || accLower.includes(cardLower) ||
-        // Comparación por palabras clave
         accLower.split(' ').some(word => word.length > 3 && cardLower.includes(word))
     }) || null
   }
@@ -113,13 +130,10 @@ export default function Dashboard() {
     if (!archivo) return
     setStep('processing')
     setLoading(true)
-
     try {
       const pdfText = await extractTextFromPDF(archivo)
       const result = await analyzeStatementWithClaude(pdfText, 'auto')
       setStatementData(result)
-
-      // Detectar tarjeta
       const match = findMatchingAccount(result)
       if (match) {
         setMatchedAccount(match)
@@ -173,7 +187,6 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const account = targetAccount
-
     const { data: statement } = await supabase.from('statements').insert({
       user_id: user.id,
       account_id: account.id,
@@ -202,7 +215,6 @@ export default function Dashboard() {
     }))
 
     await supabase.from('transactions').insert(transacciones)
-
     resetUpload()
     setShowUpload(false)
     fetchAccounts()
@@ -226,6 +238,8 @@ export default function Dashboard() {
   const formatMonto = (monto) => {
     return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
   }
+
+  const currentMsg = PROCESSING_MSGS[msgIndex]
 
   return (
     <>
@@ -251,7 +265,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* BOTÓN CARGAR EXTRACTO */}
           <div style={styles.uploadBanner}>
             <div>
               <p style={styles.uploadBannerTitle}>📄 Cargar extracto</p>
@@ -265,9 +278,7 @@ export default function Dashboard() {
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Tarjetas y Cuentas</h2>
-              <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>
-                + Agregar
-              </button>
+              <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>+ Agregar</button>
             </div>
 
             {accounts.length === 0 ? (
@@ -305,13 +316,9 @@ export default function Dashboard() {
             <form onSubmit={handleAddAccount}>
               <div style={styles.field}>
                 <label style={styles.label}>Nombre</label>
-                <input
-                  style={styles.input}
-                  value={newAccount.nombre}
+                <input style={styles.input} value={newAccount.nombre}
                   onChange={(e) => setNewAccount({...newAccount, nombre: e.target.value})}
-                  placeholder="Ej: Amex, Visa Galicia, Mastercard"
-                  required
-                />
+                  placeholder="Ej: Amex, Visa Galicia, Mastercard" required />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Tipo</label>
@@ -323,9 +330,7 @@ export default function Dashboard() {
               </div>
               <div style={styles.modalButtons}>
                 <button type="button" style={styles.cancelBtn} onClick={() => setShowAddAccount(false)}>Cancelar</button>
-                <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Guardando...' : 'Guardar'}
-                </button>
+                <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
           </div>
@@ -340,12 +345,8 @@ export default function Dashboard() {
             <form onSubmit={handleEditAccount}>
               <div style={styles.field}>
                 <label style={styles.label}>Nombre</label>
-                <input
-                  style={styles.input}
-                  value={editAccount.nombre}
-                  onChange={(e) => setEditAccount({...editAccount, nombre: e.target.value})}
-                  required
-                />
+                <input style={styles.input} value={editAccount.nombre}
+                  onChange={(e) => setEditAccount({...editAccount, nombre: e.target.value})} required />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Tipo</label>
@@ -357,9 +358,7 @@ export default function Dashboard() {
               </div>
               <div style={styles.modalButtons}>
                 <button type="button" style={styles.cancelBtn} onClick={() => setEditAccount(null)}>Cancelar</button>
-                <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Guardando...' : 'Guardar cambios'}
-                </button>
+                <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Guardando...' : 'Guardar cambios'}</button>
               </div>
             </form>
           </div>
@@ -390,16 +389,11 @@ export default function Dashboard() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
 
-            {/* STEP: UPLOAD */}
             {step === 'upload' && (
               <>
                 <h3 style={styles.modalTitle}>Cargar extracto 📄</h3>
                 <div
-                  style={{
-                    ...styles.dropzone,
-                    ...(uploadDragOver ? styles.dropzoneActive : {}),
-                    ...(archivo ? styles.dropzoneDone : {})
-                  }}
+                  style={{...styles.dropzone, ...(uploadDragOver ? styles.dropzoneActive : {}), ...(archivo ? styles.dropzoneDone : {})}}
                   onDragOver={(e) => { e.preventDefault(); setUploadDragOver(true) }}
                   onDragLeave={() => setUploadDragOver(false)}
                   onDrop={handleDropUpload}
@@ -430,17 +424,20 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* STEP: PROCESSING */}
             {step === 'processing' && (
               <div style={styles.processingContainer}>
-                <p style={styles.processingIcon}>🤖</p>
-                <h3 style={styles.processingTitle}>Analizando tu extracto...</h3>
-                <p style={styles.processingText}>La IA está leyendo y clasificando tus transacciones.</p>
+                <p style={styles.processingIcon}>{currentMsg.icon}</p>
+                <h3 style={styles.processingTitle}>{currentMsg.title}</h3>
+                <p style={styles.processingText}>{currentMsg.desc}</p>
+                <div style={styles.processingDots}>
+                  {PROCESSING_MSGS.map((_, i) => (
+                    <div key={i} style={{...styles.dot, ...(i === msgIndex ? styles.dotActive : {})}} />
+                  ))}
+                </div>
                 <div style={styles.loader} />
               </div>
             )}
 
-            {/* STEP: MATCH — tarjeta detectada */}
             {step === 'match' && matchedAccount && (
               <>
                 <h3 style={styles.modalTitle}>Tarjeta detectada ✅</h3>
@@ -451,21 +448,16 @@ export default function Dashboard() {
                   <p style={styles.matchCardType}>💳 {tipoLabel(matchedAccount.tipo)}</p>
                   <p style={styles.matchCardName}>{matchedAccount.nombre}</p>
                 </div>
-                <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px', textAlign: 'center'}}>
-                  ¿Es correcto?
-                </p>
+                <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px', textAlign: 'center'}}>¿Es correcto?</p>
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => { setStep('new_account'); setNewAccountForUpload({ nombre: suggestedName, tipo: 'credito' }) }}>
                     No, es otra
                   </button>
-                  <button style={styles.saveBtn} onClick={handleConfirmMatch}>
-                    Sí, continuar
-                  </button>
+                  <button style={styles.saveBtn} onClick={handleConfirmMatch}>Sí, continuar</button>
                 </div>
               </>
             )}
 
-            {/* STEP: NEW ACCOUNT — tarjeta no reconocida */}
             {step === 'new_account' && (
               <>
                 <h3 style={styles.modalTitle}>¿Crear nueva tarjeta?</h3>
@@ -489,15 +481,12 @@ export default function Dashboard() {
                   </div>
                   <div style={styles.modalButtons}>
                     <button type="button" style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
-                    <button type="submit" style={styles.saveBtn} disabled={loading}>
-                      {loading ? 'Creando...' : 'Crear y continuar'}
-                    </button>
+                    <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Creando...' : 'Crear y continuar'}</button>
                   </div>
                 </form>
               </>
             )}
 
-            {/* STEP: ADICIONALES */}
             {step === 'adicionales' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>Detectamos adicionales 👥</h3>
@@ -523,7 +512,6 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* STEP: PREVIEW */}
             {step === 'preview' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
@@ -675,12 +663,15 @@ const styles = {
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'
   },
   processingContainer: { textAlign: 'center', padding: '20px 0' },
-  processingIcon: { fontSize: '48px', margin: '0 0 16px 0' },
+  processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
   processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
   processingText: { fontSize: '14px', color: '#888', margin: '0 0 24px 0' },
+  processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
+  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#e0d0f0' },
+  dotActive: { backgroundColor: '#9B59B6' },
   loader: {
-    width: '40px', height: '40px', border: '4px solid #f0e6fa',
-    borderTop: '4px solid #9B59B6', borderRadius: '50%',
+    width: '36px', height: '36px', border: '3px solid #f0e6fa',
+    borderTop: '3px solid #9B59B6', borderRadius: '50%',
     animation: 'spin 1s linear infinite', margin: '0 auto'
   },
   matchCard: {
