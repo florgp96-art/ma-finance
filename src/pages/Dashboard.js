@@ -239,7 +239,7 @@ export default function Dashboard() {
         <div style={styles.content}>
           <div style={styles.summaryCards}>
             <div style={styles.summaryCard}>
-              <p style={styles.cardLabel}>Total del mes</p>
+              <p style={styles.cardLabel}>Total del Mes</p>
               <p style={styles.cardValue}>$ —</p>
             </div>
             <div style={styles.summaryCard}>
@@ -265,7 +265,7 @@ export default function Dashboard() {
 
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Mis tarjetas y cuentas</h2>
+              <h2 style={styles.sectionTitle}>Tarjetas y Cuentas</h2>
               <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>
                 + Agregar
               </button>
@@ -638,7 +638,7 @@ const styles = {
   accountType: { fontSize: '12px', color: '#9B59B6', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   accountActions: { display: 'flex', gap: '4px' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px', opacity: 0.5 },
+  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px', opacity: 0.8 },
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
