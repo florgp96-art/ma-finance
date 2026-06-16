@@ -77,8 +77,17 @@ export default function AccountDetail({ account }) {
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado'
     }).eq('id', tx.id)
+    // Actualizar estado local sin recargar para no hacer scroll
+    setTransactions(prev => prev.map(t => t.id === tx.id ? {
+      ...t,
+      nombre: editNombre,
+      category_id: catObj?.id || t.category_id,
+      subcategory_id: subcatObj?.id || null,
+      estado: 'identificado',
+      categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
+      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null
+    } : t))
     setEditingTx(null)
-    fetchData()
   }
 
   const startEdit = (tx) => {

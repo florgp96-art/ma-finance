@@ -30,16 +30,16 @@ Reglas de categoría y subcategoría:
 - titular: nombre del titular de la tarjeta
 
 Categorías y subcategorías permitidas:
-- Casa → subcategorías: Alquiler, Hipoteca, Luz, Gas, Internet, Expensas, Supermercado (compras grandes de hogar)
-- Alimentación → subcategorías: Supermercado, Delivery
-- Transporte → subcategorías: Nafta, Auto, Transporte público, Uber/Cabify
+- Casa → subcategorías: Alquiler, Luz, Gas, Internet, Expensas, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
+- Comida → subcategorías: Supermercado, Delivery
+- Transporte → subcategorías: Nafta, Auto, Transporte público, Uber/Cabify, Telepase, Service Auto, Estacionamiento
 - Salud → subcategorías: Obra social, Médicos, Farmacia
 - Educación → subcategorías: Colegio, Universidad, Cursos
 - Ropa → sin subcategoría
 - Entretenimiento → subcategorías: Salidas
 - Suscripciones → sin subcategoría
 - Trabajo → subcategorías: Freelance, Negocio propio, Insumos, Monotributo, Empleada
-- Ingresos → subcategorías: Sueldo, Freelance
+- Ingresos → subcategorías: Sueldo, Freelance, Alquileres, Inversiones, Otros
 - Débitos → subcategorías: Impuestos, Percepciones, Intereses
 - A Identificar → sin subcategoría
 
@@ -49,7 +49,7 @@ Reglas de asignación:
 - UBER/CABIFY/PAYU*AR*UBER → Transporte, subcategoría: Uber/Cabify
 - COTO/DISCO/INC SA/JUMBO/supermercados presenciales → Alimentación, subcategoría: Supermercado
 - PEDIDOSYA/RAPPI/delivery → Alimentación, subcategoría: Delivery
-- Restaurantes/bares/sushi/cantina/pizzería → Entretenimiento, subcategoría: Salidas
+- Restaurantes/bares/sushi/cantina/pizzería/Starbucks → Entretenimiento, subcategoría: Salidas
 - OSDE/obra social/prepaga → Salud, subcategoría: Obra social
 - Médicos/clínicas/laboratorios → Salud, subcategoría: Médicos
 - Farmacia/droguería → Salud, subcategoría: Farmacia

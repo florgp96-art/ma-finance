@@ -596,11 +596,11 @@ export default function Dashboard() {
                     <p style={styles.moreTransactions}>+ {statementData.transacciones.length - 10} transacciones más</p>
                   )}
                 </div>
-                {statementData.transacciones.some(t => t.nombre_limpio === t.nombre_original) && (
-                  <div style={styles.warningBox}>
-                    ❓ Hay {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length} {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length === 1 ? 'transacción' : 'transacciones'} sin identificar.
-                  </div>
-                )}
+                {statementData.transacciones.some(t => t.categoria_sugerida === 'A Identificar') && (
+                <div style={styles.warningBox}>
+               ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Podrás nombrarlas después.
+               </div>
+               )}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setStep('upload')}>← Atrás</button>
                   <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>
