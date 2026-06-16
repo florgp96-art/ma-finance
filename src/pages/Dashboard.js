@@ -6,26 +6,16 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
   const [showAddAccount, setShowAddAccount] = useState(false)
-  const [newAccount, setNewAccount] = useState({
-    nombre: '',
-    tipo: 'credito',
-    moneda: 'ARS',
-    cupo_total: '',
-    dia_cierre: '',
-    dia_vencimiento: ''
-  })
+  const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
+  const [archivo, setArchivo] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
-  useEffect(() => {
-    fetchAccounts()
-  }, [])
+  useEffect(() => { fetchAccounts() }, [])
 
   const fetchAccounts = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase
-      .from('accounts')
-      .select('*')
-      .eq('user_id', user.id)
+    const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
   }
 
@@ -36,6 +26,7 @@ export default function Dashboard() {
 
   const handleAddAccount = async (e) => {
     e.preventDefault()
+    if (!archivo) { alert('Por favor cargá el extracto PDF'); return }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -43,16 +34,21 @@ export default function Dashboard() {
       user_id: user.id,
       nombre: newAccount.nombre,
       tipo: newAccount.tipo,
-      moneda: newAccount.moneda,
-      cupo_total: newAccount.cupo_total || null,
-      dia_cierre: newAccount.dia_cierre || null,
-      dia_vencimiento: newAccount.dia_vencimiento || null
     })
 
-    setNewAccount({ nombre: '', tipo: 'credito', moneda: 'ARS', cupo_total: '', dia_cierre: '', dia_vencimiento: '' })
+    setNewAccount({ nombre: '', tipo: 'credito' })
+    setArchivo(null)
     setShowAddAccount(false)
     fetchAccounts()
     setLoading(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file && file.type === 'application/pdf') setArchivo(file)
+    else alert('Solo se aceptan archivos PDF')
   }
 
   const tipoLabel = (tipo) => {
@@ -70,7 +66,6 @@ export default function Dashboard() {
         </div>
 
         <div style={styles.content}>
-          {/* Cards resumen */}
           <div style={styles.summaryCards}>
             <div style={styles.summaryCard}>
               <p style={styles.cardLabel}>Total del mes</p>
@@ -86,7 +81,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Mis tarjetas */}
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Mis tarjetas y cuentas</h2>
@@ -110,13 +104,6 @@ export default function Dashboard() {
                   <div key={acc.id} style={styles.accountCard}>
                     <p style={styles.accountType}>{tipoLabel(acc.tipo)}</p>
                     <p style={styles.accountName}>{acc.nombre}</p>
-                    <p style={styles.accountMoneda}>{acc.moneda}</p>
-                    {acc.dia_vencimiento && (
-                      <p style={styles.accountDetail}>Vence día {acc.dia_vencimiento}</p>
-                    )}
-                    {acc.cupo_total && (
-                      <p style={styles.accountDetail}>Cupo: ${Number(acc.cupo_total).toLocaleString()}</p>
-                    )}
                   </div>
                 ))}
               </div>
@@ -125,20 +112,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Modal agregar tarjeta */}
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Agregar tarjeta o cuenta</h3>
+            <h3 style={styles.modalTitle}>Agregar tarjeta</h3>
 
             <form onSubmit={handleAddAccount}>
               <div style={styles.field}>
-                <label style={styles.label}>Nombre</label>
+                <label style={styles.label}>Nombre de la tarjeta</label>
                 <input
                   style={styles.input}
                   value={newAccount.nombre}
                   onChange={(e) => setNewAccount({...newAccount, nombre: e.target.value})}
-                  placeholder="Ej: AMEX, Visa Galicia, Efectivo"
+                  placeholder="Ej: AMEX, Visa Galicia, Mastercard BBVA"
                   required
                 />
               </div>
@@ -150,74 +136,60 @@ export default function Dashboard() {
                   value={newAccount.tipo}
                   onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}
                 >
-                  <option value="credito">💳 Crédito</option>
-                  <option value="debito">🏦 Débito</option>
-                  <option value="efectivo">💵 Efectivo</option>
+                  <option value="credito">💳 Tarjeta de crédito</option>
+                  <option value="debito">🏦 Débito / Cuenta bancaria</option>
                 </select>
               </div>
 
               <div style={styles.field}>
-                <label style={styles.label}>Moneda</label>
-                <select
-                  style={styles.input}
-                  value={newAccount.moneda}
-                  onChange={(e) => setNewAccount({...newAccount, moneda: e.target.value})}
+                <label style={styles.label}>Extracto del banco (PDF)</label>
+                <div
+                  style={{
+                    ...styles.dropzone,
+                    ...(dragOver ? styles.dropzoneActive : {}),
+                    ...(archivo ? styles.dropzoneDone : {})
+                  }}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
+                  onClick={() => document.getElementById('fileInput').click()}
                 >
-                  <option value="ARS">ARS — Pesos</option>
-                  <option value="USD">USD — Dólares</option>
-                </select>
+                  {archivo ? (
+                    <>
+                      <p style={styles.dropzoneIcon}>✅</p>
+                      <p style={styles.dropzoneText}>{archivo.name}</p>
+                      <p style={styles.dropzoneHint}>Clickeá para cambiar</p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={styles.dropzoneIcon}>📄</p>
+                      <p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p>
+                      <p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p>
+                    </>
+                  )}
+                </div>
+                <input
+                  id="fileInput"
+                  type="file"
+                  accept=".pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files[0]
+                    if (file) setArchivo(file)
+                  }}
+                />
               </div>
-
-              {newAccount.tipo === 'credito' && (
-                <>
-                  <div style={styles.row}>
-                    <div style={{...styles.field, flex: 1}}>
-                      <label style={styles.label}>Día de cierre</label>
-                      <input
-                        style={styles.input}
-                        type="number"
-                        min="1" max="31"
-                        value={newAccount.dia_cierre}
-                        onChange={(e) => setNewAccount({...newAccount, dia_cierre: e.target.value})}
-                        placeholder="Ej: 15"
-                      />
-                    </div>
-                    <div style={{...styles.field, flex: 1}}>
-                      <label style={styles.label}>Día de vencimiento</label>
-                      <input
-                        style={styles.input}
-                        type="number"
-                        min="1" max="31"
-                        value={newAccount.dia_vencimiento}
-                        onChange={(e) => setNewAccount({...newAccount, dia_vencimiento: e.target.value})}
-                        placeholder="Ej: 25"
-                      />
-                    </div>
-                  </div>
-
-                  <div style={styles.field}>
-                    <label style={styles.label}>Cupo total (opcional)</label>
-                    <input
-                      style={styles.input}
-                      type="number"
-                      value={newAccount.cupo_total}
-                      onChange={(e) => setNewAccount({...newAccount, cupo_total: e.target.value})}
-                      placeholder="Ej: 500000"
-                    />
-                  </div>
-                </>
-              )}
 
               <div style={styles.modalButtons}>
                 <button
                   type="button"
                   style={styles.cancelBtn}
-                  onClick={() => setShowAddAccount(false)}
+                  onClick={() => { setShowAddAccount(false); setArchivo(null) }}
                 >
                   Cancelar
                 </button>
                 <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Guardando...' : 'Guardar'}
+                  {loading ? 'Procesando...' : 'Guardar y procesar'}
                 </button>
               </div>
             </form>
@@ -263,9 +235,7 @@ const styles = {
     border: '1px solid #ede8f5'
   },
   accountType: { fontSize: '12px', color: '#9B59B6', margin: '0 0 6px 0', fontWeight: '600' },
-  accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 4px 0' },
-  accountMoneda: { fontSize: '12px', color: '#aaa', margin: '0 0 8px 0' },
-  accountDetail: { fontSize: '12px', color: '#888', margin: '2px 0' },
+  accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
@@ -273,7 +243,8 @@ const styles = {
   },
   modal: {
     backgroundColor: 'white', borderRadius: '16px', padding: '32px',
-    width: '100%', maxWidth: '480px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+    width: '100%', maxWidth: '480px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+    maxHeight: '90vh', overflowY: 'auto'
   },
   modalTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
   field: { marginBottom: '16px' },
@@ -282,7 +253,16 @@ const styles = {
     width: '100%', padding: '11px', borderRadius: '10px',
     border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box'
   },
-  row: { display: 'flex', gap: '12px' },
+  dropzone: {
+    border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '32px',
+    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+    backgroundColor: '#fafafa'
+  },
+  dropzoneActive: { borderColor: '#9B59B6', backgroundColor: '#f5eefb' },
+  dropzoneDone: { borderColor: '#27AE60', backgroundColor: '#f0faf5' },
+  dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
+  dropzoneText: { fontSize: '14px', color: '#444', margin: '0 0 4px 0', fontWeight: '500' },
+  dropzoneHint: { fontSize: '12px', color: '#aaa', margin: 0 },
   modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
   cancelBtn: {
     flex: 1, padding: '12px', backgroundColor: 'white', color: '#9B59B6',
