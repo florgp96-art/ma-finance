@@ -216,6 +216,18 @@ export default function Dashboard() {
       return match ? match.id : null
     }
 
+    // Verificar duplicado
+    const { data: existing } = await supabase.from('statements')
+      .select('id')
+      .eq('account_id', account.id)
+      .eq('periodo', statementData.periodo)
+      .single()
+
+    if (existing) {
+      alert(`Ya cargaste el extracto de ${statementData.periodo} para esta tarjeta.`)
+      setLoading(false)
+      return
+    }
     const { data: statement } = await supabase.from('statements').insert({
       user_id: user.id,
       account_id: account.id,
