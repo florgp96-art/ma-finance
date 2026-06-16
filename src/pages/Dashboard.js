@@ -434,7 +434,6 @@ export default function Dashboard() {
                     <div key={i} style={{...styles.dot, ...(i === msgIndex ? styles.dotActive : {})}} />
                   ))}
                 </div>
-                <div style={styles.loader} />
               </div>
             )}
 
