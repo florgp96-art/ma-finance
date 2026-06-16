@@ -24,7 +24,9 @@ const formatMonto = (monto) =>
 const formatMontoFull = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
 
-export default function AccountDetail({ account }) {
+const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : '$'
+
+export default function AccountDetail({ account, refreshKey }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -40,7 +42,7 @@ export default function AccountDetail({ account }) {
   useEffect(() => {
     if (account) fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account])
+  }, [account, refreshKey])
 
   const fetchData = async () => {
     setLoading(true)
@@ -78,7 +80,6 @@ export default function AccountDetail({ account }) {
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado'
     }).eq('id', tx.id)
-    // Actualizar estado local sin recargar para no hacer scroll
     setTransactions(prev => prev.map(t => t.id === tx.id ? {
       ...t,
       nombre: editNombre,
@@ -115,22 +116,13 @@ export default function AccountDetail({ account }) {
   const sortTx = (list) => {
     return [...list].sort((a, b) => {
       let valA, valB
-      if (sortKey === 'fecha') {
-        valA = a.fecha; valB = b.fecha
-      } else if (sortKey === 'nombre') {
-        valA = (a.nombre || a.detalle || '').toLowerCase()
-        valB = (b.nombre || b.detalle || '').toLowerCase()
-      } else if (sortKey === 'categoria') {
-        valA = (a.categories?.nombre || '').toLowerCase()
-        valB = (b.categories?.nombre || '').toLowerCase()
-      } else if (sortKey === 'subcategoria') {
-        valA = (a.subcategories?.nombre || '').toLowerCase()
-        valB = (b.subcategories?.nombre || '').toLowerCase()
-      } else if (sortKey === 'monto') {
-        valA = Number(a.monto); valB = Number(b.monto)
-      } else if (sortKey === 'cuotas') {
-        valA = a.cuotas_total || 1; valB = b.cuotas_total || 1
-      }
+      if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
+      else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
+      else if (sortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
+      else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
+      else if (sortKey === 'monto') { valA = Number(a.monto); valB = Number(b.monto) }
+      else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
+      else if (sortKey === 'moneda') { valA = a.moneda || ''; valB = b.moneda || '' }
       if (valA < valB) return sortDir === 'asc' ? -1 : 1
       if (valA > valB) return sortDir === 'asc' ? 1 : -1
       return 0
@@ -147,19 +139,53 @@ export default function AccountDetail({ account }) {
     ? transactions.filter(t => t.statement_id === lastStatement.id && t.tipo === 'gasto')
     : []
 
-  const donutData = Object.entries(
-    lastMonthTxs.reduce((acc, t) => {
+  // Separar donut por moneda
+  const lastMonthARS = lastMonthTxs.filter(t => t.moneda === 'ARS')
+  const lastMonthUSD = lastMonthTxs.filter(t => t.moneda === 'USD')
+
+  const buildDonutData = (txList) => Object.entries(
+    txList.reduce((acc, t) => {
       const cat = t.categories?.nombre || 'A Identificar'
       acc[cat] = (acc[cat] || 0) + Number(t.monto)
       return acc
     }, {})
-  ).map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
+  ).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+
+  const donutARS = buildDonutData(lastMonthARS)
+  const donutUSD = buildDonutData(lastMonthUSD)
 
   const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
   const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
 
-  const renderEditCells = (tx) => (
+  const renderDonut = (data, moneda) => (
+    <div style={styles.donutBlock}>
+      <h4 style={styles.donutSubtitle}>{moneda === 'ARS' ? '🇦🇷 Pesos' : '🇺🇸 Dólares'}</h4>
+      <div style={styles.donutContainer}>
+        <ResponsiveContainer width="50%" height={200}>
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+              dataKey="value" paddingAngle={2}>
+              {data.map((entry, i) => (
+                <Cell key={i} fill={CATEGORY_COLORS[entry.name] || '#ccc'} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v) => `${monedaSymbol(moneda)} ${formatMontoFull(v)}`} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={styles.donutLegend}>
+          {data.map((entry, i) => (
+            <div key={i} style={styles.legendItem}>
+              <div style={{...styles.legendDot, backgroundColor: CATEGORY_COLORS[entry.name] || '#ccc'}} />
+              <span style={styles.legendName}>{entry.name}</span>
+              <span style={styles.legendValue}>{monedaSymbol(moneda)} {formatMonto(entry.value)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderEditCells = () => (
     <>
       <td style={styles.td}>
         <input style={styles.editInput} value={editNombre}
@@ -220,31 +246,11 @@ export default function AccountDetail({ account }) {
         </div>
       )}
 
-      {donutData.length > 0 && (
+      {(donutARS.length > 0 || donutUSD.length > 0) && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>🍩 Gastos del último mes por categoría</h3>
-          <div style={styles.donutContainer}>
-            <ResponsiveContainer width="50%" height={220}>
-              <PieChart>
-                <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={90}
-                  dataKey="value" paddingAngle={2}>
-                  {donutData.map((entry, i) => (
-                    <Cell key={i} fill={CATEGORY_COLORS[entry.name] || '#ccc'} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => `$${formatMontoFull(v)}`} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div style={styles.donutLegend}>
-              {donutData.map((entry, i) => (
-                <div key={i} style={styles.legendItem}>
-                  <div style={{...styles.legendDot, backgroundColor: CATEGORY_COLORS[entry.name] || '#ccc'}} />
-                  <span style={styles.legendName}>{entry.name}</span>
-                  <span style={styles.legendValue}>${formatMonto(entry.value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {donutARS.length > 0 && renderDonut(donutARS, 'ARS')}
+          {donutUSD.length > 0 && renderDonut(donutUSD, 'USD')}
         </div>
       )}
 
@@ -269,15 +275,15 @@ export default function AccountDetail({ account }) {
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{tx.fecha}</td>
                   <td style={styles.td}><span style={styles.detalle}>{tx.detalle}</span></td>
-                  {editingTx === tx.id ? renderEditCells(tx) : (
+                  {editingTx === tx.id ? renderEditCells() : (
                     <>
-                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
+                      <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
                       <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
                       <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
                     </>
                   )}
                   <td style={{...styles.td, textAlign:'right', fontWeight:'600'}}>
-                    ${formatMontoFull(tx.monto)}
+                    {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                   </td>
                   {editingTx === tx.id ? renderEditActions(tx) : (
                     <td style={styles.td}>
@@ -301,6 +307,7 @@ export default function AccountDetail({ account }) {
               {thSortable('Categoría', 'categoria')}
               {thSortable('Subcategoría', 'subcategoria')}
               {thSortable('Cuotas', 'cuotas')}
+              {thSortable('Moneda', 'moneda')}
               {thSortable('Monto', 'monto')}
               <th style={styles.th}></th>
             </tr>
@@ -309,7 +316,7 @@ export default function AccountDetail({ account }) {
             {identificadas.map(tx => (
               <tr key={tx.id} style={styles.tr}>
                 <td style={styles.td}>{tx.fecha}</td>
-                {editingTx === tx.id ? renderEditCells(tx) : (
+                {editingTx === tx.id ? renderEditCells() : (
                   <>
                     <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                     <td style={styles.td}>
@@ -331,9 +338,19 @@ export default function AccountDetail({ account }) {
                 <td style={styles.td}>
                   {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
                 </td>
+                <td style={styles.td}>
+                  <span style={{
+                    fontSize: '11px', fontWeight: '600',
+                    color: tx.moneda === 'USD' ? '#2980b9' : '#666',
+                    backgroundColor: tx.moneda === 'USD' ? '#ebf5fb' : '#f8f8f8',
+                    padding: '2px 6px', borderRadius: '8px'
+                  }}>
+                    {tx.moneda || 'ARS'}
+                  </span>
+                </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600',
                   color: tx.tipo === 'ingreso' ? '#27AE60' : '#2d2d2d'}}>
-                  {tx.tipo === 'ingreso' ? '+' : '-'}${formatMontoFull(tx.monto)}
+                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
                   <td style={styles.td}>
@@ -353,6 +370,8 @@ const styles = {
   loading: { padding: '24px', color: '#888', fontSize: '14px' },
   chartSection: { marginBottom: '32px' },
   chartTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 16px 0' },
+  donutBlock: { marginBottom: '24px' },
+  donutSubtitle: { fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 12px 0' },
   donutContainer: { display: 'flex', alignItems: 'center', gap: '16px' },
   donutLegend: { flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' },
   legendItem: { display: 'flex', alignItems: 'center', gap: '8px' },

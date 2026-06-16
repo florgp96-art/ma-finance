@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Modal agregar tarjeta
   const [showAddAccount, setShowAddAccount] = useState(false)
@@ -42,25 +43,11 @@ export default function Dashboard() {
   // Mensajes rotativos
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
+
+  // Totales del mes
   const [totales, setTotales] = useState({ gastos: 0, ingresos: 0 })
 
   useEffect(() => { fetchAccounts(); fetchTotales() }, [])
-  const fetchTotales = async () => {
-  const { data: { user } } = await supabase.auth.getUser()
-  const now = new Date()
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
-  const { data } = await supabase.from('transactions')
-    .select('monto, tipo, moneda')
-    .eq('user_id', user.id)
-    .eq('moneda', 'ARS')
-    .gte('fecha', firstDay)
-    .lte('fecha', lastDay)
-  if (!data) return
-  const gastos = data.filter(t => t.tipo === 'gasto').reduce((sum, t) => sum + Number(t.monto), 0)
-  const ingresos = data.filter(t => t.tipo === 'ingreso').reduce((sum, t) => sum + Number(t.monto), 0)
-  setTotales({ gastos, ingresos })
-}
 
   useEffect(() => {
     if (step === 'processing') {
@@ -78,6 +65,23 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
+  }
+
+  const fetchTotales = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const now = new Date()
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
+    const { data } = await supabase.from('transactions')
+      .select('monto, tipo, moneda')
+      .eq('user_id', user.id)
+      .eq('moneda', 'ARS')
+      .gte('fecha', firstDay)
+      .lte('fecha', lastDay)
+    if (!data) return
+    const gastos = data.filter(t => t.tipo === 'gasto').reduce((sum, t) => sum + Number(t.monto), 0)
+    const ingresos = data.filter(t => t.tipo === 'ingreso').reduce((sum, t) => sum + Number(t.monto), 0)
+    setTotales({ gastos, ingresos })
   }
 
   const handleLogout = async () => {
@@ -208,7 +212,6 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const account = targetAccount
 
-    // Traer categorías para hacer el match por nombre
     const { data: categorias } = await supabase.from('categories').select('id, nombre')
     const getCategoryId = (categoriaSugerida) => {
       if (!categorias || !categoriaSugerida) return null
@@ -228,6 +231,7 @@ export default function Dashboard() {
       setLoading(false)
       return
     }
+
     const { data: statement } = await supabase.from('statements').insert({
       user_id: user.id,
       account_id: account.id,
@@ -239,7 +243,7 @@ export default function Dashboard() {
       estado: 'completo'
     }).select().single()
 
-     const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
+    const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
     const getSubcategoryId = (subcategoriaSugerida, categoryId) => {
       if (!subcategorias || !subcategoriaSugerida || !categoryId) return null
       const match = subcategorias.find(s =>
@@ -274,6 +278,8 @@ export default function Dashboard() {
     resetUpload()
     setShowUpload(false)
     fetchAccounts()
+    fetchTotales()
+    setRefreshKey(k => k + 1)
     setLoading(false)
   }
 
@@ -306,7 +312,7 @@ export default function Dashboard() {
         </div>
 
         <div style={styles.content}>
-           <div style={styles.summaryCards}>
+          <div style={styles.summaryCards}>
             <div style={styles.summaryCard}>
               <p style={styles.cardLabel}>Total del Mes</p>
               <p style={styles.cardValue}>$ {formatMonto(totales.gastos - totales.ingresos)}</p>
@@ -368,7 +374,7 @@ export default function Dashboard() {
               <h2 style={{...styles.sectionTitle, marginBottom: '24px'}}>
                 📊 {selectedAccount.nombre}
               </h2>
-              <AccountDetail account={selectedAccount} />
+              <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
             </div>
           )}
 
@@ -623,10 +629,10 @@ export default function Dashboard() {
                   )}
                 </div>
                 {statementData.transacciones.some(t => t.categoria_sugerida === 'A Identificar') && (
-                <div style={styles.warningBox}>
-               ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Podrás nombrarlas después.
-               </div>
-               )}
+                  <div style={styles.warningBox}>
+                    ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Podrás nombrarlas después.
+                  </div>
+                )}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setStep('upload')}>← Atrás</button>
                   <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>
@@ -690,9 +696,7 @@ const styles = {
     backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px',
     border: '1px solid #ede8f5', cursor: 'pointer', transition: 'all 0.2s'
   },
-  accountCardSelected: {
-    border: '2px solid #9B59B6', backgroundColor: '#f5eefb'
-  },
+  accountCardSelected: { border: '2px solid #9B59B6', backgroundColor: '#f5eefb' },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
   accountType: { fontSize: '12px', color: '#9B59B6', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
