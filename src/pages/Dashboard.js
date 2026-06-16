@@ -38,7 +38,7 @@ export default function Dashboard() {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     await supabase.from('accounts').insert({
       user_id: user.id,
       nombre: newAccount.nombre,
@@ -62,62 +62,66 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.logo}>Moms Assist Finance</h1>
-        <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
-      </div>
-
-      <div style={styles.content}>
-        {/* Cards resumen */}
-        <div style={styles.summaryCards}>
-          <div style={styles.summaryCard}>
-            <p style={styles.cardLabel}>Total del mes</p>
-            <p style={styles.cardValue}>$ —</p>
-          </div>
-          <div style={styles.summaryCard}>
-            <p style={styles.cardLabel}>Gastos</p>
-            <p style={styles.cardValue}>$ —</p>
-          </div>
-          <div style={styles.summaryCard}>
-            <p style={styles.cardLabel}>Ingresos</p>
-            <p style={styles.cardValue}>$ —</p>
-          </div>
+    <>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h1 style={styles.logo}>Moms Assist Finance</h1>
+          <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
 
-        {/* Mis tarjetas */}
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <h2 style={styles.sectionTitle}>Mis tarjetas y cuentas</h2>
-            <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>
-              + Agregar
-            </button>
+        <div style={styles.content}>
+          {/* Cards resumen */}
+          <div style={styles.summaryCards}>
+            <div style={styles.summaryCard}>
+              <p style={styles.cardLabel}>Total del mes</p>
+              <p style={styles.cardValue}>$ —</p>
+            </div>
+            <div style={styles.summaryCard}>
+              <p style={styles.cardLabel}>Gastos</p>
+              <p style={styles.cardValue}>$ —</p>
+            </div>
+            <div style={styles.summaryCard}>
+              <p style={styles.cardLabel}>Ingresos</p>
+              <p style={styles.cardValue}>$ —</p>
+            </div>
           </div>
 
-          {accounts.length === 0 ? (
-            <div style={styles.empty}>
-              <p>Todavía no agregaste ninguna tarjeta.</p>
-              <button style={styles.addBtnLarge} onClick={() => setShowAddAccount(true)}>
-                + Agregar mi primera tarjeta
-              </button>
+          {/* Mis tarjetas */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Mis tarjetas y cuentas</h2>
+              {accounts.length > 0 && (
+                <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>
+                  + Agregar
+                </button>
+              )}
             </div>
-          ) : (
-            <div style={styles.accountsGrid}>
-              {accounts.map(acc => (
-                <div key={acc.id} style={styles.accountCard}>
-                  <p style={styles.accountType}>{tipoLabel(acc.tipo)}</p>
-                  <p style={styles.accountName}>{acc.nombre}</p>
-                  <p style={styles.accountMoneda}>{acc.moneda}</p>
-                  {acc.dia_vencimiento && (
-                    <p style={styles.accountDetail}>Vence día {acc.dia_vencimiento}</p>
-                  )}
-                  {acc.cupo_total && (
-                    <p style={styles.accountDetail}>Cupo: ${Number(acc.cupo_total).toLocaleString()}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+
+            {accounts.length === 0 ? (
+              <div style={styles.empty}>
+                <p>Todavía no agregaste ninguna tarjeta.</p>
+                <button style={styles.addBtnLarge} onClick={() => setShowAddAccount(true)}>
+                  + Agregar mi primera tarjeta
+                </button>
+              </div>
+            ) : (
+              <div style={styles.accountsGrid}>
+                {accounts.map(acc => (
+                  <div key={acc.id} style={styles.accountCard}>
+                    <p style={styles.accountType}>{tipoLabel(acc.tipo)}</p>
+                    <p style={styles.accountName}>{acc.nombre}</p>
+                    <p style={styles.accountMoneda}>{acc.moneda}</p>
+                    {acc.dia_vencimiento && (
+                      <p style={styles.accountDetail}>Vence día {acc.dia_vencimiento}</p>
+                    )}
+                    {acc.cupo_total && (
+                      <p style={styles.accountDetail}>Cupo: ${Number(acc.cupo_total).toLocaleString()}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -126,7 +130,7 @@ export default function Dashboard() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Agregar tarjeta o cuenta</h3>
-            
+
             <form onSubmit={handleAddAccount}>
               <div style={styles.field}>
                 <label style={styles.label}>Nombre</label>
@@ -220,7 +224,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
