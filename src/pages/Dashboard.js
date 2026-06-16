@@ -7,7 +7,6 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
 
   // Modal agregar tarjeta
   const [showAddAccount, setShowAddAccount] = useState(false)
