@@ -42,8 +42,25 @@ export default function Dashboard() {
   // Mensajes rotativos
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
+  const [totales, setTotales] = useState({ gastos: 0, ingresos: 0 })
 
-  useEffect(() => { fetchAccounts() }, [])
+  useEffect(() => { fetchAccounts(); fetchTotales() }, [])
+  const fetchTotales = async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  const now = new Date()
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
+  const { data } = await supabase.from('transactions')
+    .select('monto, tipo, moneda')
+    .eq('user_id', user.id)
+    .eq('moneda', 'ARS')
+    .gte('fecha', firstDay)
+    .lte('fecha', lastDay)
+  if (!data) return
+  const gastos = data.filter(t => t.tipo === 'gasto').reduce((sum, t) => sum + Number(t.monto), 0)
+  const ingresos = data.filter(t => t.tipo === 'ingreso').reduce((sum, t) => sum + Number(t.monto), 0)
+  setTotales({ gastos, ingresos })
+}
 
   useEffect(() => {
     if (step === 'processing') {
@@ -277,18 +294,18 @@ export default function Dashboard() {
         </div>
 
         <div style={styles.content}>
-          <div style={styles.summaryCards}>
+           <div style={styles.summaryCards}>
             <div style={styles.summaryCard}>
               <p style={styles.cardLabel}>Total del Mes</p>
-              <p style={styles.cardValue}>$ —</p>
+              <p style={styles.cardValue}>$ {formatMonto(totales.gastos - totales.ingresos)}</p>
             </div>
             <div style={styles.summaryCard}>
               <p style={styles.cardLabel}>Gastos</p>
-              <p style={styles.cardValue}>$ —</p>
+              <p style={styles.cardValue}>$ {formatMonto(totales.gastos)}</p>
             </div>
             <div style={styles.summaryCard}>
               <p style={styles.cardLabel}>Ingresos</p>
-              <p style={styles.cardValue}>$ —</p>
+              <p style={styles.cardValue}>$ {formatMonto(totales.ingresos)}</p>
             </div>
           </div>
 
