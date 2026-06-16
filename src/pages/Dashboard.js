@@ -14,6 +14,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
+  const [selectedAccount, setSelectedAccount] = useState(null)
 
   // Modal agregar tarjeta
   const [showAddAccount, setShowAddAccount] = useState(false)
@@ -99,6 +100,7 @@ export default function Dashboard() {
     await supabase.from('statements').delete().eq('account_id', accountId)
     await supabase.from('accounts').delete().eq('id', accountId)
     setConfirmDelete(null)
+    if (selectedAccount?.id === accountId) setSelectedAccount(null)
     fetchAccounts()
     setLoading(false)
   }
@@ -187,6 +189,15 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const account = targetAccount
+
+    // Traer categorías para hacer el match por nombre
+    const { data: categorias } = await supabase.from('categories').select('id, nombre')
+    const getCategoryId = (categoriaSugerida) => {
+      if (!categorias || !categoriaSugerida) return null
+      const match = categorias.find(c => c.nombre.toLowerCase() === categoriaSugerida.toLowerCase())
+      return match ? match.id : null
+    }
+
     const { data: statement } = await supabase.from('statements').insert({
       user_id: user.id,
       account_id: account.id,
@@ -210,6 +221,7 @@ export default function Dashboard() {
       cuotas_total: t.cuotas_total,
       cuota_numero: t.cuota_numero,
       tipo: t.es_credito ? 'ingreso' : 'gasto',
+      category_id: getCategoryId(t.categoria_sugerida),
       estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
       es_manual: false
     }))
@@ -291,12 +303,15 @@ export default function Dashboard() {
             ) : (
               <div style={styles.accountsGrid}>
                 {accounts.map(acc => (
-                  <div key={acc.id} style={styles.accountCard}>
+                  <div key={acc.id}
+                    style={{...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {})}}
+                    onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
+                  >
                     <div style={styles.accountCardHeader}>
                       <p style={styles.accountType}>💳 {tipoLabel(acc.tipo)}</p>
                       <div style={styles.accountActions}>
-                        <button style={styles.actionBtn} onClick={() => setEditAccount({...acc})} title="Editar">✏️</button>
-                        <button style={styles.actionBtn} onClick={() => setConfirmDelete(acc.id)} title="Eliminar">🗑️</button>
+                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }} title="Editar">✏️</button>
+                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setConfirmDelete(acc.id) }} title="Eliminar">🗑️</button>
                       </div>
                     </div>
                     <p style={styles.accountName}>{acc.nombre}</p>
@@ -305,6 +320,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* DETALLE DE TARJETA */}
+          {selectedAccount && (
+            <div style={styles.section}>
+              <p style={{color: '#9B59B6', fontSize: '14px', margin: '0 0 16px 0'}}>
+                📊 {selectedAccount.nombre} — detalle próximamente
+              </p>
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -606,7 +631,7 @@ const styles = {
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600',
     whiteSpace: 'nowrap', marginLeft: '16px'
   },
-  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' },
+  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   addBtn: {
@@ -619,7 +644,13 @@ const styles = {
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600'
   },
   accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
-  accountCard: { backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px', border: '1px solid #ede8f5' },
+  accountCard: {
+    backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px',
+    border: '1px solid #ede8f5', cursor: 'pointer', transition: 'all 0.2s'
+  },
+  accountCardSelected: {
+    border: '2px solid #9B59B6', backgroundColor: '#f5eefb'
+  },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
   accountType: { fontSize: '12px', color: '#9B59B6', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
@@ -668,11 +699,6 @@ const styles = {
   processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
   dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#e0d0f0' },
   dotActive: { backgroundColor: '#9B59B6' },
-  loader: {
-    width: '36px', height: '36px', border: '3px solid #f0e6fa',
-    borderTop: '3px solid #9B59B6', borderRadius: '50%',
-    animation: 'spin 1s linear infinite', margin: '0 auto'
-  },
   matchCard: {
     backgroundColor: '#f5eefb', borderRadius: '12px', padding: '20px',
     textAlign: 'center', marginBottom: '16px', border: '2px solid #ede8f5'
