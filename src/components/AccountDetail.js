@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const CATEGORY_COLORS = {
   'Alimentación': '#7ED321',
@@ -34,6 +34,7 @@ export default function AccountDetail({ account }) {
 
   useEffect(() => {
     if (account) fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account])
 
   const fetchData = async () => {
