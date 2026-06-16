@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
+import AccountDetail from '../components/AccountDetail'
 
 const PROCESSING_MSGS = [
   { icon: '📄', title: 'Leyendo el extracto...', desc: 'Procesando las páginas del PDF' },
@@ -324,9 +325,10 @@ export default function Dashboard() {
           {/* DETALLE DE TARJETA */}
           {selectedAccount && (
             <div style={styles.section}>
-              <p style={{color: '#9B59B6', fontSize: '14px', margin: '0 0 16px 0'}}>
-                📊 {selectedAccount.nombre} — detalle próximamente
-              </p>
+              <h2 style={{...styles.sectionTitle, marginBottom: '24px'}}>
+                📊 {selectedAccount.nombre}
+              </h2>
+              <AccountDetail account={selectedAccount} />
             </div>
           )}
 
