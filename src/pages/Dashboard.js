@@ -11,9 +11,10 @@ export default function Dashboard() {
   const [archivo, setArchivo] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [step, setStep] = useState('form') // form | processing | preview | adicionales
+  const [step, setStep] = useState('form')
   const [statementData, setStatementData] = useState(null)
   const [separarAdicionales, setSepararAdicionales] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null) // id de la cuenta a borrar
 
   useEffect(() => { fetchAccounts() }, [])
 
@@ -26,6 +27,17 @@ export default function Dashboard() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     navigate('/login')
+  }
+
+  const handleDeleteAccount = async (accountId) => {
+    setLoading(true)
+    // Borrar transacciones, extractos y cuenta en cascada
+    await supabase.from('transactions').delete().eq('account_id', accountId)
+    await supabase.from('statements').delete().eq('account_id', accountId)
+    await supabase.from('accounts').delete().eq('id', accountId)
+    setConfirmDelete(null)
+    fetchAccounts()
+    setLoading(false)
   }
 
   const handleAddAccount = async (e) => {
@@ -61,14 +73,12 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    // Crear cuenta
     const { data: account } = await supabase.from('accounts').insert({
       user_id: user.id,
       nombre: newAccount.nombre,
       tipo: newAccount.tipo,
     }).select().single()
 
-    // Crear extracto
     const { data: statement } = await supabase.from('statements').insert({
       user_id: user.id,
       account_id: account.id,
@@ -80,7 +90,6 @@ export default function Dashboard() {
       estado: 'completo'
     }).select().single()
 
-    // Insertar transacciones
     const transacciones = statementData.transacciones.map(t => ({
       user_id: user.id,
       account_id: account.id,
@@ -117,9 +126,9 @@ export default function Dashboard() {
   }
 
   const tipoLabel = (tipo) => {
-    if (tipo === 'credito') return '💳 Crédito'
-    if (tipo === 'debito') return '🏦 Débito'
-    return '💵 Efectivo'
+    if (tipo === 'credito') return 'Crédito'
+    if (tipo === 'debito') return 'Débito'
+    return 'Efectivo'
   }
 
   const formatMonto = (monto) => {
@@ -171,7 +180,16 @@ export default function Dashboard() {
               <div style={styles.accountsGrid}>
                 {accounts.map(acc => (
                   <div key={acc.id} style={styles.accountCard}>
-                    <p style={styles.accountType}>{tipoLabel(acc.tipo)}</p>
+                    <div style={styles.accountCardHeader}>
+                      <p style={styles.accountType}>💳 {tipoLabel(acc.tipo)}</p>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={() => setConfirmDelete(acc.id)}
+                        title="Eliminar tarjeta"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                     <p style={styles.accountName}>{acc.nombre}</p>
                   </div>
                 ))}
@@ -181,11 +199,34 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* MODAL CONFIRMAR ELIMINACIÓN */}
+      {confirmDelete && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '380px'}}>
+            <h3 style={styles.modalTitle}>¿Eliminar tarjeta?</h3>
+            <p style={{fontSize: '14px', color: '#666', marginBottom: '24px'}}>
+              Se borrarán todos los extractos y transacciones asociadas. Esta acción no se puede deshacer.
+            </p>
+            <div style={styles.modalButtons}>
+              <button style={styles.cancelBtn} onClick={() => setConfirmDelete(null)}>
+                Cancelar
+              </button>
+              <button
+                style={{...styles.saveBtn, backgroundColor: '#e74c3c'}}
+                onClick={() => handleDeleteAccount(confirmDelete)}
+                disabled={loading}
+              >
+                {loading ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
 
-            {/* STEP: FORM */}
             {step === 'form' && (
               <>
                 <h3 style={styles.modalTitle}>Agregar tarjeta</h3>
@@ -262,7 +303,6 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* STEP: PROCESSING */}
             {step === 'processing' && (
               <div style={styles.processingContainer}>
                 <p style={styles.processingIcon}>🤖</p>
@@ -272,7 +312,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* STEP: ADICIONALES */}
             {step === 'adicionales' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>Detectamos adicionales 👥</h3>
@@ -300,7 +339,6 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* STEP: PREVIEW */}
             {step === 'preview' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
@@ -411,8 +449,13 @@ const styles = {
   },
   accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
   accountCard: { backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px', border: '1px solid #ede8f5' },
-  accountType: { fontSize: '12px', color: '#9B59B6', margin: '0 0 6px 0', fontWeight: '600' },
+  accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
+  accountType: { fontSize: '12px', color: '#9B59B6', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+  deleteBtn: {
+    background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px',
+    padding: '2px', opacity: 0.5, transition: 'opacity 0.2s'
+  },
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex',
@@ -468,15 +511,12 @@ const styles = {
   opcionBtn: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px',
-    backgroundColor: 'white', cursor: 'pointer', transition: 'all 0.2s',
-    gap: '4px'
+    backgroundColor: 'white', cursor: 'pointer', transition: 'all 0.2s', gap: '4px'
   },
   opcionIcon: { fontSize: '28px' },
   opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
   opcionDesc: { fontSize: '12px', color: '#888' },
-  previewStats: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px'
-  },
+  previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
   previewStat: {
     backgroundColor: '#f8f6f3', borderRadius: '10px', padding: '12px',
     display: 'flex', flexDirection: 'column', gap: '4px'
