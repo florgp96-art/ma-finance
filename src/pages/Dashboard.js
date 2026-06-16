@@ -310,10 +310,7 @@ export default function Dashboard() {
 
             {accounts.length === 0 ? (
               <div style={styles.empty}>
-                <p>Todavía no agregaste ninguna tarjeta.</p>
-                <button style={styles.addBtnLarge} onClick={() => setShowAddAccount(true)}>
-                  + Agregar mi primera tarjeta
-                </button>
+                <p>Todavía no agregaste ninguna tarjeta. Usá "Cargar PDF" para empezar.</p>
               </div>
             ) : (
               <div style={styles.accountsGrid}>
