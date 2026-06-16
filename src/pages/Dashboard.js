@@ -308,7 +308,7 @@ export default function Dashboard() {
     <>
       <div style={styles.container}>
         <div style={styles.header}>
-          <h1 style={styles.logo}>Moms Assist Finance</h1>
+          <img src={require('../assets/logo.svg')} alt="Moms Assist Finance" style={styles.logoImg} />
           <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
         </div>
 
@@ -657,7 +657,7 @@ const styles = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
   },
-  logo: { fontSize: '20px', fontWeight: 'bold', color: '#9B59B6', margin: 0 },
+   logoImg: { height: '48px', objectFit: 'contain' },
   logoutBtn: {
     padding: '8px 16px', backgroundColor: 'white', color: '#9B59B6',
     border: '2px solid #9B59B6', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
