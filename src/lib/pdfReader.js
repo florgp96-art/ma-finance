@@ -16,7 +16,7 @@ export async function extractTextFromPDF(file) {
   }
 
   const cleaned = fullText
-    .replace(/[^\x20-\x7E\n\r\táéíóúüñÁÉÍÓÚÜÑ°$%.,;:()\-\/]/g, ' ')
+    .replace(/[^\x20-\x7E\n\r\táéíóúüñÁÉÍÓÚÜÑ°$%.,;:()\-/]/g, ' ')
     .replace(/\s{3,}/g, '  ')
     .trim()
 
