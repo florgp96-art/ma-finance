@@ -45,7 +45,7 @@ Analizá este extracto de la tarjeta "${cardName}" y devolvé SOLO un JSON váli
     }
   ]
 }
-
+IMPORTANTE: Devolvé el JSON minificado, sin saltos de línea ni espacios innecesarios entre campos.
 Reglas importantes:
 - "nombre_limpio": nombre legible del comercio. Si es críptico, dejarlo igual al original.
 - "categoria_sugerida": Casa, Alimentación, Transporte, Salud, Educación, Ropa, Entretenimiento, Suscripciones, Trabajo, Ingresos, Débitos, A Identificar
