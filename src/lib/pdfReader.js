@@ -15,7 +15,12 @@ export async function extractTextFromPDF(file) {
     fullText += `\n--- Página ${i} ---\n${pageText}`
   }
 
-  return fullText
+  const cleaned = fullText
+    .replace(/[^\x20-\x7E\n\r\táéíóúüñÁÉÍÓÚÜÑ°$%.,;:()\-\/]/g, ' ')
+    .replace(/\s{3,}/g, '  ')
+    .trim()
+
+  return cleaned
 }
 
 export async function analyzeStatementWithClaude(pdfText, cardName) {
@@ -34,34 +39,25 @@ export async function analyzeStatementWithClaude(pdfText, cardName) {
   console.log('=== Claude raw response ===', JSON.stringify(data, null, 2))
 
   try {
-    // Validar estructura de respuesta
     if (!data?.content || !Array.isArray(data.content) || data.content.length === 0) {
-      console.error('Estructura inesperada:', data)
-      // Si Claude devolvió un error (ej: stop_reason: "max_tokens")
       if (data?.error) throw new Error(`Claude error: ${data.error.message}`)
       throw new Error('Respuesta vacía de Claude')
     }
 
-    // Buscar el primer bloque de texto
     const textBlock = data.content.find(block => block.type === 'text')
     if (!textBlock?.text) throw new Error('No se encontró bloque de texto en la respuesta')
 
-    const raw = textBlock.text
-
-    // Verificar si fue cortado por max_tokens
     if (data.stop_reason === 'max_tokens') {
-      console.warn('⚠️ Respuesta cortada por max_tokens — intentando parsear igual')
+      console.warn('⚠️ Respuesta cortada por max_tokens')
     }
 
-    // Limpiar y parsear
-    const clean = raw
+    const clean = textBlock.text
       .replace(/^```json\s*/i, '')
       .replace(/\s*```\s*$/i, '')
       .trim()
 
     const parsed = JSON.parse(clean)
 
-    // Validación mínima del resultado
     if (!parsed.transacciones || !Array.isArray(parsed.transacciones)) {
       throw new Error('JSON válido pero sin array de transacciones')
     }
