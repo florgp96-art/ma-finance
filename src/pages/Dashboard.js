@@ -210,22 +210,36 @@ export default function Dashboard() {
       estado: 'completo'
     }).select().single()
 
-    const transacciones = statementData.transacciones.map(t => ({
-      user_id: user.id,
-      account_id: account.id,
-      statement_id: statement.id,
-      fecha: t.fecha,
-      nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
-      detalle: t.nombre_original,
-      monto: t.monto,
-      moneda: t.moneda,
-      cuotas_total: t.cuotas_total,
-      cuota_numero: t.cuota_numero,
-      tipo: t.es_credito ? 'ingreso' : 'gasto',
-      category_id: getCategoryId(t.categoria_sugerida),
-      estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
-      es_manual: false
-    }))
+     const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
+    const getSubcategoryId = (subcategoriaSugerida, categoryId) => {
+      if (!subcategorias || !subcategoriaSugerida || !categoryId) return null
+      const match = subcategorias.find(s =>
+        s.nombre.toLowerCase() === subcategoriaSugerida.toLowerCase() &&
+        s.category_id === categoryId
+      )
+      return match ? match.id : null
+    }
+
+    const transacciones = statementData.transacciones.map(t => {
+      const categoryId = getCategoryId(t.categoria_sugerida)
+      return {
+        user_id: user.id,
+        account_id: account.id,
+        statement_id: statement.id,
+        fecha: t.fecha,
+        nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+        detalle: t.nombre_original,
+        monto: t.monto,
+        moneda: t.moneda,
+        cuotas_total: t.cuotas_total,
+        cuota_numero: t.cuota_numero,
+        tipo: t.es_credito ? 'ingreso' : 'gasto',
+        category_id: categoryId,
+        subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
+        estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+        es_manual: false
+      }
+    })
 
     await supabase.from('transactions').insert(transacciones)
     resetUpload()

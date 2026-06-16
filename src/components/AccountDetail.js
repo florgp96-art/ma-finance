@@ -33,6 +33,8 @@ export default function AccountDetail({ account }) {
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
+  const [sortKey, setSortKey] = useState('fecha')
+  const [sortDir, setSortDir] = useState('desc')
 
   useEffect(() => {
     if (account) fetchData()
@@ -60,7 +62,6 @@ export default function AccountDetail({ account }) {
     setLoading(false)
   }
 
-  // Subcategorías filtradas por categoría seleccionada
   const filteredSubcats = () => {
     const catObj = categories.find(c => c.nombre === editCategoria)
     if (!catObj) return []
@@ -87,13 +88,50 @@ export default function AccountDetail({ account }) {
     setEditSubcategoria(tx.subcategories?.nombre || '')
   }
 
-  // Datos para gráfico de barras mes a mes
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const sortIcon = (key) => {
+    if (sortKey !== key) return ' ↕'
+    return sortDir === 'asc' ? ' ↑' : ' ↓'
+  }
+
+  const sortTx = (list) => {
+    return [...list].sort((a, b) => {
+      let valA, valB
+      if (sortKey === 'fecha') {
+        valA = a.fecha; valB = b.fecha
+      } else if (sortKey === 'nombre') {
+        valA = (a.nombre || a.detalle || '').toLowerCase()
+        valB = (b.nombre || b.detalle || '').toLowerCase()
+      } else if (sortKey === 'categoria') {
+        valA = (a.categories?.nombre || '').toLowerCase()
+        valB = (b.categories?.nombre || '').toLowerCase()
+      } else if (sortKey === 'subcategoria') {
+        valA = (a.subcategories?.nombre || '').toLowerCase()
+        valB = (b.subcategories?.nombre || '').toLowerCase()
+      } else if (sortKey === 'monto') {
+        valA = Number(a.monto); valB = Number(b.monto)
+      } else if (sortKey === 'cuotas') {
+        valA = a.cuotas_total || 1; valB = b.cuotas_total || 1
+      }
+      if (valA < valB) return sortDir === 'asc' ? -1 : 1
+      if (valA > valB) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
   const barData = statements.map(s => ({
     mes: s.periodo || s.fecha_hasta?.slice(0, 7),
     total: Number(s.total_resumen) || 0
   }))
 
-  // Datos para donut — último mes
   const lastStatement = statements[statements.length - 1]
   const lastMonthTxs = lastStatement
     ? transactions.filter(t => t.statement_id === lastStatement.id && t.tipo === 'gasto')
@@ -109,7 +147,7 @@ export default function AccountDetail({ account }) {
     .sort((a, b) => b.value - a.value)
 
   const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
-  const identificadas = transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar')
+  const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
 
   const renderEditCells = (tx) => (
     <>
@@ -146,13 +184,18 @@ export default function AccountDetail({ account }) {
     </td>
   )
 
+  const thSortable = (label, key) => (
+    <th style={styles.thSortable} onClick={() => handleSort(key)}>
+      {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
+    </th>
+  )
+
   if (loading) return (
     <div style={styles.loading}>Cargando datos de {account.nombre}...</div>
   )
 
   return (
     <div>
-      {/* GRÁFICO DE BARRAS MES A MES */}
       {barData.length > 0 && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
@@ -167,7 +210,6 @@ export default function AccountDetail({ account }) {
         </div>
       )}
 
-      {/* DONUT MES ACTUAL */}
       {donutData.length > 0 && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>🍩 Gastos del último mes por categoría</h3>
@@ -196,7 +238,6 @@ export default function AccountDetail({ account }) {
         </div>
       )}
 
-      {/* TRANSACCIONES SIN IDENTIFICAR */}
       {sinIdentificar.length > 0 && (
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
@@ -240,18 +281,17 @@ export default function AccountDetail({ account }) {
         </div>
       )}
 
-      {/* TODAS LAS TRANSACCIONES */}
       <div style={styles.tableSection}>
         <h3 style={styles.chartTitle}>📋 Todas las transacciones ({identificadas.length})</h3>
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Fecha</th>
-              <th style={styles.th}>Nombre</th>
-              <th style={styles.th}>Categoría</th>
-              <th style={styles.th}>Subcategoría</th>
-              <th style={styles.th}>Cuotas</th>
-              <th style={styles.th}>Monto</th>
+              {thSortable('Fecha', 'fecha')}
+              {thSortable('Nombre', 'nombre')}
+              {thSortable('Categoría', 'categoria')}
+              {thSortable('Subcategoría', 'subcategoria')}
+              {thSortable('Cuotas', 'cuotas')}
+              {thSortable('Monto', 'monto')}
               <th style={styles.th}></th>
             </tr>
           </thead>
@@ -316,6 +356,12 @@ const styles = {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
     color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', fontWeight: '600'
   },
+  thSortable: {
+    textAlign: 'left', padding: '10px 12px', fontSize: '11px',
+    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', fontWeight: '600',
+    cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
+  },
+  sortIcon: { fontSize: '10px', color: '#bbb' },
   td: { padding: '10px 12px', borderBottom: '1px solid #f8f6f3', verticalAlign: 'middle' },
   tr: { transition: 'background 0.1s' },
   trUnknown: { backgroundColor: '#fffbf0' },
