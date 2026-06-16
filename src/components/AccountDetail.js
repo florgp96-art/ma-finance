@@ -26,11 +26,13 @@ const formatMontoFull = (monto) =>
 export default function AccountDetail({ account }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
+  const [subcategories, setSubcategories] = useState([])
   const [statements, setStatements] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingTx, setEditingTx] = useState(null)
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
+  const [editSubcategoria, setEditSubcategoria] = useState('')
 
   useEffect(() => {
     if (account) fetchData()
@@ -39,12 +41,13 @@ export default function AccountDetail({ account }) {
 
   const fetchData = async () => {
     setLoading(true)
-    const [txRes, catRes, stmtRes] = await Promise.all([
+    const [txRes, catRes, subcatRes, stmtRes] = await Promise.all([
       supabase.from('transactions')
-        .select('*, categories(nombre, color)')
+        .select('*, categories(nombre, color), subcategories(nombre)')
         .eq('account_id', account.id)
         .order('fecha', { ascending: false }),
       supabase.from('categories').select('*').order('orden'),
+      supabase.from('subcategories').select('*').order('nombre'),
       supabase.from('statements')
         .select('*')
         .eq('account_id', account.id)
@@ -52,19 +55,36 @@ export default function AccountDetail({ account }) {
     ])
     setTransactions(txRes.data || [])
     setCategories(catRes.data || [])
+    setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
     setLoading(false)
   }
 
+  // Subcategorías filtradas por categoría seleccionada
+  const filteredSubcats = () => {
+    const catObj = categories.find(c => c.nombre === editCategoria)
+    if (!catObj) return []
+    return subcategories.filter(s => s.category_id === catObj.id)
+  }
+
   const handleSaveEdit = async (tx) => {
     const catObj = categories.find(c => c.nombre === editCategoria)
+    const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
     await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj ? catObj.id : tx.category_id,
+      subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado'
     }).eq('id', tx.id)
     setEditingTx(null)
     fetchData()
+  }
+
+  const startEdit = (tx) => {
+    setEditingTx(tx.id)
+    setEditNombre(tx.nombre || tx.detalle)
+    setEditCategoria(tx.categories?.nombre || 'A Identificar')
+    setEditSubcategoria(tx.subcategories?.nombre || '')
   }
 
   // Datos para gráfico de barras mes a mes
@@ -88,9 +108,43 @@ export default function AccountDetail({ account }) {
   ).map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
 
-  // Separar a_identificar del resto
-  const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar')
-  const identificadas = transactions.filter(t => t.estado !== 'a_identificar')
+  const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
+  const identificadas = transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar')
+
+  const renderEditCells = (tx) => (
+    <>
+      <td style={styles.td}>
+        <input style={styles.editInput} value={editNombre}
+          onChange={e => setEditNombre(e.target.value)} />
+      </td>
+      <td style={styles.td}>
+        <select style={styles.editSelect} value={editCategoria}
+          onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }}>
+          {categories.map(c => (
+            <option key={c.id} value={c.nombre}>{c.nombre}</option>
+          ))}
+        </select>
+      </td>
+      <td style={styles.td}>
+        <select style={styles.editSelect} value={editSubcategoria}
+          onChange={e => setEditSubcategoria(e.target.value)}>
+          <option value="">— Sin subcategoría</option>
+          {filteredSubcats().map(s => (
+            <option key={s.id} value={s.nombre}>{s.nombre}</option>
+          ))}
+        </select>
+      </td>
+    </>
+  )
+
+  const renderEditActions = (tx) => (
+    <td style={styles.td}>
+      <div style={{display:'flex', gap:'4px'}}>
+        <button style={styles.saveEditBtn} onClick={() => handleSaveEdit(tx)}>✓</button>
+        <button style={styles.cancelEditBtn} onClick={() => setEditingTx(null)}>✕</button>
+      </div>
+    </td>
+  )
 
   if (loading) return (
     <div style={styles.loading}>Cargando datos de {account.nombre}...</div>
@@ -146,7 +200,7 @@ export default function AccountDetail({ account }) {
       {sinIdentificar.length > 0 && (
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
-          <p style={styles.tableHint}>Editá el nombre y la categoría de estos gastos</p>
+          <p style={styles.tableHint}>Editá el nombre, categoría y subcategoría de estos gastos</p>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -154,6 +208,7 @@ export default function AccountDetail({ account }) {
                 <th style={styles.th}>Detalle original</th>
                 <th style={styles.th}>Nombre</th>
                 <th style={styles.th}>Categoría</th>
+                <th style={styles.th}>Subcategoría</th>
                 <th style={styles.th}>Monto</th>
                 <th style={styles.th}></th>
               </tr>
@@ -163,43 +218,21 @@ export default function AccountDetail({ account }) {
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{tx.fecha}</td>
                   <td style={styles.td}><span style={styles.detalle}>{tx.detalle}</span></td>
-                  <td style={styles.td}>
-                    {editingTx === tx.id ? (
-                      <input style={styles.editInput} value={editNombre}
-                        onChange={e => setEditNombre(e.target.value)} />
-                    ) : (
-                      <span style={{color: '#aaa'}}>—</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>
-                    {editingTx === tx.id ? (
-                      <select style={styles.editSelect} value={editCategoria}
-                        onChange={e => setEditCategoria(e.target.value)}>
-                        {categories.map(c => (
-                          <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span style={{color: '#aaa'}}>—</span>
-                    )}
-                  </td>
-                  <td style={{...styles.td, textAlign: 'right', fontWeight: '600'}}>
+                  {editingTx === tx.id ? renderEditCells(tx) : (
+                    <>
+                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
+                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
+                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
+                    </>
+                  )}
+                  <td style={{...styles.td, textAlign:'right', fontWeight:'600'}}>
                     ${formatMontoFull(tx.monto)}
                   </td>
-                  <td style={styles.td}>
-                    {editingTx === tx.id ? (
-                      <div style={{display:'flex', gap:'4px'}}>
-                        <button style={styles.saveEditBtn} onClick={() => handleSaveEdit(tx)}>✓</button>
-                        <button style={styles.cancelEditBtn} onClick={() => setEditingTx(null)}>✕</button>
-                      </div>
-                    ) : (
-                      <button style={styles.editBtn} onClick={() => {
-                        setEditingTx(tx.id)
-                        setEditNombre(tx.nombre || tx.detalle)
-                        setEditCategoria(tx.categories?.nombre || 'A Identificar')
-                      }}>✏️</button>
-                    )}
-                  </td>
+                  {editingTx === tx.id ? renderEditActions(tx) : (
+                    <td style={styles.td}>
+                      <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -216,6 +249,7 @@ export default function AccountDetail({ account }) {
               <th style={styles.th}>Fecha</th>
               <th style={styles.th}>Nombre</th>
               <th style={styles.th}>Categoría</th>
+              <th style={styles.th}>Subcategoría</th>
               <th style={styles.th}>Cuotas</th>
               <th style={styles.th}>Monto</th>
               <th style={styles.th}></th>
@@ -225,53 +259,37 @@ export default function AccountDetail({ account }) {
             {identificadas.map(tx => (
               <tr key={tx.id} style={styles.tr}>
                 <td style={styles.td}>{tx.fecha}</td>
-                <td style={styles.td}>
-                  {editingTx === tx.id ? (
-                    <input style={styles.editInput} value={editNombre}
-                      onChange={e => setEditNombre(e.target.value)} />
-                  ) : (
-                    <span>{tx.nombre || tx.detalle}</span>
-                  )}
-                </td>
-                <td style={styles.td}>
-                  {editingTx === tx.id ? (
-                    <select style={styles.editSelect} value={editCategoria}
-                      onChange={e => setEditCategoria(e.target.value)}>
-                      {categories.map(c => (
-                        <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span style={{
-                      backgroundColor: CATEGORY_COLORS[tx.categories?.nombre] + '22' || '#f0f0f0',
-                      color: CATEGORY_COLORS[tx.categories?.nombre] || '#888',
-                      padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
-                    }}>
-                      {tx.categories?.nombre || '—'}
-                    </span>
-                  )}
-                </td>
+                {editingTx === tx.id ? renderEditCells(tx) : (
+                  <>
+                    <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                    <td style={styles.td}>
+                      <span style={{
+                        backgroundColor: (CATEGORY_COLORS[tx.categories?.nombre] || '#ccc') + '22',
+                        color: CATEGORY_COLORS[tx.categories?.nombre] || '#888',
+                        padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
+                      }}>
+                        {tx.categories?.nombre || '—'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={{fontSize:'12px', color:'#888'}}>
+                        {tx.subcategories?.nombre || '—'}
+                      </span>
+                    </td>
+                  </>
+                )}
                 <td style={styles.td}>
                   {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
                 </td>
-                <td style={{...styles.td, textAlign: 'right', fontWeight: '600',
+                <td style={{...styles.td, textAlign:'right', fontWeight:'600',
                   color: tx.tipo === 'ingreso' ? '#27AE60' : '#2d2d2d'}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}${formatMontoFull(tx.monto)}
                 </td>
-                <td style={styles.td}>
-                  {editingTx === tx.id ? (
-                    <div style={{display:'flex', gap:'4px'}}>
-                      <button style={styles.saveEditBtn} onClick={() => handleSaveEdit(tx)}>✓</button>
-                      <button style={styles.cancelEditBtn} onClick={() => setEditingTx(null)}>✕</button>
-                    </div>
-                  ) : (
-                    <button style={styles.editBtn} onClick={() => {
-                      setEditingTx(tx.id)
-                      setEditNombre(tx.nombre || tx.detalle)
-                      setEditCategoria(tx.categories?.nombre || 'A Identificar')
-                    }}>✏️</button>
-                  )}
-                </td>
+                {editingTx === tx.id ? renderEditActions(tx) : (
+                  <td style={styles.td}>
+                    <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -296,8 +314,7 @@ const styles = {
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   th: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0',
-    fontWeight: '600'
+    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', fontWeight: '600'
   },
   td: { padding: '10px 12px', borderBottom: '1px solid #f8f6f3', verticalAlign: 'middle' },
   tr: { transition: 'background 0.1s' },

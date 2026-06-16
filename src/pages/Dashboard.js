@@ -584,7 +584,7 @@ export default function Dashboard() {
                 </div>
                 {statementData.transacciones.some(t => t.nombre_limpio === t.nombre_original) && (
                   <div style={styles.warningBox}>
-                    ❓ Hay {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length} transacciones sin identificar. Podrás nombrarlas después.
+                    ❓ Hay {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length} {statementData.transacciones.filter(t => t.nombre_limpio === t.nombre_original).length === 1 ? 'transacción' : 'transacciones'} sin identificar.
                   </div>
                 )}
                 <div style={styles.modalButtons}>
