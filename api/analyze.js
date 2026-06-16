@@ -30,7 +30,7 @@ Reglas de categoría y subcategoría:
 - titular: nombre del titular de la tarjeta
 
 Categorías y subcategorías permitidas:
-- Casa → subcategorías: Alquiler, Luz, Gas, Internet, Expensas, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
+- Casa → subcategorías: Alquiler, Luz, Gas, Internet, Expensas, Veterinaria, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
 - Comida → subcategorías: Supermercado, Delivery
 - Transporte → subcategorías: Nafta, Auto, Transporte público, Uber/Cabify, Telepase, Service Auto, Estacionamiento
 - Salud → subcategorías: Obra social, Médicos, Farmacia

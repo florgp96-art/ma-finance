@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const CATEGORY_COLORS = {
-  'Alimentación': '#7ED321',
+  'Comida': '#7ED321',
+  'Personal': '#FF9800',
   'Transporte': '#F5A623',
   'Salud': '#D0021B',
   'Entretenimiento': '#FF5722',
