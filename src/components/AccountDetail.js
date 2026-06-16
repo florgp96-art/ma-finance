@@ -138,7 +138,10 @@ export default function AccountDetail({ account, refreshKey }) {
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
       else if (sortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
-      else if (sortKey === 'monto') { valA = Number(a.monto); valB = Number(b.monto) }
+      else if (sortKey === 'monto') {
+      valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
+      valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
+      }
       else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
       else if (sortKey === 'moneda') { valA = a.moneda || ''; valB = b.moneda || '' }
       if (valA < valB) return sortDir === 'asc' ? -1 : 1
