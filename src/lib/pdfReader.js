@@ -20,6 +20,7 @@ export async function extractTextFromPDF(file) {
     .replace(/\s{3,}/g, '  ')
     .trim()
 
+  console.log(`Texto extraído: ${cleaned.length} chars`)
   return cleaned
 }
 
@@ -46,10 +47,6 @@ export async function analyzeStatementWithClaude(pdfText, cardName) {
 
     const textBlock = data.content.find(block => block.type === 'text')
     if (!textBlock?.text) throw new Error('No se encontró bloque de texto en la respuesta')
-
-    if (data.stop_reason === 'max_tokens') {
-      console.warn('⚠️ Respuesta cortada por max_tokens')
-    }
 
     const clean = textBlock.text
       .replace(/^```json\s*/i, '')
