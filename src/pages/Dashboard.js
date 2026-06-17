@@ -148,50 +148,121 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const account = targetAccount
+    const esBanco = statementData.tipo_documento === 'banco'
 
     const { data: categorias } = await supabase.from('categories').select('id, nombre')
     const getCategoryId = (cat) => {
       if (!categorias || !cat) return null
       return categorias.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null
     }
-
-    const { data: existing } = await supabase.from('statements')
-      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
-    if (existing) {
-      alert(`Ya cargaste el extracto de ${statementData.periodo} para esta tarjeta.`)
-      setLoading(false)
-      return
-    }
-
-    const { data: statement } = await supabase.from('statements').insert({
-      user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
-      periodo: statementData.periodo, fecha_desde: null,
-      fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
-    }).select().single()
-
     const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
     const getSubcategoryId = (sub, catId) => {
       if (!subcategorias || !sub || !catId) return null
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
 
-    const transacciones = statementData.transacciones.map(t => {
-      const categoryId = getCategoryId(t.categoria_sugerida)
-      return {
-        user_id: user.id, account_id: account.id, statement_id: statement.id,
-        fecha: t.fecha,
-        nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
-        detalle: t.nombre_original,
-        monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
-        moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
-        tipo: 'gasto', category_id: categoryId,
-        subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
-        estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
-        es_manual: false
-      }
-    })
+    const { data: existing } = await supabase.from('statements')
+      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
+    if (existing) {
+      alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
+      setLoading(false)
+      return
+    }
 
-    await supabase.from('transactions').insert(transacciones)
+    if (esBanco) {
+      // Separar en dos cuentas: Egresos e Ingresos
+      const nombreBase = account.nombre.replace(/^(Egresos|Ingresos)\s*[-–]\s*/i, '').trim()
+
+      // Buscar o crear cuenta de egresos
+      let { data: cuentaEgresos } = await supabase.from('accounts')
+        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${nombreBase}`).maybeSingle()
+      if (!cuentaEgresos) {
+        const { data: nueva } = await supabase.from('accounts').insert({
+          user_id: user.id, nombre: `Egresos - ${nombreBase}`, tipo: 'debito'
+        }).select().single()
+        cuentaEgresos = nueva
+      }
+
+      // Buscar o crear cuenta de ingresos
+      let { data: cuentaIngresos } = await supabase.from('accounts')
+        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${nombreBase}`).maybeSingle()
+      if (!cuentaIngresos) {
+        const { data: nueva } = await supabase.from('accounts').insert({
+          user_id: user.id, nombre: `Ingresos - ${nombreBase}`, tipo: 'debito'
+        }).select().single()
+        cuentaIngresos = nueva
+      }
+
+      // Crear statement para egresos
+      const { data: stmtEgresos } = await supabase.from('statements').insert({
+        user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
+        periodo: statementData.periodo, fecha_desde: null,
+        fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+      }).select().single()
+
+      // Crear statement para ingresos
+      const { data: stmtIngresos } = await supabase.from('statements').insert({
+        user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
+        periodo: statementData.periodo, fecha_desde: null,
+        fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+      }).select().single()
+
+      // Separar transacciones
+      const txEgresos = []
+      const txIngresos = []
+
+      statementData.transacciones.forEach(t => {
+        const categoryId = getCategoryId(t.categoria_sugerida)
+        const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
+        const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
+        const base = {
+          user_id: user.id, fecha: t.fecha,
+          nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+          detalle: t.nombre_original,
+          monto: Math.abs(t.monto),
+          moneda: t.moneda || 'ARS',
+          cuotas_total: null, cuota_numero: null,
+          category_id: categoryId, subcategory_id: subcategoryId,
+          estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+          es_manual: false, tipo_movimiento: tipoTx
+        }
+        if (tipoTx === 'ingreso') {
+          txIngresos.push({ ...base, account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso' })
+        } else {
+          // gastos y neutros van a egresos
+          txEgresos.push({ ...base, account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto' })
+        }
+      })
+
+      if (txEgresos.length > 0) await supabase.from('transactions').insert(txEgresos)
+      if (txIngresos.length > 0) await supabase.from('transactions').insert(txIngresos)
+
+    } else {
+      // Tarjeta de crédito — flujo normal
+      const { data: statement } = await supabase.from('statements').insert({
+        user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
+        periodo: statementData.periodo, fecha_desde: null,
+        fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
+      }).select().single()
+
+      const transacciones = statementData.transacciones.map(t => {
+        const categoryId = getCategoryId(t.categoria_sugerida)
+        return {
+          user_id: user.id, account_id: account.id, statement_id: statement.id,
+          fecha: t.fecha,
+          nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+          detalle: t.nombre_original,
+          monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
+          moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
+          tipo: 'gasto', category_id: categoryId,
+          subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
+          estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+          es_manual: false
+        }
+      })
+      await supabase.from('transactions').insert(transacciones)
+    }
+
     resetUpload()
     setShowUpload(false)
     fetchAccounts()

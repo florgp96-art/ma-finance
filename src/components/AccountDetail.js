@@ -343,7 +343,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // Transacciones de los meses seleccionados
   const mesTxs = selectedMeses.length > 0
-    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo === 'gasto')
+    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
 
 
@@ -364,8 +364,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const txFiltradas = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
     : transactions
-  const sinIdentificar = txFiltradas.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
-  const identificadas = sortTx(txFiltradas.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
+  // Neutros van solo en tabla separada, no en sin identificar ni identificadas de gasto
+  const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
+  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro')
+  const sinIdentificar = txNoNeutras.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
+  const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
 
   const renderEditCells = () => (
     <>
@@ -460,6 +463,42 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
             <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
+        </div>
+      )}
+
+      {txNeutras.length > 0 && (
+        <div style={styles.tableSection}>
+          <h3 style={styles.chartTitle}>🔄 Movimientos neutros ({txNeutras.length})</h3>
+          <p style={styles.tableHint}>Inversiones, pagos de tarjeta y transferencias propias — no se incluyen en los gráficos</p>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Fecha</th>
+                <th style={styles.th}>Nombre</th>
+                <th style={styles.th}>Categoría</th>
+                <th style={styles.th}>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {txNeutras.map(tx => (
+                <tr key={tx.id} style={{...styles.tr, opacity: 0.7}}>
+                  <td style={styles.td}>{tx.fecha}</td>
+                  <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                  <td style={styles.td}>
+                    <span style={{
+                      backgroundColor: '#f0f0f8', color: '#6e6e73',
+                      padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
+                    }}>
+                      {tx.categories?.nombre || '—'}
+                    </span>
+                  </td>
+                  <td style={{...styles.td, textAlign: 'right', fontWeight: '600', color: '#8e8e93'}}>
+                    {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
