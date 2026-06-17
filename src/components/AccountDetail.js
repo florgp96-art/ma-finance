@@ -70,32 +70,31 @@ function BubbleChart({ data, moneda }) {
     }))
 
     // Mini force simulation
-    let nodes = positioned
-    for (let iter = 0; iter < 200; iter++) {
-      nodes = nodes.map((a, i) => {
-        let fx = 0, fy = 0
-        // Repulsión entre burbujas
-        nodes.forEach((b, j) => {
-          if (i === j) return
-          const dx = a.x - b.x
-          const dy = a.y - b.y
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          const minDist = a.r + b.r + 6
-          if (dist < minDist) {
-            const force = (minDist - dist) / dist * 0.3
-            fx += dx * force
-            fy += dy * force
-          }
-        })
-        // Atracción al centro
-        fx += (WIDTH / 2 - a.x) * 0.012
-        fy += (HEIGHT / 2 - a.y) * 0.012
-        return {
-          ...a,
-          x: Math.max(a.r + 4, Math.min(WIDTH - a.r - 4, a.x + fx)),
-          y: Math.max(a.r + 4, Math.min(HEIGHT - a.r - 4, a.y + fy)),
+    const simulate = (currentNodes) => currentNodes.map((a, i) => {
+      let fx = 0, fy = 0
+      currentNodes.forEach((b, j) => {
+        if (i === j) return
+        const dx = a.x - b.x
+        const dy = a.y - b.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const minDist = a.r + b.r + 6
+        if (dist < minDist) {
+          const force = (minDist - dist) / dist * 0.3
+          fx += dx * force
+          fy += dy * force
         }
       })
+      fx += (WIDTH / 2 - a.x) * 0.012
+      fy += (HEIGHT / 2 - a.y) * 0.012
+      return {
+        ...a,
+        x: Math.max(a.r + 4, Math.min(WIDTH - a.r - 4, a.x + fx)),
+        y: Math.max(a.r + 4, Math.min(HEIGHT - a.r - 4, a.y + fy)),
+      }
+    })
+    let nodes = positioned
+    for (let iter = 0; iter < 200; iter++) {
+      nodes = simulate(nodes)
     }
     setBubbles(nodes)
   }, [data])
