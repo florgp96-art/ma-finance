@@ -2,21 +2,25 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
+// Paleta fría y armónica — pega con #6B7BB8
 const CATEGORY_COLORS = {
-  'Comida': '#7ED321',
-  'Personal': '#FF9800',
-  'Transporte': '#F5A623',
-  'Salud': '#D0021B',
-  'Entretenimiento': '#FF5722',
-  'Suscripciones': '#00BCD4',
-  'Ropa': '#E91E63',
-  'Casa': '#4A90D9',
-  'Educación': '#9B59B6',
-  'Trabajo': '#607D8B',
-  'Ingresos': '#27AE60',
-  'Débitos': '#95A5A6',
-  'A Identificar': '#E74C3C',
+  'Comida':          '#3D8B6E',  // verde pizarra oscuro
+  'Personal':        '#E07B39',  // terracota sobrio (no naranja neón)
+  'Transporte':      '#5B8DB8',  // azul acero
+  'Salud':           '#B85B5B',  // rojo apagado
+  'Entretenimiento': '#7B5EA7',  // violeta medio
+  'Suscripciones':   '#3A9BAF',  // petróleo/cian oscuro
+  'Ropa':            '#A0527A',  // rosa vino
+  'Casa':            '#4A7FB5',  // azul clásico
+  'Educación':       '#5C7A6B',  // verde musgo
+  'Trabajo':         '#5A6E7F',  // gris azulado
+  'Ingresos':        '#2E8B6A',  // verde esmeralda
+  'Débitos':         '#8A9BAD',  // gris azulado claro
+  'A Identificar':   '#A0576A',  // rosa grisáceo
 }
+
+// Color para las barras del gráfico mes a mes
+const BAR_COLOR = '#6B7BB8'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -72,7 +76,6 @@ export default function AccountDetail({ account, refreshKey }) {
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
 
-    // Seleccionar el mes más reciente por defecto
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
       setSelectedMes(meses[0])
@@ -80,7 +83,6 @@ export default function AccountDetail({ account, refreshKey }) {
     setLoading(false)
   }
 
-  // Meses disponibles a partir de las transacciones
   const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
 
   const filteredSubcats = () => {
@@ -139,8 +141,8 @@ export default function AccountDetail({ account, refreshKey }) {
       else if (sortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'monto') {
-      valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
-      valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
+        valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
+        valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
       }
       else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
       else if (sortKey === 'moneda') { valA = a.moneda || ''; valB = b.moneda || '' }
@@ -155,7 +157,6 @@ export default function AccountDetail({ account, refreshKey }) {
     total: Number(s.total_resumen) || 0
   }))
 
-  // Transacciones del mes seleccionado
   const mesTxs = selectedMes
     ? transactions.filter(t => t.fecha?.startsWith(selectedMes) && t.tipo === 'gasto')
     : []
@@ -179,14 +180,14 @@ export default function AccountDetail({ account, refreshKey }) {
 
   const renderDonut = (data, moneda) => (
     <div style={styles.donutBlock}>
-      <h4 style={styles.donutSubtitle}>{moneda === 'ARS' ? '🇦🇷 Pesos' : '🇺🇸 Dólares'}</h4>
+      <h4 style={styles.donutSubtitle}>{moneda === 'ARS' ? 'Pesos ARS' : 'Dólares USD'}</h4>
       <div style={styles.donutContainer}>
         <ResponsiveContainer width="50%" height={200}>
           <PieChart>
             <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
               dataKey="value" paddingAngle={2}>
               {data.map((entry, i) => (
-                <Cell key={i} fill={CATEGORY_COLORS[entry.name] || '#ccc'} />
+                <Cell key={i} fill={CATEGORY_COLORS[entry.name] || '#8A9BAD'} />
               ))}
             </Pie>
             <Tooltip formatter={(v) => `${monedaSymbol(moneda)} ${formatMontoFull(v)}`} />
@@ -195,7 +196,7 @@ export default function AccountDetail({ account, refreshKey }) {
         <div style={styles.donutLegend}>
           {data.map((entry, i) => (
             <div key={i} style={styles.legendItem}>
-              <div style={{...styles.legendDot, backgroundColor: CATEGORY_COLORS[entry.name] || '#ccc'}} />
+              <div style={{...styles.legendDot, backgroundColor: CATEGORY_COLORS[entry.name] || '#8A9BAD'}} />
               <span style={styles.legendName}>{entry.name}</span>
               <span style={styles.legendValue}>{monedaSymbol(moneda)} {formatMonto(entry.value)}</span>
             </div>
@@ -260,7 +261,7 @@ export default function AccountDetail({ account, refreshKey }) {
               <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#888' }} />
               <YAxis tick={{ fontSize: 11, fill: '#888' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
               <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
-              <Bar dataKey="total" fill="#9B59B6" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -351,8 +352,8 @@ export default function AccountDetail({ account, refreshKey }) {
                     <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                     <td style={styles.td}>
                       <span style={{
-                        backgroundColor: (CATEGORY_COLORS[tx.categories?.nombre] || '#ccc') + '22',
-                        color: CATEGORY_COLORS[tx.categories?.nombre] || '#888',
+                        backgroundColor: (CATEGORY_COLORS[tx.categories?.nombre] || '#8A9BAD') + '22',
+                        color: CATEGORY_COLORS[tx.categories?.nombre] || '#666',
                         padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
                       }}>
                         {tx.categories?.nombre || '—'}
@@ -372,15 +373,15 @@ export default function AccountDetail({ account, refreshKey }) {
                   <span style={{
                     fontSize: '11px', fontWeight: '600',
                     color: tx.moneda === 'USD' ? '#2980b9' : '#666',
-                    backgroundColor: tx.moneda === 'USD' ? '#ebf5fb' : '#f8f8f8',
+                    backgroundColor: tx.moneda === 'USD' ? '#ebf5fb' : '#f0f2f8',
                     padding: '2px 6px', borderRadius: '8px'
                   }}>
                     {tx.moneda || 'ARS'}
                   </span>
                 </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace:'nowrap',
-  color: tx.tipo === 'ingreso' ? '#27AE60' : '#2d2d2d'}}>
-  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                  color: tx.tipo === 'ingreso' ? '#2E8B6A' : '#2d2d2d'}}>
+                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
                   <td style={styles.td}>
@@ -402,7 +403,7 @@ const styles = {
   chartTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 16px 0' },
   donutHeader: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
   mesSelector: {
-    padding: '6px 12px', borderRadius: '8px', border: '1px solid #e0e0e0',
+    padding: '6px 12px', borderRadius: '8px', border: '1px solid #d0d5ee',
     fontSize: '14px', color: '#2d2d2d', backgroundColor: 'white', cursor: 'pointer', outline: 'none'
   },
   donutBlock: { marginBottom: '24px' },
@@ -418,29 +419,29 @@ const styles = {
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   th: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', fontWeight: '600'
+    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600'
   },
   thSortable: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', fontWeight: '600',
+    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600',
     cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
   },
   sortIcon: { fontSize: '10px', color: '#bbb' },
-  td: { padding: '10px 12px', borderBottom: '1px solid #f8f6f3', verticalAlign: 'middle' },
+  td: { padding: '10px 12px', borderBottom: '1px solid #f0f2f8', verticalAlign: 'middle' },
   tr: { transition: 'background 0.1s' },
   trUnknown: { backgroundColor: '#fffbf0' },
   detalle: { fontSize: '12px', color: '#aaa', fontFamily: 'monospace' },
   editInput: {
     width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #9B59B6', fontSize: '13px', outline: 'none'
+    border: '1px solid #6B7BB8', fontSize: '13px', outline: 'none'
   },
   editSelect: {
     width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #9B59B6', fontSize: '13px', outline: 'none', backgroundColor: 'white'
+    border: '1px solid #6B7BB8', fontSize: '13px', outline: 'none', backgroundColor: 'white'
   },
   editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
   saveEditBtn: {
-    padding: '3px 8px', backgroundColor: '#27AE60', color: 'white',
+    padding: '3px 8px', backgroundColor: '#2E8B6A', color: 'white',
     border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
   },
   cancelEditBtn: {
