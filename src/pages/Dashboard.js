@@ -144,7 +144,6 @@ export default function Dashboard() {
     else setStep('preview')
   }
 
-
   const handleCreateNewForUpload = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -234,10 +233,13 @@ export default function Dashboard() {
 
   return (
     <>
+      {/* Fondo azul muy suave en toda la página */}
       <div style={styles.container}>
+        {/* Header con logo centrado */}
         <div style={styles.header}>
-          <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
-          <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+          <div style={styles.headerInner}>
+            <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
+          </div>
         </div>
 
         <div style={styles.content}>
@@ -304,7 +306,12 @@ export default function Dashboard() {
               <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
             </div>
           )}
+
+          <div style={styles.logoutRow}>
+            <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+          </div>
         </div>
+
       </div>
 
       {showAddAccount && (
@@ -542,31 +549,43 @@ export default function Dashboard() {
 }
 
 const styles = {
-  container: { minHeight: '100vh', backgroundColor: '#f8f6f3', fontFamily: 'Arial, sans-serif' },
+  // Fondo: azul muy diluido, casi blanco
+  container: { minHeight: '100vh', backgroundColor: '#EEF0F8', fontFamily: 'Arial, sans-serif' },
   header: {
-    backgroundColor: '#6B7BB8', padding: '12px 32px',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+    backgroundColor: '#6B7BB8',
+    padding: '0',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+    height: '72px',
   },
-  logoImg: { height: '80px', objectFit: 'contain' },
-  logoutBtn: { padding: '8px 16px', backgroundColor: 'transparent', color: 'white', border: '2px solid white', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
+  headerInner: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  logoImg: { height: '52px', objectFit: 'contain' },
+  logoutRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: '40px' },
+  logoutBtn: { padding: '10px 20px', backgroundColor: 'transparent', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
   content: { maxWidth: '960px', margin: '32px auto', padding: '0 24px' },
   summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
-  summaryCard: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' },
+  summaryCard: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
   cardLabel: { fontSize: '13px', color: '#888', margin: '0 0 8px 0' },
   cardValue: { fontSize: '28px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  uploadBanner: { backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px dashed #ede8f5' },
+  uploadBanner: { backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px dashed #d0d5ee' },
   uploadBannerTitle: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', margin: '0 0 4px 0' },
   uploadBannerDesc: { fontSize: '13px', color: '#888', margin: 0 },
   uploadBannerBtn: { padding: '10px 20px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '16px' },
-  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px' },
+  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)', marginBottom: '24px' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   addBtn: { padding: '8px 16px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
   empty: { textAlign: 'center', padding: '40px', color: '#888' },
   accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
-  accountCard: { backgroundColor: '#f8f6f3', borderRadius: '12px', padding: '20px', border: '1px solid #ede8f5', cursor: 'pointer', transition: 'all 0.2s' },
-  accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#eef0f8' },
+  accountCard: { backgroundColor: '#EEF0F8', borderRadius: '12px', padding: '20px', border: '1px solid #d0d5ee', cursor: 'pointer', transition: 'all 0.2s' },
+  accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#dde1f3' },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
   accountType: { fontSize: '12px', color: '#6B7BB8', margin: 0, fontWeight: '600' },
   accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
@@ -609,7 +628,7 @@ const styles = {
   opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
   opcionDesc: { fontSize: '12px', color: '#888' },
   previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
-  previewStat: { backgroundColor: '#f8f6f3', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
+  previewStat: { backgroundColor: '#EEF0F8', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
   previewStatValue: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d' },
   transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
