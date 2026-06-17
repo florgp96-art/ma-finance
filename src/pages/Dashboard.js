@@ -35,20 +35,83 @@ export default function Dashboard() {
 
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
+  const [timer, setTimer] = useState(120)
+  const timerInterval = useRef(null)
 
-  useEffect(() => { fetchAccounts() }, [])
+  // Búsqueda
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Modal gasto en efectivo
+  const [showEfectivo, setShowEfectivo] = useState(false)
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
+  const [categoriasDB, setCategoriasDB] = useState([])
+  const [subcategoriasDB, setSubcategoriasDB] = useState([])
+
+  useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
 
   useEffect(() => {
     if (step === 'processing') {
       setMsgIndex(0)
+      setTimer(120)
       msgInterval.current = setInterval(() => {
         setMsgIndex(i => (i + 1) % PROCESSING_MSGS.length)
       }, 3000)
+      timerInterval.current = setInterval(() => {
+        setTimer(t => t > 0 ? t - 1 : 0)
+      }, 1000)
     } else {
       clearInterval(msgInterval.current)
+      clearInterval(timerInterval.current)
     }
-    return () => clearInterval(msgInterval.current)
+    return () => { clearInterval(msgInterval.current); clearInterval(timerInterval.current) }
   }, [step])
+
+  const fetchCategorias = async () => {
+    const { data: cats } = await supabase.from('categories').select('*').order('orden')
+    const { data: subcats } = await supabase.from('subcategories').select('*').order('nombre')
+    setCategoriasDB(cats || [])
+    setSubcategoriasDB(subcats || [])
+  }
+
+  const handleGuardarEfectivo = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria)
+    const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
+
+    // Buscar o crear cuenta de efectivo
+    let { data: cuentaEfectivo } = await supabase.from('accounts')
+      .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
+    if (!cuentaEfectivo) {
+      const { data: nueva } = await supabase.from('accounts')
+        .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+      cuentaEfectivo = nueva
+      fetchAccounts()
+    }
+
+    await supabase.from('transactions').insert({
+      user_id: user.id,
+      account_id: cuentaEfectivo.id,
+      fecha: efectivo.fecha,
+      nombre: efectivo.nombre,
+      detalle: efectivo.nota || efectivo.nombre,
+      monto: parseFloat(efectivo.monto),
+      moneda: efectivo.moneda,
+      tipo: 'gasto',
+      category_id: catObj?.id || null,
+      subcategory_id: subcatObj?.id || null,
+      estado: catObj ? 'identificado' : 'a_identificar',
+      es_manual: true,
+      cuotas_total: 1,
+      cuota_numero: 1,
+    })
+
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
+    setShowEfectivo(false)
+    setRefreshKey(k => k + 1)
+    setLoading(false)
+  }
 
   const fetchAccounts = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -111,7 +174,12 @@ export default function Dashboard() {
       const result = await analyzeStatementWithClaude(pdfText, 'auto')
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
-      setStep('select_account')
+      // Si es banco, saltar directo al preview — las cuentas se crean automáticamente
+      if (result.tipo_documento === 'banco') {
+        setStep('preview')
+      } else {
+        setStep('select_account')
+      }
     } catch (err) {
       alert('Error procesando el PDF: ' + err.message)
       setStep('upload')
@@ -149,6 +217,9 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const account = targetAccount
     const esBanco = statementData.tipo_documento === 'banco'
+    const nombreBase = esBanco
+      ? (statementData.tarjeta_detectada || 'Cuenta Bancaria')
+      : null
 
     const { data: categorias } = await supabase.from('categories').select('id, nombre')
     const getCategoryId = (cat) => {
@@ -171,24 +242,24 @@ export default function Dashboard() {
 
     if (esBanco) {
       // Separar en dos cuentas: Egresos e Ingresos
-      const nombreBase = account.nombre.replace(/^(Egresos|Ingresos)\s*[-–]\s*/i, '').trim()
+      const baseNombre = nombreBase
 
       // Buscar o crear cuenta de egresos
       let { data: cuentaEgresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${nombreBase}`).maybeSingle()
+        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${baseNombre}`).maybeSingle()
       if (!cuentaEgresos) {
         const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Egresos - ${nombreBase}`, tipo: 'debito'
+          user_id: user.id, nombre: `Egresos - ${baseNombre}`, tipo: 'debito'
         }).select().single()
         cuentaEgresos = nueva
       }
 
       // Buscar o crear cuenta de ingresos
       let { data: cuentaIngresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${nombreBase}`).maybeSingle()
+        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${baseNombre}`).maybeSingle()
       if (!cuentaIngresos) {
         const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Ingresos - ${nombreBase}`, tipo: 'debito'
+          user_id: user.id, nombre: `Ingresos - ${baseNombre}`, tipo: 'debito'
         }).select().single()
         cuentaIngresos = nueva
       }
@@ -303,7 +374,7 @@ export default function Dashboard() {
             <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
               + CARGAR PDF
             </button>
-            <button style={styles.sidebarBtnPrimary} onClick={() => alert('Próximamente')}>
+            <button style={styles.sidebarBtnPrimary} onClick={() => setShowEfectivo(true)}>
               + GASTO EN EFECTIVO
             </button>
             <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
@@ -351,12 +422,12 @@ export default function Dashboard() {
             {selectedAccount === 'all' ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 Resumen General</h2>
-                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} />
+                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
               </div>
             ) : selectedAccount ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -482,6 +553,10 @@ export default function Dashboard() {
                     <div key={i} style={{...styles.dot, ...(i === msgIndex ? styles.dotActive : {})}} />
                   ))}
                 </div>
+                <div style={styles.timerBar}>
+                  <div style={{...styles.timerFill, width: `${(timer / 120) * 100}%`, backgroundColor: timer < 20 ? '#e07b39' : '#6B7BB8'}} />
+                </div>
+                <p style={styles.timerText}>{timer}s restantes</p>
               </div>
             )}
 
@@ -565,7 +640,9 @@ export default function Dashboard() {
 
             {step === 'preview' && statementData && (
               <>
-                <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
+                <h3 style={styles.modalTitle}>
+                  {statementData?.tipo_documento === 'banco' ? 'Revisá los movimientos del banco 🏦' : 'Revisá las transacciones ✅'}
+                </h3>
                 <div style={styles.previewStats}>
                   <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
                   <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
@@ -592,11 +669,82 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => setStep('select_account')}>← Atrás</button>
+                  <button style={styles.cancelBtn} onClick={() => setStep(statementData?.tipo_documento === 'banco' ? 'upload' : 'select_account')}>← Atrás</button>
                   <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>{loading ? 'Guardando...' : 'Confirmar y guardar'}</button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {showEfectivo && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '440px'}}>
+            <h3 style={styles.modalTitle}>+ Gasto en efectivo 💵</h3>
+            <form onSubmit={handleGuardarEfectivo}>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Fecha</label>
+                  <input style={styles.input} type="date" value={efectivo.fecha}
+                    onChange={e => setEfectivo({...efectivo, fecha: e.target.value})} required />
+                </div>
+                <div style={styles.field}>
+                  <label style={styles.label}>Moneda</label>
+                  <select style={styles.input} value={efectivo.moneda}
+                    onChange={e => setEfectivo({...efectivo, moneda: e.target.value})}>
+                    <option value="ARS">$ ARS</option>
+                    <option value="USD">U$S USD</option>
+                    <option value="EUR">€ EUR</option>
+                  </select>
+                </div>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Descripción</label>
+                <input style={styles.input} type="text" value={efectivo.nombre}
+                  onChange={e => setEfectivo({...efectivo, nombre: e.target.value})}
+                  placeholder="Ej: Almuerzo, taxi, mercado..." required />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Monto</label>
+                <input style={styles.input} type="number" step="0.01" value={efectivo.monto}
+                  onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
+                  placeholder="0.00" required />
+              </div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Categoría</label>
+                  <select style={styles.input} value={efectivo.categoria}
+                    onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
+                    <option value="">— Elegir —</option>
+                    {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div style={styles.field}>
+                  <label style={styles.label}>Subcategoría</label>
+                  <select style={styles.input} value={efectivo.subcategoria}
+                    onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
+                    disabled={!efectivo.categoria}>
+                    <option value="">— Elegir —</option>
+                    {subcategoriasDB
+                      .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria)?.id)
+                      .map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Nota (opcional)</label>
+                <input style={styles.input} type="text" value={efectivo.nota}
+                  onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
+                  placeholder="Detalles adicionales..." />
+              </div>
+              <div style={styles.modalButtons}>
+                <button type="button" style={styles.cancelBtn} onClick={() => setShowEfectivo(false)}>Cancelar</button>
+                <button type="submit" style={styles.saveBtn} disabled={loading}>
+                  {loading ? 'Guardando...' : 'Guardar gasto'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -702,6 +850,9 @@ const styles = {
   processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
   dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#d0d5ee' },
   dotActive: { backgroundColor: '#6B7BB8' },
+  timerBar: { width: '100%', height: '4px', backgroundColor: '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
+  timerFill: { height: '100%', borderRadius: '2px', transition: 'width 1s linear, background-color 0.3s' },
+  timerText: { fontSize: '12px', color: '#8e8e93', margin: 0 },
   stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
   adicionalesList: { marginBottom: '20px' },
   adicionalItem: { padding: '10px 14px', backgroundColor: '#eef0f8', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#4a5a9a', fontWeight: '500' },

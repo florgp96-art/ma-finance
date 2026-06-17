@@ -188,7 +188,7 @@ function BubbleChart({ data }) {
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -367,8 +367,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   // Neutros van solo en tabla separada, no en sin identificar ni identificadas de gasto
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
   const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro')
-  const sinIdentificar = txNoNeutras.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
-  const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
+
+  const matchSearch = (t) => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      (t.nombre || '').toLowerCase().includes(q) ||
+      (t.detalle || '').toLowerCase().includes(q) ||
+      (t.categories?.nombre || '').toLowerCase().includes(q) ||
+      (t.subcategories?.nombre || '').toLowerCase().includes(q)
+    )
+  }
+
+  const sinIdentificar = txNoNeutras.filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
+  const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
   const renderEditCells = () => (
     <>
@@ -465,6 +477,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           )}
         </div>
       )}
+
+      {/* Buscador */}
+      <div style={{ marginBottom: '24px' }}>
+        <input
+          style={{
+            width: '100%', padding: '10px 14px', borderRadius: '12px',
+            border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
+            boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
+          }}
+          placeholder="🔍 Buscar por nombre, categoría..."
+          value={searchQuery || ''}
+          onChange={e => onSearchChange && onSearchChange(e.target.value)}
+        />
+      </div>
 
       {txNeutras.length > 0 && (
         <div style={styles.tableSection}>
