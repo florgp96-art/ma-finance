@@ -156,7 +156,7 @@ export default function Dashboard() {
     }
 
     const { data: existing } = await supabase.from('statements')
-      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).single()
+      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
     if (existing) {
       alert(`Ya cargaste el extracto de ${statementData.periodo} para esta tarjeta.`)
       setLoading(false)
