@@ -29,8 +29,6 @@ export default function Dashboard() {
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [step, setStep] = useState('upload')
   const [statementData, setStatementData] = useState(null)
-  const [matchedAccount, setMatchedAccount] = useState(null)
-  const [suggestedName, setSuggestedName] = useState('')
   const [newAccountForUpload, setNewAccountForUpload] = useState({ nombre: '', tipo: 'credito' })
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
@@ -117,8 +115,6 @@ export default function Dashboard() {
     setArchivo(null)
     setStep('upload')
     setStatementData(null)
-    setMatchedAccount(null)
-    setSuggestedName('')
     setTargetAccount(null)
     setSepararAdicionales(null)
     setNewAccountForUpload({ nombre: '', tipo: 'credito' })
@@ -133,7 +129,6 @@ export default function Dashboard() {
       const pdfText = await extractTextFromPDF(archivo)
       const result = await analyzeStatementWithClaude(pdfText, 'auto')
       setStatementData(result)
-      setSuggestedName(result.tarjeta_detectada || '')
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
       setStep('select_account')
     } catch (err) {
@@ -149,10 +144,6 @@ export default function Dashboard() {
     else setStep('preview')
   }
 
-  const handleConfirmMatch = () => {
-    if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
-    else setStep('preview')
-  }
 
   const handleCreateNewForUpload = async (e) => {
     e.preventDefault()
