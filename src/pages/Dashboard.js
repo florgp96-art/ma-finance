@@ -527,7 +527,7 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoImg: { height: '104px', objectFit: 'contain' },
+  logoImg: { height: '220px', objectFit: 'contain' },
 
   // Layout dos columnas
   layout: {
