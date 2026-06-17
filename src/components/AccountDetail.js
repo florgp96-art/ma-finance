@@ -319,8 +319,6 @@ export default function AccountDetail({ account, refreshKey }) {
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo === 'gasto')
     : []
 
-  const mesARS = mesTxs.filter(t => t.moneda === 'ARS')
-  const mesUSD = mesTxs.filter(t => t.moneda === 'USD')
 
   const buildBubbleData = (txList) => Object.entries(
     txList.reduce((acc, t) => {
