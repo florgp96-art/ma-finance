@@ -557,7 +557,7 @@ const styles = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
   },
-  logoImg: { height: '52px', objectFit: 'contain' },
+  logoImg: { height: '80px', objectFit: 'contain' },
   logoutBtn: {
     padding: '8px 16px', backgroundColor: 'transparent', color: 'white',
     border: '2px solid white', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
