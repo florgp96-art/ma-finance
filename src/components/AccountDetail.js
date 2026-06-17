@@ -1,26 +1,24 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
-// Paleta fría y armónica — pega con #6B7BB8
-const CATEGORY_COLORS = {
-  'Comida':          '#3D8B6E',  // verde pizarra oscuro
-  'Personal':        '#E07B39',  // terracota sobrio (no naranja neón)
-  'Transporte':      '#5B8DB8',  // azul acero
-  'Salud':           '#B85B5B',  // rojo apagado
-  'Entretenimiento': '#7B5EA7',  // violeta medio
-  'Suscripciones':   '#3A9BAF',  // petróleo/cian oscuro
-  'Ropa':            '#A0527A',  // rosa vino
-  'Casa':            '#4A7FB5',  // azul clásico
-  'Educación':       '#5C7A6B',  // verde musgo
-  'Trabajo':         '#5A6E7F',  // gris azulado
-  'Ingresos':        '#2E8B6A',  // verde esmeralda
-  'Débitos':         '#8A9BAD',  // gris azulado claro
-  'A Identificar':   '#A0576A',  // rosa grisáceo
+const CATEGORY_CONFIG = {
+  'Comida':          { icon: '🍔', color: '#FADADD' }, // rosa palo
+  'Personal':        { icon: '👤', color: '#B5CCEE' }, // azul pastel
+  'Transporte':      { icon: '🚗', color: '#C3B8E8' }, // lavanda
+  'Salud':           { icon: '💊', color: '#FFCBA4' }, // durazno
+  'Entretenimiento': { icon: '🎬', color: '#FFB3BA' }, // rosa chicle suave
+  'Suscripciones':   { icon: '📱', color: '#B5EAD7' }, // menta
+  'Ropa':            { icon: '👕', color: '#E8C3D8' }, // lila rosado
+  'Casa':            { icon: '🏠', color: '#AEC6CF' }, // celeste grisáceo
+  'Educación':       { icon: '📚', color: '#C5E8C3' }, // verde pastel
+  'Trabajo':         { icon: '💼', color: '#D4E8C2' }, // verde lima pastel
+  'Ingresos':        { icon: '💰', color: '#B5EAC8' }, // verde menta
+  'Débitos':         { icon: '🏦', color: '#D8D8F0' }, // lila muy suave
+  'A Identificar':   { icon: '❓', color: '#F9E4B7' }, // amarillo manteca
 }
 
-// Color para las barras del gráfico mes a mes
-const BAR_COLOR = '#6B7BB8'
+const BAR_COLOR = '#A8B8D8'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -37,6 +35,150 @@ const mesLabel = (yearMonth) => {
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
 
+// Bubble chart component usando D3-style force simulation simple
+function BubbleChart({ data, moneda }) {
+  const containerRef = useRef(null)
+  const [bubbles, setBubbles] = useState([])
+  const [hoveredIdx, setHoveredIdx] = useState(null)
+  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, data: null })
+  const WIDTH = 600
+  const HEIGHT = 340
+  const MIN_R = 32
+  const MAX_R = 90
+
+  useEffect(() => {
+    if (!data || data.length === 0) return
+    const total = data.reduce((s, d) => s + d.value, 0)
+    const maxVal = Math.max(...data.map(d => d.value))
+    const minVal = Math.min(...data.map(d => d.value))
+
+    // Calcular radios
+    const withR = data.map(d => {
+      const ratio = maxVal === minVal ? 0.7 : 0.3 + 0.7 * (d.value / maxVal)
+      const r = Math.max(MIN_R, Math.min(MAX_R, ratio * MAX_R))
+      return { ...d, r, pct: Math.round((d.value / total) * 100) }
+    })
+
+    // Posición inicial en grilla
+    const cols = Math.ceil(Math.sqrt(withR.length))
+    const positioned = withR.map((b, i) => ({
+      ...b,
+      x: (WIDTH / (cols + 1)) * ((i % cols) + 1),
+      y: (HEIGHT / (Math.ceil(withR.length / cols) + 1)) * (Math.floor(i / cols) + 1),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+    }))
+
+    // Mini force simulation
+    let nodes = positioned
+    for (let iter = 0; iter < 200; iter++) {
+      nodes = nodes.map((a, i) => {
+        let fx = 0, fy = 0
+        // Repulsión entre burbujas
+        nodes.forEach((b, j) => {
+          if (i === j) return
+          const dx = a.x - b.x
+          const dy = a.y - b.y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const minDist = a.r + b.r + 6
+          if (dist < minDist) {
+            const force = (minDist - dist) / dist * 0.3
+            fx += dx * force
+            fy += dy * force
+          }
+        })
+        // Atracción al centro
+        fx += (WIDTH / 2 - a.x) * 0.012
+        fy += (HEIGHT / 2 - a.y) * 0.012
+        return {
+          ...a,
+          x: Math.max(a.r + 4, Math.min(WIDTH - a.r - 4, a.x + fx)),
+          y: Math.max(a.r + 4, Math.min(HEIGHT - a.r - 4, a.y + fy)),
+        }
+      })
+    }
+    setBubbles(nodes)
+  }, [data])
+
+  if (!data || data.length === 0) return null
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
+        {bubbles.map((b, i) => {
+          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+          const isHovered = hoveredIdx === i
+          return (
+            <g key={i}
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={(e) => {
+                setHoveredIdx(i)
+                setTooltip({ visible: true, x: b.x, y: b.y - b.r - 8, data: b })
+              }}
+              onMouseLeave={() => {
+                setHoveredIdx(null)
+                setTooltip({ visible: false, x: 0, y: 0, data: null })
+              }}
+            >
+              <circle
+                cx={b.x} cy={b.y} r={isHovered ? b.r + 4 : b.r}
+                fill={cfg.color}
+                opacity={hoveredIdx !== null && !isHovered ? 0.5 : 1}
+                style={{ transition: 'all 0.2s' }}
+              />
+              <text x={b.x} y={b.y - (b.r > 40 ? 10 : 4)}
+                textAnchor="middle" dominantBaseline="middle"
+                fontSize={b.r > 50 ? 28 : b.r > 38 ? 22 : 16}>
+                {cfg.icon}
+              </text>
+              {b.r > 36 && (
+                <text x={b.x} y={b.y + (b.r > 40 ? 14 : 10)}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={b.r > 50 ? 11 : 9}
+                  fill="#555" fontWeight="600">
+                  {b.pct}%
+                </text>
+              )}
+            </g>
+          )
+        })}
+        {/* Tooltip SVG */}
+        {tooltip.visible && tooltip.data && (() => {
+          const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
+          const tx = Math.max(80, Math.min(WIDTH - 80, tooltip.x))
+          const ty = Math.max(30, tooltip.y)
+          return (
+            <g>
+              <rect x={tx - 80} y={ty - 30} width={160} height={48}
+                rx={8} fill="white"
+                style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.12))' }} />
+              <text x={tx} y={ty - 10} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
+                {cfg.icon} {tooltip.data.name}
+              </text>
+              <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#666">
+                {monedaSymbol(moneda)} {formatMontoFull(tooltip.data.value)}
+              </text>
+            </g>
+          )
+        })()}
+      </svg>
+      {/* Leyenda debajo */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '8px' }}>
+        {bubbles.map((b, i) => {
+          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#555' }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
+              <span>{cfg.icon} {b.name}</span>
+              <span style={{ fontWeight: '600', color: '#2d2d2d' }}>{monedaSymbol(moneda)} {formatMonto(b.value)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function AccountDetail({ account, refreshKey }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
@@ -49,7 +191,7 @@ export default function AccountDetail({ account, refreshKey }) {
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
-  const [selectedMes, setSelectedMes] = useState(null)
+  const [selectedMeses, setSelectedMeses] = useState([])
 
   useEffect(() => {
     if (account) fetchData()
@@ -78,12 +220,18 @@ export default function AccountDetail({ account, refreshKey }) {
 
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
-      setSelectedMes(meses[0])
+      setSelectedMeses([meses[0]])
     }
     setLoading(false)
   }
 
   const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+
+  const toggleMes = (m) => {
+    setSelectedMeses(prev =>
+      prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
+    )
+  }
 
   const filteredSubcats = () => {
     const catObj = categories.find(c => c.nombre === editCategoria)
@@ -157,14 +305,15 @@ export default function AccountDetail({ account, refreshKey }) {
     total: Number(s.total_resumen) || 0
   }))
 
-  const mesTxs = selectedMes
-    ? transactions.filter(t => t.fecha?.startsWith(selectedMes) && t.tipo === 'gasto')
+  // Transacciones de los meses seleccionados
+  const mesTxs = selectedMeses.length > 0
+    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo === 'gasto')
     : []
 
   const mesARS = mesTxs.filter(t => t.moneda === 'ARS')
   const mesUSD = mesTxs.filter(t => t.moneda === 'USD')
 
-  const buildDonutData = (txList) => Object.entries(
+  const buildBubbleData = (txList) => Object.entries(
     txList.reduce((acc, t) => {
       const cat = t.categories?.nombre || 'A Identificar'
       acc[cat] = (acc[cat] || 0) + Number(t.monto)
@@ -172,39 +321,11 @@ export default function AccountDetail({ account, refreshKey }) {
     }, {})
   ).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
 
-  const donutARS = buildDonutData(mesARS)
-  const donutUSD = buildDonutData(mesUSD)
+  const bubbleARS = buildBubbleData(mesARS)
+  const bubbleUSD = buildBubbleData(mesUSD)
 
   const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
   const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
-
-  const renderDonut = (data, moneda) => (
-    <div style={styles.donutBlock}>
-      <h4 style={styles.donutSubtitle}>{moneda === 'ARS' ? 'Pesos ARS' : 'Dólares USD'}</h4>
-      <div style={styles.donutContainer}>
-        <ResponsiveContainer width="50%" height={200}>
-          <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
-              dataKey="value" paddingAngle={2}>
-              {data.map((entry, i) => (
-                <Cell key={i} fill={CATEGORY_COLORS[entry.name] || '#8A9BAD'} />
-              ))}
-            </Pie>
-            <Tooltip formatter={(v) => `${monedaSymbol(moneda)} ${formatMontoFull(v)}`} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div style={styles.donutLegend}>
-          {data.map((entry, i) => (
-            <div key={i} style={styles.legendItem}>
-              <div style={{...styles.legendDot, backgroundColor: CATEGORY_COLORS[entry.name] || '#8A9BAD'}} />
-              <span style={styles.legendName}>{entry.name}</span>
-              <span style={styles.legendValue}>{monedaSymbol(moneda)} {formatMonto(entry.value)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
 
   const renderEditCells = () => (
     <>
@@ -269,18 +390,42 @@ export default function AccountDetail({ account, refreshKey }) {
 
       {mesesDisponibles.length > 0 && (
         <div style={styles.chartSection}>
-          <div style={styles.donutHeader}>
-            <h3 style={{...styles.chartTitle, margin: 0}}>🍩 Gastos de:</h3>
-            <select style={styles.mesSelector} value={selectedMes || ''} onChange={e => setSelectedMes(e.target.value)}>
+          <div style={styles.mesChipsHeader}>
+            <h3 style={{...styles.chartTitle, margin: 0}}>🫧 Gastos de:</h3>
+            <div style={styles.mesChips}>
               {mesesDisponibles.map(m => (
-                <option key={m} value={m}>{mesLabel(m)}</option>
+                <button
+                  key={m}
+                  style={{
+                    ...styles.mesChip,
+                    ...(selectedMeses.includes(m) ? styles.mesChipActive : {})
+                  }}
+                  onClick={() => toggleMes(m)}
+                >
+                  {mesLabel(m)}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-          {donutARS.length > 0 && renderDonut(donutARS, 'ARS')}
-          {donutUSD.length > 0 && renderDonut(donutUSD, 'USD')}
-          {donutARS.length === 0 && donutUSD.length === 0 && (
-            <p style={{color:'#aaa', fontSize:'14px'}}>Sin gastos en este mes.</p>
+
+          {selectedMeses.length === 0 && (
+            <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
+          )}
+
+          {bubbleARS.length > 0 && (
+            <div style={styles.bubbleSection}>
+              <h4 style={styles.bubbleSubtitle}>Pesos ARS</h4>
+              <BubbleChart data={bubbleARS} moneda="ARS" />
+            </div>
+          )}
+          {bubbleUSD.length > 0 && (
+            <div style={styles.bubbleSection}>
+              <h4 style={styles.bubbleSubtitle}>Dólares USD</h4>
+              <BubbleChart data={bubbleUSD} moneda="USD" />
+            </div>
+          )}
+          {selectedMeses.length > 0 && bubbleARS.length === 0 && bubbleUSD.length === 0 && (
+            <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
         </div>
       )}
@@ -352,11 +497,11 @@ export default function AccountDetail({ account, refreshKey }) {
                     <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                     <td style={styles.td}>
                       <span style={{
-                        backgroundColor: (CATEGORY_COLORS[tx.categories?.nombre] || '#8A9BAD') + '22',
-                        color: CATEGORY_COLORS[tx.categories?.nombre] || '#666',
+                        backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),
+                        color: '#444',
                         padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
                       }}>
-                        {tx.categories?.nombre || '—'}
+                        {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
                       </span>
                     </td>
                     <td style={styles.td}>
@@ -372,15 +517,15 @@ export default function AccountDetail({ account, refreshKey }) {
                 <td style={styles.td}>
                   <span style={{
                     fontSize: '11px', fontWeight: '600',
-                    color: tx.moneda === 'USD' ? '#2980b9' : '#666',
-                    backgroundColor: tx.moneda === 'USD' ? '#ebf5fb' : '#f0f2f8',
+                    color: tx.moneda === 'USD' ? '#5588aa' : '#666',
+                    backgroundColor: tx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
                     padding: '2px 6px', borderRadius: '8px'
                   }}>
                     {tx.moneda || 'ARS'}
                   </span>
                 </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace:'nowrap',
-                  color: tx.tipo === 'ingreso' ? '#2E8B6A' : '#2d2d2d'}}>
+                  color: tx.tipo === 'ingreso' ? '#4a9e7a' : '#2d2d2d'}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
@@ -401,19 +546,18 @@ const styles = {
   loading: { padding: '24px', color: '#888', fontSize: '14px' },
   chartSection: { marginBottom: '32px' },
   chartTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 16px 0' },
-  donutHeader: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
-  mesSelector: {
-    padding: '6px 12px', borderRadius: '8px', border: '1px solid #d0d5ee',
-    fontSize: '14px', color: '#2d2d2d', backgroundColor: 'white', cursor: 'pointer', outline: 'none'
+  mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
+  mesChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
+  mesChip: {
+    padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #d0d5ee',
+    backgroundColor: 'white', color: '#666', fontSize: '13px', cursor: 'pointer',
+    fontWeight: '500', transition: 'all 0.15s'
   },
-  donutBlock: { marginBottom: '24px' },
-  donutSubtitle: { fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 12px 0' },
-  donutContainer: { display: 'flex', alignItems: 'center', gap: '16px' },
-  donutLegend: { flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' },
-  legendItem: { display: 'flex', alignItems: 'center', gap: '8px' },
-  legendDot: { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
-  legendName: { fontSize: '13px', color: '#444', flex: 1 },
-  legendValue: { fontSize: '13px', fontWeight: '600', color: '#2d2d2d' },
+  mesChipActive: {
+    backgroundColor: '#6B7BB8', color: 'white', borderColor: '#6B7BB8', fontWeight: '600'
+  },
+  bubbleSection: { marginBottom: '32px' },
+  bubbleSubtitle: { fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 16px 0' },
   tableSection: { marginBottom: '32px' },
   tableHint: { fontSize: '13px', color: '#888', margin: '-8px 0 12px 0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
@@ -441,7 +585,7 @@ const styles = {
   },
   editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
   saveEditBtn: {
-    padding: '3px 8px', backgroundColor: '#2E8B6A', color: 'white',
+    padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white',
     border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
   },
   cancelEditBtn: {
