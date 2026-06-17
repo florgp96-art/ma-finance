@@ -35,9 +35,8 @@ export default function Dashboard() {
 
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
-  const [totales, setTotales] = useState({ gastos: 0, ingresos: 0 })
 
-  useEffect(() => { fetchAccounts(); fetchTotales() }, [])
+  useEffect(() => { fetchAccounts() }, [])
 
   useEffect(() => {
     if (step === 'processing') {
@@ -55,23 +54,6 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
-  }
-
-  const fetchTotales = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const now = new Date()
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
-    const { data } = await supabase.from('transactions')
-      .select('monto, tipo, moneda')
-      .eq('user_id', user.id)
-      .eq('moneda', 'ARS')
-      .gte('fecha', firstDay)
-      .lte('fecha', lastDay)
-    if (!data) return
-    const gastos = data.filter(t => t.tipo === 'gasto').reduce((sum, t) => sum + Number(t.monto), 0)
-    const ingresos = data.filter(t => t.tipo === 'ingreso').reduce((sum, t) => sum + Number(t.monto), 0)
-    setTotales({ gastos, ingresos })
   }
 
   const handleLogout = async () => {
@@ -107,7 +89,6 @@ export default function Dashboard() {
     setConfirmDelete(null)
     if (selectedAccount?.id === accountId) setSelectedAccount(null)
     fetchAccounts()
-    fetchTotales()
     setLoading(false)
   }
 
@@ -214,7 +195,6 @@ export default function Dashboard() {
     resetUpload()
     setShowUpload(false)
     fetchAccounts()
-    fetchTotales()
     setRefreshKey(k => k + 1)
     setLoading(false)
   }
@@ -233,55 +213,34 @@ export default function Dashboard() {
 
   return (
     <>
-      {/* Fondo azul muy suave en toda la página */}
       <div style={styles.container}>
-        {/* Header con logo centrado */}
+
+        {/* Header: mismo fondo que la página, logo grande centrado */}
         <div style={styles.header}>
-          <div style={styles.headerInner}>
-            <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
-          </div>
+          <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
         </div>
 
-        <div style={styles.content}>
-          {accounts.length > 0 && (
-            <div style={styles.summaryCards}>
-              <div style={styles.summaryCard}>
-                <p style={styles.cardLabel}>Total del Mes</p>
-                <p style={styles.cardValue}>$ {formatMonto(totales.gastos - totales.ingresos)}</p>
-              </div>
-              <div style={styles.summaryCard}>
-                <p style={styles.cardLabel}>Gastos</p>
-                <p style={styles.cardValue}>$ {formatMonto(totales.gastos)}</p>
-              </div>
-              <div style={styles.summaryCard}>
-                <p style={styles.cardLabel}>Ingresos</p>
-                <p style={styles.cardValue}>$ {formatMonto(totales.ingresos)}</p>
-              </div>
-            </div>
-          )}
+        {/* Layout dos columnas */}
+        <div style={styles.layout}>
 
-          <div style={styles.uploadBanner}>
-            <div>
-              <p style={styles.uploadBannerTitle}>📄 Cargar extracto</p>
-              <p style={styles.uploadBannerDesc}>Subí el PDF de tu resumen y la IA lo clasifica automáticamente</p>
+          {/* Sidebar izquierdo */}
+          <div style={styles.sidebar}>
+            <div style={styles.sidebarHeader}>
+              <h2 style={styles.sidebarTitle}>Tarjetas</h2>
             </div>
-            <button style={styles.uploadBannerBtn} onClick={() => { resetUpload(); setShowUpload(true) }}>
-              Cargar PDF
+
+            <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
+              📄 Cargar PDF
             </button>
-          </div>
+            <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
+              + Agregar tarjeta
+            </button>
 
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Tarjetas y Cuentas</h2>
-              <button style={styles.addBtn} onClick={() => setShowAddAccount(true)}>+ Agregar</button>
-            </div>
-            {accounts.length === 0 ? (
-              <div style={styles.empty}>
-                <p>Todavía no agregaste ninguna tarjeta. Usá "Cargar PDF" para empezar.</p>
-              </div>
-            ) : (
-              <div style={styles.accountsGrid}>
-                {accounts.map(acc => (
+            <div style={styles.accountsList}>
+              {accounts.length === 0 ? (
+                <p style={styles.emptyText}>Todavía no agregaste ninguna tarjeta.</p>
+              ) : (
+                accounts.map(acc => (
                   <div key={acc.id}
                     style={{...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {})}}
                     onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
@@ -295,25 +254,34 @@ export default function Dashboard() {
                     </div>
                     <p style={styles.accountName}>{acc.nombre}</p>
                   </div>
-                ))}
+                ))
+              )}
+            </div>
+
+            <div style={styles.sidebarFooter}>
+              <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+            </div>
+          </div>
+
+          {/* Contenido derecho */}
+          <div style={styles.mainContent}>
+            {selectedAccount ? (
+              <div style={styles.section}>
+                <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
+              </div>
+            ) : (
+              <div style={styles.emptyState}>
+                <p style={styles.emptyStateIcon}>💳</p>
+                <p style={styles.emptyStateText}>Seleccioná una tarjeta para ver sus movimientos</p>
               </div>
             )}
           </div>
 
-          {selectedAccount && (
-            <div style={styles.section}>
-              <h2 style={{...styles.sectionTitle, marginBottom: '24px'}}>📊 {selectedAccount.nombre}</h2>
-              <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
-            </div>
-          )}
-
-          <div style={styles.logoutRow}>
-            <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
-          </div>
         </div>
-
       </div>
 
+      {/* Modales */}
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '400px'}}>
@@ -549,48 +517,79 @@ export default function Dashboard() {
 }
 
 const styles = {
-  // Fondo: azul muy diluido, casi blanco
   container: { minHeight: '100vh', backgroundColor: '#EEF0F8', fontFamily: 'Arial, sans-serif' },
+
+  // Header sin color — se funde con el fondo
   header: {
-    backgroundColor: '#6B7BB8',
-    padding: '0',
+    backgroundColor: '#EEF0F8',
+    padding: '24px 32px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-    height: '72px',
   },
-  headerInner: {
+  logoImg: { height: '104px', objectFit: 'contain' },
+
+  // Layout dos columnas
+  layout: {
     display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
+    alignItems: 'flex-start',
+    maxWidth: '1280px',
+    margin: '0 auto',
+    padding: '0 24px 48px 24px',
+    gap: '24px',
   },
-  logoImg: { height: '52px', objectFit: 'contain' },
-  logoutRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: '40px' },
-  logoutBtn: { padding: '10px 20px', backgroundColor: 'transparent', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
-  content: { maxWidth: '960px', margin: '32px auto', padding: '0 24px' },
-  summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
-  summaryCard: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
-  cardLabel: { fontSize: '13px', color: '#888', margin: '0 0 8px 0' },
-  cardValue: { fontSize: '28px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  uploadBanner: { backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px dashed #d0d5ee' },
-  uploadBannerTitle: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', margin: '0 0 4px 0' },
-  uploadBannerDesc: { fontSize: '13px', color: '#888', margin: 0 },
-  uploadBannerBtn: { padding: '10px 20px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '16px' },
-  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)', marginBottom: '24px' },
-  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  addBtn: { padding: '8px 16px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
-  empty: { textAlign: 'center', padding: '40px', color: '#888' },
-  accountsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' },
-  accountCard: { backgroundColor: '#EEF0F8', borderRadius: '12px', padding: '20px', border: '1px solid #d0d5ee', cursor: 'pointer', transition: 'all 0.2s' },
+
+  // Sidebar izquierdo
+  sidebar: {
+    width: '240px',
+    flexShrink: 0,
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    padding: '24px 16px',
+    boxShadow: '0 2px 12px rgba(107,123,184,0.10)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    position: 'sticky',
+    top: '24px',
+  },
+  sidebarHeader: { marginBottom: '4px' },
+  sidebarTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: 0 },
+  sidebarBtnPrimary: {
+    width: '100%', padding: '10px', backgroundColor: '#6B7BB8', color: 'white',
+    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
+  },
+  sidebarBtnSecondary: {
+    width: '100%', padding: '10px', backgroundColor: 'white', color: '#6B7BB8',
+    border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
+  },
+  accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
+  emptyText: { fontSize: '13px', color: '#aaa', textAlign: 'center', padding: '16px 0' },
+  accountCard: {
+    backgroundColor: '#EEF0F8', borderRadius: '12px', padding: '14px',
+    border: '1px solid #d0d5ee', cursor: 'pointer', transition: 'all 0.2s'
+  },
   accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#dde1f3' },
-  accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' },
-  accountType: { fontSize: '12px', color: '#6B7BB8', margin: 0, fontWeight: '600' },
-  accountName: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  accountActions: { display: 'flex', gap: '4px' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', padding: '2px', opacity: 0.8 },
+  accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
+  accountType: { fontSize: '11px', color: '#6B7BB8', margin: 0, fontWeight: '600' },
+  accountName: { fontSize: '15px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+  accountActions: { display: 'flex', gap: '2px' },
+  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7 },
+  sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #eef0f8' },
+  logoutBtn: {
+    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#aaa',
+    border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
+  },
+
+  // Contenido principal derecho
+  mainContent: { flex: 1, minWidth: 0 },
+  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
+  sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
+  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#bbb' },
+  emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
+  emptyStateText: { fontSize: '15px' },
+
+  // Modales
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
   modalTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
@@ -615,9 +614,6 @@ const styles = {
   processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
   dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#d0d5ee' },
   dotActive: { backgroundColor: '#6B7BB8' },
-  matchCard: { backgroundColor: '#eef0f8', borderRadius: '12px', padding: '20px', textAlign: 'center', marginBottom: '16px', border: '2px solid #d0d5ee' },
-  matchCardType: { fontSize: '12px', color: '#6B7BB8', margin: '0 0 6px 0', fontWeight: '600' },
-  matchCardName: { fontSize: '22px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
   stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
   adicionalesList: { marginBottom: '20px' },
   adicionalItem: { padding: '10px 14px', backgroundColor: '#eef0f8', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#4a5a9a', fontWeight: '500' },
