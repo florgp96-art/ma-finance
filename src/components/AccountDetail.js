@@ -36,7 +36,7 @@ const mesLabel = (yearMonth) => {
 }
 
 // Bubble chart component usando D3-style force simulation simple
-function BubbleChart({ data, moneda }) {
+function BubbleChart({ data }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -140,7 +140,7 @@ function BubbleChart({ data, moneda }) {
                   fontSize={pctSize} fill="#444" fontWeight="700">
                   {b.pct}%
                 </text>
-                {moneda === 'USD' && b.r > 28 && (
+                {b.moneda === 'USD' && b.r > 28 && (
                   <text x={b.x} y={b.y + b.r - 10}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
@@ -162,8 +162,8 @@ function BubbleChart({ data, moneda }) {
                 <text x={tx} y={ty - 12} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
                   {cfg.icon} {tooltip.data.name}
                 </text>
-                <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#666">
-                  {monedaSymbol(moneda)} {formatMontoFull(tooltip.data.value)}
+                <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#6e6e73">
+                  {monedaSymbol(tooltip.data.moneda || 'ARS')} {formatMontoFull(tooltip.data.value)}
                 </text>
               </g>
             )
@@ -178,7 +178,7 @@ function BubbleChart({ data, moneda }) {
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
               <span style={{ flex: 1, color: '#3a3a3c' }}>{cfg.icon} {b.name}</span>
               <span style={{ fontWeight: '700', color: '#1d1d1f', whiteSpace: 'nowrap' }}>
-                {monedaSymbol(moneda)} {formatMonto(b.value)}
+                {monedaSymbol(b.moneda || 'ARS')} {formatMonto(b.value)}
               </span>
             </div>
           )
@@ -325,13 +325,15 @@ export default function AccountDetail({ account, refreshKey }) {
   const buildBubbleData = (txList) => Object.entries(
     txList.reduce((acc, t) => {
       const cat = t.categories?.nombre || 'A Identificar'
-      acc[cat] = (acc[cat] || 0) + Number(t.monto)
+      const moneda = t.moneda || 'ARS'
+      const key = cat + '|' + moneda
+      if (!acc[key]) acc[key] = { name: cat, moneda, value: 0 }
+      acc[key].value += Number(t.monto)
       return acc
     }, {})
-  ).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  ).map(([, v]) => v).sort((a, b) => b.value - a.value)
 
-  const bubbleARS = buildBubbleData(mesARS)
-  const bubbleUSD = buildBubbleData(mesUSD)
+  const bubbleData = buildBubbleData(mesTxs)
 
   const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
   const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
@@ -421,20 +423,13 @@ export default function AccountDetail({ account, refreshKey }) {
             <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
           )}
 
-          {bubbleARS.length > 0 && (
+          {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <h4 style={styles.bubbleSubtitle}>Pesos ARS</h4>
-              <BubbleChart data={bubbleARS} moneda="ARS" />
+              <BubbleChart data={bubbleData} />
             </div>
           )}
-          {bubbleUSD.length > 0 && (
-            <div style={styles.bubbleSection}>
-              <h4 style={styles.bubbleSubtitle}>Dólares USD</h4>
-              <BubbleChart data={bubbleUSD} moneda="USD" />
-            </div>
-          )}
-          {selectedMeses.length > 0 && bubbleARS.length === 0 && bubbleUSD.length === 0 && (
-            <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
+          {selectedMeses.length > 0 && bubbleData.length === 0 && (
+            <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
         </div>
       )}
