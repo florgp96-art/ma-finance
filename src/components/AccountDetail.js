@@ -372,15 +372,19 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }, {})
   const catTop = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0]
 
-  // Comparativa vs mes anterior (siempre sobre el mes más reciente con datos)
-  const mesReciente = mesesDisponibles[0]
-  const mesAnterior = mesesDisponibles[1]
-  const txMesReciente = mesReciente ? transactions.filter(t => t.fecha?.startsWith(mesReciente) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
+  // Comparativa vs mes anterior — solo cuando hay exactamente un mes seleccionado
+  const puedeComparar = selectedMeses.length === 1
+  const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
+  const idxMesSeleccionado = mesSeleccionado ? mesesDisponibles.indexOf(mesSeleccionado) : -1
+  const mesAnterior = idxMesSeleccionado >= 0 && idxMesSeleccionado < mesesDisponibles.length - 1
+    ? mesesDisponibles[idxMesSeleccionado + 1]
+    : null
+  const txMesSeleccionado = mesSeleccionado ? transactions.filter(t => t.fecha?.startsWith(mesSeleccionado) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
   const txMesAnterior = mesAnterior ? transactions.filter(t => t.fecha?.startsWith(mesAnterior) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
-  const totalReciente = txMesReciente.reduce((s, t) => s + Number(t.monto), 0)
-  const totalAnterior = txMesAnterior.reduce((s, t) => s + Number(t.monto), 0)
-  const diffPct = totalAnterior > 0 ? Math.round(((totalReciente - totalAnterior) / totalAnterior) * 100) : null
-  const diffMonto = totalReciente - totalAnterior
+  const totalSeleccionado = txMesSeleccionado.reduce((s, t) => s + Number(t.monto), 0)
+  const totalAnteriorMonto = txMesAnterior.reduce((s, t) => s + Number(t.monto), 0)
+  const diffPct = puedeComparar && totalAnteriorMonto > 0 ? Math.round(((totalSeleccionado - totalAnteriorMonto) / totalAnteriorMonto) * 100) : null
+  const diffMonto = totalSeleccionado - totalAnteriorMonto
 
   // Filtrar tabla por meses seleccionados (igual que las burbujas)
   const txFiltradas = selectedMeses.length > 0
@@ -464,7 +468,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
             </div>
           )}
-          {diffPct !== null && (
+          {diffPct !== null && mesAnterior && selectedMeses.length === 1 && (
             <div style={styles.summaryCard}>
               <p style={styles.summaryLabel}>vs {mesLabel(mesAnterior)}</p>
               <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '22px'}}>

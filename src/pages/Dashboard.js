@@ -682,15 +682,16 @@ export default function Dashboard() {
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '440px'}}>
             <h3 style={styles.modalTitle}>+ Gasto en efectivo 💵</h3>
+            <p style={{fontSize:'12px', color:'#8e8e93', margin:'-8px 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
             <form onSubmit={handleGuardarEfectivo}>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
-                  <label style={styles.label}>Fecha</label>
+                  <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
                   <input style={styles.input} type="date" value={efectivo.fecha}
                     onChange={e => setEfectivo({...efectivo, fecha: e.target.value})} required />
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.label}>Moneda</label>
+                  <label style={styles.label}>Moneda <span style={{color:'#c0392b'}}>*</span></label>
                   <select style={styles.input} value={efectivo.moneda}
                     onChange={e => setEfectivo({...efectivo, moneda: e.target.value})}>
                     <option value="ARS">$ ARS</option>
@@ -700,20 +701,20 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={styles.field}>
-                <label style={styles.label}>Descripción</label>
+                <label style={styles.label}>Descripción <span style={{color:'#c0392b'}}>*</span></label>
                 <input style={styles.input} type="text" value={efectivo.nombre}
                   onChange={e => setEfectivo({...efectivo, nombre: e.target.value})}
                   placeholder="Ej: Almuerzo, taxi, mercado..." required />
               </div>
               <div style={styles.field}>
-                <label style={styles.label}>Monto</label>
+                <label style={styles.label}>Monto <span style={{color:'#c0392b'}}>*</span></label>
                 <input style={styles.input} type="number" step="0.01" value={efectivo.monto}
                   onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
                   placeholder="0.00" required />
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
-                  <label style={styles.label}>Categoría</label>
+                  <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.categoria}
                     onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
                     <option value="">— Elegir —</option>
@@ -721,7 +722,7 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.label}>Subcategoría</label>
+                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.subcategoria}
                     onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
                     disabled={!efectivo.categoria}>
@@ -733,7 +734,7 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={styles.field}>
-                <label style={styles.label}>Nota (opcional)</label>
+                <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                 <input style={styles.input} type="text" value={efectivo.nota}
                   onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
                   placeholder="Detalles adicionales..." />
