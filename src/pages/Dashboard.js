@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
 import AccountDetail from '../components/AccountDetail'
-const logo = process.env.PUBLIC_URL + '/logo.svg'
+const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
   { icon: '📄', title: 'Leyendo el extracto...', desc: 'Procesando las páginas del PDF' },
