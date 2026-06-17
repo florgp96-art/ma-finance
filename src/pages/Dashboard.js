@@ -125,17 +125,6 @@ export default function Dashboard() {
     setMsgIndex(0)
   }
 
-  const findMatchingAccount = (statementResult) => {
-    const cardNombre = statementResult.tarjeta_detectada || ''
-    if (!cardNombre || accounts.length === 0) return null
-    const cardLower = cardNombre.toLowerCase()
-    return accounts.find(acc => {
-      const accLower = acc.nombre.toLowerCase()
-      return cardLower.includes(accLower) || accLower.includes(cardLower) ||
-        accLower.split(' ').some(word => word.length > 3 && cardLower.includes(word))
-    }) || null
-  }
-
   const handleUploadPDF = async () => {
     if (!archivo) return
     setStep('processing')
@@ -144,21 +133,20 @@ export default function Dashboard() {
       const pdfText = await extractTextFromPDF(archivo)
       const result = await analyzeStatementWithClaude(pdfText, 'auto')
       setStatementData(result)
-      const match = findMatchingAccount(result)
-      if (match) {
-        setMatchedAccount(match)
-        setTargetAccount(match)
-        setStep('match')
-      } else {
-        setSuggestedName(result.tarjeta_detectada || '')
-        setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
-        setStep('new_account')
-      }
+      setSuggestedName(result.tarjeta_detectada || '')
+      setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
+      setStep('select_account')
     } catch (err) {
       alert('Error procesando el PDF: ' + err.message)
       setStep('upload')
     }
     setLoading(false)
+  }
+
+  const handleSelectAccount = (acc) => {
+    setTargetAccount(acc)
+    if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
+    else setStep('preview')
   }
 
   const handleConfirmMatch = () => {
@@ -443,26 +431,38 @@ export default function Dashboard() {
               </div>
             )}
 
-            {step === 'match' && matchedAccount && (
+            {step === 'select_account' && statementData && (
               <>
-                <h3 style={styles.modalTitle}>Tarjeta detectada ✅</h3>
-                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>Encontramos que este extracto pertenece a:</p>
-                <div style={styles.matchCard}>
-                  <p style={styles.matchCardType}>💳 {tipoLabel(matchedAccount.tipo)}</p>
-                  <p style={styles.matchCardName}>{matchedAccount.nombre}</p>
+                <h3 style={styles.modalTitle}>¿A qué tarjeta pertenece? 💳</h3>
+                <p style={{fontSize: '14px', color: '#666', marginBottom: '8px'}}>
+                  Detectamos: <strong>{statementData.tarjeta_detectada}</strong>
+                </p>
+                <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px'}}>
+                  Seleccioná la tarjeta o creá una nueva:
+                </p>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
+                  {accounts.map(acc => (
+                    <button key={acc.id} style={styles.selectAccountBtn}
+                      onClick={() => handleSelectAccount(acc)}>
+                      💳 {acc.nombre}
+                      <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
+                    </button>
+                  ))}
+                  <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                    onClick={() => setStep('new_account')}>
+                    + Crear nueva tarjeta
+                  </button>
                 </div>
-                <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px', textAlign: 'center'}}>¿Es correcto?</p>
                 <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => { setStep('new_account'); setNewAccountForUpload({ nombre: suggestedName, tipo: 'credito' }) }}>No, es otra</button>
-                  <button style={styles.saveBtn} onClick={handleConfirmMatch}>Sí, continuar</button>
+                  <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
                 </div>
               </>
             )}
 
             {step === 'new_account' && (
               <>
-                <h3 style={styles.modalTitle}>¿Crear nueva tarjeta?</h3>
-                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>No encontramos esta tarjeta en tu lista. ¿Querés crearla?</p>
+                <h3 style={styles.modalTitle}>Nueva tarjeta</h3>
+                <p style={{fontSize: '14px', color: '#666', marginBottom: '20px'}}>Completá los datos de la nueva tarjeta:</p>
                 <form onSubmit={handleCreateNewForUpload}>
                   <div style={styles.field}>
                     <label style={styles.label}>Nombre</label>
@@ -479,7 +479,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                   <div style={styles.modalButtons}>
-                    <button type="button" style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
+                    <button type="button" style={styles.cancelBtn} onClick={() => setStep('select_account')}>← Volver</button>
                     <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Creando...' : 'Crear y continuar'}</button>
                   </div>
                 </form>
@@ -538,7 +538,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => setStep('upload')}>← Atrás</button>
+                  <button style={styles.cancelBtn} onClick={() => setStep('select_account')}>← Atrás</button>
                   <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>{loading ? 'Guardando...' : 'Confirmar y guardar'}</button>
                 </div>
               </>
@@ -558,28 +558,16 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
   },
   logoImg: { height: '80px', objectFit: 'contain' },
-  logoutBtn: {
-    padding: '8px 16px', backgroundColor: 'transparent', color: 'white',
-    border: '2px solid white', borderRadius: '8px', cursor: 'pointer', fontSize: '14px'
-  },
+  logoutBtn: { padding: '8px 16px', backgroundColor: 'transparent', color: 'white', border: '2px solid white', borderRadius: '8px', cursor: 'pointer', fontSize: '14px' },
   content: { maxWidth: '960px', margin: '32px auto', padding: '0 24px' },
   summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
   summaryCard: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' },
   cardLabel: { fontSize: '13px', color: '#888', margin: '0 0 8px 0' },
   cardValue: { fontSize: '28px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
-  uploadBanner: {
-    backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px',
-    boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    border: '2px dashed #ede8f5'
-  },
+  uploadBanner: { backgroundColor: 'white', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '2px dashed #ede8f5' },
   uploadBannerTitle: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', margin: '0 0 4px 0' },
   uploadBannerDesc: { fontSize: '13px', color: '#888', margin: 0 },
-  uploadBannerBtn: {
-    padding: '10px 20px', backgroundColor: '#6B7BB8', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600',
-    whiteSpace: 'nowrap', marginLeft: '16px'
-  },
+  uploadBannerBtn: { padding: '10px 20px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', marginLeft: '16px' },
   section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', marginBottom: '24px' },
   sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
@@ -608,6 +596,8 @@ const styles = {
   modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
   cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
   saveBtn: { flex: 1, padding: '12px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
+  selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: 'white', color: '#2d2d2d', border: '2px solid #d0d5ee', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600', textAlign: 'left' },
+  selectAccountBtnNew: { borderStyle: 'dashed', color: '#6B7BB8', fontWeight: '500', fontSize: '14px' },
   processingContainer: { textAlign: 'center', padding: '20px 0' },
   processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
   processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
