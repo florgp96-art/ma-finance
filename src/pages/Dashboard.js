@@ -226,19 +226,22 @@ export default function Dashboard() {
           {/* Sidebar izquierdo */}
           <div style={styles.sidebar}>
             <div style={styles.sidebarHeader}>
-              <h2 style={styles.sidebarTitle}>Tarjetas</h2>
+              <h2 style={styles.sidebarTitle}>CUENTAS</h2>
             </div>
 
             <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
-              📄 Cargar PDF
+              + CARGAR PDF
+            </button>
+            <button style={styles.sidebarBtnPrimary} onClick={() => alert('Próximamente')}>
+              + GASTO EN EFECTIVO
             </button>
             <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
-              + Agregar tarjeta
+              + CUENTA
             </button>
 
             <div style={styles.accountsList}>
               {accounts.length === 0 ? (
-                <p style={styles.emptyText}>Todavía no agregaste ninguna tarjeta.</p>
+                <p style={styles.emptyText}>Todavía no agregaste ninguna cuenta.</p>
               ) : (
                 accounts.map(acc => (
                   <div key={acc.id}
@@ -285,7 +288,7 @@ export default function Dashboard() {
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '400px'}}>
-            <h3 style={styles.modalTitle}>Agregar tarjeta</h3>
+            <h3 style={styles.modalTitle}>Agregar cuenta</h3>
             <form onSubmit={handleAddAccount}>
               <div style={styles.field}>
                 <label style={styles.label}>Nombre</label>
@@ -517,11 +520,11 @@ export default function Dashboard() {
 }
 
 const styles = {
-  container: { minHeight: '100vh', backgroundColor: '#EEF0F8', fontFamily: 'Arial, sans-serif' },
+  container: { minHeight: '100vh', backgroundColor: '#E4E7F3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
 
   // Header sin color — se funde con el fondo
   header: {
-    backgroundColor: '#EEF0F8',
+    backgroundColor: '#E4E7F3',
     padding: '24px 32px',
     display: 'flex',
     justifyContent: 'center',
@@ -553,8 +556,8 @@ const styles = {
     position: 'sticky',
     top: '24px',
   },
-  sidebarHeader: { marginBottom: '4px' },
-  sidebarTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: 0 },
+  sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
+  sidebarTitle: { fontSize: '13px', fontWeight: '700', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
   sidebarBtnPrimary: {
     width: '100%', padding: '10px', backgroundColor: '#6B7BB8', color: 'white',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
@@ -564,15 +567,15 @@ const styles = {
     border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
   },
   accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
-  emptyText: { fontSize: '13px', color: '#aaa', textAlign: 'center', padding: '16px 0' },
+  emptyText: { fontSize: '13px', color: '#6e6e73', textAlign: 'center', padding: '16px 0' },
   accountCard: {
-    backgroundColor: '#EEF0F8', borderRadius: '12px', padding: '14px',
+    backgroundColor: '#E4E7F3', borderRadius: '12px', padding: '14px',
     border: '1px solid #d0d5ee', cursor: 'pointer', transition: 'all 0.2s'
   },
   accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#dde1f3' },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
-  accountType: { fontSize: '11px', color: '#6B7BB8', margin: 0, fontWeight: '600' },
-  accountName: { fontSize: '15px', fontWeight: 'bold', color: '#2d2d2d', margin: 0 },
+  accountType: { fontSize: '11px', color: '#6e6e73', margin: 0, fontWeight: '500' },
+  accountName: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0 },
   accountActions: { display: 'flex', gap: '2px' },
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7 },
   sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #eef0f8' },
@@ -584,15 +587,15 @@ const styles = {
   // Contenido principal derecho
   mainContent: { flex: 1, minWidth: 0 },
   section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
-  sectionTitle: { fontSize: '18px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
-  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#bbb' },
+  sectionTitle: { fontSize: '18px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
+  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#6e6e73' },
   emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
-  emptyStateText: { fontSize: '15px' },
+  emptyStateText: { fontSize: '15px', color: '#6e6e73', fontWeight: '500' },
 
   // Modales
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
-  modalTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 24px 0' },
+  modalTitle: { fontSize: '20px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
   field: { marginBottom: '16px' },
   label: { display: 'block', fontSize: '14px', fontWeight: '500', color: '#444', marginBottom: '6px' },
   input: { width: '100%', padding: '11px', borderRadius: '10px', border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
@@ -624,7 +627,7 @@ const styles = {
   opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
   opcionDesc: { fontSize: '12px', color: '#888' },
   previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
-  previewStat: { backgroundColor: '#EEF0F8', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
+  previewStat: { backgroundColor: '#E4E7F3', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
   previewStatValue: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d' },
   transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },

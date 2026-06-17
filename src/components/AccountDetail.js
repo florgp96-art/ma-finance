@@ -176,8 +176,8 @@ function BubbleChart({ data, moneda }) {
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, color: '#555' }}>{cfg.icon} {b.name}</span>
-              <span style={{ fontWeight: '700', color: '#2d2d2d', whiteSpace: 'nowrap' }}>
+              <span style={{ flex: 1, color: '#3a3a3c' }}>{cfg.icon} {b.name}</span>
+              <span style={{ fontWeight: '700', color: '#1d1d1f', whiteSpace: 'nowrap' }}>
                 {monedaSymbol(moneda)} {formatMonto(b.value)}
               </span>
             </div>
@@ -388,8 +388,8 @@ export default function AccountDetail({ account, refreshKey }) {
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#888' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#888' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
               <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
               <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
             </BarChart>
@@ -507,7 +507,7 @@ export default function AccountDetail({ account, refreshKey }) {
                     <td style={styles.td}>
                       <span style={{
                         backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),
-                        color: '#444',
+                        color: '#3a3a3c',
                         padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
                       }}>
                         {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
@@ -552,38 +552,38 @@ export default function AccountDetail({ account, refreshKey }) {
 }
 
 const styles = {
-  loading: { padding: '24px', color: '#888', fontSize: '14px' },
+  loading: { padding: '24px', color: '#6e6e73', fontSize: '14px' },
   chartSection: { marginBottom: '32px' },
-  chartTitle: { fontSize: '16px', fontWeight: '700', color: '#2d2d2d', margin: '0 0 16px 0' },
+  chartTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 16px 0' },
   mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
   mesChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   mesChip: {
     padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #d0d5ee',
-    backgroundColor: 'white', color: '#666', fontSize: '13px', cursor: 'pointer',
+    backgroundColor: 'white', color: '#6e6e73', fontSize: '13px', cursor: 'pointer',
     fontWeight: '500', transition: 'all 0.15s'
   },
   mesChipActive: {
     backgroundColor: '#6B7BB8', color: 'white', borderColor: '#6B7BB8', fontWeight: '600'
   },
   bubbleSection: { marginBottom: '32px' },
-  bubbleSubtitle: { fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 16px 0' },
+  bubbleSubtitle: { fontSize: '14px', fontWeight: '600', color: '#3a3a3c', margin: '0 0 16px 0' },
   tableSection: { marginBottom: '32px' },
-  tableHint: { fontSize: '13px', color: '#888', margin: '-8px 0 12px 0' },
+  tableHint: { fontSize: '13px', color: '#6e6e73', margin: '-8px 0 12px 0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   th: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600'
+    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600'
   },
   thSortable: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600',
+    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600',
     cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
   },
   sortIcon: { fontSize: '10px', color: '#bbb' },
   td: { padding: '10px 12px', borderBottom: '1px solid #f0f2f8', verticalAlign: 'middle' },
   tr: { transition: 'background 0.1s' },
   trUnknown: { backgroundColor: '#fffbf0' },
-  detalle: { fontSize: '12px', color: '#aaa', fontFamily: 'monospace' },
+  detalle: { fontSize: '12px', color: '#8e8e93', fontFamily: 'monospace' },
   editInput: {
     width: '100%', padding: '4px 8px', borderRadius: '6px',
     border: '1px solid #6B7BB8', fontSize: '13px', outline: 'none'
@@ -598,7 +598,7 @@ const styles = {
     border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
   },
   cancelEditBtn: {
-    padding: '3px 8px', backgroundColor: '#e0e0e0', color: '#444',
+    padding: '3px 8px', backgroundColor: '#e0e0e0', color: '#3a3a3c',
     border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
   },
 }
