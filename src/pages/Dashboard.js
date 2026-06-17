@@ -577,8 +577,8 @@ const styles = {
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7 },
   sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #eef0f8' },
   logoutBtn: {
-    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#aaa',
-    border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'
+    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#6B7BB8',
+    border: '1.5px solid #6B7BB8', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600'
   },
 
   // Contenido principal derecho

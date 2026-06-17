@@ -102,74 +102,84 @@ function BubbleChart({ data, moneda }) {
   if (!data || data.length === 0) return null
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-      <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
-        {bubbles.map((b, i) => {
-          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
-          const isHovered = hoveredIdx === i
-          return (
-            <g key={i}
-              style={{ cursor: 'pointer' }}
-              onMouseEnter={(e) => {
-                setHoveredIdx(i)
-                setTooltip({ visible: true, x: b.x, y: b.y - b.r - 8, data: b })
-              }}
-              onMouseLeave={() => {
-                setHoveredIdx(null)
-                setTooltip({ visible: false, x: 0, y: 0, data: null })
-              }}
-            >
-              <circle
-                cx={b.x} cy={b.y} r={isHovered ? b.r + 4 : b.r}
-                fill={cfg.color}
-                opacity={hoveredIdx !== null && !isHovered ? 0.5 : 1}
-                style={{ transition: 'all 0.2s' }}
-              />
-              <text x={b.x} y={b.y - (b.r > 40 ? 10 : 4)}
-                textAnchor="middle" dominantBaseline="middle"
-                fontSize={b.r > 50 ? 28 : b.r > 38 ? 22 : 16}>
-                {cfg.icon}
-              </text>
-              {b.r > 36 && (
-                <text x={b.x} y={b.y + (b.r > 40 ? 14 : 10)}
+    <div ref={containerRef} style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
+      <div style={{ flex: '1 1 0', minWidth: 0 }}>
+        <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
+          {bubbles.map((b, i) => {
+            const cfg = CATEGORY_CONFIG[b.name] || { icon: '\u2753', color: '#E0E0E0' }
+            const isHovered = hoveredIdx === i
+            const iconSize = b.r > 50 ? 26 : b.r > 35 ? 20 : 14
+            const pctSize = b.r > 50 ? 11 : b.r > 35 ? 9 : 7
+            const iconY = b.r > 30 ? b.y - b.r * 0.22 : b.y
+            const pctY = b.r > 30 ? b.y + b.r * 0.28 : b.y + b.r * 0.5 + 8
+            return (
+              <g key={i}
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => {
+                  setHoveredIdx(i)
+                  setTooltip({ visible: true, x: b.x, y: b.y - b.r - 8, data: b })
+                }}
+                onMouseLeave={() => {
+                  setHoveredIdx(null)
+                  setTooltip({ visible: false, x: 0, y: 0, data: null })
+                }}
+              >
+                <circle
+                  cx={b.x} cy={b.y} r={isHovered ? b.r + 4 : b.r}
+                  fill={cfg.color}
+                  opacity={hoveredIdx !== null && !isHovered ? 0.45 : 1}
+                  style={{ transition: 'all 0.2s' }}
+                />
+                <text x={b.x} y={iconY}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={b.r > 50 ? 11 : 9}
-                  fill="#555" fontWeight="600">
+                  fontSize={iconSize}>
+                  {cfg.icon}
+                </text>
+                <text x={b.x} y={pctY}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={pctSize} fill="#444" fontWeight="700">
                   {b.pct}%
                 </text>
-              )}
-            </g>
-          )
-        })}
-        {/* Tooltip SVG */}
-        {tooltip.visible && tooltip.data && (() => {
-          const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
-          const tx = Math.max(80, Math.min(WIDTH - 80, tooltip.x))
-          const ty = Math.max(30, tooltip.y)
+                {moneda === 'USD' && b.r > 28 && (
+                  <text x={b.x} y={b.y + b.r - 10}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
+                    U$S
+                  </text>
+                )}
+              </g>
+            )
+          })}
+          {tooltip.visible && tooltip.data && (() => {
+            const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '\u2753', color: '#E0E0E0' }
+            const tx = Math.max(80, Math.min(WIDTH - 80, tooltip.x))
+            const ty = Math.max(30, tooltip.y)
+            return (
+              <g>
+                <rect x={tx - 85} y={ty - 32} width={170} height={50}
+                  rx={8} fill="white"
+                  style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.12))' }} />
+                <text x={tx} y={ty - 12} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
+                  {cfg.icon} {tooltip.data.name}
+                </text>
+                <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#666">
+                  {monedaSymbol(moneda)} {formatMontoFull(tooltip.data.value)}
+                </text>
+              </g>
+            )
+          })()}
+        </svg>
+      </div>
+      <div style={{ width: '200px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '16px' }}>
+        {[...bubbles].sort((a, b) => b.value - a.value).map((b, i) => {
+          const cfg = CATEGORY_CONFIG[b.name] || { icon: '\u2753', color: '#E0E0E0' }
           return (
-            <g>
-              <rect x={tx - 80} y={ty - 30} width={160} height={48}
-                rx={8} fill="white"
-                style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.12))' }} />
-              <text x={tx} y={ty - 10} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
-                {cfg.icon} {tooltip.data.name}
-              </text>
-              <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#666">
-                {monedaSymbol(moneda)} {formatMontoFull(tooltip.data.value)}
-              </text>
-            </g>
-          )
-        })()}
-      </svg>
-      {/* Leyenda debajo */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '8px' }}>
-        {bubbles.map((b, i) => {
-          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#555' }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
-              <span>{cfg.icon} {b.name}</span>
-              <span style={{ fontWeight: '600', color: '#2d2d2d' }}>{monedaSymbol(moneda)} {formatMonto(b.value)}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, color: '#555' }}>{cfg.icon} {b.name}</span>
+              <span style={{ fontWeight: '700', color: '#2d2d2d', whiteSpace: 'nowrap' }}>
+                {monedaSymbol(moneda)} {formatMonto(b.value)}
+              </span>
             </div>
           )
         })}
