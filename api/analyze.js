@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:

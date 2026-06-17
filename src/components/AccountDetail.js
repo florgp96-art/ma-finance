@@ -360,6 +360,28 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   const bubbleData = buildBubbleData(mesTxs)
 
+  // Cards de resumen
+  const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
+  const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
+
+  // Categoría top ARS
+  const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
+    const cat = t.categories?.nombre || 'A Identificar'
+    acc[cat] = (acc[cat] || 0) + Number(t.monto)
+    return acc
+  }, {})
+  const catTop = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0]
+
+  // Comparativa vs mes anterior (siempre sobre el mes más reciente con datos)
+  const mesReciente = mesesDisponibles[0]
+  const mesAnterior = mesesDisponibles[1]
+  const txMesReciente = mesReciente ? transactions.filter(t => t.fecha?.startsWith(mesReciente) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
+  const txMesAnterior = mesAnterior ? transactions.filter(t => t.fecha?.startsWith(mesAnterior) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
+  const totalReciente = txMesReciente.reduce((s, t) => s + Number(t.monto), 0)
+  const totalAnterior = txMesAnterior.reduce((s, t) => s + Number(t.monto), 0)
+  const diffPct = totalAnterior > 0 ? Math.round(((totalReciente - totalAnterior) / totalAnterior) * 100) : null
+  const diffMonto = totalReciente - totalAnterior
+
   // Filtrar tabla por meses seleccionados (igual que las burbujas)
   const txFiltradas = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
@@ -429,6 +451,42 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   return (
     <div>
+      {/* Cards de resumen */}
+      {selectedMeses.length > 0 && mesTxs.length > 0 && (
+        <div style={styles.summaryCards}>
+          <div style={styles.summaryCard}>
+            <p style={styles.summaryLabel}>Total ARS</p>
+            <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
+          </div>
+          {totalUSD > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total USD</p>
+              <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+            </div>
+          )}
+          {diffPct !== null && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>vs {mesLabel(mesAnterior)}</p>
+              <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '22px'}}>
+                {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
+              </p>
+              <p style={styles.summarySubval}>
+                {diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}
+              </p>
+            </div>
+          )}
+          {catTop && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Categoría top</p>
+              <p style={{...styles.summaryValue, fontSize: '18px'}}>
+                {CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}
+              </p>
+              <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {barData.length > 0 && !allAccounts && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
@@ -642,6 +700,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
 const styles = {
   loading: { padding: '24px', color: '#6e6e73', fontSize: '14px' },
+  summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '28px' },
+  summaryCard: { backgroundColor: 'white', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 2px 12px rgba(107,123,184,0.08)', border: '1px solid #eef0f8' },
+  summaryLabel: { fontSize: '11px', fontWeight: '600', color: '#6e6e73', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.06em' },
+  summaryValue: { fontSize: '24px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 2px 0' },
+  summarySubval: { fontSize: '12px', color: '#6e6e73', margin: 0 },
   chartSection: { marginBottom: '32px' },
   chartTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 16px 0' },
   mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
