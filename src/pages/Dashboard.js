@@ -295,7 +295,7 @@ export default function Dashboard() {
           cuotas_total: null, cuota_numero: null,
           category_id: categoryId, subcategory_id: subcategoryId,
           estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
-          es_manual: false, tipo_movimiento: tipoTx
+          es_manual: false
         }
         if (tipoTx === 'ingreso') {
           txIngresos.push({ ...base, account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso' })
