@@ -188,7 +188,7 @@ function BubbleChart({ data }) {
   )
 }
 
-export default function AccountDetail({ account, refreshKey }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -203,9 +203,10 @@ export default function AccountDetail({ account, refreshKey }) {
   const [selectedMeses, setSelectedMeses] = useState([])
 
   useEffect(() => {
-    if (account) fetchData()
+    if (allAccounts && accounts) fetchAllData()
+    else if (account) fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, refreshKey])
+  }, [account, accounts, allAccounts, refreshKey])
 
   const fetchData = async () => {
     setLoading(true)
@@ -226,7 +227,33 @@ export default function AccountDetail({ account, refreshKey }) {
     setCategories(catRes.data || [])
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
+    if (txs.length > 0) {
+      const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+      setSelectedMeses([meses[0]])
+    }
+    setLoading(false)
+  }
 
+  const fetchAllData = async () => {
+    setLoading(true)
+    const accountIds = accounts.map(a => a.id)
+    const [txRes, catRes, subcatRes, stmtRes] = await Promise.all([
+      supabase.from('transactions')
+        .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+        .in('account_id', accountIds)
+        .order('fecha', { ascending: false }),
+      supabase.from('categories').select('*').order('orden'),
+      supabase.from('subcategories').select('*').order('nombre'),
+      supabase.from('statements')
+        .select('*')
+        .in('account_id', accountIds)
+        .order('fecha_hasta', { ascending: true }),
+    ])
+    const txs = txRes.data || []
+    setTransactions(txs)
+    setCategories(catRes.data || [])
+    setSubcategories(subcatRes.data || [])
+    setStatements(stmtRes.data || [])
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
       setSelectedMeses([meses[0]])
@@ -333,8 +360,12 @@ export default function AccountDetail({ account, refreshKey }) {
 
   const bubbleData = buildBubbleData(mesTxs)
 
-  const sinIdentificar = transactions.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
-  const identificadas = sortTx(transactions.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
+  // Filtrar tabla por meses seleccionados (igual que las burbujas)
+  const txFiltradas = selectedMeses.length > 0
+    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
+    : transactions
+  const sinIdentificar = txFiltradas.filter(t => t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar')
+  const identificadas = sortTx(txFiltradas.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar'))
 
   const renderEditCells = () => (
     <>
@@ -378,12 +409,12 @@ export default function AccountDetail({ account, refreshKey }) {
   )
 
   if (loading) return (
-    <div style={styles.loading}>Cargando datos de {account.nombre}...</div>
+    <div style={styles.loading}>Cargando datos...</div>
   )
 
   return (
     <div>
-      {barData.length > 0 && (
+      {barData.length > 0 && !allAccounts && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
           <ResponsiveContainer width="100%" height={220}>

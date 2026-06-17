@@ -240,6 +240,15 @@ export default function Dashboard() {
             </button>
 
             <div style={styles.accountsList}>
+              {accounts.length > 0 && (
+                <div
+                  style={{...styles.accountCard, ...(selectedAccount === 'all' ? styles.accountCardSelected : {})}}
+                  onClick={() => setSelectedAccount(selectedAccount === 'all' ? null : 'all')}
+                >
+                  <p style={{...styles.accountType, marginBottom: '4px'}}>📊 RESUMEN</p>
+                  <p style={styles.accountName}>Resumen General</p>
+                </div>
+              )}
               {accounts.length === 0 ? (
                 <p style={styles.emptyText}>Todavía no agregaste ninguna cuenta.</p>
               ) : (
@@ -268,7 +277,12 @@ export default function Dashboard() {
 
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
-            {selectedAccount ? (
+            {selectedAccount === 'all' ? (
+              <div style={styles.section}>
+                <h2 style={styles.sectionTitle}>📊 Resumen General</h2>
+                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} />
+              </div>
+            ) : selectedAccount ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
                 <AccountDetail account={selectedAccount} refreshKey={refreshKey} />
@@ -276,7 +290,7 @@ export default function Dashboard() {
             ) : (
               <div style={styles.emptyState}>
                 <p style={styles.emptyStateIcon}>💳</p>
-                <p style={styles.emptyStateText}>Seleccioná una tarjeta para ver sus movimientos</p>
+                <p style={styles.emptyStateText}>Seleccioná una cuenta para ver sus movimientos</p>
               </div>
             )}
           </div>
@@ -557,7 +571,7 @@ const styles = {
     top: '24px',
   },
   sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
-  sidebarTitle: { fontSize: '13px', fontWeight: '700', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
+  sidebarTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.1em' },
   sidebarBtnPrimary: {
     width: '100%', padding: '10px', backgroundColor: '#6B7BB8', color: 'white',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
