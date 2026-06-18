@@ -316,11 +316,25 @@ export default function Dashboard() {
         fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
       }).select().single()
 
+      // Para cuotas, usar la fecha del resumen (fecha_facturacion) — es cuando realmente se debita
+      const fechaResumen = statementData.fecha_facturacion || null
       const transacciones = statementData.transacciones.map(t => {
         const categoryId = getCategoryId(t.categoria_sugerida)
+        const fechaTx = (t.cuotas_total > 1 && fechaResumen)
+          ? fechaResumen.slice(6,8).padStart(2,'0') + '/' + fechaResumen.slice(3,5) + '/' + fechaResumen.slice(0,2)
+          : t.fecha
+        // fechaResumen viene en formato dd/mm/yy, convertir a yyyy-mm-dd
+        let fechaFinal = t.fecha
+        if (t.cuotas_total > 1 && fechaResumen) {
+          const parts = fechaResumen.split('/')
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+            fechaFinal = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+          }
+        }
         return {
           user_id: user.id, account_id: account.id, statement_id: statement.id,
-          fecha: t.fecha,
+          fecha: fechaFinal,
           nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
           detalle: t.nombre_original,
           monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
@@ -794,11 +808,11 @@ const styles = {
   sidebarTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.1em' },
   sidebarBtnPrimary: {
     width: '100%', padding: '10px', backgroundColor: '#6B7BB8', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
+    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center', outline: 'none'
   },
   sidebarBtnSecondary: {
     width: '100%', padding: '10px', backgroundColor: 'white', color: '#6B7BB8',
-    border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center'
+    border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center', outline: 'none'
   },
   accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
   emptyText: { fontSize: '13px', color: '#6e6e73', textAlign: 'center', padding: '16px 0' },
@@ -811,11 +825,11 @@ const styles = {
   accountType: { fontSize: '11px', color: '#6e6e73', margin: 0, fontWeight: '500' },
   accountName: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0 },
   accountActions: { display: 'flex', gap: '2px' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7 },
+  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
   sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #eef0f8' },
   logoutBtn: {
     width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#6B7BB8',
-    border: '1.5px solid #6B7BB8', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600'
+    border: '1.5px solid #6B7BB8', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', outline: 'none'
   },
 
   // Contenido principal derecho
@@ -840,8 +854,8 @@ const styles = {
   dropzoneText: { fontSize: '14px', color: '#444', margin: '0 0 4px 0', fontWeight: '500' },
   dropzoneHint: { fontSize: '12px', color: '#aaa', margin: 0 },
   modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
-  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
-  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
+  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', outline: 'none' },
+  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', outline: 'none' },
   selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: 'white', color: '#2d2d2d', border: '2px solid #d0d5ee', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600', textAlign: 'left' },
   selectAccountBtnNew: { borderStyle: 'dashed', color: '#6B7BB8', fontWeight: '500', fontSize: '14px' },
   processingContainer: { textAlign: 'center', padding: '20px 0' },
