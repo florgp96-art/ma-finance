@@ -408,6 +408,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const sinIdentificar = txNoNeutras.filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
+  const handleDeleteTx = async (tx) => {
+    if (!window.confirm('¿Eliminar este gasto?')) return
+    await supabase.from('transactions').delete().eq('id', tx.id)
+    setTransactions(prev => prev.filter(t => t.id !== tx.id))
+  }
+
   const renderEditCells = () => (
     <>
       <td style={styles.td}>
@@ -690,7 +696,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
                   <td style={styles.td}>
-                    <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+                    <div style={{display:'flex', gap:'4px'}}>
+                      <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+                      {tx.es_manual && (
+                        <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
