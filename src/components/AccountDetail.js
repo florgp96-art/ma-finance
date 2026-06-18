@@ -716,7 +716,7 @@ const styles = {
   mesChip: {
     padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #d0d5ee',
     backgroundColor: 'white', color: '#6e6e73', fontSize: '13px', cursor: 'pointer',
-    fontWeight: '500', transition: 'all 0.15s'
+    fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
   },
   mesChipActive: {
     backgroundColor: '#6B7BB8', color: 'white', borderColor: '#6B7BB8', fontWeight: '600'
