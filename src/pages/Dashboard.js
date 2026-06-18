@@ -43,6 +43,7 @@ export default function Dashboard() {
 
   // Modal gasto en efectivo
   const [showEfectivo, setShowEfectivo] = useState(false)
+  const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
   const [categoriasDB, setCategoriasDB] = useState([])
   const [subcategoriasDB, setSubcategoriasDB] = useState([])
@@ -80,19 +81,9 @@ export default function Dashboard() {
     const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria)
     const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
 
-    // Buscar o crear cuenta de efectivo
-    let { data: cuentaEfectivo } = await supabase.from('accounts')
-      .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
-    if (!cuentaEfectivo) {
-      const { data: nueva } = await supabase.from('accounts')
-        .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
-      cuentaEfectivo = nueva
-      fetchAccounts()
-    }
-
     await supabase.from('transactions').insert({
       user_id: user.id,
-      account_id: cuentaEfectivo.id,
+      account_id: cuentaEfectivoId,
       fecha: efectivo.fecha,
       nombre: efectivo.nombre,
       detalle: efectivo.nota || efectivo.nombre,
@@ -117,6 +108,11 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
+    // Seleccionar Efectivo por defecto si existe y no hay nada seleccionado
+    if (data && data.length > 0) {
+      const efectivo = data.find(a => a.nombre === 'Efectivo')
+      if (efectivo) setSelectedAccount(prev => prev === null ? efectivo : prev)
+    }
   }
 
   const handleLogout = async () => {
@@ -385,7 +381,19 @@ export default function Dashboard() {
             <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
               + CARGAR PDF
             </button>
-            <button style={styles.sidebarBtnPrimary} onClick={() => setShowEfectivo(true)}>
+            <button style={styles.sidebarBtnPrimary} onClick={async () => {
+              const { data: { user } } = await supabase.auth.getUser()
+              let { data: ce } = await supabase.from('accounts')
+                .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
+              if (!ce) {
+                const { data: nueva } = await supabase.from('accounts')
+                  .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+                ce = nueva
+                fetchAccounts()
+              }
+              setCuentaEfectivoId(ce.id)
+              setShowEfectivo(true)
+            }}>
               + GASTO EN EFECTIVO
             </button>
             <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
