@@ -320,9 +320,6 @@ export default function Dashboard() {
       const fechaResumen = statementData.fecha_facturacion || null
       const transacciones = statementData.transacciones.map(t => {
         const categoryId = getCategoryId(t.categoria_sugerida)
-        const fechaTx = (t.cuotas_total > 1 && fechaResumen)
-          ? fechaResumen.slice(6,8).padStart(2,'0') + '/' + fechaResumen.slice(3,5) + '/' + fechaResumen.slice(0,2)
-          : t.fecha
         // fechaResumen viene en formato dd/mm/yy, convertir a yyyy-mm-dd
         let fechaFinal = t.fecha
         if (t.cuotas_total > 1 && fechaResumen) {
