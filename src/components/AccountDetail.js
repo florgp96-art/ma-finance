@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const CATEGORY_CONFIG = {
   'Comida':          { icon: '🍔', color: '#FADADD' },
-  'Personal':        { icon: '👤', color: '#B5CCEE' },
-  'Transporte':      { icon: '🚗', color: '#C3B8E8' },
+  'Personal':        { icon: '👤', color: '#C8C0CC' },
+  'Transporte':      { icon: '🚗', color: '#BDB5C4' },
   'Salud':           { icon: '💊', color: '#FFCBA4' },
   'Entretenimiento': { icon: '🎬', color: '#FFB3BA' },
   'Suscripciones':   { icon: '📱', color: '#B5EAD7' },
@@ -14,7 +14,7 @@ const CATEGORY_CONFIG = {
   'Educación':       { icon: '📚', color: '#C5E8C3' },
   'Trabajo':         { icon: '💼', color: '#D4E8C2' },
   'Ingresos':        { icon: '💰', color: '#B5EAC8' },
-  'Débitos':         { icon: '🏦', color: '#D8D8F0' },
+  'Débitos':         { icon: '🏦', color: '#D0CCCE' },
   'A Identificar':   { icon: '❓', color: '#F9E4B7' },
 }
 
@@ -174,7 +174,7 @@ function BubbleChart({ data }) {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
               <span style={{ flex: 1, color: '#3a3a3c' }}>{cfg.icon} {b.name}</span>
-              <span style={{ fontWeight: '700', color: '#1d1d1f', whiteSpace: 'nowrap' }}>
+              <span style={{ fontWeight: '500', color: '#1d1d1f', whiteSpace: 'nowrap' }}>
                 {monedaSymbol(b.moneda || 'ARS')} {formatMonto(b.value)}
               </span>
             </div>
@@ -596,12 +596,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   <td style={styles.td}>
                     <span style={{
                       backgroundColor: '#f0f0f8', color: '#6e6e73',
-                      padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
+                      padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500'
                     }}>
                       {tx.categories?.nombre || '—'}
                     </span>
                   </td>
-                  <td style={{...styles.td, textAlign: 'right', fontWeight: '600', color: '#8e8e93'}}>
+                  <td style={{...styles.td, textAlign: 'right', fontWeight: '500', color: '#8e8e93'}}>
                     {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
                   </td>
                 </tr>
@@ -680,7 +680,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       <span style={{
                         backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),
                         color: '#3a3a3c',
-                        padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '600'
+                        padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500'
                       }}>
                         {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
                       </span>
@@ -697,7 +697,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </td>
                 <td style={styles.td}>
                   <span style={{
-                    fontSize: '11px', fontWeight: '600',
+                    fontSize: '11px', fontWeight: '500',
                     color: tx.moneda === 'USD' ? '#5588aa' : '#666',
                     backgroundColor: tx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
                     padding: '2px 6px', borderRadius: '8px'
@@ -731,21 +731,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 const styles = {
   loading: { padding: '24px', color: '#6e6e73', fontSize: '14px' },
   summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '28px' },
-  summaryCard: { backgroundColor: 'white', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 2px 12px rgba(107,123,184,0.08)', border: '1px solid #eef0f8' },
-  summaryLabel: { fontSize: '11px', fontWeight: '600', color: '#6e6e73', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.06em' },
-  summaryValue: { fontSize: '24px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 2px 0' },
+  summaryCard: { backgroundColor: 'white', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 2px 12px rgba(92,79,92,0.08)', border: '1px solid #EDE8EC' },
+  summaryLabel: { fontSize: '11px', fontWeight: '400', color: '#6e6e73', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
+  summaryValue: { fontSize: '24px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 2px 0' },
   summarySubval: { fontSize: '12px', color: '#6e6e73', margin: 0 },
   chartSection: { marginBottom: '32px' },
-  chartTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 16px 0' },
+  chartTitle: { fontSize: '16px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 16px 0' },
   mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
   mesChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   mesChip: {
-    padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #d0d5ee',
+    padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #E2DDE0',
     backgroundColor: 'white', color: '#6e6e73', fontSize: '13px', cursor: 'pointer',
     fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
   },
   mesChipActive: {
-    backgroundColor: '#6B7BB8', color: 'white', borderColor: '#6B7BB8', fontWeight: '600'
+    backgroundColor: '#5C4F5C', color: 'white', borderColor: '#5C4F5C', fontWeight: '500'
   },
   bubbleSection: { marginBottom: '32px' },
   tableSection: { marginBottom: '32px' },
@@ -753,11 +753,11 @@ const styles = {
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   th: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600'
+    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #EDE8EC', fontWeight: '400'
   },
   thSortable: {
     textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #eef0f8', fontWeight: '600',
+    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #EDE8EC', fontWeight: '400',
     cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
   },
   sortIcon: { fontSize: '10px', color: '#bbb' },
@@ -767,11 +767,11 @@ const styles = {
   detalle: { fontSize: '12px', color: '#8e8e93', fontFamily: 'monospace' },
   editInput: {
     width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #6B7BB8', fontSize: '13px', outline: 'none'
+    border: '1px solid #5C4F5C', fontSize: '13px', outline: 'none'
   },
   editSelect: {
     width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #6B7BB8', fontSize: '13px', outline: 'none', backgroundColor: 'white'
+    border: '1px solid #5C4F5C', fontSize: '13px', outline: 'none', backgroundColor: 'white'
   },
   editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
   saveEditBtn: {

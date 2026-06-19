@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
@@ -66,6 +66,9 @@ export default function Dashboard() {
   const [showEfectivo, setShowEfectivo] = useState(false)
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
+
+  // Widget ahorro
+  const [ahorro, setAhorro] = useState({ monto: '', moneda: 'USD', anos: '', tasa: '' })
 
   useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
 
@@ -618,6 +621,65 @@ export default function Dashboard() {
             )}
           </div>
 
+          {/* Widget ahorro */}
+          <div style={styles.savingsPanel}>
+            <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Monto mensual</label>
+              <input style={styles.savingsInput} type="number" min="0" placeholder="500"
+                value={ahorro.monto} onChange={e => setAhorro({...ahorro, monto: e.target.value})} />
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Moneda</label>
+              <select style={styles.savingsInput} value={ahorro.moneda} onChange={e => setAhorro({...ahorro, moneda: e.target.value})}>
+                <option value="USD">USD</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Cantidad de años</label>
+              <input style={styles.savingsInput} type="number" min="1" max="50" placeholder="5"
+                value={ahorro.anos} onChange={e => setAhorro({...ahorro, anos: e.target.value})} />
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Tasa anual % <span style={{fontWeight:400, color:'#aaa'}}>(opcional)</span></label>
+              <input style={styles.savingsInput} type="number" min="0" step="0.1" placeholder="Sin tasa = cálculo simple"
+                value={ahorro.tasa} onChange={e => setAhorro({...ahorro, tasa: e.target.value})} />
+            </div>
+
+            {(() => {
+              const monto = parseFloat(ahorro.monto)
+              const anos = parseFloat(ahorro.anos)
+              if (!monto || !anos || monto <= 0 || anos <= 0) return (
+                <p style={styles.savingsHint}>Completá los campos para ver tu proyección</p>
+              )
+              let total
+              const tasa = parseFloat(ahorro.tasa)
+              if (tasa && tasa > 0) {
+                const r = tasa / 100 / 12
+                const n = anos * 12
+                total = monto * ((Math.pow(1 + r, n) - 1) / r)
+              } else {
+                total = monto * 12 * anos
+              }
+              const anioFin = new Date().getFullYear() + Math.floor(anos)
+              const simbolo = ahorro.moneda === 'USD' ? 'U$S' : '$'
+              const totalFmt = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total))
+              return (
+                <div style={styles.savingsResult}>
+                  <p style={styles.savingsResultLabel}>Tu proyección</p>
+                  <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
+                  <p style={styles.savingsResultAmount}>{simbolo} {totalFmt}</p>
+                  {tasa > 0 && <p style={styles.savingsResultNote}>interés compuesto mensual</p>}
+                </div>
+              )
+            })()}
+          </div>
+
         </div>
       </div>
 
@@ -735,7 +797,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <div style={styles.timerBar}>
-                  <div style={{...styles.timerFill, width: `${(timer / 120) * 100}%`, backgroundColor: timer < 20 ? '#e07b39' : '#6B7BB8'}} />
+                  <div style={{...styles.timerFill, width: `${(timer / 120) * 100}%`, backgroundColor: timer < 20 ? '#e07b39' : '#5C4F5C'}} />
                 </div>
                 <p style={styles.timerText}>{timer}s restantes</p>
               </div>
@@ -869,7 +931,7 @@ export default function Dashboard() {
                   <div style={{
                     ...styles.timerFill,
                     width: `${((txIdentificarIdx + 1) / txSinIdentificar.length) * 100}%`,
-                    backgroundColor: '#6B7BB8',
+                    backgroundColor: '#5C4F5C',
                     transition: 'width 0.3s'
                   }} />
                 </div>
@@ -1026,9 +1088,9 @@ export default function Dashboard() {
 }
 
 const styles = {
-  container: { minHeight: '100vh', backgroundColor: '#E4E7F3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  container: { minHeight: '100vh', backgroundColor: '#F0EDEC', fontFamily: '"Montserrat", sans-serif' },
   header: {
-    backgroundColor: '#E4E7F3',
+    backgroundColor: '#F0EDEC',
     padding: '24px 32px',
     display: 'flex',
     justifyContent: 'center',
@@ -1049,7 +1111,7 @@ const styles = {
     backgroundColor: 'white',
     borderRadius: '16px',
     padding: '24px 16px',
-    boxShadow: '0 2px 12px rgba(107,123,184,0.10)',
+    boxShadow: '0 2px 12px rgba(92,79,92,0.08)',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
@@ -1057,96 +1119,131 @@ const styles = {
     top: '24px',
   },
   sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
-  sidebarTitle: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.1em' },
+  sidebarTitle: { fontSize: '16px', fontWeight: '400', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
   sidebarBtnPrimary: {
-    width: '100%', padding: '10px', backgroundColor: '#6B7BB8', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center', outline: 'none'
+    width: '100%', padding: '10px', backgroundColor: '#5C4F5C', color: 'white',
+    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
   },
   sidebarBtnSecondary: {
-    width: '100%', padding: '10px', backgroundColor: 'white', color: '#6B7BB8',
-    border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'center', outline: 'none'
+    width: '100%', padding: '10px', backgroundColor: 'white', color: '#5C4F5C',
+    border: '2px solid #5C4F5C', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
   },
   accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
   emptyText: { fontSize: '13px', color: '#6e6e73', textAlign: 'center', padding: '16px 0' },
   accountCard: {
-    backgroundColor: '#E4E7F3', borderRadius: '12px', padding: '14px',
-    border: '1px solid #d0d5ee', cursor: 'pointer', transition: 'all 0.2s'
+    backgroundColor: '#F0EDEC', borderRadius: '12px', padding: '14px',
+    border: '1px solid #E2DDE0', cursor: 'pointer', transition: 'all 0.2s'
   },
-  accountCardSelected: { border: '2px solid #6B7BB8', backgroundColor: '#dde1f3' },
+  accountCardSelected: { border: '2px solid #5C4F5C', backgroundColor: '#EDE8EC' },
   accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
-  accountType: { fontSize: '11px', color: '#6e6e73', margin: 0, fontWeight: '500' },
-  accountName: { fontSize: '16px', fontWeight: '700', color: '#1d1d1f', margin: 0 },
+  accountType: { fontSize: '11px', color: '#6e6e73', margin: 0, fontWeight: '400' },
+  accountName: { fontSize: '16px', fontWeight: '500', color: '#1d1d1f', margin: 0 },
   accountActions: { display: 'flex', gap: '2px' },
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
-  sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #eef0f8' },
+  sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #EDE8EC' },
   logoutBtn: {
-    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#6B7BB8',
-    border: '1.5px solid #6B7BB8', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', outline: 'none'
+    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#5C4F5C',
+    border: '1.5px solid #5C4F5C', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', outline: 'none'
   },
   mainContent: { flex: 1, minWidth: 0 },
-  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
-  sectionTitle: { fontSize: '18px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
+  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(92,79,92,0.08)' },
+  sectionTitle: { fontSize: '18px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 24px 0' },
   emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#6e6e73' },
   emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
   emptyStateText: { fontSize: '15px', color: '#6e6e73', fontWeight: '500' },
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
-  modalTitle: { fontSize: '20px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
+  modalTitle: { fontSize: '20px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 24px 0' },
   field: { marginBottom: '16px' },
-  label: { display: 'block', fontSize: '14px', fontWeight: '500', color: '#444', marginBottom: '6px' },
+  label: { display: 'block', fontSize: '14px', fontWeight: '400', color: '#444', marginBottom: '6px' },
   input: { width: '100%', padding: '11px', borderRadius: '10px', border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
   dropzone: { border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: '#fafafa', marginBottom: '16px' },
-  dropzoneActive: { borderColor: '#6B7BB8', backgroundColor: '#eef0f8' },
+  dropzoneActive: { borderColor: '#5C4F5C', backgroundColor: '#EDE8EC' },
   dropzoneDone: { borderColor: '#27AE60', backgroundColor: '#f0faf5' },
   dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
   dropzoneText: { fontSize: '14px', color: '#444', margin: '0 0 4px 0', fontWeight: '500' },
   dropzoneHint: { fontSize: '12px', color: '#aaa', margin: 0 },
   modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
-  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#6B7BB8', border: '2px solid #6B7BB8', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', outline: 'none' },
-  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#6B7BB8', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', outline: 'none' },
-  selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: 'white', color: '#2d2d2d', border: '2px solid #d0d5ee', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '600', textAlign: 'left' },
-  selectAccountBtnNew: { borderStyle: 'dashed', color: '#6B7BB8', fontWeight: '500', fontSize: '14px' },
+  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#5C4F5C', border: '2px solid #5C4F5C', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
+  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
+  selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: 'white', color: '#2d2d2d', border: '2px solid #E2DDE0', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '500', textAlign: 'left' },
+  selectAccountBtnNew: { borderStyle: 'dashed', color: '#5C4F5C', fontWeight: '500', fontSize: '14px' },
   processingContainer: { textAlign: 'center', padding: '20px 0' },
   processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
   processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
   processingText: { fontSize: '14px', color: '#888', margin: '0 0 24px 0' },
   processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
-  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#d0d5ee' },
-  dotActive: { backgroundColor: '#6B7BB8' },
+  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#E2DDE0' },
+  dotActive: { backgroundColor: '#5C4F5C' },
   timerBar: { width: '100%', height: '4px', backgroundColor: '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
   timerFill: { height: '100%', borderRadius: '2px', transition: 'width 1s linear, background-color 0.3s' },
   timerText: { fontSize: '12px', color: '#8e8e93', margin: 0 },
   stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
   adicionalesList: { marginBottom: '20px' },
-  adicionalItem: { padding: '10px 14px', backgroundColor: '#eef0f8', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#4a5a9a', fontWeight: '500' },
-  stepQuestion: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d', marginBottom: '16px' },
+  adicionalItem: { padding: '10px 14px', backgroundColor: '#EDE8EC', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#5C4F5C', fontWeight: '500' },
+  stepQuestion: { fontSize: '15px', fontWeight: '500', color: '#2d2d2d', marginBottom: '16px' },
   opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   opcionBtn: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px', backgroundColor: 'white', cursor: 'pointer', gap: '4px' },
   opcionIcon: { fontSize: '28px' },
-  opcionTitle: { fontSize: '14px', fontWeight: '600', color: '#2d2d2d' },
+  opcionTitle: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d' },
   opcionDesc: { fontSize: '12px', color: '#888' },
   previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
-  previewStat: { backgroundColor: '#E4E7F3', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
+  previewStat: { backgroundColor: '#F0EDEC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
   previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
-  previewStatValue: { fontSize: '15px', fontWeight: '600', color: '#2d2d2d' },
+  previewStatValue: { fontSize: '15px', fontWeight: '500', color: '#2d2d2d' },
   transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
   transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
   transactionLeft: { flex: 1, paddingRight: '12px' },
   transactionName: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d', margin: '0 0 2px 0' },
   transactionDetail: { fontSize: '12px', color: '#aaa', margin: 0 },
-  transactionMonto: { fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' },
-  moreTransactions: { fontSize: '13px', color: '#6B7BB8', textAlign: 'center', padding: '8px 0' },
+  transactionMonto: { fontSize: '14px', fontWeight: '500', whiteSpace: 'nowrap' },
+  moreTransactions: { fontSize: '13px', color: '#5C4F5C', textAlign: 'center', padding: '8px 0' },
   warningBox: { backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px' },
   // Paso identificar
   identificarCard: {
-    backgroundColor: '#f5f6fb', borderRadius: '12px', padding: '16px 20px',
+    backgroundColor: '#F0EDEC', borderRadius: '12px', padding: '16px 20px',
     marginBottom: '20px', border: '1px solid #e0e4f0'
   },
   identificarDetalle: {
-    fontSize: '13px', fontFamily: 'monospace', color: '#4a5a9a',
+    fontSize: '13px', fontFamily: 'monospace', color: '#5C4F5C',
     margin: 0, wordBreak: 'break-all'
   },
   // Paso contexto
   contextoCard: { textAlign: 'center', paddingTop: '8px' },
   contextoIcon: { fontSize: '48px', margin: '0 0 16px 0' },
+  // Widget ahorro
+  savingsPanel: {
+    width: '220px',
+    flexShrink: 0,
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    padding: '20px 16px',
+    boxShadow: '0 2px 12px rgba(92,79,92,0.08)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0px',
+    position: 'sticky',
+    top: '24px',
+    alignSelf: 'flex-start',
+  },
+  savingsPanelTitle: {
+    fontSize: '14px', fontWeight: '400', color: '#1d1d1f',
+    margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase'
+  },
+  savingsField: { marginBottom: '12px' },
+  savingsLabel: { display: 'block', fontSize: '12px', fontWeight: '400', color: '#6e6e73', marginBottom: '4px' },
+  savingsInput: {
+    width: '100%', padding: '8px 10px', borderRadius: '8px',
+    border: '1px solid #e0e0e0', fontSize: '13px', outline: 'none',
+    boxSizing: 'border-box', color: '#1d1d1f', backgroundColor: '#fafafa'
+  },
+  savingsHint: { fontSize: '12px', color: '#b0b0b8', textAlign: 'center', marginTop: '8px', lineHeight: '1.5' },
+  savingsResult: {
+    marginTop: '16px', backgroundColor: '#F0EDEC', borderRadius: '12px',
+    padding: '16px', textAlign: 'center'
+  },
+  savingsResultLabel: { fontSize: '10px', fontWeight: '500', color: '#5C4F5C', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px 0' },
+  savingsResultPhrase: { fontSize: '13px', color: '#5a6080', margin: '0 0 4px 0', fontWeight: '500' },
+  savingsResultAmount: { fontSize: '22px', fontWeight: '800', color: '#1d1d1f', margin: '0 0 4px 0', letterSpacing: '-0.02em' },
+  savingsResultNote: { fontSize: '11px', color: '#5C4F5C', margin: 0, fontStyle: 'italic' },
 }

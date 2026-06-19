@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, Link } from 'react-router-dom'
 const logo = process.env.PUBLIC_URL + '/logo.png'
@@ -86,8 +86,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E4E7F3',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    backgroundColor: '#F0EDEC',
+    fontFamily: '"Montserrat", sans-serif',
   },
   card: {
     backgroundColor: 'white',
@@ -95,7 +95,7 @@ const styles = {
     padding: '48px 40px 36px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 8px 40px rgba(107,123,184,0.15)',
+    boxShadow: '0 8px 40px rgba(92,79,92,0.10)',
   },
   logoWrap: {
     display: 'flex',
@@ -111,13 +111,13 @@ const styles = {
     textAlign: 'center',
     marginBottom: '32px',
     fontSize: '15px',
-    fontWeight: '500',
+    fontWeight: '400',
   },
   field: { marginBottom: '20px' },
   label: {
     display: 'block',
     fontSize: '13px',
-    fontWeight: '600',
+    fontWeight: '400',
     color: '#1d1d1f',
     marginBottom: '6px',
     letterSpacing: '0.02em',
@@ -137,12 +137,12 @@ const styles = {
   button: {
     width: '100%',
     padding: '14px',
-    backgroundColor: '#6B7BB8',
+    backgroundColor: '#5C4F5C',
     color: 'white',
     border: 'none',
     borderRadius: '12px',
     fontSize: '15px',
-    fontWeight: '700',
+    fontWeight: '500',
     cursor: 'pointer',
     marginTop: '8px',
     letterSpacing: '0.02em',
@@ -165,8 +165,8 @@ const styles = {
     color: '#6e6e73',
   },
   linkAnchor: {
-    color: '#6B7BB8',
-    fontWeight: '600',
+    color: '#5C4F5C',
+    fontWeight: '500',
     textDecoration: 'none',
   },
 }
