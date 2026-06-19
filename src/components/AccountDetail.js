@@ -36,7 +36,7 @@ const mesLabel = (yearMonth) => {
 }
 
 // Bubble chart component
-function BubbleChart({ data }) {
+function BubbleChart({ data, darkMode }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -134,7 +134,7 @@ function BubbleChart({ data }) {
                 </text>
                 <text x={b.x} y={pctY}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={pctSize} fill="#444" fontWeight="700">
+                  fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700">
                   {b.pct}%
                 </text>
                 {b.moneda === 'USD' && b.r > 28 && (
@@ -173,8 +173,8 @@ function BubbleChart({ data }) {
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, color: '#3a3a3c' }}>{cfg.icon} {b.name}</span>
-              <span style={{ fontWeight: '500', color: '#1d1d1f', whiteSpace: 'nowrap' }}>
+              <span style={{ flex: 1, color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{cfg.icon} {b.name}</span>
+              <span style={{ fontWeight: '500', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
                 {monedaSymbol(b.moneda || 'ARS')} {formatMonto(b.value)}
               </span>
             </div>
@@ -195,6 +195,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
+  const [editTag, setEditTag] = useState('')
+  const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -204,6 +206,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     else if (account) fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, accounts, allAccounts, refreshKey])
+
+  useEffect(() => {
+    supabase.from('children').select('nombre').order('nombre').then(({ data }) => setChildren(data || []))
+  }, [])
 
   const fetchData = async () => {
     setLoading(true)
@@ -282,7 +288,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       nombre: editNombre,
       category_id: catObj ? catObj.id : tx.category_id,
       subcategory_id: subcatObj ? subcatObj.id : null,
-      estado: 'identificado'
+      estado: 'identificado',
+      tag: editTag || null
     }).eq('id', tx.id)
 
     // Guardar regla aprendida en user_rules si hay un detalle original
@@ -309,6 +316,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     setTransactions(prev => prev.map(t => t.id === tx.id ? {
       ...t,
       nombre: editNombre,
+      tag: editTag || null,
       category_id: catObj?.id || t.category_id,
       subcategory_id: subcatObj?.id || null,
       estado: 'identificado',
@@ -323,6 +331,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     setEditNombre(tx.nombre || tx.detalle)
     setEditCategoria(tx.categories?.nombre || 'A Identificar')
     setEditSubcategoria(tx.subcategories?.nombre || '')
+    setEditTag(tx.tag || '')
   }
 
   const handleSort = (key) => {
@@ -416,7 +425,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       (t.nombre || '').toLowerCase().includes(q) ||
       (t.detalle || '').toLowerCase().includes(q) ||
       (t.categories?.nombre || '').toLowerCase().includes(q) ||
-      (t.subcategories?.nombre || '').toLowerCase().includes(q)
+      (t.subcategories?.nombre || '').toLowerCase().includes(q) ||
+      (t.tag || '').toLowerCase().includes(q)
     )
   }
 
@@ -458,6 +468,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       <td style={styles.td}>
         <input style={styles.editInput} value={editNombre}
           onChange={e => setEditNombre(e.target.value)} />
+        {children.length > 0 && (
+          <select style={{ ...styles.editSelect, marginTop: '4px', fontSize: '11px' }}
+            value={editTag} onChange={e => setEditTag(e.target.value)}>
+            <option value="">👧 Sin hijo/a</option>
+            {children.map(c => (
+              <option key={c.nombre} value={c.nombre}>{c.nombre}</option>
+            ))}
+          </select>
+        )}
       </td>
       <td style={styles.td}>
         <select style={styles.editSelect} value={editCategoria}
@@ -609,7 +628,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} />
+              <BubbleChart data={bubbleData} darkMode={darkMode} />
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
@@ -617,6 +636,32 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           )}
         </div>
       )}
+
+      {/* Gasto por hijo */}
+      {(() => {
+        const tagTxs = mesTxs.filter(t => t.tag && t.tipo === 'gasto')
+        if (tagTxs.length === 0) return null
+        const byTag = tagTxs.reduce((acc, t) => {
+          if (!acc[t.tag]) acc[t.tag] = { ARS: 0, USD: 0 }
+          if (t.moneda === 'USD') acc[t.tag].USD += Number(t.monto)
+          else acc[t.tag].ARS += Number(t.monto)
+          return acc
+        }, {})
+        return (
+          <div style={{ ...styles.chartSection, marginBottom: '28px' }}>
+            <h3 style={styles.chartTitle}>👧 Gasto por hijo/a</h3>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {Object.entries(byTag).map(([nombre, totales]) => (
+                <div key={nombre} style={styles.summaryCard}>
+                  <p style={styles.summaryLabel}>{nombre}</p>
+                  {totales.ARS > 0 && <p style={styles.summaryValue}>$ {formatMonto(totales.ARS)}</p>}
+                  {totales.USD > 0 && <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMontoFull(totales.USD)}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Buscador */}
       <div style={{ marginBottom: '24px' }}>
@@ -739,7 +784,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 <td style={styles.td}>{tx.fecha}</td>
                 {editingTx === tx.id ? renderEditCells() : (
                   <>
-                    <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                    <td style={styles.td}>
+                      <div>{tx.nombre || tx.detalle}</div>
+                      {tx.tag && (
+                        <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
+                          👧 {tx.tag}
+                        </span>
+                      )}
+                    </td>
                     <td style={styles.td}>
                       <span style={{
                         backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),

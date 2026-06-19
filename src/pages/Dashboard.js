@@ -762,11 +762,18 @@ export default function Dashboard() {
               const anioFin = new Date().getFullYear() + Math.floor(anos)
               const simbolo = ahorro.moneda === 'USD' ? 'U$S' : '$'
               const totalFmt = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total))
+              const tc = parseFloat(tipoCambio)
+              const equivalente = tc > 0
+                ? ahorro.moneda === 'USD'
+                  ? `≈ $ ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total * tc))} ARS`
+                  : `≈ U$S ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total / tc))}`
+                : null
               return (
                 <div style={styles.savingsResult}>
                   <p style={styles.savingsResultLabel}>Tu proyección</p>
                   <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
                   <p style={styles.savingsResultAmount}>{simbolo} {totalFmt}</p>
+                  {equivalente && <p style={styles.savingsResultNote}>{equivalente}</p>}
                   {tasa > 0 && <p style={styles.savingsResultNote}>interés compuesto mensual</p>}
                 </div>
               )
