@@ -20,8 +20,18 @@ export async function extractTextFromPDF(file) {
     .replace(/\s{3,}/g, '  ')
     .trim()
 
-  console.log(`Texto extraído: ${cleaned.length} chars`)
-  return cleaned
+  const cutMarkers = ['TOTAL A PAGAR', 'Plan V:', 'CFTEA']
+  let finalText = cleaned
+  for (const marker of cutMarkers) {
+    const idx = cleaned.toUpperCase().indexOf(marker.toUpperCase())
+    if (idx !== -1) {
+      finalText = cleaned.substring(0, idx + 200)
+      break
+    }
+  }
+
+  console.log(`Texto extraído: ${finalText.length} chars`)
+  return finalText
 }
 
 export async function analyzeStatementWithClaude(pdfText, cardName, userRules) {
