@@ -49,12 +49,10 @@ export default function Dashboard() {
   const [txEditTemp, setTxEditTemp] = useState({ nombre: '', categoria: '', subcategoria: '' })
   const [categoriasDB, setCategoriasDB] = useState([])
   const [subcategoriasDB, setSubcategoriasDB] = useState([])
-  const [savedTxIds, setSavedTxIds] = useState([]) // IDs de las txs guardadas en DB para poder actualizarlas
 
   // Contexto detectado
   const [contextoDetectado, setContextoDetectado] = useState([])
   const [contextoIdx, setContextoIdx] = useState(0)
-  const [showContexto, setShowContexto] = useState(false)
 
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
@@ -181,7 +179,6 @@ export default function Dashboard() {
     setMsgIndex(0)
     setTxSinIdentificar([])
     setTxIdentificarIdx(0)
-    setSavedTxIds([])
     setContextoDetectado([])
     setContextoIdx(0)
   }
@@ -300,7 +297,6 @@ export default function Dashboard() {
     // Si hay contextos nuevos detectados, mostrarlos
     if (contextoDetectado.length > 0) {
       setContextoIdx(0)
-      setShowContexto(true)
       setStep('contexto')
     } else {
       cerrarYRefrescar()
@@ -359,7 +355,6 @@ export default function Dashboard() {
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
 
-    let cuentaParaVerificar = targetAccount
 
     if (esBanco) {
       // Verificar duplicado en egresos (representativa)
@@ -371,7 +366,6 @@ export default function Dashboard() {
         }).select().single()
         cuentaEgresos = nueva
       }
-      cuentaParaVerificar = cuentaEgresos
 
       const { data: existing } = await supabase.from('statements')
         .select('id').eq('account_id', cuentaEgresos.id).eq('periodo', statementData.periodo).maybeSingle()
@@ -441,7 +435,6 @@ export default function Dashboard() {
       const sinId = insertedIds.filter(t => t.estado === 'a_identificar')
       if (sinId.length > 0) {
         setTxSinIdentificar(sinId)
-        setSavedTxIds(sinId.map(t => t.id))
         setTxIdentificarIdx(0)
         setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
         setStep('identificar')
@@ -497,7 +490,6 @@ export default function Dashboard() {
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
       if (sinId.length > 0) {
         setTxSinIdentificar(sinId)
-        setSavedTxIds(sinId.map(t => t.id))
         setTxIdentificarIdx(0)
         setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
         setStep('identificar')
