@@ -822,7 +822,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   </span>
                 </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace:'nowrap',
-                  color: tx.tipo === 'ingreso' ? '#4a9e7a' : '#2d2d2d'}}>
+                  color: tx.tipo === 'ingreso' ? '#4a9e7a' : (darkMode ? '#F0EDEC' : '#2d2d2d')}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
