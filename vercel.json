@@ -1,5 +1,11 @@
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron-reclasificar",
+      "schedule": "0 3 * * *"
+    }
   ]
 }
