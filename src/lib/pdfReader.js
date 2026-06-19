@@ -24,11 +24,11 @@ export async function extractTextFromPDF(file) {
   return cleaned
 }
 
-export async function analyzeStatementWithClaude(pdfText, cardName) {
+export async function analyzeStatementWithClaude(pdfText, cardName, userRules) {
   const response = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pdfText, cardName })
+    body: JSON.stringify({ pdfText, cardName, userRules: userRules || [] })
   })
 
   if (!response.ok) {

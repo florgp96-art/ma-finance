@@ -3,7 +3,22 @@ export const maxDuration = 120
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { pdfText, cardName } = req.body
+  const { pdfText, cardName, userRules } = req.body
+
+  // Construir bloque de reglas del usuario si existen
+  let userRulesBlock = ''
+  if (userRules && userRules.length > 0) {
+    const rulesText = userRules
+      .map(r => `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"`)
+      .join('\n')
+    userRulesBlock = `
+═══════════════════════════════
+REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
+═══════════════════════════════
+Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada:
+${rulesText}
+`
+  }
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -19,7 +34,25 @@ export default async function handler(req, res) {
         role: 'user',
         content: `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
 
-{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":"GALLO PROT FLORENCIA"}]}
+{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":"GALLO PROT FLORENCIA"}]}
+
+═══════════════════════════════
+CAMPO contexto_detectado:
+═══════════════════════════════
+Analizá el conjunto de transacciones y detectá patrones que sugieran contexto personal del usuario.
+Devolvé un array con los contextos detectados. Valores posibles:
+
+- "hijo" → si aparecen gastos de colegio, guardería, librería escolar, pediatra, juguetería, cuota colegial
+- "mascota" → si aparecen gastos de veterinaria, pet shop, alimento para mascotas
+- "auto_propio" → si aparecen gastos de nafta, service, patente, seguro de auto, estacionamiento recurrente
+- "empleada_domestica" → si aparecen pagos regulares a empleada doméstica o similar
+- "alquiler_pagado" → si aparece pago de alquiler recurrente
+- "gimnasio" → si aparece cuota de gimnasio o actividad física regular
+
+Si no detectás ninguno, devolvé array vacío [].
+Ejemplos: ["hijo","auto_propio"] o [] o ["mascota"]
+
+${userRulesBlock}
 
 ═══════════════════════════════
 CAMPO tipo_documento:

@@ -10,8 +10,8 @@ export default function Login() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
+  const handleLogin = async () => {
+    if (!email || !password) return
     setLoading(true)
     setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -21,6 +21,10 @@ export default function Login() {
       navigate('/dashboard')
     }
     setLoading(false)
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleLogin()
   }
 
   return (
@@ -34,35 +38,39 @@ export default function Login() {
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <form onSubmit={handleLogin}>
-          <div style={styles.field}>
-            <label style={styles.label}>Email</label>
-            <input
-              style={styles.input}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@email.com"
-              required
-            />
-          </div>
+        <div style={styles.field}>
+          <label style={styles.label}>Email</label>
+          <input
+            style={styles.input}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="tu@email.com"
+            autoComplete="email"
+          />
+        </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Contraseña</label>
-            <input
-              style={styles.input}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
-          </div>
+        <div style={styles.field}>
+          <label style={styles.label}>Contraseña</label>
+          <input
+            style={styles.input}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="••••••••"
+            autoComplete="current-password"
+          />
+        </div>
 
-          <button style={{...styles.button, opacity: loading ? 0.7 : 1}} type="submit" disabled={loading}>
-            {loading ? 'Ingresando...' : 'Ingresar'}
-          </button>
-        </form>
+        <button
+          style={{ ...styles.button, opacity: loading ? 0.7 : 1 }}
+          onClick={handleLogin}
+          disabled={loading}
+        >
+          {loading ? 'Ingresando...' : 'Ingresar'}
+        </button>
 
         <p style={styles.link}>
           ¿No tenés cuenta? <Link to="/register" style={styles.linkAnchor}>Registrate</Link>
@@ -139,6 +147,7 @@ const styles = {
     marginTop: '8px',
     letterSpacing: '0.02em',
     transition: 'opacity 0.2s',
+    outline: 'none',
   },
   error: {
     backgroundColor: '#fff0f0',

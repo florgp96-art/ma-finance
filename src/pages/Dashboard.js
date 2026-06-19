@@ -12,6 +12,16 @@ const PROCESSING_MSGS = [
   { icon: '✨', title: 'Casi listo...', desc: 'Preparando el resumen final' },
 ]
 
+// Etiquetas para contextos detectados
+const CONTEXTO_LABELS = {
+  hijo: { icon: '👧', titulo: '¿Tenés hijos?', desc: 'Detectamos gastos de colegio, librería o pediatra. ¿Querés etiquetar estos gastos con el nombre de tu hijo/a?' },
+  mascota: { icon: '🐾', titulo: '¿Tenés mascota?', desc: 'Detectamos gastos de veterinaria o pet shop. ¿Querés etiquetar estos gastos con el nombre de tu mascota?' },
+  auto_propio: { icon: '🚗', titulo: '¿Tenés auto propio?', desc: 'Detectamos gastos de nafta, service o patente. ¿Querés crear una etiqueta para gastos del auto?' },
+  empleada_domestica: { icon: '🧹', titulo: 'Empleada doméstica', desc: 'Detectamos pagos regulares a empleada doméstica. ¿Querés crear una etiqueta para estos pagos?' },
+  alquiler_pagado: { icon: '🏠', titulo: 'Pago de alquiler', desc: 'Detectamos pago de alquiler recurrente. ¿Querés crear una etiqueta para este gasto?' },
+  gimnasio: { icon: '🏋️', titulo: 'Gimnasio o actividad física', desc: 'Detectamos cuota de gimnasio. ¿Querés crear una etiqueta para este gasto?' },
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
@@ -33,6 +43,19 @@ export default function Dashboard() {
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
 
+  // Paso identificar: transacciones sin clasificar post-carga
+  const [txSinIdentificar, setTxSinIdentificar] = useState([])
+  const [txIdentificarIdx, setTxIdentificarIdx] = useState(0)
+  const [txEditTemp, setTxEditTemp] = useState({ nombre: '', categoria: '', subcategoria: '' })
+  const [categoriasDB, setCategoriasDB] = useState([])
+  const [subcategoriasDB, setSubcategoriasDB] = useState([])
+  const [savedTxIds, setSavedTxIds] = useState([]) // IDs de las txs guardadas en DB para poder actualizarlas
+
+  // Contexto detectado
+  const [contextoDetectado, setContextoDetectado] = useState([])
+  const [contextoIdx, setContextoIdx] = useState(0)
+  const [showContexto, setShowContexto] = useState(false)
+
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
   const [timer, setTimer] = useState(120)
@@ -45,8 +68,6 @@ export default function Dashboard() {
   const [showEfectivo, setShowEfectivo] = useState(false)
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
-  const [categoriasDB, setCategoriasDB] = useState([])
-  const [subcategoriasDB, setSubcategoriasDB] = useState([])
 
   useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
 
@@ -108,10 +129,9 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
-    // Seleccionar Efectivo por defecto si existe y no hay nada seleccionado
     if (data && data.length > 0) {
-      const efectivo = data.find(a => a.nombre === 'Efectivo')
-      if (efectivo) setSelectedAccount(prev => prev === null ? efectivo : prev)
+      const ef = data.find(a => a.nombre === 'Efectivo')
+      if (ef) setSelectedAccount(prev => prev === null ? ef : prev)
     }
   }
 
@@ -159,6 +179,11 @@ export default function Dashboard() {
     setSepararAdicionales(null)
     setNewAccountForUpload({ nombre: '', tipo: 'credito' })
     setMsgIndex(0)
+    setTxSinIdentificar([])
+    setTxIdentificarIdx(0)
+    setSavedTxIds([])
+    setContextoDetectado([])
+    setContextoIdx(0)
   }
 
   const handleUploadPDF = async () => {
@@ -166,11 +191,25 @@ export default function Dashboard() {
     setStep('processing')
     setLoading(true)
     try {
+      // Cargar user_rules del usuario para inyectarlas al prompt
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: rules } = await supabase.from('user_rules').select('*').eq('user_id', user.id)
+
       const pdfText = await extractTextFromPDF(archivo)
-      const result = await analyzeStatementWithClaude(pdfText, 'auto')
+      const result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [])
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
-      // Si es banco, saltar directo al preview — las cuentas se crean automáticamente
+
+      // Guardar contexto detectado si hay algo nuevo
+      if (result.contexto_detectado && result.contexto_detectado.length > 0) {
+        // Filtrar contextos que el usuario ya confirmó antes (guardados en user_rules como contexto_*)
+        const { data: existingCtx } = await supabase.from('user_rules')
+          .select('texto_original').eq('user_id', user.id).like('texto_original', 'contexto_%')
+        const yaConfirmados = (existingCtx || []).map(r => r.texto_original.replace('contexto_', ''))
+        const nuevos = result.contexto_detectado.filter(c => !yaConfirmados.includes(c))
+        setContextoDetectado(nuevos)
+      }
+
       if (result.tipo_documento === 'banco') {
         setStep('preview')
       } else {
@@ -208,10 +247,102 @@ export default function Dashboard() {
     setStep('preview')
   }
 
+  // Guardar una clasificación desde el paso identificar
+  const handleGuardarClasificacion = async (txId, detalle) => {
+    const catObj = categoriasDB.find(c => c.nombre === txEditTemp.categoria)
+    const subcatObj = subcategoriasDB.find(s => s.nombre === txEditTemp.subcategoria && s.category_id === catObj?.id)
+
+    await supabase.from('transactions').update({
+      nombre: txEditTemp.nombre,
+      category_id: catObj?.id || null,
+      subcategory_id: subcatObj?.id || null,
+      estado: 'identificado'
+    }).eq('id', txId)
+
+    // Guardar regla aprendida
+    if (detalle && catObj) {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('user_rules').upsert({
+        user_id: user.id,
+        texto_original: detalle.trim(),
+        nombre_asignado: txEditTemp.nombre || detalle.trim(),
+        categoria: catObj.nombre,
+        subcategoria: subcatObj?.nombre || null,
+        category_id: catObj.id,
+        subcategory_id: subcatObj?.id || null,
+        veces_confirmado: 1,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,texto_original', ignoreDuplicates: false })
+    }
+
+    // Avanzar a la siguiente
+    if (txIdentificarIdx + 1 < txSinIdentificar.length) {
+      const next = txSinIdentificar[txIdentificarIdx + 1]
+      setTxIdentificarIdx(i => i + 1)
+      setTxEditTemp({ nombre: next.nombre_original, categoria: 'A Identificar', subcategoria: '' })
+    } else {
+      // Terminamos, ir a contexto o cerrar
+      finalizarCarga()
+    }
+  }
+
+  const handleSaltarClasificacion = () => {
+    if (txIdentificarIdx + 1 < txSinIdentificar.length) {
+      const next = txSinIdentificar[txIdentificarIdx + 1]
+      setTxIdentificarIdx(i => i + 1)
+      setTxEditTemp({ nombre: next.nombre_original, categoria: 'A Identificar', subcategoria: '' })
+    } else {
+      finalizarCarga()
+    }
+  }
+
+  const finalizarCarga = () => {
+    // Si hay contextos nuevos detectados, mostrarlos
+    if (contextoDetectado.length > 0) {
+      setContextoIdx(0)
+      setShowContexto(true)
+      setStep('contexto')
+    } else {
+      cerrarYRefrescar()
+    }
+  }
+
+  // Confirmar contexto detectado — guarda en user_rules como flag para no preguntar de nuevo
+  const handleConfirmarContexto = async (confirmar) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const clave = contextoDetectado[contextoIdx]
+    if (confirmar) {
+      // Guardamos que el usuario confirmó este contexto (para uso futuro)
+      await supabase.from('user_rules').upsert({
+        user_id: user.id,
+        texto_original: `contexto_${clave}`,
+        nombre_asignado: clave,
+        categoria: 'Personal',
+        subcategoria: null,
+        category_id: null,
+        subcategory_id: null,
+        veces_confirmado: 1,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,texto_original', ignoreDuplicates: false })
+    }
+
+    if (contextoIdx + 1 < contextoDetectado.length) {
+      setContextoIdx(i => i + 1)
+    } else {
+      cerrarYRefrescar()
+    }
+  }
+
+  const cerrarYRefrescar = () => {
+    resetUpload()
+    setShowUpload(false)
+    fetchAccounts()
+    setRefreshKey(k => k + 1)
+  }
+
   const handleConfirmTransactions = async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const account = targetAccount
     const esBanco = statementData.tipo_documento === 'banco'
     const nombreBase = esBanco
       ? (statementData.tarjeta_detectada || 'Cuenta Bancaria')
@@ -228,53 +359,49 @@ export default function Dashboard() {
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
 
-    const { data: existing } = await supabase.from('statements')
-      .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
-    if (existing) {
-      alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
-      setLoading(false)
-      return
-    }
+    let cuentaParaVerificar = targetAccount
 
     if (esBanco) {
-      // Separar en dos cuentas: Egresos e Ingresos
-      const baseNombre = nombreBase
-
-      // Buscar o crear cuenta de egresos
+      // Verificar duplicado en egresos (representativa)
       let { data: cuentaEgresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${baseNombre}`).maybeSingle()
+        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${nombreBase}`).maybeSingle()
       if (!cuentaEgresos) {
         const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Egresos - ${baseNombre}`, tipo: 'debito'
+          user_id: user.id, nombre: `Egresos - ${nombreBase}`, tipo: 'debito'
         }).select().single()
         cuentaEgresos = nueva
       }
+      cuentaParaVerificar = cuentaEgresos
 
-      // Buscar o crear cuenta de ingresos
+      const { data: existing } = await supabase.from('statements')
+        .select('id').eq('account_id', cuentaEgresos.id).eq('periodo', statementData.periodo).maybeSingle()
+      if (existing) {
+        alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
+        setLoading(false)
+        return
+      }
+
       let { data: cuentaIngresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${baseNombre}`).maybeSingle()
+        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${nombreBase}`).maybeSingle()
       if (!cuentaIngresos) {
         const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Ingresos - ${baseNombre}`, tipo: 'debito'
+          user_id: user.id, nombre: `Ingresos - ${nombreBase}`, tipo: 'debito'
         }).select().single()
         cuentaIngresos = nueva
       }
 
-      // Crear statement para egresos
       const { data: stmtEgresos } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
         periodo: statementData.periodo, fecha_desde: null,
         fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
       }).select().single()
 
-      // Crear statement para ingresos
       const { data: stmtIngresos } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
         periodo: statementData.periodo, fecha_desde: null,
         fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
       }).select().single()
 
-      // Separar transacciones
       const txEgresos = []
       const txIngresos = []
 
@@ -296,27 +423,52 @@ export default function Dashboard() {
         if (tipoTx === 'ingreso') {
           txIngresos.push({ ...base, account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso' })
         } else {
-          // gastos y neutros van a egresos
           txEgresos.push({ ...base, account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto' })
         }
       })
 
-      if (txEgresos.length > 0) await supabase.from('transactions').insert(txEgresos)
-      if (txIngresos.length > 0) await supabase.from('transactions').insert(txIngresos)
+      const insertedIds = []
+      if (txEgresos.length > 0) {
+        const { data: ins } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado, nombre_original')
+        if (ins) insertedIds.push(...ins)
+      }
+      if (txIngresos.length > 0) {
+        const { data: ins } = await supabase.from('transactions').insert(txIngresos).select('id, detalle, estado, nombre_original')
+        if (ins) insertedIds.push(...ins)
+      }
+
+      // Preparar paso identificar
+      const sinId = insertedIds.filter(t => t.estado === 'a_identificar')
+      if (sinId.length > 0) {
+        setTxSinIdentificar(sinId)
+        setSavedTxIds(sinId.map(t => t.id))
+        setTxIdentificarIdx(0)
+        setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
+        setStep('identificar')
+      } else {
+        finalizarCarga()
+      }
 
     } else {
       // Tarjeta de crédito — flujo normal
+      const account = targetAccount
+      const { data: existing } = await supabase.from('statements')
+        .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
+      if (existing) {
+        alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
+        setLoading(false)
+        return
+      }
+
       const { data: statement } = await supabase.from('statements').insert({
         user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
         periodo: statementData.periodo, fecha_desde: null,
         fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
       }).select().single()
 
-      // Para cuotas, usar la fecha del resumen (fecha_facturacion) — es cuando realmente se debita
       const fechaResumen = statementData.fecha_facturacion || null
       const transacciones = statementData.transacciones.map(t => {
         const categoryId = getCategoryId(t.categoria_sugerida)
-        // fechaResumen viene en formato dd/mm/yy, convertir a yyyy-mm-dd
         let fechaFinal = t.fecha
         if (t.cuotas_total > 1 && fechaResumen) {
           const parts = fechaResumen.split('/')
@@ -338,13 +490,23 @@ export default function Dashboard() {
           es_manual: false
         }
       })
-      await supabase.from('transactions').insert(transacciones)
+
+      const { data: inserted } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+
+      // Preparar paso identificar
+      const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
+      if (sinId.length > 0) {
+        setTxSinIdentificar(sinId)
+        setSavedTxIds(sinId.map(t => t.id))
+        setTxIdentificarIdx(0)
+        setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
+        setStep('identificar')
+      } else {
+        finalizarCarga()
+      }
     }
 
-    resetUpload()
-    setShowUpload(false)
     fetchAccounts()
-    setRefreshKey(k => k + 1)
     setLoading(false)
   }
 
@@ -360,16 +522,24 @@ export default function Dashboard() {
   const formatMonto = (monto) => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
   const currentMsg = PROCESSING_MSGS[msgIndex]
 
+  // Subcategorías filtradas para el paso identificar
+  const subcatsParaIdentificar = () => {
+    const catObj = categoriasDB.find(c => c.nombre === txEditTemp.categoria)
+    if (!catObj) return []
+    return subcategoriasDB.filter(s => s.category_id === catObj.id)
+  }
+
+  const txActual = txSinIdentificar[txIdentificarIdx]
+  const contextoActual = contextoDetectado[contextoIdx]
+
   return (
     <>
       <div style={styles.container}>
 
-        {/* Header: mismo fondo que la página, logo grande centrado */}
         <div style={styles.header}>
           <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
         </div>
 
-        {/* Layout dos columnas */}
         <div style={styles.layout}>
 
           {/* Sidebar izquierdo */}
@@ -684,7 +854,7 @@ export default function Dashboard() {
                 </div>
                 {statementData.transacciones.some(t => t.categoria_sugerida === 'A Identificar') && (
                   <div style={styles.warningBox}>
-                    ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Podrás nombrarlas después.
+                    ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Te vamos a pedir que las clasifiques antes de cerrar.
                   </div>
                 )}
                 <div style={styles.modalButtons}>
@@ -693,6 +863,97 @@ export default function Dashboard() {
                 </div>
               </>
             )}
+
+            {/* Paso: clasificar transacciones sin identificar */}
+            {step === 'identificar' && txActual && (
+              <>
+                <h3 style={styles.modalTitle}>¿Qué es este gasto? 🔍</h3>
+                <p style={{fontSize: '13px', color: '#8e8e93', margin: '-8px 0 20px 0'}}>
+                  {txIdentificarIdx + 1} de {txSinIdentificar.length} sin identificar
+                </p>
+
+                {/* Barra de progreso */}
+                <div style={styles.timerBar}>
+                  <div style={{
+                    ...styles.timerFill,
+                    width: `${((txIdentificarIdx + 1) / txSinIdentificar.length) * 100}%`,
+                    backgroundColor: '#6B7BB8',
+                    transition: 'width 0.3s'
+                  }} />
+                </div>
+
+                <div style={styles.identificarCard}>
+                  <p style={styles.identificarDetalle}>{txActual.detalle}</p>
+                </div>
+
+                <div style={styles.field}>
+                  <label style={styles.label}>Nombre legible</label>
+                  <input
+                    style={styles.input}
+                    value={txEditTemp.nombre}
+                    onChange={e => setTxEditTemp({...txEditTemp, nombre: e.target.value})}
+                    placeholder="Ej: Supermercado Coto, Netflix..."
+                  />
+                </div>
+
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                  <div style={styles.field}>
+                    <label style={styles.label}>Categoría</label>
+                    <select style={styles.input} value={txEditTemp.categoria}
+                      onChange={e => setTxEditTemp({...txEditTemp, categoria: e.target.value, subcategoria: ''})}>
+                      {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div style={styles.field}>
+                    <label style={styles.label}>Subcategoría</label>
+                    <select style={styles.input} value={txEditTemp.subcategoria}
+                      onChange={e => setTxEditTemp({...txEditTemp, subcategoria: e.target.value})}
+                      disabled={subcatsParaIdentificar().length === 0}>
+                      <option value="">— Sin subcategoría</option>
+                      {subcatsParaIdentificar().map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={handleSaltarClasificacion}>
+                    Saltar →
+                  </button>
+                  <button style={styles.saveBtn}
+                    onClick={() => handleGuardarClasificacion(txActual.id, txActual.detalle)}
+                    disabled={!txEditTemp.nombre}>
+                    Guardar y siguiente →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Paso: contexto personal detectado */}
+            {step === 'contexto' && contextoActual && CONTEXTO_LABELS[contextoActual] && (
+              <>
+                <div style={styles.contextoCard}>
+                  <p style={styles.contextoIcon}>{CONTEXTO_LABELS[contextoActual].icon}</p>
+                  <h3 style={styles.modalTitle}>{CONTEXTO_LABELS[contextoActual].titulo}</h3>
+                  <p style={{fontSize: '14px', color: '#6e6e73', marginBottom: '28px', lineHeight: '1.5'}}>
+                    {CONTEXTO_LABELS[contextoActual].desc}
+                  </p>
+                  {contextoDetectado.length > 1 && (
+                    <p style={{fontSize: '12px', color: '#aaa', marginBottom: '8px'}}>
+                      {contextoIdx + 1} de {contextoDetectado.length}
+                    </p>
+                  )}
+                </div>
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => handleConfirmarContexto(false)}>
+                    No, ignorar
+                  </button>
+                  <button style={styles.saveBtn} onClick={() => handleConfirmarContexto(true)}>
+                    Sí, tener en cuenta ✓
+                  </button>
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}
@@ -774,8 +1035,6 @@ export default function Dashboard() {
 
 const styles = {
   container: { minHeight: '100vh', backgroundColor: '#E4E7F3', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
-
-  // Header sin color — se funde con el fondo
   header: {
     backgroundColor: '#E4E7F3',
     padding: '24px 32px',
@@ -784,8 +1043,6 @@ const styles = {
     alignItems: 'center',
   },
   logoImg: { height: '220px', objectFit: 'contain' },
-
-  // Layout dos columnas
   layout: {
     display: 'flex',
     alignItems: 'flex-start',
@@ -794,8 +1051,6 @@ const styles = {
     padding: '0 24px 48px 24px',
     gap: '24px',
   },
-
-  // Sidebar izquierdo
   sidebar: {
     width: '240px',
     flexShrink: 0,
@@ -836,16 +1091,12 @@ const styles = {
     width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#6B7BB8',
     border: '1.5px solid #6B7BB8', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', outline: 'none'
   },
-
-  // Contenido principal derecho
   mainContent: { flex: 1, minWidth: 0 },
   section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(107,123,184,0.10)' },
   sectionTitle: { fontSize: '18px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
   emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#6e6e73' },
   emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
   emptyStateText: { fontSize: '15px', color: '#6e6e73', fontWeight: '500' },
-
-  // Modales
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
   modalTitle: { fontSize: '20px', fontWeight: '700', color: '#1d1d1f', margin: '0 0 24px 0' },
@@ -893,5 +1144,17 @@ const styles = {
   transactionDetail: { fontSize: '12px', color: '#aaa', margin: 0 },
   transactionMonto: { fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap' },
   moreTransactions: { fontSize: '13px', color: '#6B7BB8', textAlign: 'center', padding: '8px 0' },
-  warningBox: { backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px' }
+  warningBox: { backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px' },
+  // Paso identificar
+  identificarCard: {
+    backgroundColor: '#f5f6fb', borderRadius: '12px', padding: '16px 20px',
+    marginBottom: '20px', border: '1px solid #e0e4f0'
+  },
+  identificarDetalle: {
+    fontSize: '13px', fontFamily: 'monospace', color: '#4a5a9a',
+    margin: 0, wordBreak: 'break-all'
+  },
+  // Paso contexto
+  contextoCard: { textAlign: 'center', paddingTop: '8px' },
+  contextoIcon: { fontSize: '48px', margin: '0 0 16px 0' },
 }

@@ -3,19 +3,19 @@ import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const CATEGORY_CONFIG = {
-  'Comida':          { icon: '🍔', color: '#FADADD' }, // rosa palo
-  'Personal':        { icon: '👤', color: '#B5CCEE' }, // azul pastel
-  'Transporte':      { icon: '🚗', color: '#C3B8E8' }, // lavanda
-  'Salud':           { icon: '💊', color: '#FFCBA4' }, // durazno
-  'Entretenimiento': { icon: '🎬', color: '#FFB3BA' }, // rosa chicle suave
-  'Suscripciones':   { icon: '📱', color: '#B5EAD7' }, // menta
-  'Ropa':            { icon: '👕', color: '#E8C3D8' }, // lila rosado
-  'Casa':            { icon: '🏠', color: '#AEC6CF' }, // celeste grisáceo
-  'Educación':       { icon: '📚', color: '#C5E8C3' }, // verde pastel
-  'Trabajo':         { icon: '💼', color: '#D4E8C2' }, // verde lima pastel
-  'Ingresos':        { icon: '💰', color: '#B5EAC8' }, // verde menta
-  'Débitos':         { icon: '🏦', color: '#D8D8F0' }, // lila muy suave
-  'A Identificar':   { icon: '❓', color: '#F9E4B7' }, // amarillo manteca
+  'Comida':          { icon: '🍔', color: '#FADADD' },
+  'Personal':        { icon: '👤', color: '#B5CCEE' },
+  'Transporte':      { icon: '🚗', color: '#C3B8E8' },
+  'Salud':           { icon: '💊', color: '#FFCBA4' },
+  'Entretenimiento': { icon: '🎬', color: '#FFB3BA' },
+  'Suscripciones':   { icon: '📱', color: '#B5EAD7' },
+  'Ropa':            { icon: '👕', color: '#E8C3D8' },
+  'Casa':            { icon: '🏠', color: '#AEC6CF' },
+  'Educación':       { icon: '📚', color: '#C5E8C3' },
+  'Trabajo':         { icon: '💼', color: '#D4E8C2' },
+  'Ingresos':        { icon: '💰', color: '#B5EAC8' },
+  'Débitos':         { icon: '🏦', color: '#D8D8F0' },
+  'A Identificar':   { icon: '❓', color: '#F9E4B7' },
 }
 
 const BAR_COLOR = '#A8B8D8'
@@ -35,7 +35,7 @@ const mesLabel = (yearMonth) => {
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
 
-// Bubble chart component usando D3-style force simulation simple
+// Bubble chart component
 function BubbleChart({ data }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
@@ -52,14 +52,12 @@ function BubbleChart({ data }) {
     const maxVal = Math.max(...data.map(d => d.value))
     const minVal = Math.min(...data.map(d => d.value))
 
-    // Calcular radios
     const withR = data.map(d => {
       const ratio = maxVal === minVal ? 0.7 : 0.3 + 0.7 * (d.value / maxVal)
       const r = Math.max(MIN_R, Math.min(MAX_R, ratio * MAX_R))
       return { ...d, r, pct: Math.round((d.value / total) * 100) }
     })
 
-    // Posición inicial en grilla
     const cols = Math.ceil(Math.sqrt(withR.length))
     const positioned = withR.map((b, i) => ({
       ...b,
@@ -69,7 +67,6 @@ function BubbleChart({ data }) {
       vy: (Math.random() - 0.5) * 0.5,
     }))
 
-    // Mini force simulation
     const simulate = (currentNodes) => currentNodes.map((a, i) => {
       let fx = 0, fy = 0
       currentNodes.forEach((b, j) => {
@@ -106,7 +103,7 @@ function BubbleChart({ data }) {
       <div style={{ flex: '1 1 0', minWidth: 0 }}>
         <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
           {bubbles.map((b, i) => {
-            const cfg = CATEGORY_CONFIG[b.name] || { icon: '\u2753', color: '#E0E0E0' }
+            const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
             const isHovered = hoveredIdx === i
             const iconSize = b.r > 50 ? 26 : b.r > 35 ? 20 : 14
             const pctSize = b.r > 50 ? 11 : b.r > 35 ? 9 : 7
@@ -151,7 +148,7 @@ function BubbleChart({ data }) {
             )
           })}
           {tooltip.visible && tooltip.data && (() => {
-            const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '\u2753', color: '#E0E0E0' }
+            const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
             const tx = Math.max(80, Math.min(WIDTH - 80, tooltip.x))
             const ty = Math.max(30, tooltip.y)
             return (
@@ -172,7 +169,7 @@ function BubbleChart({ data }) {
       </div>
       <div style={{ width: '200px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '16px' }}>
         {[...bubbles].sort((a, b) => b.value - a.value).map((b, i) => {
-          const cfg = CATEGORY_CONFIG[b.name] || { icon: '\u2753', color: '#E0E0E0' }
+          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
@@ -275,15 +272,40 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     return subcategories.filter(s => s.category_id === catObj.id)
   }
 
+  // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
+
+    // Actualizar la transacción
     await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj ? catObj.id : tx.category_id,
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado'
     }).eq('id', tx.id)
+
+    // Guardar regla aprendida en user_rules si hay un detalle original
+    const texto_original = (tx.detalle || '').trim()
+    if (texto_original && catObj) {
+      const { data: { user } } = await supabase.auth.getUser()
+      // Upsert: si ya existe una regla para este patrón, la actualiza
+      await supabase.from('user_rules').upsert({
+        user_id: user.id,
+        texto_original: texto_original,
+        nombre_asignado: editNombre || texto_original,
+        categoria: catObj.nombre,
+        subcategoria: subcatObj?.nombre || null,
+        category_id: catObj.id,
+        subcategory_id: subcatObj?.id || null,
+        veces_confirmado: 1,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,texto_original',
+        ignoreDuplicates: false
+      })
+    }
+
     setTransactions(prev => prev.map(t => t.id === tx.id ? {
       ...t,
       nombre: editNombre,
@@ -341,11 +363,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     total: Number(s.total_resumen) || 0
   }))
 
-  // Transacciones de los meses seleccionados
   const mesTxs = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
-
 
   const buildBubbleData = (txList) => Object.entries(
     txList.reduce((acc, t) => {
@@ -360,11 +380,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   const bubbleData = buildBubbleData(mesTxs)
 
-  // Cards de resumen
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
 
-  // Categoría top ARS
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
     acc[cat] = (acc[cat] || 0) + Number(t.monto)
@@ -372,7 +390,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }, {})
   const catTop = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0]
 
-  // Comparativa vs mes anterior — solo cuando hay exactamente un mes seleccionado
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
   const idxMesSeleccionado = mesSeleccionado ? mesesDisponibles.indexOf(mesSeleccionado) : -1
@@ -386,11 +403,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const diffPct = puedeComparar && totalAnteriorMonto > 0 ? Math.round(((totalSeleccionado - totalAnteriorMonto) / totalAnteriorMonto) * 100) : null
   const diffMonto = totalSeleccionado - totalAnteriorMonto
 
-  // Filtrar tabla por meses seleccionados (igual que las burbujas)
   const txFiltradas = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
     : transactions
-  // Neutros van solo en tabla separada, no en sin identificar ni identificadas de gasto
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
   const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro')
 
@@ -733,7 +748,6 @@ const styles = {
     backgroundColor: '#6B7BB8', color: 'white', borderColor: '#6B7BB8', fontWeight: '600'
   },
   bubbleSection: { marginBottom: '32px' },
-  bubbleSubtitle: { fontSize: '14px', fontWeight: '600', color: '#3a3a3c', margin: '0 0 16px 0' },
   tableSection: { marginBottom: '32px' },
   tableHint: { fontSize: '13px', color: '#6e6e73', margin: '-8px 0 12px 0' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
