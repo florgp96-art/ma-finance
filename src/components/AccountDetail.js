@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -185,7 +185,7 @@ function BubbleChart({ data }) {
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, darkMode }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -423,6 +423,30 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const sinIdentificar = txNoNeutras.filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
+  const handleExportCSV = () => {
+    const rows = [
+      ['Fecha', 'Nombre', 'Categoría', 'Subcategoría', 'Moneda', 'Monto', 'Tipo', 'Cuotas'],
+      ...txFiltradas.map(t => [
+        t.fecha || '',
+        (t.nombre || t.detalle || '').replace(/,/g, ' '),
+        (t.categories?.nombre || '').replace(/,/g, ' '),
+        (t.subcategories?.nombre || '').replace(/,/g, ' '),
+        t.moneda || 'ARS',
+        t.monto || 0,
+        t.tipo || '',
+        t.cuotas_total > 1 ? `${t.cuota_numero}/${t.cuotas_total}` : '1/1',
+      ])
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ma-finance-${selectedMeses.join('-') || 'todos'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleDeleteTx = async (tx) => {
     if (!window.confirm('¿Eliminar este gasto?')) return
     await supabase.from('transactions').delete().eq('id', tx.id)
@@ -470,12 +494,38 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     </th>
   )
 
+  const styles = getStyles(darkMode)
+
   if (loading) return (
     <div style={styles.loading}>Cargando datos...</div>
   )
 
+  // Contar transacciones por período de cada extracto
+  const stmtsConTx = statements.map(s => {
+    const mes = s.fecha_hasta?.slice(0, 7) || ''
+    const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
+    return { ...s, txCount: count }
+  })
+
   return (
     <div>
+      {/* Historial de extractos */}
+      {!allAccounts && stmtsConTx.length > 0 && (
+        <div style={styles.stmtHistory}>
+          <h3 style={styles.stmtHistoryTitle}>Extractos cargados</h3>
+          <div style={styles.stmtChips}>
+            {stmtsConTx.map(s => (
+              <div key={s.id} style={styles.stmtChip}>
+                <span style={styles.stmtChipPeriod}>{s.periodo || mesLabel(s.fecha_hasta?.slice(0,7) || '')}</span>
+                <span style={styles.stmtChipDetail}>
+                  {s.txCount} tx · {s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit', year:'2-digit'}) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Cards de resumen */}
       {selectedMeses.length > 0 && mesTxs.length > 0 && (
         <div style={styles.summaryCards}>
@@ -507,6 +557,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 {CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}
               </p>
               <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
+            </div>
+          )}
+          {tipoCambio && parseFloat(tipoCambio) > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total equiv. ARS</p>
+              <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * parseFloat(tipoCambio))}</p>
+              <p style={styles.summarySubval}>U$S 1 = $ {parseFloat(tipoCambio).toLocaleString('es-AR')}</p>
             </div>
           )}
         </div>
@@ -655,7 +712,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       )}
 
       <div style={styles.tableSection}>
-        <h3 style={styles.chartTitle}>📋 Todas las transacciones ({identificadas.length})</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ ...styles.chartTitle, margin: 0 }}>📋 Todas las transacciones ({identificadas.length})</h3>
+          {txFiltradas.length > 0 && (
+            <button onClick={handleExportCSV} style={styles.exportBtn}>
+              ↓ Exportar CSV
+            </button>
+          )}
+        </div>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -728,58 +792,62 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   )
 }
 
-const styles = {
-  loading: { padding: '24px', color: '#6e6e73', fontSize: '14px' },
-  summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '28px' },
-  summaryCard: { backgroundColor: 'white', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 2px 12px rgba(92,79,92,0.08)', border: '1px solid #EDE8EC' },
-  summaryLabel: { fontSize: '11px', fontWeight: '400', color: '#6e6e73', margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
-  summaryValue: { fontSize: '24px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 2px 0' },
-  summarySubval: { fontSize: '12px', color: '#6e6e73', margin: 0 },
-  chartSection: { marginBottom: '32px' },
-  chartTitle: { fontSize: '16px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 16px 0' },
-  mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
-  mesChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
-  mesChip: {
-    padding: '6px 14px', borderRadius: '20px', border: '1.5px solid #E2DDE0',
-    backgroundColor: 'white', color: '#6e6e73', fontSize: '13px', cursor: 'pointer',
-    fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
-  },
-  mesChipActive: {
-    backgroundColor: '#5C4F5C', color: 'white', borderColor: '#5C4F5C', fontWeight: '500'
-  },
-  bubbleSection: { marginBottom: '32px' },
-  tableSection: { marginBottom: '32px' },
-  tableHint: { fontSize: '13px', color: '#6e6e73', margin: '-8px 0 12px 0' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
-  th: {
-    textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #EDE8EC', fontWeight: '400'
-  },
-  thSortable: {
-    textAlign: 'left', padding: '10px 12px', fontSize: '11px',
-    color: '#6e6e73', textTransform: 'uppercase', borderBottom: '2px solid #EDE8EC', fontWeight: '400',
-    cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
-  },
-  sortIcon: { fontSize: '10px', color: '#bbb' },
-  td: { padding: '10px 12px', borderBottom: '1px solid #f0f2f8', verticalAlign: 'middle' },
-  tr: { transition: 'background 0.1s' },
-  trUnknown: { backgroundColor: '#fffbf0' },
-  detalle: { fontSize: '12px', color: '#8e8e93', fontFamily: 'monospace' },
-  editInput: {
-    width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #5C4F5C', fontSize: '13px', outline: 'none'
-  },
-  editSelect: {
-    width: '100%', padding: '4px 8px', borderRadius: '6px',
-    border: '1px solid #5C4F5C', fontSize: '13px', outline: 'none', backgroundColor: 'white'
-  },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
-  saveEditBtn: {
-    padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white',
-    border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
-  },
-  cancelEditBtn: {
-    padding: '3px 8px', backgroundColor: '#e0e0e0', color: '#3a3a3c',
-    border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px'
-  },
+const getStyles = (dark) => {
+  const p = dark ? '#8C7B8C' : '#5C4F5C'
+  const panel = dark ? '#2A272A' : 'white'
+  const txt = dark ? '#F0EDEC' : '#1d1d1f'
+  const muted = dark ? '#9A8A9A' : '#6e6e73'
+  const border = dark ? '#3A333A' : '#E2DDE0'
+  const cardBg = dark ? '#1A181A' : '#F0EDEC'
+  const tdBorder = dark ? '#2A272A' : '#f0f2f8'
+  const hdrBorder = dark ? '#3A333A' : '#EDE8EC'
+  const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
+  return {
+    loading: { padding: '24px', color: muted, fontSize: '14px' },
+    summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '28px' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
+    summaryLabel: { fontSize: '11px', fontWeight: '400', color: muted, margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
+    summaryValue: { fontSize: '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
+    summarySubval: { fontSize: '12px', color: muted, margin: 0 },
+    chartSection: { marginBottom: '32px' },
+    chartTitle: { fontSize: '16px', fontWeight: '500', color: txt, margin: '0 0 16px 0' },
+    mesChipsHeader: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' },
+    mesChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
+    mesChip: {
+      padding: '6px 14px', borderRadius: '20px', border: `1.5px solid ${border}`,
+      backgroundColor: panel, color: muted, fontSize: '13px', cursor: 'pointer',
+      fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
+    },
+    mesChipActive: { backgroundColor: p, color: 'white', borderColor: p, fontWeight: '500' },
+    bubbleSection: { marginBottom: '32px' },
+    tableSection: { marginBottom: '32px' },
+    tableHint: { fontSize: '13px', color: muted, margin: '-8px 0 12px 0' },
+    table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+    th: {
+      textAlign: 'left', padding: '10px 12px', fontSize: '11px',
+      color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400'
+    },
+    thSortable: {
+      textAlign: 'left', padding: '10px 12px', fontSize: '11px',
+      color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400',
+      cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
+    },
+    sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
+    td: { padding: '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt },
+    tr: { transition: 'background 0.1s' },
+    trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
+    detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },
+    editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
+    editSelect: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
+    editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
+    saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
+    cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
+    exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
+    stmtHistory: { marginBottom: '24px' },
+    stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', letterSpacing: '0.06em', textTransform: 'uppercase' },
+    stmtChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
+    stmtChip: { display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: cardBg, borderRadius: '10px', padding: '8px 12px', border: `1px solid ${border}`, minWidth: '110px' },
+    stmtChipPeriod: { fontSize: '13px', fontWeight: '500', color: txt },
+    stmtChipDetail: { fontSize: '11px', color: muted },
+  }
 }

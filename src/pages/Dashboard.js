@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
@@ -70,6 +70,20 @@ export default function Dashboard() {
   // Widget ahorro
   const [ahorro, setAhorro] = useState({ monto: '', moneda: 'USD', anos: '', tasa: '' })
 
+  // Categorías
+  const [showCategorias, setShowCategorias] = useState(false)
+  const [newCatNombre, setNewCatNombre] = useState('')
+  const [editingCat, setEditingCat] = useState(null)
+  const [editingCatNombre, setEditingCatNombre] = useState('')
+  const [newSubcatCatId, setNewSubcatCatId] = useState(null)
+  const [newSubcatNombre, setNewSubcatNombre] = useState('')
+
+  // Tipo de cambio
+  const [tipoCambio, setTipoCambio] = useState(() => localStorage.getItem('tc_ma') || '')
+
+  // Dark mode
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
+
   useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
 
   useEffect(() => {
@@ -94,6 +108,30 @@ export default function Dashboard() {
     const { data: subcats } = await supabase.from('subcategories').select('*').order('nombre')
     setCategoriasDB(cats || [])
     setSubcategoriasDB(subcats || [])
+  }
+
+  const handleAddCategoria = async (e) => {
+    e.preventDefault()
+    if (!newCatNombre.trim()) return
+    await supabase.from('categories').insert({ nombre: newCatNombre.trim(), orden: categoriasDB.length + 1 })
+    setNewCatNombre('')
+    fetchCategorias()
+  }
+
+  const handleSaveEditCat = async (cat) => {
+    if (!editingCatNombre.trim()) return
+    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id)
+    setEditingCat(null)
+    fetchCategorias()
+  }
+
+  const handleAddSubcat = async (e) => {
+    e.preventDefault()
+    if (!newSubcatNombre.trim() || !newSubcatCatId) return
+    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId })
+    setNewSubcatNombre('')
+    setNewSubcatCatId(null)
+    fetchCategorias()
   }
 
   const handleGuardarEfectivo = async (e) => {
@@ -186,17 +224,47 @@ export default function Dashboard() {
     setContextoIdx(0)
   }
 
+  const analyzeImageWithClaude = async (file, userRules) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        try {
+          const base64 = e.target.result.split(',')[1]
+          const mediaType = file.type || 'image/jpeg'
+          const response = await fetch('/api/analyzeImage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
+          })
+          if (!response.ok) throw new Error(`Error servidor: ${response.status}`)
+          const data = await response.json()
+          const textBlock = data?.content?.find(b => b.type === 'text')
+          if (!textBlock?.text) throw new Error('Sin respuesta de Claude')
+          const clean = textBlock.text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+          resolve(JSON.parse(clean))
+        } catch (err) { reject(err) }
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
   const handleUploadPDF = async () => {
     if (!archivo) return
     setStep('processing')
     setLoading(true)
     try {
-      // Cargar user_rules del usuario para inyectarlas al prompt
       const { data: { user } } = await supabase.auth.getUser()
       const { data: rules } = await supabase.from('user_rules').select('*').eq('user_id', user.id)
 
-      const pdfText = await extractTextFromPDF(archivo)
-      const result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [])
+      const isImage = archivo.type.startsWith('image/')
+      let result
+      if (isImage) {
+        result = await analyzeImageWithClaude(archivo, rules || [])
+      } else {
+        const pdfText = await extractTextFromPDF(archivo)
+        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [])
+      }
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
 
@@ -509,8 +577,8 @@ export default function Dashboard() {
     e.preventDefault()
     setUploadDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file && file.type === 'application/pdf') setArchivo(file)
-    else alert('Solo se aceptan archivos PDF')
+    if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) setArchivo(file)
+    else alert('Solo se aceptan archivos PDF o imágenes (PNG, JPG)')
   }
 
   const tipoLabel = (tipo) => tipo === 'credito' ? 'Crédito' : tipo === 'debito' ? 'Débito' : 'Efectivo'
@@ -524,6 +592,7 @@ export default function Dashboard() {
     return subcategoriasDB.filter(s => s.category_id === catObj.id)
   }
 
+  const styles = getStyles(darkMode)
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -533,6 +602,13 @@ export default function Dashboard() {
 
         <div style={styles.header}>
           <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
+          <button
+            onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }}
+            title={darkMode ? 'Modo claro' : 'Modo oscuro'}
+            style={{ position: 'absolute', top: '20px', right: '32px', background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
         </div>
 
         <div style={styles.layout}>
@@ -564,6 +640,23 @@ export default function Dashboard() {
             <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
               + CUENTA
             </button>
+            <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>
+              + CATEGORÍAS
+            </button>
+
+            {/* Tipo de cambio */}
+            <div style={{ borderTop: '1px solid #EDE8EC', paddingTop: '12px', marginTop: '4px' }}>
+              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em' }}>
+                U$S 1 = $
+              </label>
+              <input
+                type="number"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: '1px solid #E2DDE0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
+                placeholder="ej. 1250"
+                value={tipoCambio}
+                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
+              />
+            </div>
 
             <div style={styles.accountsList}>
               {accounts.length > 0 && (
@@ -606,12 +699,12 @@ export default function Dashboard() {
             {selectedAccount === 'all' ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 Resumen General</h2>
-                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
               </div>
             ) : selectedAccount ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -684,6 +777,76 @@ export default function Dashboard() {
       </div>
 
       {/* Modales */}
+      {/* Modal categorías */}
+      {showCategorias && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '520px' }}>
+            <h3 style={styles.modalTitle}>Categorías y subcategorías</h3>
+            <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
+              {categoriasDB.map(cat => (
+                <div key={cat.id} style={{ marginBottom: '16px', borderBottom: '1px solid #EDE8EC', paddingBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    {editingCat === cat.id ? (
+                      <>
+                        <input
+                          style={{ ...styles.input, flex: 1, padding: '6px 10px', fontSize: '13px' }}
+                          value={editingCatNombre}
+                          onChange={e => setEditingCatNombre(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleSaveEditCat(cat)}
+                          autoFocus
+                        />
+                        <button style={{ ...styles.saveBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => handleSaveEditCat(cat)}>✓</button>
+                        <button style={{ ...styles.cancelBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => setEditingCat(null)}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: '500', fontSize: '14px', flex: 1 }}>{cat.nombre}</span>
+                        <button style={styles.actionBtn} onClick={() => { setEditingCat(cat.id); setEditingCatNombre(cat.nombre) }}>✏️</button>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: '4px' }}>
+                    {subcategoriasDB.filter(s => s.category_id === cat.id).map(s => (
+                      <span key={s.id} style={{ fontSize: '12px', backgroundColor: '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: '#5C4F5C' }}>{s.nombre}</span>
+                    ))}
+                    {newSubcatCatId === cat.id ? (
+                      <form onSubmit={handleAddSubcat} style={{ display: 'flex', gap: '4px' }}>
+                        <input
+                          style={{ ...styles.input, padding: '3px 8px', fontSize: '12px', width: '120px' }}
+                          placeholder="Nueva subcategoría"
+                          value={newSubcatNombre}
+                          onChange={e => setNewSubcatNombre(e.target.value)}
+                          autoFocus
+                        />
+                        <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '3px 10px', fontSize: '12px' }}>+</button>
+                        <button type="button" style={{ ...styles.cancelBtn, flex: 'none', padding: '3px 8px', fontSize: '12px' }} onClick={() => setNewSubcatCatId(null)}>✕</button>
+                      </form>
+                    ) : (
+                      <button
+                        onClick={() => { setNewSubcatCatId(cat.id); setNewSubcatNombre('') }}
+                        style={{ fontSize: '11px', color: '#5C4F5C', background: 'none', border: '1px dashed #5C4F5C', borderRadius: '6px', padding: '2px 8px', cursor: 'pointer' }}
+                      >+ sub</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <form onSubmit={handleAddCategoria} style={{ display: 'flex', gap: '8px' }}>
+              <input
+                style={{ ...styles.input, flex: 1 }}
+                placeholder="Nueva categoría"
+                value={newCatNombre}
+                onChange={e => setNewCatNombre(e.target.value)}
+              />
+              <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
+            </form>
+            <div style={{ marginTop: '16px', textAlign: 'right' }}>
+              <button style={styles.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null) }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddAccount && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '400px'}}>
@@ -772,10 +935,10 @@ export default function Dashboard() {
                   {archivo ? (
                     <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{archivo.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
                   ) : (
-                    <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF acá o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos PDF · Máx. 10MB</p></>
+                    <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG, JPG · Máx. 10MB</p></>
                   )}
                 </div>
-                <input id="uploadInput" type="file" accept=".pdf" style={{display:'none'}}
+                <input id="uploadInput" type="file" accept=".pdf,.png,.jpg,.jpeg" style={{display:'none'}}
                   onChange={(e) => { if (e.target.files[0]) setArchivo(e.target.files[0]) }} />
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
@@ -1087,163 +1250,122 @@ export default function Dashboard() {
   )
 }
 
-const styles = {
-  container: { minHeight: '100vh', backgroundColor: '#F0EDEC', fontFamily: '"Montserrat", sans-serif' },
-  header: {
-    backgroundColor: '#F0EDEC',
-    padding: '24px 32px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoImg: { height: '220px', objectFit: 'contain' },
-  layout: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    maxWidth: '1280px',
-    margin: '0 auto',
-    padding: '0 24px 48px 24px',
-    gap: '24px',
-  },
-  sidebar: {
-    width: '240px',
-    flexShrink: 0,
-    backgroundColor: 'white',
-    borderRadius: '16px',
-    padding: '24px 16px',
-    boxShadow: '0 2px 12px rgba(92,79,92,0.08)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-    position: 'sticky',
-    top: '24px',
-  },
-  sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
-  sidebarTitle: { fontSize: '16px', fontWeight: '400', color: '#1d1d1f', margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
-  sidebarBtnPrimary: {
-    width: '100%', padding: '10px', backgroundColor: '#5C4F5C', color: 'white',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
-  },
-  sidebarBtnSecondary: {
-    width: '100%', padding: '10px', backgroundColor: 'white', color: '#5C4F5C',
-    border: '2px solid #5C4F5C', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
-  },
-  accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
-  emptyText: { fontSize: '13px', color: '#6e6e73', textAlign: 'center', padding: '16px 0' },
-  accountCard: {
-    backgroundColor: '#F0EDEC', borderRadius: '12px', padding: '14px',
-    border: '1px solid #E2DDE0', cursor: 'pointer', transition: 'all 0.2s'
-  },
-  accountCardSelected: { border: '2px solid #5C4F5C', backgroundColor: '#EDE8EC' },
-  accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
-  accountType: { fontSize: '11px', color: '#6e6e73', margin: 0, fontWeight: '400' },
-  accountName: { fontSize: '16px', fontWeight: '500', color: '#1d1d1f', margin: 0 },
-  accountActions: { display: 'flex', gap: '2px' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
-  sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #EDE8EC' },
-  logoutBtn: {
-    width: '100%', padding: '9px', backgroundColor: 'transparent', color: '#5C4F5C',
-    border: '1.5px solid #5C4F5C', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', outline: 'none'
-  },
-  mainContent: { flex: 1, minWidth: 0 },
-  section: { backgroundColor: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(92,79,92,0.08)' },
-  sectionTitle: { fontSize: '18px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 24px 0' },
-  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: '#6e6e73' },
-  emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
-  emptyStateText: { fontSize: '15px', color: '#6e6e73', fontWeight: '500' },
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: 'white', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', maxHeight: '90vh', overflowY: 'auto' },
-  modalTitle: { fontSize: '20px', fontWeight: '500', color: '#1d1d1f', margin: '0 0 24px 0' },
-  field: { marginBottom: '16px' },
-  label: { display: 'block', fontSize: '14px', fontWeight: '400', color: '#444', marginBottom: '6px' },
-  input: { width: '100%', padding: '11px', borderRadius: '10px', border: '1px solid #e0e0e0', fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
-  dropzone: { border: '2px dashed #e0e0e0', borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: '#fafafa', marginBottom: '16px' },
-  dropzoneActive: { borderColor: '#5C4F5C', backgroundColor: '#EDE8EC' },
-  dropzoneDone: { borderColor: '#27AE60', backgroundColor: '#f0faf5' },
-  dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
-  dropzoneText: { fontSize: '14px', color: '#444', margin: '0 0 4px 0', fontWeight: '500' },
-  dropzoneHint: { fontSize: '12px', color: '#aaa', margin: 0 },
-  modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
-  cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'white', color: '#5C4F5C', border: '2px solid #5C4F5C', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
-  saveBtn: { flex: 1, padding: '12px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
-  selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: 'white', color: '#2d2d2d', border: '2px solid #E2DDE0', borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '500', textAlign: 'left' },
-  selectAccountBtnNew: { borderStyle: 'dashed', color: '#5C4F5C', fontWeight: '500', fontSize: '14px' },
-  processingContainer: { textAlign: 'center', padding: '20px 0' },
-  processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
-  processingTitle: { fontSize: '20px', fontWeight: 'bold', color: '#2d2d2d', margin: '0 0 8px 0' },
-  processingText: { fontSize: '14px', color: '#888', margin: '0 0 24px 0' },
-  processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
-  dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#E2DDE0' },
-  dotActive: { backgroundColor: '#5C4F5C' },
-  timerBar: { width: '100%', height: '4px', backgroundColor: '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
-  timerFill: { height: '100%', borderRadius: '2px', transition: 'width 1s linear, background-color 0.3s' },
-  timerText: { fontSize: '12px', color: '#8e8e93', margin: 0 },
-  stepSubtitle: { fontSize: '14px', color: '#666', marginBottom: '16px' },
-  adicionalesList: { marginBottom: '20px' },
-  adicionalItem: { padding: '10px 14px', backgroundColor: '#EDE8EC', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: '#5C4F5C', fontWeight: '500' },
-  stepQuestion: { fontSize: '15px', fontWeight: '500', color: '#2d2d2d', marginBottom: '16px' },
-  opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  opcionBtn: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', border: '2px solid #e0e0e0', borderRadius: '12px', backgroundColor: 'white', cursor: 'pointer', gap: '4px' },
-  opcionIcon: { fontSize: '28px' },
-  opcionTitle: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d' },
-  opcionDesc: { fontSize: '12px', color: '#888' },
-  previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
-  previewStat: { backgroundColor: '#F0EDEC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
-  previewStatLabel: { fontSize: '11px', color: '#888', textTransform: 'uppercase' },
-  previewStatValue: { fontSize: '15px', fontWeight: '500', color: '#2d2d2d' },
-  transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
-  transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
-  transactionLeft: { flex: 1, paddingRight: '12px' },
-  transactionName: { fontSize: '14px', fontWeight: '500', color: '#2d2d2d', margin: '0 0 2px 0' },
-  transactionDetail: { fontSize: '12px', color: '#aaa', margin: 0 },
-  transactionMonto: { fontSize: '14px', fontWeight: '500', whiteSpace: 'nowrap' },
-  moreTransactions: { fontSize: '13px', color: '#5C4F5C', textAlign: 'center', padding: '8px 0' },
-  warningBox: { backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#856404', marginBottom: '16px' },
-  // Paso identificar
-  identificarCard: {
-    backgroundColor: '#F0EDEC', borderRadius: '12px', padding: '16px 20px',
-    marginBottom: '20px', border: '1px solid #e0e4f0'
-  },
-  identificarDetalle: {
-    fontSize: '13px', fontFamily: 'monospace', color: '#5C4F5C',
-    margin: 0, wordBreak: 'break-all'
-  },
-  // Paso contexto
-  contextoCard: { textAlign: 'center', paddingTop: '8px' },
-  contextoIcon: { fontSize: '48px', margin: '0 0 16px 0' },
-  // Widget ahorro
-  savingsPanel: {
-    width: '220px',
-    flexShrink: 0,
-    backgroundColor: 'white',
-    borderRadius: '16px',
-    padding: '20px 16px',
-    boxShadow: '0 2px 12px rgba(92,79,92,0.08)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0px',
-    position: 'sticky',
-    top: '24px',
-    alignSelf: 'flex-start',
-  },
-  savingsPanelTitle: {
-    fontSize: '14px', fontWeight: '400', color: '#1d1d1f',
-    margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase'
-  },
-  savingsField: { marginBottom: '12px' },
-  savingsLabel: { display: 'block', fontSize: '12px', fontWeight: '400', color: '#6e6e73', marginBottom: '4px' },
-  savingsInput: {
-    width: '100%', padding: '8px 10px', borderRadius: '8px',
-    border: '1px solid #e0e0e0', fontSize: '13px', outline: 'none',
-    boxSizing: 'border-box', color: '#1d1d1f', backgroundColor: '#fafafa'
-  },
-  savingsHint: { fontSize: '12px', color: '#b0b0b8', textAlign: 'center', marginTop: '8px', lineHeight: '1.5' },
-  savingsResult: {
-    marginTop: '16px', backgroundColor: '#F0EDEC', borderRadius: '12px',
-    padding: '16px', textAlign: 'center'
-  },
-  savingsResultLabel: { fontSize: '10px', fontWeight: '500', color: '#5C4F5C', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px 0' },
-  savingsResultPhrase: { fontSize: '13px', color: '#5a6080', margin: '0 0 4px 0', fontWeight: '500' },
-  savingsResultAmount: { fontSize: '22px', fontWeight: '800', color: '#1d1d1f', margin: '0 0 4px 0', letterSpacing: '-0.02em' },
-  savingsResultNote: { fontSize: '11px', color: '#5C4F5C', margin: 0, fontStyle: 'italic' },
+const getStyles = (dark) => {
+  const p = dark ? '#8C7B8C' : '#5C4F5C'
+  const bg = dark ? '#1C1A1C' : '#F0EDEC'
+  const panel = dark ? '#2A272A' : 'white'
+  const txt = dark ? '#F0EDEC' : '#1d1d1f'
+  const muted = dark ? '#9A8A9A' : '#6e6e73'
+  const border = dark ? '#3A333A' : '#E2DDE0'
+  const cardBg = dark ? '#1A181A' : '#F0EDEC'
+  const inputBg = dark ? '#1C1A1C' : '#fafafa'
+  const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
+  return {
+    container: { minHeight: '100vh', backgroundColor: bg, fontFamily: '"Montserrat", sans-serif' },
+    header: { backgroundColor: bg, padding: '24px 32px', display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+    logoImg: { height: '220px', objectFit: 'contain' },
+    layout: { display: 'flex', alignItems: 'flex-start', padding: '0 32px 48px 32px', gap: '24px' },
+    sidebar: {
+      width: '240px', flexShrink: 0, backgroundColor: panel, borderRadius: '16px',
+      padding: '24px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
+      gap: '10px', position: 'sticky', top: '24px',
+    },
+    sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
+    sidebarTitle: { fontSize: '16px', fontWeight: '400', color: txt, margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
+    sidebarBtnPrimary: {
+      width: '100%', padding: '10px', backgroundColor: p, color: 'white',
+      border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
+    },
+    sidebarBtnSecondary: {
+      width: '100%', padding: '10px', backgroundColor: 'transparent', color: p,
+      border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
+    },
+    accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
+    emptyText: { fontSize: '13px', color: muted, textAlign: 'center', padding: '16px 0' },
+    accountCard: { backgroundColor: cardBg, borderRadius: '12px', padding: '14px', border: `1px solid ${border}`, cursor: 'pointer', transition: 'all 0.2s' },
+    accountCardSelected: { border: `2px solid ${p}`, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
+    accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
+    accountType: { fontSize: '11px', color: muted, margin: 0, fontWeight: '400' },
+    accountName: { fontSize: '16px', fontWeight: '500', color: txt, margin: 0 },
+    accountActions: { display: 'flex', gap: '2px' },
+    actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
+    sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: `1px solid ${border}` },
+    logoutBtn: {
+      width: '100%', padding: '9px', backgroundColor: 'transparent', color: p,
+      border: `1.5px solid ${p}`, borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', outline: 'none'
+    },
+    mainContent: { flex: 1, minWidth: 0 },
+    section: { backgroundColor: panel, borderRadius: '16px', padding: '24px', boxShadow: shadow },
+    sectionTitle: { fontSize: '18px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },
+    emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: muted },
+    emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
+    emptyStateText: { fontSize: '15px', color: muted, fontWeight: '500' },
+    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+    modal: { backgroundColor: panel, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto' },
+    modalTitle: { fontSize: '20px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },
+    field: { marginBottom: '16px' },
+    label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
+    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt },
+    dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px' },
+    dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
+    dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },
+    dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
+    dropzoneText: { fontSize: '14px', color: dark ? '#C0B0C0' : '#444', margin: '0 0 4px 0', fontWeight: '500' },
+    dropzoneHint: { fontSize: '12px', color: muted, margin: 0 },
+    modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
+    cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
+    saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
+    selectAccountBtn: { width: '100%', padding: '14px 16px', backgroundColor: panel, color: txt, border: `2px solid ${border}`, borderRadius: '10px', cursor: 'pointer', fontSize: '15px', fontWeight: '500', textAlign: 'left' },
+    selectAccountBtnNew: { borderStyle: 'dashed', color: p, fontWeight: '500', fontSize: '14px' },
+    processingContainer: { textAlign: 'center', padding: '20px 0' },
+    processingIcon: { fontSize: '52px', margin: '0 0 16px 0', display: 'block' },
+    processingTitle: { fontSize: '20px', fontWeight: '500', color: txt, margin: '0 0 8px 0' },
+    processingText: { fontSize: '14px', color: muted, margin: '0 0 24px 0' },
+    processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
+    dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: border },
+    dotActive: { backgroundColor: p },
+    timerBar: { width: '100%', height: '4px', backgroundColor: dark ? '#3A333A' : '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
+    timerFill: { height: '100%', borderRadius: '2px', transition: 'width 1s linear, background-color 0.3s' },
+    timerText: { fontSize: '12px', color: muted, margin: 0 },
+    stepSubtitle: { fontSize: '14px', color: muted, marginBottom: '16px' },
+    adicionalesList: { marginBottom: '20px' },
+    adicionalItem: { padding: '10px 14px', backgroundColor: dark ? '#2A202A' : '#EDE8EC', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: p, fontWeight: '500' },
+    stepQuestion: { fontSize: '15px', fontWeight: '500', color: txt, marginBottom: '16px' },
+    opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+    opcionBtn: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', border: `2px solid ${border}`, borderRadius: '12px', backgroundColor: panel, cursor: 'pointer', gap: '4px' },
+    opcionIcon: { fontSize: '28px' },
+    opcionTitle: { fontSize: '14px', fontWeight: '500', color: txt },
+    opcionDesc: { fontSize: '12px', color: muted },
+    previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
+    previewStat: { backgroundColor: cardBg, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
+    previewStatLabel: { fontSize: '11px', color: muted, textTransform: 'uppercase' },
+    previewStatValue: { fontSize: '15px', fontWeight: '500', color: txt },
+    transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
+    transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${border}` },
+    transactionLeft: { flex: 1, paddingRight: '12px' },
+    transactionName: { fontSize: '14px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
+    transactionDetail: { fontSize: '12px', color: muted, margin: 0 },
+    transactionMonto: { fontSize: '14px', fontWeight: '500', whiteSpace: 'nowrap' },
+    moreTransactions: { fontSize: '13px', color: p, textAlign: 'center', padding: '8px 0' },
+    warningBox: { backgroundColor: dark ? '#2A2010' : '#fff8e1', border: `1px solid ${dark ? '#4A3A10' : '#ffe082'}`, borderRadius: '10px', padding: '12px', fontSize: '13px', color: dark ? '#D0A840' : '#856404', marginBottom: '16px' },
+    identificarCard: { backgroundColor: cardBg, borderRadius: '12px', padding: '16px 20px', marginBottom: '20px', border: `1px solid ${border}` },
+    identificarDetalle: { fontSize: '13px', fontFamily: 'monospace', color: p, margin: 0, wordBreak: 'break-all' },
+    contextoCard: { textAlign: 'center', paddingTop: '8px' },
+    contextoIcon: { fontSize: '48px', margin: '0 0 16px 0' },
+    savingsPanel: {
+      width: '220px', flexShrink: 0, backgroundColor: panel, borderRadius: '16px',
+      padding: '20px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
+      gap: '0px', position: 'sticky', top: '24px', alignSelf: 'flex-start',
+    },
+    savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase' },
+    savingsField: { marginBottom: '12px' },
+    savingsLabel: { display: 'block', fontSize: '12px', fontWeight: '400', color: muted, marginBottom: '4px' },
+    savingsInput: { width: '100%', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: txt, backgroundColor: inputBg },
+    savingsHint: { fontSize: '12px', color: muted, textAlign: 'center', marginTop: '8px', lineHeight: '1.5' },
+    savingsResult: { marginTop: '16px', backgroundColor: cardBg, borderRadius: '12px', padding: '16px', textAlign: 'center' },
+    savingsResultLabel: { fontSize: '10px', fontWeight: '500', color: p, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px 0' },
+    savingsResultPhrase: { fontSize: '13px', color: muted, margin: '0 0 4px 0', fontWeight: '500' },
+    savingsResultAmount: { fontSize: '22px', fontWeight: '800', color: txt, margin: '0 0 4px 0', letterSpacing: '-0.02em' },
+    savingsResultNote: { fontSize: '11px', color: p, margin: 0, fontStyle: 'italic' },
+  }
 }
