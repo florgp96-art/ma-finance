@@ -83,7 +83,7 @@ REGLAS GENERALES:
 ═══════════════════════════════
 CATEGORÍAS PARA TARJETAS DE CRÉDITO:
 ═══════════════════════════════
-- Casa → Alquiler, Luz, Gas, Internet, Expensas, Veterinaria, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
+- Casa → Alquiler, Luz, Gas, Internet, Teléfono, Expensas, Veterinaria, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
 - Comida → Supermercado, Delivery
 - Transporte → Nafta, Auto, Transporte público, Uber/Cabify, Telepase, Service Auto, Estacionamiento
 - Salud → Obra social, Médicos, Farmacia
@@ -123,6 +123,7 @@ REGLAS DE ASIGNACIÓN PARA TARJETAS:
 - Cursos/capacitación → Educación / Cursos
 - NETFLIX/SPOTIFY/CANVA/APPLE.COM/Disney/HBO/Amazon Prime → Suscripciones
 - EDENOR/METROGAS/luz/gas → Casa / Luz o Gas
+- MOVISAPPMOVIL/Personal app/Claro app/planes de celular → Casa / Teléfono
 - Internet/telefonía/Fibertel/Personal/Claro/Movistar → Casa / Internet
 - Expensas/administración → Casa / Expensas
 - Alquiler → Casa / Alquiler
