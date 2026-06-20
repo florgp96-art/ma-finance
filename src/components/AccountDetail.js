@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
-const CATEGORY_CONFIG = {
+export const CATEGORY_CONFIG = {
   'Comida':          { icon: '🍔', color: '#FADADD' },
   'Personal':        { icon: '👤', color: '#C8C0CC' },
   'Transporte':      { icon: '🚗', color: '#BDB5C4' },
@@ -20,17 +20,17 @@ const CATEGORY_CONFIG = {
 
 const BAR_COLOR = '#A8B8D8'
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const formatMonto = (monto) =>
+export const formatMonto = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
 
-const formatMontoFull = (monto) =>
+export const formatMontoFull = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : '$'
 
-const mesLabel = (yearMonth) => {
+export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
@@ -46,7 +46,7 @@ const getLast6Months = () => {
 }
 
 // Bubble chart component
-function BubbleChart({ data, darkMode }) {
+export function BubbleChart({ data, darkMode }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)

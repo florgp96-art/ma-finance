@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
 import AccountDetail from '../components/AccountDetail'
+import HijoDetail from '../components/HijoDetail'
 import * as XLSX from 'xlsx'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
@@ -1078,20 +1079,22 @@ export default function Dashboard() {
           <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
               <div style={styles.section}>
-                {/* Tabs */}
-                <div style={{ display: 'flex', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                {/* Tabs — General + hijos dinámicos */}
+                <div style={{ display: 'flex', overflowX: 'auto', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                   {[
-                    { key: 'resumen', label: '📊 Resumen General' },
+                    { key: 'resumen', label: '📊 Resumen' },
                     { key: 'vencimientos', label: '📅 Vencimientos' },
+                    ...childrenDB.map(c => ({ key: c.nombre, label: `👧 ${c.nombre}` }))
                   ].map(tab => (
                     <button key={tab.key}
                       onClick={() => setDashboardTab(tab.key)}
                       style={{
-                        padding: '10px 22px', border: 'none', background: 'none', cursor: 'pointer',
+                        padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
                         fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
                         color: dashboardTab === tab.key ? '#5C4F5C' : '#6e6e73',
                         borderBottom: dashboardTab === tab.key ? '2px solid #5C4F5C' : '2px solid transparent',
-                        marginBottom: '-2px', outline: 'none', transition: 'color 0.15s'
+                        marginBottom: '-2px', outline: 'none', transition: 'color 0.15s',
+                        whiteSpace: 'nowrap'
                       }}
                     >
                       {tab.label}
@@ -1101,6 +1104,10 @@ export default function Dashboard() {
 
                 {dashboardTab === 'resumen' && (
                   <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
+                )}
+
+                {childrenDB.some(c => c.nombre === dashboardTab) && (
+                  <HijoDetail hijoNombre={dashboardTab} darkMode={darkMode} tipoCambio={tipoCambio} refreshKey={refreshKey} />
                 )}
 
                 {dashboardTab === 'vencimientos' && (
