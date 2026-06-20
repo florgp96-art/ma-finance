@@ -14,6 +14,13 @@ const PROCESSING_MSGS = [
   { icon: '✨', title: 'Casi listo...', desc: 'Preparando el resumen final' },
 ]
 
+const EXCEL_PROCESSING_MSGS = [
+  { icon: '📊', title: 'Leyendo el archivo...', desc: 'Procesando las filas del Excel' },
+  { icon: '🤖', title: 'Clasificando con IA...', desc: 'Analizando gastos y montos' },
+  { icon: '🏷️', title: 'Asignando categorías...', desc: 'Identificando cada transacción' },
+  { icon: '✨', title: 'Casi listo...', desc: 'Preparando la vista previa' },
+]
+
 // Etiquetas para contextos detectados
 const CONTEXTO_LABELS = {
   hijo: { icon: '👧', titulo: '¿Tenés hijos?', desc: 'Detectamos gastos de colegio, librería o pediatra. ¿Querés etiquetar estos gastos con el nombre de tu hijo/a?' },
@@ -110,6 +117,13 @@ export default function Dashboard() {
   const [excelPreview, setExcelPreview] = useState(null)
   const [excelDragOver, setExcelDragOver] = useState(false)
   const [loadingExcel, setLoadingExcel] = useState(false)
+  const [excelMsgIndex, setExcelMsgIndex] = useState(0)
+  const [excelTimer, setExcelTimer] = useState(0)
+  const [excelTimerMax, setExcelTimerMax] = useState(60)
+  const [excelTotalBatches, setExcelTotalBatches] = useState(0)
+  const [excelBackgroundMode, setExcelBackgroundMode] = useState(false)
+  const excelMsgIntervalRef = useRef(null)
+  const excelTimerIntervalRef = useRef(null)
 
   // Responsive
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
@@ -367,6 +381,7 @@ export default function Dashboard() {
     if (!excelFile) return
     setLoadingExcel(true)
     setLoadingExcelMsg('Leyendo Excel...')
+    setExcelBackgroundMode(false)
     try {
       const rows = await parsearExcel(excelFile)
       if (rows.length === 0) {
@@ -374,6 +389,25 @@ export default function Dashboard() {
         setLoadingExcel(false); setLoadingExcelMsg('')
         return
       }
+
+      const totalBatches = Math.ceil(rows.length / 30)
+      const timerMax = Math.max(20, Math.min(120, totalBatches * 5))
+      setExcelTotalBatches(totalBatches)
+      setExcelTimerMax(timerMax)
+      setExcelTimer(timerMax)
+      setExcelMsgIndex(0)
+
+      excelMsgIntervalRef.current = setInterval(() => {
+        setExcelMsgIndex(i => (i + 1) % EXCEL_PROCESSING_MSGS.length)
+      }, 3000)
+
+      let elapsed = 0
+      excelTimerIntervalRef.current = setInterval(() => {
+        elapsed++
+        if (elapsed >= 30) setExcelBackgroundMode(true)
+        setExcelTimer(t => t > 0 ? t - 1 : 0)
+      }, 1000)
+
       setLoadingExcelMsg('Clasificando con IA...')
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
@@ -406,7 +440,11 @@ export default function Dashboard() {
     } catch (err) {
       alert('Error procesando el archivo: ' + err.message)
     }
-    setLoadingExcel(false); setLoadingExcelMsg('')
+    clearInterval(excelMsgIntervalRef.current)
+    clearInterval(excelTimerIntervalRef.current)
+    setLoadingExcel(false)
+    setLoadingExcelMsg('')
+    setExcelBackgroundMode(false)
   }
 
   const handleImportarExcel = async () => {
@@ -1802,30 +1840,67 @@ export default function Dashboard() {
             {excelPreview === null ? (
               <>
                 <h3 style={styles.modalTitle}>Importar Excel 📊</h3>
-                <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-                  El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
-                </p>
-                <div
-                  style={{ ...styles.dropzone, ...(excelDragOver ? styles.dropzoneActive : {}), ...(excelFile ? styles.dropzoneDone : {}) }}
-                  onDragOver={e => { e.preventDefault(); setExcelDragOver(true) }}
-                  onDragLeave={() => setExcelDragOver(false)}
-                  onDrop={e => { e.preventDefault(); setExcelDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.xlsx')) setExcelFile(f); else alert('Solo se aceptan archivos .xlsx') }}
-                  onClick={() => document.getElementById('excelInput').click()}
-                >
-                  {excelFile ? (
-                    <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{excelFile.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
-                  ) : (
-                    <><p style={styles.dropzoneIcon}>📊</p><p style={styles.dropzoneText}>Arrastrá el archivo .xlsx o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos Excel (.xlsx)</p></>
-                  )}
-                </div>
-                <input id="excelInput" type="file" accept=".xlsx" style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files[0]) setExcelFile(e.target.files[0]) }} />
-                <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => setShowExcel(false)}>Cancelar</button>
-                  <button style={styles.saveBtn} onClick={handleAnalizarExcel} disabled={!excelFile || loadingExcel}>
-                    {loadingExcel ? (loadingExcelMsg || 'Procesando...') : 'Analizar'}
-                  </button>
-                </div>
+                {loadingExcel ? (() => {
+                  const excelCurrentMsg = EXCEL_PROCESSING_MSGS[excelMsgIndex]
+                  const elapsed = excelTimerMax - excelTimer
+                  const secsPerBatch = excelTotalBatches > 0 ? excelTimerMax / excelTotalBatches : 5
+                  const currentBatch = excelTotalBatches > 0
+                    ? Math.min(excelTotalBatches, Math.floor(elapsed / secsPerBatch) + 1)
+                    : 1
+                  const barPct = excelTimerMax > 0 ? (excelTimer / excelTimerMax) * 100 : 0
+                  return (
+                    <div style={styles.processingContainer}>
+                      <p style={styles.processingIcon}>{excelCurrentMsg.icon}</p>
+                      <h3 style={styles.processingTitle}>{excelCurrentMsg.title}</h3>
+                      <p style={styles.processingText}>
+                        {excelTotalBatches > 0
+                          ? `Clasificando batch ${currentBatch} de ${excelTotalBatches}...`
+                          : excelCurrentMsg.desc}
+                      </p>
+                      <div style={styles.processingDots}>
+                        {EXCEL_PROCESSING_MSGS.map((_, i) => (
+                          <div key={i} style={{ ...styles.dot, ...(i === excelMsgIndex ? styles.dotActive : {}) }} />
+                        ))}
+                      </div>
+                      <div style={styles.timerBar}>
+                        <div style={{ ...styles.timerFill, width: `${barPct}%`, backgroundColor: excelTimer < 10 ? '#e07b39' : '#5C4F5C' }} />
+                      </div>
+                      <p style={styles.timerText}>{excelTimer}s restantes</p>
+                      {excelBackgroundMode && (
+                        <p style={{ fontSize: '12px', color: '#8e8e93', marginTop: '8px', textAlign: 'center' }}>
+                          🔄 Esto está tardando más de lo esperado. El procesamiento continúa en segundo plano...
+                        </p>
+                      )}
+                    </div>
+                  )
+                })() : (
+                  <>
+                    <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+                      El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
+                    </p>
+                    <div
+                      style={{ ...styles.dropzone, ...(excelDragOver ? styles.dropzoneActive : {}), ...(excelFile ? styles.dropzoneDone : {}) }}
+                      onDragOver={e => { e.preventDefault(); setExcelDragOver(true) }}
+                      onDragLeave={() => setExcelDragOver(false)}
+                      onDrop={e => { e.preventDefault(); setExcelDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.xlsx')) setExcelFile(f); else alert('Solo se aceptan archivos .xlsx') }}
+                      onClick={() => document.getElementById('excelInput').click()}
+                    >
+                      {excelFile ? (
+                        <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{excelFile.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
+                      ) : (
+                        <><p style={styles.dropzoneIcon}>📊</p><p style={styles.dropzoneText}>Arrastrá el archivo .xlsx o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos Excel (.xlsx)</p></>
+                      )}
+                    </div>
+                    <input id="excelInput" type="file" accept=".xlsx" style={{ display: 'none' }}
+                      onChange={e => { if (e.target.files[0]) setExcelFile(e.target.files[0]) }} />
+                    <div style={styles.modalButtons}>
+                      <button style={styles.cancelBtn} onClick={() => setShowExcel(false)}>Cancelar</button>
+                      <button style={styles.saveBtn} onClick={handleAnalizarExcel} disabled={!excelFile}>
+                        Analizar
+                      </button>
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <>
