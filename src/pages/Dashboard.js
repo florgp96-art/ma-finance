@@ -337,6 +337,14 @@ export default function Dashboard() {
       const d = String(val.getDate()).padStart(2, '0')
       return `${y}-${m}-${d}`
     }
+    if (typeof val === 'number') {
+      // Excel serial date: days since 1900-01-00 (with leap year bug offset)
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000))
+      const y = date.getUTCFullYear()
+      const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(date.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
     if (typeof val === 'string') {
       const parts = val.split('/')
       if (parts.length === 3) {
