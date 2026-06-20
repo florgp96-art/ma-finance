@@ -140,7 +140,6 @@ export default function Dashboard() {
   const [showAliases, setShowAliases] = useState(false)
   const [userAliases, setUserAliases] = useState([])
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
-  const [loadingExcelMsg, setLoadingExcelMsg] = useState('')
 
   useEffect(() => { fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases() }, [])
 
@@ -380,13 +379,12 @@ export default function Dashboard() {
   const handleAnalizarExcel = async () => {
     if (!excelFile) return
     setLoadingExcel(true)
-    setLoadingExcelMsg('Leyendo Excel...')
     setExcelBackgroundMode(false)
     try {
       const rows = await parsearExcel(excelFile)
       if (rows.length === 0) {
         alert('No se encontraron filas válidas en la hoja GASTOS.')
-        setLoadingExcel(false); setLoadingExcelMsg('')
+        setLoadingExcel(false)
         return
       }
 
@@ -408,7 +406,6 @@ export default function Dashboard() {
         setExcelTimer(t => t > 0 ? t - 1 : 0)
       }, 1000)
 
-      setLoadingExcelMsg('Clasificando con IA...')
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
       const headers = { 'Content-Type': 'application/json' }
@@ -443,7 +440,6 @@ export default function Dashboard() {
     clearInterval(excelMsgIntervalRef.current)
     clearInterval(excelTimerIntervalRef.current)
     setLoadingExcel(false)
-    setLoadingExcelMsg('')
     setExcelBackgroundMode(false)
   }
 
