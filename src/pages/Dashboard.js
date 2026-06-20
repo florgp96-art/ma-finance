@@ -186,7 +186,8 @@ export default function Dashboard() {
   }
 
   const fetchUserAliases = async () => {
-    const { data } = await supabase.from('user_aliases').select('*').order('alias')
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
     setUserAliases(data || [])
   }
 
@@ -575,6 +576,23 @@ export default function Dashboard() {
     if (selectedAccount?.id === accountId) setSelectedAccount(null)
     fetchAccounts()
     setLoading(false)
+  }
+
+  const handleMergeDuplicateAccounts = async (nombre) => {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const duplicates = accounts.filter(a => a.nombre === nombre)
+    if (duplicates.length <= 1) { setLoading(false); return }
+    const keeper = duplicates[0]
+    const toRemove = duplicates.slice(1)
+    for (const acc of toRemove) {
+      await supabase.from('transactions').update({ account_id: keeper.id }).eq('account_id', acc.id)
+      await supabase.from('statements').delete().eq('account_id', acc.id)
+      await supabase.from('accounts').delete().eq('id', acc.id).eq('user_id', user.id)
+    }
+    fetchAccounts()
+    setLoading(false)
+    alert(`✅ ${toRemove.length} cuenta(s) duplicada(s) consolidadas en "${nombre}".`)
   }
 
   const resetUpload = () => {
@@ -1026,6 +1044,21 @@ export default function Dashboard() {
               <h2 style={styles.sidebarTitle}>CUENTAS</h2>
             </div>
 
+            {(() => {
+              const names = accounts.map(a => a.nombre)
+              const dupes = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))]
+              return dupes.length > 0 ? (
+                <div style={{ background: '#e74c3c22', border: '1px solid #e74c3c66', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '12px', color: '#e74c3c' }}>
+                  ⚠️ Cuentas duplicadas: {dupes.join(', ')}
+                  {dupes.map(nombre => (
+                    <button key={nombre} style={{ display: 'block', width: '100%', marginTop: '6px', padding: '5px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px' }}
+                      onClick={() => handleMergeDuplicateAccounts(nombre)} disabled={loading}>
+                      {loading ? 'Consolidando...' : `Consolidar "${nombre}"`}
+                    </button>
+                  ))}
+                </div>
+              ) : null
+            })()}
             <div style={styles.accountsList}>
               {accounts.length > 0 && (
                 <div
