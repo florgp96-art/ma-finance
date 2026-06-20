@@ -248,7 +248,8 @@ export default function Dashboard() {
   const handleAddHijo = async (e) => {
     e.preventDefault()
     if (!newHijoNombre.trim()) return
-    await supabase.from('children').insert({ nombre: newHijoNombre.trim() })
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('children').insert({ user_id: user.id, nombre: newHijoNombre.trim() })
     setNewHijoNombre('')
     fetchChildren()
   }
@@ -1066,7 +1067,7 @@ export default function Dashboard() {
                 👧 HIJOS
               </button>
               <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>
-                🏷️ ALIASES
+                🏷️ ETIQUETAS
               </button>
             </div>
 
@@ -1736,13 +1737,13 @@ export default function Dashboard() {
       {showAliases && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '580px' }}>
-            <h3 style={styles.modalTitle}>🏷️ Aliases / Contextos del Excel</h3>
+            <h3 style={styles.modalTitle}>🏷️ Mis Etiquetas</h3>
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
               Definí cómo se mapean los valores de DESCRIPCION del Excel a categorías, hijos o cuentas.
             </p>
             <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
               {userAliases.length === 0 ? (
-                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin aliases. Agregá el primero abajo.</p>
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin etiquetas. Agregá la primera abajo.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
