@@ -8,6 +8,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resetSent, setResetSent] = useState(false)
   const navigate = useNavigate()
 
   const handleLogin = async () => {
@@ -25,6 +26,21 @@ export default function Login() {
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') handleLogin()
+  }
+
+  const handleResetPassword = async () => {
+    if (!email) { setError('Ingresá tu email para restablecer la contraseña.'); return }
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/dashboard`
+    })
+    setLoading(false)
+    if (error) {
+      setError('Error al enviar el email. Verificá la dirección.')
+    } else {
+      setResetSent(true)
+    }
   }
 
   return (
@@ -71,6 +87,18 @@ export default function Login() {
         >
           {loading ? 'Ingresando...' : 'Ingresar'}
         </button>
+
+        {resetSent ? (
+          <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '13px', color: '#27ae60' }}>
+            ✅ Te enviamos un email para restablecer tu contraseña.
+          </p>
+        ) : (
+          <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: '#6e6e73' }}>
+            <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: '#5C4F5C', cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
+              ¿Olvidaste tu contraseña?
+            </button>
+          </p>
+        )}
 
         <p style={styles.link}>
           ¿No tenés cuenta? <Link to="/register" style={styles.linkAnchor}>Registrate</Link>
@@ -126,12 +154,12 @@ const styles = {
     width: '100%',
     padding: '13px 14px',
     borderRadius: '12px',
-    border: '1.5px solid #e0e0e0',
+    border: '1.5px solid #D0C8CC',
     fontSize: '15px',
     outline: 'none',
     boxSizing: 'border-box',
     color: '#1d1d1f',
-    backgroundColor: '#fafafa',
+    backgroundColor: '#F7F5F6',
     transition: 'border-color 0.2s',
   },
   button: {

@@ -23,29 +23,6 @@ const CONTEXTO_LABELS = {
   gimnasio: { icon: '🏋️', titulo: 'Gimnasio o actividad física', desc: 'Detectamos cuota de gimnasio. ¿Querés crear una etiqueta para este gasto?' },
 }
 
-const MAPEO_CATEGORIAS = {
-  'SUPERMERCADO': { cat: 'Comida', subcat: 'Supermercado' },
-  'VETERINARIA':  { cat: 'Casa', subcat: 'Veterinaria' },
-  'DEBITOS':      { cat: 'Débitos', subcat: null },
-  'TELEFONO':     { cat: 'Casa', subcat: 'Teléfono' },
-  'FLOR':         { cat: 'Personal', subcat: 'Varios' },
-  'EXTRAS':       { cat: 'Personal', subcat: 'Varios' },
-  'PRESTAMO':     { cat: 'Débitos', subcat: null },
-  'DELIVERY':     { cat: 'Comida', subcat: 'Delivery' },
-  'ROPA':         { cat: 'Ropa', subcat: null },
-  'SALUD':        { cat: 'Salud', subcat: null },
-  'FARMACIA':     { cat: 'Salud', subcat: 'Farmacia' },
-  'MEDICO':       { cat: 'Salud', subcat: 'Médicos' },
-  'EDUCACION':    { cat: 'Educación', subcat: null },
-  'COLEGIO':      { cat: 'Educación', subcat: 'Colegio' },
-  'NAFTA':        { cat: 'Transporte', subcat: 'Nafta' },
-  'PEAJE':        { cat: 'Transporte', subcat: 'Auto' },
-  'UBER':         { cat: 'Transporte', subcat: 'Uber/Cabify' },
-  'CASA':         { cat: 'Casa', subcat: null },
-  'EXPENSAS':     { cat: 'Casa', subcat: 'Expensas' },
-  'ALQUILER':     { cat: 'Casa', subcat: 'Alquiler' },
-  'SUSCRIPCIONES':{ cat: 'Suscripciones', subcat: null },
-}
 
 const SERVICIOS = [
   { nombre: 'Edenor', link: 'https://autogestion.edenor.com.ar', usuario: '' },
@@ -144,7 +121,13 @@ export default function Dashboard() {
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
-  useEffect(() => { fetchAccounts(); fetchCategorias(); fetchChildren() }, [])
+  // Aliases
+  const [showAliases, setShowAliases] = useState(false)
+  const [userAliases, setUserAliases] = useState([])
+  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+  const [loadingExcelMsg, setLoadingExcelMsg] = useState('')
+
+  useEffect(() => { fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases() }, [])
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -186,6 +169,32 @@ export default function Dashboard() {
   const fetchChildren = async () => {
     const { data } = await supabase.from('children').select('nombre').order('nombre')
     setChildrenDB(data || [])
+  }
+
+  const fetchUserAliases = async () => {
+    const { data } = await supabase.from('user_aliases').select('*').order('alias')
+    setUserAliases(data || [])
+  }
+
+  const handleAddAlias = async (e) => {
+    e.preventDefault()
+    if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('user_aliases').insert({
+      user_id: user.id,
+      alias: newAlias.alias.trim().toUpperCase(),
+      tipo: newAlias.tipo,
+      valor: newAlias.valor.trim(),
+      descripcion: newAlias.descripcion.trim() || null
+    })
+    setNewAlias({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+    fetchUserAliases()
+  }
+
+  const handleDeleteAlias = async (id) => {
+    if (!window.confirm('¿Eliminar este alias?')) return
+    await supabase.from('user_aliases').delete().eq('id', id)
+    fetchUserAliases()
   }
 
   const handleAddCategoria = async (e) => {
@@ -323,15 +332,6 @@ export default function Dashboard() {
     return null
   }
 
-  const mapearCategoria = (descripcion) => {
-    if (!descripcion) return null
-    const upper = String(descripcion).toUpperCase()
-    for (const [key, val] of Object.entries(MAPEO_CATEGORIAS)) {
-      if (upper.includes(key)) return val
-    }
-    return null
-  }
-
   const parsearExcel = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -349,10 +349,9 @@ export default function Dashboard() {
             const descripcion = String(row[4] || '').trim()
             const notas = String(row[5] || '').trim()
             const modo_pago = String(row[6] || '').trim()
-            const mapeo = mapearCategoria(descripcion)
             const monto = monto_usd > 0 ? monto_usd : monto_ars
             const moneda = monto_usd > 0 ? 'USD' : 'ARS'
-            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas, modo_pago, detalle: notas || descripcion, cat: mapeo?.cat || null, subcat: mapeo?.subcat || null, estado: mapeo ? 'identificado' : 'a_identificar' }
+            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas, modo_pago }
           })
           .filter(r => r.fecha && r.monto > 0)
         resolve(parsed)
@@ -365,14 +364,47 @@ export default function Dashboard() {
   const handleAnalizarExcel = async () => {
     if (!excelFile) return
     setLoadingExcel(true)
+    setLoadingExcelMsg('Leyendo Excel...')
     try {
       const rows = await parsearExcel(excelFile)
-      if (rows.length === 0) { alert('No se encontraron filas válidas en la hoja GASTOS.'); setLoadingExcel(false); return }
-      setExcelPreview(rows)
+      if (rows.length === 0) {
+        alert('No se encontraron filas válidas en la hoja GASTOS.')
+        setLoadingExcel(false); setLoadingExcelMsg('')
+        return
+      }
+      setLoadingExcelMsg('Clasificando con IA...')
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const headers = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const response = await fetch('/api/classifyRows', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          rows: rows.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
+          categories: categoriasDB.map(c => ({ nombre: c.nombre })),
+          children: childrenDB,
+          aliases: userAliases
+        })
+      })
+      if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
+      const { classifications } = await response.json()
+      const enriched = rows.map((r, i) => {
+        const cl = Array.isArray(classifications) ? classifications[i] : null
+        return {
+          ...r,
+          cat: cl?.categoria || null,
+          subcat: cl?.subcategoria || null,
+          hijo: cl?.hijo || null,
+          nombre: cl?.nombre || r.notas || r.descripcion,
+          estado: cl?.categoria && cl?.categoria !== 'A Identificar' ? 'identificado' : 'a_identificar'
+        }
+      })
+      setExcelPreview(enriched)
     } catch (err) {
-      alert('Error leyendo el archivo: ' + err.message)
+      alert('Error procesando el archivo: ' + err.message)
     }
-    setLoadingExcel(false)
+    setLoadingExcel(false); setLoadingExcelMsg('')
   }
 
   const handleImportarExcel = async () => {
@@ -380,52 +412,88 @@ export default function Dashboard() {
     setLoadingExcel(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      const currentAccounts = [...accounts]
 
-      let { data: cuentaEf } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
-      if (!cuentaEf) {
-        const { data: nueva } = await supabase.from('accounts')
-          .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
-        cuentaEf = nueva
-        fetchAccounts()
+      const accountCache = {}
+      const resolveAccount = async (modoPago) => {
+        const key = (modoPago || 'EFECTIVO').toUpperCase().trim()
+        if (accountCache[key]) return accountCache[key]
+        const aliasAcc = userAliases.find(a => a.tipo === 'cuenta' && a.alias.toUpperCase() === key)
+        if (aliasAcc) {
+          let acc = currentAccounts.find(a => a.nombre.toLowerCase() === aliasAcc.valor.toLowerCase())
+          if (!acc) {
+            const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: aliasAcc.valor, tipo: 'credito' }).select().single()
+            acc = data; currentAccounts.push(acc)
+          }
+          accountCache[key] = acc; return acc
+        }
+        if (key.includes('VISA') && !key.includes('MASTER')) {
+          let acc = currentAccounts.find(a => a.nombre.toLowerCase().includes('visa') && !a.nombre.toLowerCase().includes('master'))
+          if (!acc) {
+            const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Visa Galicia', tipo: 'credito' }).select().single()
+            acc = data; currentAccounts.push(acc)
+          }
+          accountCache[key] = acc; return acc
+        }
+        if (key.includes('MASTER') || key.includes('MASTERCARD')) {
+          let acc = currentAccounts.find(a => a.nombre.toLowerCase().includes('master'))
+          if (!acc) {
+            const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Mastercard Platinum Galicia', tipo: 'credito' }).select().single()
+            acc = data; currentAccounts.push(acc)
+          }
+          accountCache[key] = acc; return acc
+        }
+        let acc = currentAccounts.find(a => a.nombre === 'Efectivo')
+        if (!acc) {
+          const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+          acc = data; currentAccounts.push(acc)
+        }
+        accountCache[key] = acc; return acc
       }
-
-      const { data: existentes } = await supabase.from('transactions')
-        .select('fecha, monto, detalle').eq('account_id', cuentaEf.id)
 
       const { data: categorias } = await supabase.from('categories').select('id, nombre')
       const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
       const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
       const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
 
-      const nuevas = excelPreview.filter(row =>
-        !existentes?.some(e =>
-          e.fecha === row.fecha &&
-          Math.abs(Number(e.monto) - row.monto) < 0.01 &&
-          (e.detalle || '').toLowerCase() === (row.detalle || '').toLowerCase()
-        )
-      )
+      const accountsForRows = await Promise.all(excelPreview.map(r => resolveAccount(r.modo_pago)))
+      const uniqueAccountIds = [...new Set(accountsForRows.map(a => a.id))]
+      const { data: existentes } = await supabase.from('transactions')
+        .select('fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
 
-      if (nuevas.length === 0) {
+      const nuevasWithAccounts = excelPreview
+        .map((row, i) => ({ row, acc: accountsForRows[i] }))
+        .filter(({ row, acc }) =>
+          !existentes?.some(e =>
+            e.account_id === acc.id &&
+            e.fecha === row.fecha &&
+            Math.abs(Number(e.monto) - row.monto) < 0.01 &&
+            (e.detalle || '').toLowerCase() === (row.notas || row.descripcion || '').toLowerCase()
+          )
+        )
+
+      if (nuevasWithAccounts.length === 0) {
         alert('Todas las transacciones ya existen (duplicadas).')
-        setLoadingExcel(false)
-        return
+        setLoadingExcel(false); return
       }
 
-      const toInsert = nuevas.map(row => {
+      const toInsert = nuevasWithAccounts.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
         return {
-          user_id: user.id, account_id: cuentaEf.id,
-          fecha: row.fecha, nombre: row.descripcion || null, detalle: row.detalle,
+          user_id: user.id, account_id: acc.id,
+          fecha: row.fecha,
+          nombre: row.nombre || row.notas || row.descripcion || null,
+          detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: 'gasto',
           category_id: catId,
           subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
+          tag: row.hijo || null,
         }
       })
 
       await supabase.from('transactions').insert(toInsert)
-      const omitidas = excelPreview.length - nuevas.length
+      const omitidas = excelPreview.length - nuevasWithAccounts.length
       alert(`✅ ${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
@@ -920,51 +988,6 @@ export default function Dashboard() {
               <h2 style={styles.sidebarTitle}>CUENTAS</h2>
             </div>
 
-            <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
-              + CARGAR PDF
-            </button>
-            <button style={styles.sidebarBtnPrimary} onClick={() => { setExcelFile(null); setExcelPreview(null); setShowExcel(true) }}>
-              + IMPORTAR EXCEL
-            </button>
-            <button style={styles.sidebarBtnPrimary} onClick={async () => {
-              const { data: { user } } = await supabase.auth.getUser()
-              let { data: ce } = await supabase.from('accounts')
-                .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
-              if (!ce) {
-                const { data: nueva } = await supabase.from('accounts')
-                  .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
-                ce = nueva
-                fetchAccounts()
-              }
-              setCuentaEfectivoId(ce.id)
-              setShowEfectivo(true)
-            }}>
-              + GASTO EN EFECTIVO
-            </button>
-            <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
-              + CUENTA
-            </button>
-            <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>
-              + CATEGORÍAS
-            </button>
-            <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>
-              👧 HIJOS
-            </button>
-
-            {/* Tipo de cambio */}
-            <div style={{ borderTop: '1px solid #EDE8EC', paddingTop: '12px', marginTop: '4px' }}>
-              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em' }}>
-                U$S 1 = $
-              </label>
-              <input
-                type="number"
-                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: '1px solid #E2DDE0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
-                placeholder="ej. 1250"
-                value={tipoCambio}
-                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
-              />
-            </div>
-
             <div style={styles.accountsList}>
               {accounts.length > 0 && (
                 <div
@@ -994,6 +1017,56 @@ export default function Dashboard() {
                   </div>
                 ))
               )}
+            </div>
+
+            {/* Tipo de cambio */}
+            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
+              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em' }}>
+                U$S 1 = $
+              </label>
+              <input
+                type="number"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
+                placeholder="ej. 1250"
+                value={tipoCambio}
+                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
+              />
+            </div>
+
+            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
+                + CARGAR PDF
+              </button>
+              <button style={styles.sidebarBtnPrimary} onClick={() => { setExcelFile(null); setExcelPreview(null); setShowExcel(true) }}>
+                + IMPORTAR EXCEL
+              </button>
+              <button style={styles.sidebarBtnPrimary} onClick={async () => {
+                const { data: { user } } = await supabase.auth.getUser()
+                let { data: ce } = await supabase.from('accounts')
+                  .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
+                if (!ce) {
+                  const { data: nueva } = await supabase.from('accounts')
+                    .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+                  ce = nueva
+                  fetchAccounts()
+                }
+                setCuentaEfectivoId(ce.id)
+                setShowEfectivo(true)
+              }}>
+                + GASTO EN EFECTIVO
+              </button>
+              <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
+                + CUENTA
+              </button>
+              <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>
+                + CATEGORÍAS
+              </button>
+              <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>
+                👧 HIJOS
+              </button>
+              <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>
+                🏷️ ALIASES
+              </button>
             </div>
 
             <div style={styles.sidebarFooter}>
@@ -1653,6 +1726,68 @@ export default function Dashboard() {
         </div>
       )}
 
+      {showAliases && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '580px' }}>
+            <h3 style={styles.modalTitle}>🏷️ Aliases / Contextos del Excel</h3>
+            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+              Definí cómo se mapean los valores de DESCRIPCION del Excel a categorías, hijos o cuentas.
+            </p>
+            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
+              {userAliases.length === 0 ? (
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin aliases. Agregá el primero abajo.</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr>
+                      {['Alias (Excel)', 'Tipo', 'Valor', ''].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userAliases.map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: '#5C4F5C', padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
+                        </td>
+                        <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>{a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}</td>
+                        <td style={{ padding: '8px' }}>
+                          <button style={styles.actionBtn} onClick={() => handleDeleteAlias(a.id)}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr auto', gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
+              <div>
+                <label style={styles.label}>Alias (valor en Excel)</label>
+                <input style={styles.input} placeholder="AMELIA" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
+              </div>
+              <div>
+                <label style={styles.label}>Tipo</label>
+                <select style={styles.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value})}>
+                  <option value="categoria">Cat.</option>
+                  <option value="hijo">Hijo/a</option>
+                  <option value="cuenta">Cuenta</option>
+                </select>
+              </div>
+              <div>
+                <label style={styles.label}>{newAlias.tipo === 'hijo' ? 'Nombre del hijo/a' : newAlias.tipo === 'cuenta' ? 'Nombre de la cuenta' : 'Categoría asignada'}</label>
+                <input style={styles.input} placeholder={newAlias.tipo === 'hijo' ? 'Amelia' : newAlias.tipo === 'cuenta' ? 'Visa Galicia' : 'Casa'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
+              </div>
+              <button type="submit" style={{ ...styles.saveBtn, padding: '11px 18px', marginTop: '20px' }}>+</button>
+            </form>
+            <div style={{ textAlign: 'right' }}>
+              <button style={styles.cancelBtn} onClick={() => setShowAliases(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showExcel && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '600px' }}>
@@ -1680,7 +1815,7 @@ export default function Dashboard() {
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setShowExcel(false)}>Cancelar</button>
                   <button style={styles.saveBtn} onClick={handleAnalizarExcel} disabled={!excelFile || loadingExcel}>
-                    {loadingExcel ? 'Leyendo...' : 'Analizar'}
+                    {loadingExcel ? (loadingExcelMsg || 'Procesando...') : 'Analizar'}
                   </button>
                 </div>
               </>
@@ -1694,35 +1829,36 @@ export default function Dashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
                       <tr>
-                        {['Fecha', 'Descripción', 'Monto', 'Notas', 'Categoría'].map(h => (
-                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: '2px solid #EDE8EC', color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
+                        {['Fecha', 'Descripción', 'Cuenta', 'Monto', 'Categoría', 'Hijo'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {excelPreview.slice(0, 10).map((row, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid #f0f2f8' }}>
-                          <td style={{ padding: '7px 10px', color: '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
-                          <td style={{ padding: '7px 10px', color: '#1d1d1f', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.descripcion}</td>
-                          <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: '#2d2d2d' }}>
+                        <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
+                          <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
+                          <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nombre || row.notas || '—'}</td>
+                          <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '11px' }}>{row.modo_pago || 'Efectivo'}</td>
+                          <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#2d2d2d' }}>
                             {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
                           </td>
-                          <td style={{ padding: '7px 10px', color: '#8e8e93', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.notas || '—'}</td>
                           <td style={{ padding: '7px 10px' }}>
-                            {row.cat ? (
-                              <span style={{ backgroundColor: '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>{row.cat}</span>
+                            {row.cat && row.cat !== 'A Identificar' ? (
+                              <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>{row.cat}</span>
                             ) : (
                               <span style={{ backgroundColor: '#fff8e1', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>❓ Sin identificar</span>
                             )}
                           </td>
+                          <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {excelPreview.filter(r => !r.cat).length > 0 && (
+                {excelPreview.filter(r => !r.cat || r.cat === 'A Identificar').length > 0 && (
                   <div style={{ backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#856404', marginBottom: '16px' }}>
-                    ❓ {excelPreview.filter(r => !r.cat).length} fila(s) sin categoría — se guardarán como "A identificar" y podés clasificarlas desde la cuenta Efectivo.
+                    ❓ {excelPreview.filter(r => !r.cat || r.cat === 'A Identificar').length} fila(s) sin categoría — se guardarán como "A identificar".
                   </div>
                 )}
                 <div style={styles.modalButtons}>
