@@ -22,6 +22,20 @@ const CONTEXTO_LABELS = {
   gimnasio: { icon: '🏋️', titulo: 'Gimnasio o actividad física', desc: 'Detectamos cuota de gimnasio. ¿Querés crear una etiqueta para este gasto?' },
 }
 
+const SERVICIOS = [
+  { nombre: 'Edenor', link: 'https://autogestion.edenor.com.ar', usuario: '' },
+  { nombre: 'Metrogas', link: 'https://www.metrogas.com.ar', usuario: '' },
+  { nombre: 'Telecentro', link: 'https://www.telecentro.com.ar', usuario: '' },
+]
+
+const parseFechaArgentina = (fecha) => {
+  if (!fecha) return null
+  const parts = fecha.split('/')
+  if (parts.length !== 3) return fecha
+  const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+  return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
@@ -83,8 +97,18 @@ export default function Dashboard() {
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
+  const [dashboardTab, setDashboardTab] = useState('resumen')
+  const [vencimientosList, setVencimientosList] = useState([])
+  const [loadingVenc, setLoadingVenc] = useState(false)
 
   useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
+
+  useEffect(() => {
+    if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
+      fetchVencimientos()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardTab, selectedAccount])
 
   useEffect(() => {
     if (step === 'processing') {
@@ -172,6 +196,21 @@ export default function Dashboard() {
       const ef = data.find(a => a.nombre === 'Efectivo')
       if (ef) setSelectedAccount(prev => prev === null ? ef : prev)
     }
+  }
+
+  const fetchVencimientos = async () => {
+    setLoadingVenc(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const today = new Date().toISOString().slice(0, 10)
+    const { data } = await supabase
+      .from('statements')
+      .select('id, periodo, fecha_vencimiento, total_resumen, accounts(nombre)')
+      .eq('user_id', user.id)
+      .not('fecha_vencimiento', 'is', null)
+      .gte('fecha_vencimiento', today)
+      .order('fecha_vencimiento', { ascending: true })
+    setVencimientosList(data || [])
+    setLoadingVenc(false)
   }
 
   const handleLogout = async () => {
@@ -527,7 +566,9 @@ export default function Dashboard() {
       const { data: statement } = await supabase.from('statements').insert({
         user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
         periodo: statementData.periodo, fecha_desde: null,
-        fecha_hasta: statementData.fecha_facturacion, total_resumen: statementData.total_pesos, estado: 'completo'
+        fecha_hasta: statementData.fecha_facturacion,
+        fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
+        total_resumen: statementData.total_pesos, estado: 'completo'
       }).select().single()
 
       const fechaResumen = statementData.fecha_facturacion || null
@@ -698,8 +739,110 @@ export default function Dashboard() {
           <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
               <div style={styles.section}>
-                <h2 style={styles.sectionTitle}>📊 Resumen General</h2>
-                <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
+                {/* Tabs */}
+                <div style={{ display: 'flex', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                  {[
+                    { key: 'resumen', label: '📊 Resumen General' },
+                    { key: 'vencimientos', label: '📅 Vencimientos' },
+                  ].map(tab => (
+                    <button key={tab.key}
+                      onClick={() => setDashboardTab(tab.key)}
+                      style={{
+                        padding: '10px 22px', border: 'none', background: 'none', cursor: 'pointer',
+                        fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
+                        color: dashboardTab === tab.key ? '#5C4F5C' : '#6e6e73',
+                        borderBottom: dashboardTab === tab.key ? '2px solid #5C4F5C' : '2px solid transparent',
+                        marginBottom: '-2px', outline: 'none', transition: 'color 0.15s'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {dashboardTab === 'resumen' && (
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
+                )}
+
+                {dashboardTab === 'vencimientos' && (
+                  <div>
+                    <div style={{ marginBottom: '32px' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 16px 0' }}>
+                        💳 Próximos vencimientos de tarjetas
+                      </h3>
+                      {loadingVenc ? (
+                        <p style={{ color: '#aaa', fontSize: '14px' }}>Cargando...</p>
+                      ) : vencimientosList.length === 0 ? (
+                        <p style={{ color: '#aaa', fontSize: '14px' }}>No hay vencimientos próximos. Los vencimientos se guardan automáticamente al cargar un PDF.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {vencimientosList.map(s => {
+                            const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
+                            const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
+                            return (
+                              <div key={s.id} style={{
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '14px 18px', borderRadius: '12px',
+                                backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
+                                border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                              }}>
+                                <div>
+                                  <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                                    💳 {s.accounts?.nombre || '—'}
+                                  </p>
+                                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
+                                    {s.periodo} · Vence: {s.fecha_vencimiento}
+                                  </p>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  {s.total_resumen > 0 && (
+                                    <p style={{ margin: 0, fontWeight: '600', fontSize: '16px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                                      $ {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(s.total_resumen)}
+                                    </p>
+                                  )}
+                                  {diasRestantes !== null && (
+                                    <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
+                                      {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 16px 0' }}>
+                        🔌 Servicios
+                      </h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {SERVICIOS.map((s, i) => (
+                          <div key={i} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '14px 18px', borderRadius: '12px',
+                            backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
+                            border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                          }}>
+                            <div>
+                              <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
+                              {s.usuario && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>👤 {s.usuario}</p>}
+                            </div>
+                            {s.link && (
+                              <a href={s.link} target="_blank" rel="noopener noreferrer" style={{
+                                padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white',
+                                fontSize: '13px', fontWeight: '500', textDecoration: 'none', fontFamily: '"Montserrat", sans-serif'
+                              }}>
+                                Pagar →
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selectedAccount ? (
               <div style={styles.section}>

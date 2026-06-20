@@ -35,6 +35,16 @@ const mesLabel = (yearMonth) => {
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
 
+const getLast6Months = () => {
+  const months = []
+  const now = new Date()
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return months
+}
+
 // Bubble chart component
 function BubbleChart({ data, darkMode }) {
   const containerRef = useRef(null)
@@ -137,7 +147,7 @@ function BubbleChart({ data, darkMode }) {
                   fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700">
                   {b.pct}%
                 </text>
-                {b.moneda === 'USD' && b.r > 28 && (
+                {(b.originalUSD || 0) > 0 && b.r > 28 && (
                   <text x={b.x} y={b.y + b.r - 10}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
@@ -149,19 +159,35 @@ function BubbleChart({ data, darkMode }) {
           })}
           {tooltip.visible && tooltip.data && (() => {
             const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
-            const tx = Math.max(80, Math.min(WIDTH - 80, tooltip.x))
+            const tx = Math.max(85, Math.min(WIDTH - 85, tooltip.x))
             const ty = Math.max(30, tooltip.y)
+            const hasARS = (tooltip.data.originalARS || 0) > 0
+            const hasUSD = (tooltip.data.originalUSD || 0) > 0
+            const hasBoth = hasARS && hasUSD
+            const rH = hasBoth ? 66 : 50
             return (
               <g>
-                <rect x={tx - 85} y={ty - 32} width={170} height={50}
+                <rect x={tx - 85} y={ty - 32} width={170} height={rH}
                   rx={8} fill="white"
                   style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.12))' }} />
                 <text x={tx} y={ty - 12} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
                   {cfg.icon} {tooltip.data.name}
                 </text>
-                <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#6e6e73">
-                  {monedaSymbol(tooltip.data.moneda || 'ARS')} {formatMontoFull(tooltip.data.value)}
-                </text>
+                {hasARS && (
+                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#6e6e73">
+                    $ {formatMontoFull(tooltip.data.originalARS)}
+                  </text>
+                )}
+                {!hasARS && hasUSD && (
+                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#5588aa">
+                    U$S {formatMontoFull(tooltip.data.originalUSD)}
+                  </text>
+                )}
+                {hasBoth && (
+                  <text x={tx} y={ty + 26} textAnchor="middle" fontSize={10} fill="#5588aa">
+                    + U$S {formatMontoFull(tooltip.data.originalUSD)}
+                  </text>
+                )}
               </g>
             )
           })()}
@@ -175,7 +201,8 @@ function BubbleChart({ data, darkMode }) {
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
               <span style={{ flex: 1, color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{cfg.icon} {b.name}</span>
               <span style={{ fontWeight: '500', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                {monedaSymbol(b.moneda || 'ARS')} {formatMonto(b.value)}
+                $ {formatMonto(b.value)}
+                {(b.originalUSD || 0) > 0 && <span style={{ fontSize: '10px', color: '#5588aa', marginLeft: '3px' }}>+U$S {formatMonto(b.originalUSD)}</span>}
               </span>
             </div>
           )
@@ -200,6 +227,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
   const [selectedMeses, setSelectedMeses] = useState([])
+  const [selectedCatEvol, setSelectedCatEvol] = useState('')
 
   useEffect(() => {
     if (allAccounts && accounts) fetchAllData()
@@ -376,18 +404,27 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
 
-  const buildBubbleData = (txList) => Object.entries(
-    txList.reduce((acc, t) => {
-      const cat = t.categories?.nombre || 'A Identificar'
-      const moneda = t.moneda || 'ARS'
-      const key = cat + '|' + moneda
-      if (!acc[key]) acc[key] = { name: cat, moneda, value: 0 }
-      acc[key].value += Number(t.monto)
-      return acc
-    }, {})
-  ).map(([, v]) => v).sort((a, b) => b.value - a.value)
+  const buildBubbleData = (txList, tc) => {
+    const tcNum = parseFloat(tc) || 0
+    return Object.values(
+      txList.reduce((acc, t) => {
+        const cat = t.categories?.nombre || 'A Identificar'
+        const monto = Number(t.monto)
+        const moneda = t.moneda || 'ARS'
+        if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0 }
+        if (moneda === 'USD') {
+          acc[cat].originalUSD += monto
+          if (tcNum > 0) acc[cat].value += monto * tcNum
+        } else {
+          acc[cat].value += monto
+          acc[cat].originalARS += monto
+        }
+        return acc
+      }, {})
+    ).sort((a, b) => b.value - a.value)
+  }
 
-  const bubbleData = buildBubbleData(mesTxs)
+  const bubbleData = buildBubbleData(mesTxs, tipoCambio)
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
@@ -840,6 +877,52 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           </tbody>
         </table>
       </div>
+
+      {/* Evolución por categoría */}
+      {transactions.length > 0 && (() => {
+        const categoriasConTx = [...new Set(
+          transactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
+            .map(t => t.categories.nombre)
+        )].sort()
+        const tc = parseFloat(tipoCambio) || 0
+        const evolData = getLast6Months().map(m => {
+          const total = transactions
+            .filter(t => t.fecha?.startsWith(m) && t.tipo === 'gasto' && t.categories?.nombre === selectedCatEvol)
+            .reduce((s, t) => {
+              const monto = Number(t.monto)
+              return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'ARS' ? monto : 0)
+            }, 0)
+          return { mes: mesLabel(m), total }
+        })
+        const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
+        const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
+        const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
+        return (
+          <div style={{ ...styles.chartSection, marginTop: '8px' }}>
+            <h3 style={styles.chartTitle}>📈 Evolución por categoría</h3>
+            <select
+              style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '13px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '16px', cursor: 'pointer' }}
+              value={selectedCatEvol}
+              onChange={e => setSelectedCatEvol(e.target.value)}
+            >
+              <option value="">— Elegir categoría —</option>
+              {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {selectedCatEvol ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={evolData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${formatMonto(v)}`} width={85} />
+                  <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, selectedCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}` }} />
+                  <Bar dataKey="total" fill="#5C4F5C" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p style={{ color: '#aaa', fontSize: '13px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
