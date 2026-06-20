@@ -168,13 +168,13 @@ function BubbleChart({ data, darkMode }) {
             return (
               <g>
                 <rect x={tx - 85} y={ty - 32} width={170} height={rH}
-                  rx={8} fill="white"
-                  style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.12))' }} />
-                <text x={tx} y={ty - 12} textAnchor="middle" fontSize={12} fontWeight="700" fill="#2d2d2d">
+                  rx={8} fill={darkMode ? '#2A272A' : 'white'}
+                  style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.18))' }} />
+                <text x={tx} y={ty - 12} textAnchor="middle" fontSize={12} fontWeight="700" fill={darkMode ? '#F0EDEC' : '#2d2d2d'}>
                   {cfg.icon} {tooltip.data.name}
                 </text>
                 {hasARS && (
-                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#6e6e73">
+                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill={darkMode ? '#9A8A9A' : '#6e6e73'}>
                     $ {formatMontoFull(tooltip.data.originalARS)}
                   </text>
                 )}
@@ -198,7 +198,7 @@ function BubbleChart({ data, darkMode }) {
           const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0 }} />
+              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
               <span style={{ flex: 1, color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{cfg.icon} {b.name}</span>
               <span style={{ fontWeight: '500', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
                 $ {formatMonto(b.value)}

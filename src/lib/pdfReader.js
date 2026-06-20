@@ -34,10 +34,12 @@ export async function extractTextFromPDF(file) {
   return finalText
 }
 
-export async function analyzeStatementWithClaude(pdfText, cardName, userRules) {
+export async function analyzeStatementWithClaude(pdfText, cardName, userRules, token) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const response = await fetch('/api/analyze', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ pdfText, cardName, userRules: userRules || [] })
   })
 

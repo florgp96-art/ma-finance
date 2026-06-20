@@ -133,7 +133,18 @@ export default function Dashboard() {
   const [excelDragOver, setExcelDragOver] = useState(false)
   const [loadingExcel, setLoadingExcel] = useState(false)
 
-  useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
+  // Responsive
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Hijos
+  const [showHijos, setShowHijos] = useState(false)
+  const [childrenDB, setChildrenDB] = useState([])
+  const [newHijoNombre, setNewHijoNombre] = useState('')
+  const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
+  const [contextoHijoNombre, setContextoHijoNombre] = useState('')
+
+  useEffect(() => { fetchAccounts(); fetchCategorias(); fetchChildren() }, [])
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -141,6 +152,12 @@ export default function Dashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardTab, selectedAccount])
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     if (step === 'processing') {
@@ -166,6 +183,11 @@ export default function Dashboard() {
     setSubcategoriasDB(subcats || [])
   }
 
+  const fetchChildren = async () => {
+    const { data } = await supabase.from('children').select('nombre').order('nombre')
+    setChildrenDB(data || [])
+  }
+
   const handleAddCategoria = async (e) => {
     e.preventDefault()
     if (!newCatNombre.trim()) return
@@ -188,6 +210,43 @@ export default function Dashboard() {
     setNewSubcatNombre('')
     setNewSubcatCatId(null)
     fetchCategorias()
+  }
+
+  const handleDeleteCategoria = async (cat) => {
+    if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id)
+    if (count > 0) {
+      alert(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`)
+      return
+    }
+    await supabase.from('subcategories').delete().eq('category_id', cat.id)
+    await supabase.from('categories').delete().eq('id', cat.id)
+    fetchCategorias()
+  }
+
+  const handleDeleteSubcat = async (subcat) => {
+    if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id)
+    if (count > 0) {
+      alert(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`)
+      return
+    }
+    await supabase.from('subcategories').delete().eq('id', subcat.id)
+    fetchCategorias()
+  }
+
+  const handleAddHijo = async (e) => {
+    e.preventDefault()
+    if (!newHijoNombre.trim()) return
+    await supabase.from('children').insert({ nombre: newHijoNombre.trim() })
+    setNewHijoNombre('')
+    fetchChildren()
+  }
+
+  const handleDeleteHijo = async (nombre) => {
+    if (!window.confirm(`¿Eliminar a "${nombre}"?`)) return
+    await supabase.from('children').delete().eq('nombre', nombre)
+    fetchChildren()
   }
 
   const handleGuardarEfectivo = async (e) => {
@@ -426,16 +485,18 @@ export default function Dashboard() {
     setContextoIdx(0)
   }
 
-  const analyzeImageWithClaude = async (file, userRules) => {
+  const analyzeImageWithClaude = async (file, userRules, token) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = async (e) => {
         try {
           const base64 = e.target.result.split(',')[1]
           const mediaType = file.type || 'image/jpeg'
+          const headers = { 'Content-Type': 'application/json' }
+          if (token) headers['Authorization'] = `Bearer ${token}`
           const response = await fetch('/api/analyzeImage', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
           })
           if (!response.ok) throw new Error(`Error servidor: ${response.status}`)
@@ -457,15 +518,17 @@ export default function Dashboard() {
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
       const { data: rules } = await supabase.from('user_rules').select('*').eq('user_id', user.id)
 
       const isImage = archivo.type.startsWith('image/')
       let result
       if (isImage) {
-        result = await analyzeImageWithClaude(archivo, rules || [])
+        result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
         const pdfText = await extractTextFromPDF(archivo)
-        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [])
+        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token)
       }
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
@@ -576,12 +639,30 @@ export default function Dashboard() {
     }
   }
 
+  const avanzarContexto = () => {
+    if (contextoIdx + 1 < contextoDetectado.length) {
+      setContextoIdx(i => i + 1)
+    } else {
+      cerrarYRefrescar()
+    }
+  }
+
+  const handleGuardarHijoDesdeContexto = async () => {
+    const nombre = contextoHijoNombre.trim()
+    if (nombre) {
+      await supabase.from('children').insert({ nombre })
+      setChildrenDB(prev => [...prev, { nombre }].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+    }
+    setContextoAskingHijoNombre(false)
+    setContextoHijoNombre('')
+    avanzarContexto()
+  }
+
   // Confirmar contexto detectado — guarda en user_rules como flag para no preguntar de nuevo
   const handleConfirmarContexto = async (confirmar) => {
     const { data: { user } } = await supabase.auth.getUser()
     const clave = contextoDetectado[contextoIdx]
     if (confirmar) {
-      // Guardamos que el usuario confirmó este contexto (para uso futuro)
       await supabase.from('user_rules').upsert({
         user_id: user.id,
         texto_original: `contexto_${clave}`,
@@ -593,13 +674,12 @@ export default function Dashboard() {
         veces_confirmado: 1,
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,texto_original', ignoreDuplicates: false })
+      if (clave === 'hijo') {
+        setContextoAskingHijoNombre(true)
+        return
+      }
     }
-
-    if (contextoIdx + 1 < contextoDetectado.length) {
-      setContextoIdx(i => i + 1)
-    } else {
-      cerrarYRefrescar()
-    }
+    avanzarContexto()
   }
 
   const cerrarYRefrescar = () => {
@@ -797,6 +877,7 @@ export default function Dashboard() {
   }
 
   const styles = getStyles(darkMode)
+  const isMobile = windowWidth < 768
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -805,20 +886,36 @@ export default function Dashboard() {
       <div style={styles.container}>
 
         <div style={styles.header}>
-          <img src={logo} alt="Moms Assist Finance" style={styles.logoImg} />
+          {isMobile && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{ position: 'absolute', left: '16px', top: '16px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', opacity: 0.8 }}
+            >
+              ☰
+            </button>
+          )}
+          <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '90px' : '220px' }} />
           <button
             onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }}
             title={darkMode ? 'Modo claro' : 'Modo oscuro'}
-            style={{ position: 'absolute', top: '20px', right: '32px', background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}
+            style={{ position: 'absolute', top: '20px', right: isMobile ? '16px' : '32px', background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}
           >
             {darkMode ? '☀️' : '🌙'}
           </button>
         </div>
 
-        <div style={styles.layout}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '0 12px 48px 12px' : '0 32px 48px 32px', gap: isMobile ? '12px' : '24px' }}>
 
           {/* Sidebar izquierdo */}
-          <div style={styles.sidebar}>
+          {isMobile && sidebarOpen && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
+          )}
+          <div style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 16px 16px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '260px' } : {}) }}>
+            {isMobile && (
+              <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
+                ✕
+              </button>
+            )}
             <div style={styles.sidebarHeader}>
               <h2 style={styles.sidebarTitle}>CUENTAS</h2>
             </div>
@@ -849,6 +946,9 @@ export default function Dashboard() {
             </button>
             <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>
               + CATEGORÍAS
+            </button>
+            <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>
+              👧 HIJOS
             </button>
 
             {/* Tipo de cambio */}
@@ -1023,7 +1123,8 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widget ahorro */}
+          {/* Widget ahorro — solo desktop */}
+          {!isMobile && (
           <div style={styles.savingsPanel}>
             <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
 
@@ -1088,11 +1189,45 @@ export default function Dashboard() {
               )
             })()}
           </div>
+          )}
 
         </div>
       </div>
 
       {/* Modales */}
+      {/* Modal hijos */}
+      {showHijos && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '400px' }}>
+            <h3 style={styles.modalTitle}>👧 Hijos / personas</h3>
+            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
+              {childrenDB.length === 0 ? (
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>Sin hijos registrados.</p>
+              ) : (
+                childrenDB.map(c => (
+                  <div key={c.nombre} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                    <span style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>👧 {c.nombre}</span>
+                    <button style={styles.actionBtn} onClick={() => handleDeleteHijo(c.nombre)}>🗑️</button>
+                  </div>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleAddHijo} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <input
+                style={{ ...styles.input, flex: 1 }}
+                placeholder="Agregar nombre..."
+                value={newHijoNombre}
+                onChange={e => setNewHijoNombre(e.target.value)}
+              />
+              <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
+            </form>
+            <div style={{ textAlign: 'right' }}>
+              <button style={styles.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal categorías */}
       {showCategorias && (
         <div style={styles.overlay}>
@@ -1118,12 +1253,16 @@ export default function Dashboard() {
                       <>
                         <span style={{ fontWeight: '500', fontSize: '14px', flex: 1 }}>{cat.nombre}</span>
                         <button style={styles.actionBtn} onClick={() => { setEditingCat(cat.id); setEditingCatNombre(cat.nombre) }}>✏️</button>
+                        <button style={styles.actionBtn} onClick={() => handleDeleteCategoria(cat)}>🗑️</button>
                       </>
                     )}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: '4px' }}>
                     {subcategoriasDB.filter(s => s.category_id === cat.id).map(s => (
-                      <span key={s.id} style={{ fontSize: '12px', backgroundColor: '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: '#5C4F5C' }}>{s.nombre}</span>
+                      <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
+                        {s.nombre}
+                        <button onClick={() => handleDeleteSubcat(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#999', padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
+                      </span>
                     ))}
                     {newSubcatCatId === cat.id ? (
                       <form onSubmit={handleAddSubcat} style={{ display: 'flex', gap: '4px' }}>
@@ -1476,14 +1615,37 @@ export default function Dashboard() {
                     </p>
                   )}
                 </div>
-                <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => handleConfirmarContexto(false)}>
-                    No, ignorar
-                  </button>
-                  <button style={styles.saveBtn} onClick={() => handleConfirmarContexto(true)}>
-                    Sí, tener en cuenta ✓
-                  </button>
-                </div>
+                {contextoAskingHijoNombre ? (
+                  <>
+                    <div style={styles.field}>
+                      <label style={styles.label}>¿Cómo se llama? <span style={{fontSize:'11px', color:'#aaa'}}>(opcional)</span></label>
+                      <input
+                        style={styles.input}
+                        placeholder="Ej: Valentina, Mateo..."
+                        value={contextoHijoNombre}
+                        onChange={e => setContextoHijoNombre(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div style={styles.modalButtons}>
+                      <button style={styles.cancelBtn} onClick={() => { setContextoAskingHijoNombre(false); setContextoHijoNombre(''); avanzarContexto() }}>
+                        Omitir
+                      </button>
+                      <button style={styles.saveBtn} onClick={handleGuardarHijoDesdeContexto}>
+                        Guardar ✓
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div style={styles.modalButtons}>
+                    <button style={styles.cancelBtn} onClick={() => handleConfirmarContexto(false)}>
+                      No, ignorar
+                    </button>
+                    <button style={styles.saveBtn} onClick={() => handleConfirmarContexto(true)}>
+                      Sí, tener en cuenta ✓
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
