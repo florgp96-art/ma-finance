@@ -492,7 +492,9 @@ export default function Dashboard() {
       const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
       const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
 
-      const accountsForRows = await Promise.all(excelPreview.map(r => resolveAccount(r.modo_pago)))
+      const uniqueModoPagos = [...new Set(excelPreview.map(r => r.modo_pago || ''))]
+      for (const mp of uniqueModoPagos) await resolveAccount(mp)
+      const accountsForRows = excelPreview.map(r => accountCache[(r.modo_pago || 'EFECTIVO').toUpperCase().trim()])
       const uniqueAccountIds = [...new Set(accountsForRows.map(a => a.id))]
       const { data: existentes } = await supabase.from('transactions')
         .select('fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
