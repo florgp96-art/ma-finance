@@ -357,17 +357,19 @@ export default function Dashboard() {
         if (!ws) { reject(new Error('No se encontró la hoja "GASTOS" en el archivo')); return }
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
         const parsed = rows.slice(1)
-          .filter(row => row && row.length > 0 && (row[0] || row[2] || row[3]))
+          .filter(row => row && row.length > 0 && (row[0] || row[1] || row[2]))
           .map(row => {
             const fecha = parseExcelDate(row[0])
-            const monto_ars = parseFloat(row[2]) || 0
-            const monto_usd = parseFloat(row[3]) || 0
-            const descripcion = String(row[4] || '').trim()
-            const notas = String(row[5] || '').trim()
-            const modo_pago = String(row[6] || '').trim()
+            const monto_ars = parseFloat(row[1]) || 0
+            const monto_usd = parseFloat(row[2]) || 0
+            const descripcion = String(row[3] || '').trim()
+            const cat = String(row[4] || '').trim() || null
+            const subcat = String(row[5] || '').trim() || null
+            const hijo = String(row[6] || '').trim() || null
+            const modo_pago = String(row[7] || '').trim()
             const monto = monto_usd > 0 ? monto_usd : monto_ars
             const moneda = monto_usd > 0 ? 'USD' : 'ARS'
-            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas, modo_pago }
+            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas: descripcion, modo_pago, cat, subcat, hijo }
           })
           .filter(r => r.fecha && r.monto > 0)
         resolve(parsed)
@@ -389,51 +391,68 @@ export default function Dashboard() {
         return
       }
 
-      const totalBatches = Math.ceil(rows.length / 30)
-      const timerMax = Math.max(20, Math.min(120, totalBatches * 5))
-      setExcelTotalBatches(totalBatches)
-      setExcelTimerMax(timerMax)
-      setExcelTimer(timerMax)
-      setExcelMsgIndex(0)
+      const rowsNeedingClassification = rows.filter(r => !r.cat || r.cat === 'A Identificar')
+      let enriched
 
-      excelMsgIntervalRef.current = setInterval(() => {
-        setExcelMsgIndex(i => (i + 1) % EXCEL_PROCESSING_MSGS.length)
-      }, 3000)
-
-      let elapsed = 0
-      excelTimerIntervalRef.current = setInterval(() => {
-        elapsed++
-        if (elapsed >= 30) setExcelBackgroundMode(true)
-        setExcelTimer(t => t > 0 ? t - 1 : 0)
-      }, 1000)
-
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-      const headers = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
-      const response = await fetch('/api/classifyRows', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          rows: rows.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
-          categories: categoriasDB.map(c => ({ nombre: c.nombre })),
-          children: childrenDB,
-          aliases: userAliases
-        })
-      })
-      if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
-      const { classifications } = await response.json()
-      const enriched = rows.map((r, i) => {
-        const cl = Array.isArray(classifications) ? classifications[i] : null
-        return {
+      if (rowsNeedingClassification.length === 0) {
+        // Excel ya tiene todas las categorías — no llamar a Claude
+        enriched = rows.map(r => ({
           ...r,
-          cat: cl?.categoria || null,
-          subcat: cl?.subcategoria || null,
-          hijo: cl?.hijo || null,
-          nombre: cl?.nombre || r.notas || r.descripcion,
-          estado: cl?.categoria && cl?.categoria !== 'A Identificar' ? 'identificado' : 'a_identificar'
-        }
-      })
+          nombre: r.descripcion,
+          estado: r.cat && r.cat !== 'A Identificar' ? 'identificado' : 'a_identificar'
+        }))
+      } else {
+        const totalBatches = Math.ceil(rowsNeedingClassification.length / 30)
+        const timerMax = Math.max(20, Math.min(120, totalBatches * 5))
+        setExcelTotalBatches(totalBatches)
+        setExcelTimerMax(timerMax)
+        setExcelTimer(timerMax)
+        setExcelMsgIndex(0)
+
+        excelMsgIntervalRef.current = setInterval(() => {
+          setExcelMsgIndex(i => (i + 1) % EXCEL_PROCESSING_MSGS.length)
+        }, 3000)
+
+        let elapsed = 0
+        excelTimerIntervalRef.current = setInterval(() => {
+          elapsed++
+          if (elapsed >= 30) setExcelBackgroundMode(true)
+          setExcelTimer(t => t > 0 ? t - 1 : 0)
+        }, 1000)
+
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        const headers = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        const response = await fetch('/api/classifyRows', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
+            categories: categoriasDB.map(c => ({ nombre: c.nombre })),
+            children: childrenDB,
+            aliases: userAliases
+          })
+        })
+        if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
+        const { classifications } = await response.json()
+
+        let clIdx = 0
+        enriched = rows.map(r => {
+          if (!r.cat || r.cat === 'A Identificar') {
+            const cl = Array.isArray(classifications) ? classifications[clIdx++] : null
+            return {
+              ...r,
+              cat: cl?.categoria || null,
+              subcat: cl?.subcategoria || null,
+              hijo: r.hijo || cl?.hijo || null,
+              nombre: cl?.nombre || r.descripcion,
+              estado: cl?.categoria && cl?.categoria !== 'A Identificar' ? 'identificado' : 'a_identificar'
+            }
+          }
+          return { ...r, nombre: r.descripcion, estado: 'identificado' }
+        })
+      }
       setExcelPreview(enriched)
     } catch (err) {
       alert('Error procesando el archivo: ' + err.message)
