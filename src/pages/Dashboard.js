@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
 import AccountDetail from '../components/AccountDetail'
+import * as XLSX from 'xlsx'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
@@ -20,6 +21,30 @@ const CONTEXTO_LABELS = {
   empleada_domestica: { icon: '🧹', titulo: 'Empleada doméstica', desc: 'Detectamos pagos regulares a empleada doméstica. ¿Querés crear una etiqueta para estos pagos?' },
   alquiler_pagado: { icon: '🏠', titulo: 'Pago de alquiler', desc: 'Detectamos pago de alquiler recurrente. ¿Querés crear una etiqueta para este gasto?' },
   gimnasio: { icon: '🏋️', titulo: 'Gimnasio o actividad física', desc: 'Detectamos cuota de gimnasio. ¿Querés crear una etiqueta para este gasto?' },
+}
+
+const MAPEO_CATEGORIAS = {
+  'SUPERMERCADO': { cat: 'Comida', subcat: 'Supermercado' },
+  'VETERINARIA':  { cat: 'Casa', subcat: 'Veterinaria' },
+  'DEBITOS':      { cat: 'Débitos', subcat: null },
+  'TELEFONO':     { cat: 'Casa', subcat: 'Teléfono' },
+  'FLOR':         { cat: 'Personal', subcat: 'Varios' },
+  'EXTRAS':       { cat: 'Personal', subcat: 'Varios' },
+  'PRESTAMO':     { cat: 'Débitos', subcat: null },
+  'DELIVERY':     { cat: 'Comida', subcat: 'Delivery' },
+  'ROPA':         { cat: 'Ropa', subcat: null },
+  'SALUD':        { cat: 'Salud', subcat: null },
+  'FARMACIA':     { cat: 'Salud', subcat: 'Farmacia' },
+  'MEDICO':       { cat: 'Salud', subcat: 'Médicos' },
+  'EDUCACION':    { cat: 'Educación', subcat: null },
+  'COLEGIO':      { cat: 'Educación', subcat: 'Colegio' },
+  'NAFTA':        { cat: 'Transporte', subcat: 'Nafta' },
+  'PEAJE':        { cat: 'Transporte', subcat: 'Auto' },
+  'UBER':         { cat: 'Transporte', subcat: 'Uber/Cabify' },
+  'CASA':         { cat: 'Casa', subcat: null },
+  'EXPENSAS':     { cat: 'Casa', subcat: 'Expensas' },
+  'ALQUILER':     { cat: 'Casa', subcat: 'Alquiler' },
+  'SUSCRIPCIONES':{ cat: 'Suscripciones', subcat: null },
 }
 
 const SERVICIOS = [
@@ -100,6 +125,13 @@ export default function Dashboard() {
   const [dashboardTab, setDashboardTab] = useState('resumen')
   const [vencimientosList, setVencimientosList] = useState([])
   const [loadingVenc, setLoadingVenc] = useState(false)
+
+  // Excel import
+  const [showExcel, setShowExcel] = useState(false)
+  const [excelFile, setExcelFile] = useState(null)
+  const [excelPreview, setExcelPreview] = useState(null)
+  const [excelDragOver, setExcelDragOver] = useState(false)
+  const [loadingExcel, setLoadingExcel] = useState(false)
 
   useEffect(() => { fetchAccounts(); fetchCategorias() }, [])
 
@@ -211,6 +243,137 @@ export default function Dashboard() {
       .order('fecha_vencimiento', { ascending: true })
     setVencimientosList(data || [])
     setLoadingVenc(false)
+  }
+
+  const parseExcelDate = (val) => {
+    if (!val) return null
+    if (val instanceof Date) {
+      const y = val.getFullYear()
+      const m = String(val.getMonth() + 1).padStart(2, '0')
+      const d = String(val.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+    if (typeof val === 'string') {
+      const parts = val.split('/')
+      if (parts.length === 3) {
+        const [d, m, y] = parts
+        return `${y.length === 2 ? '20' + y : y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+      }
+      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10)
+    }
+    return null
+  }
+
+  const mapearCategoria = (descripcion) => {
+    if (!descripcion) return null
+    const upper = String(descripcion).toUpperCase()
+    for (const [key, val] of Object.entries(MAPEO_CATEGORIAS)) {
+      if (upper.includes(key)) return val
+    }
+    return null
+  }
+
+  const parsearExcel = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true })
+        const ws = wb.Sheets['GASTOS']
+        if (!ws) { reject(new Error('No se encontró la hoja "GASTOS" en el archivo')); return }
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+        const parsed = rows.slice(1)
+          .filter(row => row && row.length > 0 && (row[0] || row[2] || row[3]))
+          .map(row => {
+            const fecha = parseExcelDate(row[0])
+            const monto_ars = parseFloat(row[2]) || 0
+            const monto_usd = parseFloat(row[3]) || 0
+            const descripcion = String(row[4] || '').trim()
+            const notas = String(row[5] || '').trim()
+            const modo_pago = String(row[6] || '').trim()
+            const mapeo = mapearCategoria(descripcion)
+            const monto = monto_usd > 0 ? monto_usd : monto_ars
+            const moneda = monto_usd > 0 ? 'USD' : 'ARS'
+            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas, modo_pago, detalle: notas || descripcion, cat: mapeo?.cat || null, subcat: mapeo?.subcat || null, estado: mapeo ? 'identificado' : 'a_identificar' }
+          })
+          .filter(r => r.fecha && r.monto > 0)
+        resolve(parsed)
+      } catch (err) { reject(err) }
+    }
+    reader.onerror = reject
+    reader.readAsArrayBuffer(file)
+  })
+
+  const handleAnalizarExcel = async () => {
+    if (!excelFile) return
+    setLoadingExcel(true)
+    try {
+      const rows = await parsearExcel(excelFile)
+      if (rows.length === 0) { alert('No se encontraron filas válidas en la hoja GASTOS.'); setLoadingExcel(false); return }
+      setExcelPreview(rows)
+    } catch (err) {
+      alert('Error leyendo el archivo: ' + err.message)
+    }
+    setLoadingExcel(false)
+  }
+
+  const handleImportarExcel = async () => {
+    if (!excelPreview || excelPreview.length === 0) return
+    setLoadingExcel(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      let { data: cuentaEf } = await supabase.from('accounts')
+        .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
+      if (!cuentaEf) {
+        const { data: nueva } = await supabase.from('accounts')
+          .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+        cuentaEf = nueva
+        fetchAccounts()
+      }
+
+      const { data: existentes } = await supabase.from('transactions')
+        .select('fecha, monto, detalle').eq('account_id', cuentaEf.id)
+
+      const { data: categorias } = await supabase.from('categories').select('id, nombre')
+      const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
+      const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
+      const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
+
+      const nuevas = excelPreview.filter(row =>
+        !existentes?.some(e =>
+          e.fecha === row.fecha &&
+          Math.abs(Number(e.monto) - row.monto) < 0.01 &&
+          (e.detalle || '').toLowerCase() === (row.detalle || '').toLowerCase()
+        )
+      )
+
+      if (nuevas.length === 0) {
+        alert('Todas las transacciones ya existen (duplicadas).')
+        setLoadingExcel(false)
+        return
+      }
+
+      const toInsert = nuevas.map(row => {
+        const catId = getCatId(row.cat)
+        return {
+          user_id: user.id, account_id: cuentaEf.id,
+          fecha: row.fecha, nombre: row.descripcion || null, detalle: row.detalle,
+          monto: row.monto, moneda: row.moneda, tipo: 'gasto',
+          category_id: catId,
+          subcategory_id: getSubcatId(row.subcat, catId),
+          estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
+        }
+      })
+
+      await supabase.from('transactions').insert(toInsert)
+      const omitidas = excelPreview.length - nuevas.length
+      alert(`✅ ${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas omitidas.` : ''}`)
+      setShowExcel(false); setExcelFile(null); setExcelPreview(null)
+      setRefreshKey(k => k + 1); fetchAccounts()
+    } catch (err) {
+      alert('Error al importar: ' + err.message)
+    }
+    setLoadingExcel(false)
   }
 
   const handleLogout = async () => {
@@ -662,6 +825,9 @@ export default function Dashboard() {
 
             <button style={styles.sidebarBtnPrimary} onClick={() => { resetUpload(); setShowUpload(true) }}>
               + CARGAR PDF
+            </button>
+            <button style={styles.sidebarBtnPrimary} onClick={() => { setExcelFile(null); setExcelPreview(null); setShowExcel(true) }}>
+              + IMPORTAR EXCEL
             </button>
             <button style={styles.sidebarBtnPrimary} onClick={async () => {
               const { data: { user } } = await supabase.auth.getUser()
@@ -1321,6 +1487,90 @@ export default function Dashboard() {
               </>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {showExcel && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '600px' }}>
+            {excelPreview === null ? (
+              <>
+                <h3 style={styles.modalTitle}>Importar Excel 📊</h3>
+                <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+                  El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
+                </p>
+                <div
+                  style={{ ...styles.dropzone, ...(excelDragOver ? styles.dropzoneActive : {}), ...(excelFile ? styles.dropzoneDone : {}) }}
+                  onDragOver={e => { e.preventDefault(); setExcelDragOver(true) }}
+                  onDragLeave={() => setExcelDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setExcelDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.xlsx')) setExcelFile(f); else alert('Solo se aceptan archivos .xlsx') }}
+                  onClick={() => document.getElementById('excelInput').click()}
+                >
+                  {excelFile ? (
+                    <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{excelFile.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
+                  ) : (
+                    <><p style={styles.dropzoneIcon}>📊</p><p style={styles.dropzoneText}>Arrastrá el archivo .xlsx o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos Excel (.xlsx)</p></>
+                  )}
+                </div>
+                <input id="excelInput" type="file" accept=".xlsx" style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files[0]) setExcelFile(e.target.files[0]) }} />
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => setShowExcel(false)}>Cancelar</button>
+                  <button style={styles.saveBtn} onClick={handleAnalizarExcel} disabled={!excelFile || loadingExcel}>
+                    {loadingExcel ? 'Leyendo...' : 'Analizar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
+                <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+                  {excelPreview.length} filas encontradas · mostrando primeras 10
+                </p>
+                <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr>
+                        {['Fecha', 'Descripción', 'Monto', 'Notas', 'Categoría'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: '2px solid #EDE8EC', color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelPreview.slice(0, 10).map((row, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #f0f2f8' }}>
+                          <td style={{ padding: '7px 10px', color: '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
+                          <td style={{ padding: '7px 10px', color: '#1d1d1f', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.descripcion}</td>
+                          <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: '#2d2d2d' }}>
+                            {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
+                          </td>
+                          <td style={{ padding: '7px 10px', color: '#8e8e93', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.notas || '—'}</td>
+                          <td style={{ padding: '7px 10px' }}>
+                            {row.cat ? (
+                              <span style={{ backgroundColor: '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>{row.cat}</span>
+                            ) : (
+                              <span style={{ backgroundColor: '#fff8e1', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>❓ Sin identificar</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {excelPreview.filter(r => !r.cat).length > 0 && (
+                  <div style={{ backgroundColor: '#fff8e1', border: '1px solid #ffe082', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#856404', marginBottom: '16px' }}>
+                    ❓ {excelPreview.filter(r => !r.cat).length} fila(s) sin categoría — se guardarán como "A identificar" y podés clasificarlas desde la cuenta Efectivo.
+                  </div>
+                )}
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => setExcelPreview(null)}>← Atrás</button>
+                  <button style={styles.saveBtn} onClick={handleImportarExcel} disabled={loadingExcel}>
+                    {loadingExcel ? 'Importando...' : `Confirmar e importar (${excelPreview.length})`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
