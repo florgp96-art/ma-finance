@@ -232,7 +232,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const mesDropdownRef = useRef(null)
 
   useEffect(() => {
-    if (allAccounts && accounts) fetchAllData()
+    if (allAccounts && accounts && accounts.length > 0) fetchAllData()
     else if (account) fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, accounts, allAccounts, refreshKey])
