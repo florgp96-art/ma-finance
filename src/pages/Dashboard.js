@@ -5,6 +5,7 @@ import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader
 import AccountDetail from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import * as XLSX from 'xlsx'
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
@@ -56,6 +57,7 @@ export default function Dashboard() {
 
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
+  const [miniChartData, setMiniChartData] = useState([])
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
   const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
@@ -149,10 +151,29 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases()
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         const saved = localStorage.getItem(`servicios_${user.id}`)
         setServicios(saved ? JSON.parse(saved) : SERVICIOS_DEFAULT)
+
+        // Mini chart: últimos 6 meses
+        const now = new Date()
+        const meses = Array.from({ length: 6 }, (_, i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        })
+        const desde = meses[0] + '-01'
+        const { data: txs } = await supabase.from('transactions')
+          .select('fecha, monto, moneda').eq('user_id', user.id)
+          .gte('fecha', desde).gt('monto', 0)
+        const tc = parseFloat(localStorage.getItem('tc_ma')) || 1
+        const totales = meses.map(ym => {
+          const mes = txs?.filter(t => t.fecha?.startsWith(ym)) || []
+          const total = mes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.monto), 0)
+          const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
+          return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
+        })
+        setMiniChartData(totales)
       }
     })
   }, [])
@@ -1433,6 +1454,26 @@ export default function Dashboard() {
           {/* Widget ahorro — solo desktop */}
           {!isMobile && (
           <div style={styles.savingsPanel}>
+            {miniChartData.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ ...styles.savingsPanelTitle, marginBottom: '12px' }}>Últimos 6 meses</h3>
+                <ResponsiveContainer width="100%" height={130}>
+                  <BarChart data={miniChartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Total']}
+                      contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#2A272A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
+                      cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+                    />
+                    <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                      {miniChartData.map((_, i) => (
+                        <Cell key={i} fill={i === miniChartData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
             <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
 
             <div style={styles.savingsField}>
