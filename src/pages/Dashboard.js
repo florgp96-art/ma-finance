@@ -2144,6 +2144,20 @@ export default function Dashboard() {
               {excelDupReview.potentialDupes.length} transacción{excelDupReview.potentialDupes.length !== 1 ? 'es' : ''} con mismo monto y fecha que algo ya cargado.
               Marcá las que querés importar igual.
             </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', paddingBottom: '12px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              {(() => {
+                const allSelected = excelDupReview.potentialDupes.every((_, i) => excelDupSelections.has(i))
+                return (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '500' }}>
+                    <input type="checkbox" checked={allSelected} onChange={() => {
+                      if (allSelected) setExcelDupSelections(new Set())
+                      else setExcelDupSelections(new Set(excelDupReview.potentialDupes.map((_, i) => i)))
+                    }} style={{ accentColor: '#5C4F5C', width: '16px', height: '16px' }} />
+                    {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                  </label>
+                )
+              })()}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
               {excelDupReview.potentialDupes.map((item, i) => {
                 const checked = excelDupSelections.has(i)
