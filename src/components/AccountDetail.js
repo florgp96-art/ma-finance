@@ -627,9 +627,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           )}
           {tipoCambio && parseFloat(tipoCambio) > 0 && (
             <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total equiv. en pesos</p>
+              <p style={styles.summaryLabel}>Final equiv. en pesos</p>
               <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * parseFloat(tipoCambio))}</p>
-              <p style={styles.summarySubval}>U$S 1 = $ {parseFloat(tipoCambio).toLocaleString('es-AR')}</p>
+              <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
+              <p style={styles.summaryLabel}>Final equiv. en USD</p>
+              <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / parseFloat(tipoCambio))}</p>
             </div>
           )}
         </div>
