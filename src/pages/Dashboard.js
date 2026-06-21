@@ -1519,21 +1519,22 @@ export default function Dashboard() {
                 total = monto * 12 * anos
               }
               const anioFin = new Date().getFullYear() + Math.floor(anos)
-              const simbolo = ahorro.moneda === 'USD' ? 'U$S' : '$'
-              const totalFmt = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total))
               const tc = parseFloat(tipoCambio)
-              const equivalente = tc > 0
-                ? ahorro.moneda === 'USD'
-                  ? `≈ $ ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total * tc))} ARS`
-                  : `≈ U$S ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(total / tc))}`
-                : null
+              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const totalUSD = ahorro.moneda === 'USD' ? total : (tc > 0 ? total / tc : null)
+              const totalARS = ahorro.moneda === 'ARS' ? total : (tc > 0 ? total * tc : null)
               return (
                 <div style={styles.savingsResult}>
-                  <p style={styles.savingsResultLabel}>Tu proyección</p>
                   <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
-                  <p style={styles.savingsResultAmount}>{simbolo} {totalFmt}</p>
-                  {equivalente && <p style={styles.savingsResultNote}>{equivalente}</p>}
-                  {tasa > 0 && <p style={styles.savingsResultNote}>interés compuesto mensual</p>}
+                  {tasa > 0 && <p style={{ ...styles.savingsResultNote, marginBottom: '10px' }}>interés compuesto mensual</p>}
+                  <p style={styles.savingsResultLabel}>Final equiv. en USD</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>
+                    {totalUSD != null ? `U$S ${fmt(totalUSD)}` : '—'}
+                  </p>
+                  <p style={styles.savingsResultLabel}>Final equiv. en pesos</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: 0 }}>
+                    {totalARS != null ? `$ ${fmt(totalARS)}` : '—'}
+                  </p>
                 </div>
               )
             })()}
