@@ -46,7 +46,7 @@ const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, darkMode }) {
+export function BubbleChart({ data, darkMode, tipoCambio }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -700,7 +700,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} darkMode={darkMode} />
+              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tipoCambio} />
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
