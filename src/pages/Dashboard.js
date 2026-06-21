@@ -484,6 +484,8 @@ export default function Dashboard() {
       const resolveAccount = async (modoPago) => {
         const key = (modoPago || 'EFECTIVO').toUpperCase().trim()
         if (accountCache[key]) return accountCache[key]
+
+        // Alias del usuario tiene prioridad
         const aliasAcc = userAliases.find(a => a.tipo === 'cuenta' && a.alias.toUpperCase() === key)
         if (aliasAcc) {
           let acc = currentAccounts.find(a => a.nombre.toLowerCase() === aliasAcc.valor.toLowerCase())
@@ -493,25 +495,16 @@ export default function Dashboard() {
           }
           accountCache[key] = acc; return acc
         }
-        if (key.includes('VISA') && !key.includes('MASTER')) {
-          let acc = currentAccounts.find(a => a.nombre.toLowerCase().includes('visa') && !a.nombre.toLowerCase().includes('master'))
-          if (!acc) {
-            const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Visa Galicia', tipo: 'credito' }).select().single()
-            acc = data; currentAccounts.push(acc)
-          }
-          accountCache[key] = acc; return acc
-        }
-        if (key.includes('MASTER') || key.includes('MASTERCARD')) {
-          let acc = currentAccounts.find(a => a.nombre.toLowerCase().includes('master'))
-          if (!acc) {
-            const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Mastercard Platinum Galicia', tipo: 'credito' }).select().single()
-            acc = data; currentAccounts.push(acc)
-          }
-          accountCache[key] = acc; return acc
-        }
-        let acc = currentAccounts.find(a => a.nombre === 'Efectivo')
+
+        // Nombre real del Excel — buscar cuenta existente o crearla
+        const nombreCuenta = modoPago?.trim() || 'Efectivo'
+        let acc = currentAccounts.find(a => a.nombre.toLowerCase() === nombreCuenta.toLowerCase())
         if (!acc) {
-          const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
+          const tipoCredito = ['VISA', 'MASTER', 'AMEX', 'AMERICAN EXPRESS', 'NARANJA', 'CABAL', 'DINERS']
+          const tipo = key === 'EFECTIVO' ? 'efectivo'
+            : tipoCredito.some(t => key.includes(t)) ? 'credito'
+            : 'debito'
+          const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: nombreCuenta, tipo }).select().single()
           acc = data; currentAccounts.push(acc)
         }
         accountCache[key] = acc; return acc
