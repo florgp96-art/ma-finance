@@ -2194,7 +2194,7 @@ const getStyles = (dark) => {
     sidebar: {
       width: '240px', flexShrink: 0, backgroundColor: panel, borderRadius: '16px',
       padding: '24px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
-      gap: '10px', position: 'sticky', top: '24px',
+      gap: '10px', position: 'sticky', top: '24px', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
     },
     sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
     sidebarTitle: { fontSize: '16px', fontWeight: '400', color: txt, margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
