@@ -34,12 +34,17 @@ ${categoriesText}
 HIJOS REGISTRADOS (nombres exactos para el campo "hijo"):
 ${childrenText}
 
-ETIQUETAS DEL USUARIO (prioridad máxima — si DESCRIPCION coincide con el alias, aplicar la regla):
+REGLAS DEL USUARIO (prioridad máxima):
 ${aliasesText}
 
-REGLAS:
+CÓMO APLICAR LAS REGLAS:
+- Si DESCRIPCION **contiene** la palabra clave del alias (parcial, sin importar mayúsculas), aplicar la regla. Ejemplo: alias "CUMPLE AMIG" matchea "AMELIA - CUMPLE AMIGUITO" y "CUMPLE AMIGA".
+- Si hay múltiples aliases que coinciden, usar el más específico (el más largo).
+- Las reglas de tipo "hijo" asignan el campo "hijo", las de "categoria" asignan "categoria".
+
+REGLAS GENERALES:
 - CAMPO "nombre": usá NOTAS como base. Si está vacío, usá DESCRIPCION. Hacelo legible.
-- CAMPO "hijo": si DESCRIPCION es el nombre exacto de un hijo registrado, asignarlo; si hay un alias tipo "hijo" que coincide, asignarlo. Si no aplica, null.
+- CAMPO "hijo": si DESCRIPCION contiene el nombre de un hijo registrado, asignarlo. Si no aplica, null.
 - Si no podés determinar la categoría → usá "A Identificar"
 
 FILAS:
