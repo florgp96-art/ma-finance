@@ -54,6 +54,7 @@ export default function Dashboard() {
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
   const [editAccount, setEditAccount] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [hoveredAccount, setHoveredAccount] = useState(null)
 
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
@@ -1172,17 +1173,19 @@ export default function Dashboard() {
               ) : (
                 accounts.map(acc => (
                   <div key={acc.id}
-                    style={{...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {})}}
+                    style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
                     onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
+                    onMouseEnter={() => setHoveredAccount(acc.id)}
+                    onMouseLeave={() => setHoveredAccount(null)}
                   >
-                    <div style={styles.accountCardHeader}>
-                      <p style={styles.accountType}>💳 {tipoLabel(acc.tipo)}</p>
-                      <div style={styles.accountActions}>
-                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
-                        <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); setConfirmDelete(acc.id) }}>🗑️</button>
-                      </div>
-                    </div>
+                    <p style={{ ...styles.accountType, marginBottom: '4px' }}>💳 {tipoLabel(acc.tipo)}</p>
                     <p style={styles.accountName}>{acc.nombre}</p>
+                    {hoveredAccount === acc.id && (
+                      <button
+                        style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
+                        onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}
+                      >✏️</button>
+                    )}
                   </div>
                 ))
               )}
@@ -1703,25 +1706,28 @@ export default function Dashboard() {
                 <button type="button" style={styles.cancelBtn} onClick={() => setEditAccount(null)}>Cancelar</button>
                 <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Guardando...' : 'Guardar cambios'}</button>
               </div>
+              {!confirmDelete && (
+                <button
+                  type="button"
+                  style={{ marginTop: '12px', width: '100%', padding: '10px', background: 'none', border: `1px solid #e74c3c`, borderRadius: '10px', color: '#e74c3c', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif' }}
+                  onClick={() => setConfirmDelete(editAccount.id)}
+                >
+                  🗑️ Eliminar esta cuenta
+                </button>
+              )}
+              {confirmDelete && (
+                <div style={{ marginTop: '12px', background: '#e74c3c11', border: '1px solid #e74c3c44', borderRadius: '10px', padding: '12px' }}>
+                  <p style={{ fontSize: '13px', color: '#e74c3c', margin: '0 0 10px 0', fontWeight: '500' }}>⚠️ Se borrarán todos los extractos y transacciones. ¿Confirmar?</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...styles.cancelBtn, flex: 1, padding: '8px' }} onClick={() => setConfirmDelete(null)}>No, cancelar</button>
+                    <button style={{ flex: 1, padding: '8px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif' }}
+                      onClick={() => { handleDeleteAccount(confirmDelete); setEditAccount(null) }} disabled={loading}>
+                      {loading ? 'Eliminando...' : 'Sí, eliminar'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
-          </div>
-        </div>
-      )}
-
-      {confirmDelete && (
-        <div style={styles.overlay}>
-          <div style={{...styles.modal, maxWidth: '380px'}}>
-            <h3 style={styles.modalTitle}>¿Eliminar tarjeta?</h3>
-            <p style={{fontSize: '14px', color: '#666', marginBottom: '24px'}}>
-              Se borrarán todos los extractos y transacciones asociadas. Esta acción no se puede deshacer.
-            </p>
-            <div style={styles.modalButtons}>
-              <button style={styles.cancelBtn} onClick={() => setConfirmDelete(null)}>Cancelar</button>
-              <button style={{...styles.saveBtn, backgroundColor: '#e74c3c'}}
-                onClick={() => handleDeleteAccount(confirmDelete)} disabled={loading}>
-                {loading ? 'Eliminando...' : 'Sí, eliminar'}
-              </button>
-            </div>
           </div>
         </div>
       )}
