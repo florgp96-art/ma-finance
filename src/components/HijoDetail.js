@@ -32,7 +32,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     const { data } = await supabase
       .from('transactions')
       .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
-      .eq('tag', hijoNombre)
+      .ilike('tag', hijoNombre)
       .gt('monto', 0)
       .order('fecha', { ascending: false })
     const txs = data || []

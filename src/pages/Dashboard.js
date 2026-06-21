@@ -387,7 +387,8 @@ export default function Dashboard() {
             const descripcion = String(row[3] || '').trim()
             const cat = String(row[4] || '').trim() || null
             const subcat = String(row[5] || '').trim() || null
-            const hijo = String(row[6] || '').trim() || null
+            const hijoRaw = String(row[6] || '').trim()
+            const hijo = hijoRaw ? hijoRaw.charAt(0).toUpperCase() + hijoRaw.slice(1).toLowerCase() : null
             const modo_pago = String(row[7] || '').trim()
             const monto = monto_usd > 0 ? monto_usd : monto_ars
             const moneda = monto_usd > 0 ? 'USD' : 'ARS'
