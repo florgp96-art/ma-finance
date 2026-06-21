@@ -57,7 +57,7 @@ export default function Dashboard() {
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
-  const [newServicio, setNewServicio] = useState({ nombre: '', link: '' })
+  const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -1312,15 +1312,25 @@ export default function Dashboard() {
                             onChange={e => setNewServicio(s => ({ ...s, link: e.target.value }))}
                             style={{ flex: 2, minWidth: '160px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
                           />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <label style={{ fontSize: '10px', color: '#6e6e73', fontFamily: '"Montserrat", sans-serif', paddingLeft: '2px' }}>Día de vencimiento</label>
+                            <input
+                              type="number" min="1" max="31"
+                              placeholder="ej. 15"
+                              value={newServicio.vencimiento}
+                              onChange={e => setNewServicio(s => ({ ...s, vencimiento: e.target.value }))}
+                              style={{ width: '90px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                            />
+                          </div>
                           <button onClick={async () => {
                             if (!newServicio.nombre.trim()) return
-                            const updated = [...servicios, { nombre: newServicio.nombre.trim(), link: newServicio.link.trim() }]
+                            const updated = [...servicios, { nombre: newServicio.nombre.trim(), link: newServicio.link.trim(), vencimiento: newServicio.vencimiento ? parseInt(newServicio.vencimiento) : null }]
                             setServicios(updated)
                             const { data: { user } } = await supabase.auth.getUser()
                             localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
-                            setNewServicio({ nombre: '', link: '' })
+                            setNewServicio({ nombre: '', link: '', vencimiento: '' })
                             setShowAddServicio(false)
-                          }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}>
+                          }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', alignSelf: 'flex-end' }}>
                             Guardar
                           </button>
                         </div>
@@ -1333,7 +1343,10 @@ export default function Dashboard() {
                             backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
                             border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
                           }}>
-                            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
+                            <div>
+                              <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
+                              {s.vencimiento && <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#6e6e73' }}>📅 Vence el día {s.vencimiento}</p>}
+                            </div>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               {s.link && (
                                 <a href={s.link} target="_blank" rel="noopener noreferrer" style={{
