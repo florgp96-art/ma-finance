@@ -1188,7 +1188,7 @@ export default function Dashboard() {
                     👧 HIJOS
                   </button>
                   <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>
-                    🏷️ ETIQUETAS
+                    📋 REGLAS DE CLASIFICACIÓN
                   </button>
                 </div>
               )}
@@ -1860,18 +1860,18 @@ export default function Dashboard() {
       {showAliases && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '580px' }}>
-            <h3 style={styles.modalTitle}>🏷️ Mis Etiquetas</h3>
+            <h3 style={styles.modalTitle}>📋 Reglas de clasificación</h3>
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-              Definí cómo se mapean los valores de DESCRIPCION del Excel a categorías, hijos o cuentas.
+              Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
             </p>
             <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
               {userAliases.length === 0 ? (
-                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin etiquetas. Agregá la primera abajo.</p>
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas. Agregá la primera abajo.</p>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr>
-                      {['Alias (Excel)', 'Tipo', 'Valor', ''].map(h => (
+                      {['Palabra clave', 'Tipo', 'Valor', ''].map(h => (
                         <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
@@ -1895,8 +1895,8 @@ export default function Dashboard() {
             </div>
             <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr auto', gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
               <div>
-                <label style={styles.label}>Alias (valor en Excel)</label>
-                <input style={styles.input} placeholder="AMELIA" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
+                <label style={styles.label}>Palabra clave</label>
+                <input style={styles.input} placeholder="ej. OSDE, DISCO, UBER" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
               </div>
               <div>
                 <label style={styles.label}>Tipo</label>
@@ -1908,7 +1908,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <label style={styles.label}>{newAlias.tipo === 'hijo' ? 'Nombre del hijo/a' : newAlias.tipo === 'cuenta' ? 'Nombre de la cuenta' : 'Categoría asignada'}</label>
-                <input style={styles.input} placeholder={newAlias.tipo === 'hijo' ? 'Amelia' : newAlias.tipo === 'cuenta' ? 'Visa Galicia' : 'Casa'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
+                <input style={styles.input} placeholder={newAlias.tipo === 'hijo' ? 'ej. Amelia' : newAlias.tipo === 'cuenta' ? 'ej. Tarjeta Visa' : 'ej. Salud'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
               </div>
               <button type="submit" style={{ ...styles.saveBtn, padding: '11px 18px', marginTop: '20px' }}>+</button>
             </form>
