@@ -122,6 +122,8 @@ export default function Dashboard() {
   const [showExcel, setShowExcel] = useState(false)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
+  const [egresosOpen, setEgresosOpen] = useState(true)
+  const [ingresosOpen, setIngresosOpen] = useState(true)
   const [excelFile, setExcelFile] = useState(null)
   const [excelPreview, setExcelPreview] = useState(null)
   const [excelDupReview, setExcelDupReview] = useState(null)
@@ -1201,57 +1203,83 @@ export default function Dashboard() {
                 ✕
               </button>
             )}
-            <div style={styles.sidebarHeader}>
-              <h2 style={styles.sidebarTitle}>CUENTAS</h2>
-            </div>
-
             {(() => {
-              const names = accounts.map(a => a.nombre)
-              const dupes = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))]
-              return dupes.length > 0 ? (
-                <div style={{ background: '#e74c3c22', border: '1px solid #e74c3c66', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '12px', color: '#e74c3c' }}>
-                  ⚠️ Cuentas duplicadas: {dupes.join(', ')}
-                  {dupes.map(nombre => (
-                    <button key={nombre} style={{ display: 'block', width: '100%', marginTop: '6px', padding: '5px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px' }}
-                      onClick={() => handleMergeDuplicateAccounts(nombre)} disabled={loading}>
-                      {loading ? 'Consolidando...' : `Consolidar "${nombre}"`}
-                    </button>
-                  ))}
-                </div>
-              ) : null
-            })()}
-            <div style={styles.accountsList}>
-              {accounts.length > 0 && (
-                <div
-                  style={{...styles.accountCard, ...(selectedAccount === 'all' ? styles.accountCardSelected : {})}}
-                  onClick={() => setSelectedAccount(selectedAccount === 'all' ? null : 'all')}
+              const egresoCuentas = accounts.filter(a => !a.nombre?.toLowerCase().startsWith('ingresos'))
+              const ingresoCuentas = accounts.filter(a => a.nombre?.toLowerCase().startsWith('ingresos'))
+
+              const renderAccount = (acc) => (
+                <div key={acc.id}
+                  style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
+                  onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
+                  onMouseEnter={() => setHoveredAccount(acc.id)}
+                  onMouseLeave={() => setHoveredAccount(null)}
                 >
-                  <p style={{...styles.accountType, marginBottom: '4px'}}>📊 RESUMEN</p>
-                  <p style={styles.accountName}>Resumen General</p>
+                  <p style={{ ...styles.accountType, marginBottom: '4px' }}>💳 {tipoLabel(acc.tipo)}</p>
+                  <p style={styles.accountName}>{acc.nombre}</p>
+                  {hoveredAccount === acc.id && (
+                    <button style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
+                      onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
+                  )}
                 </div>
-              )}
-              {accounts.length === 0 ? (
-                <p style={styles.emptyText}>Todavía no agregaste ninguna cuenta.</p>
-              ) : (
-                accounts.map(acc => (
-                  <div key={acc.id}
-                    style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
-                    onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
-                    onMouseEnter={() => setHoveredAccount(acc.id)}
-                    onMouseLeave={() => setHoveredAccount(null)}
-                  >
-                    <p style={{ ...styles.accountType, marginBottom: '4px' }}>💳 {tipoLabel(acc.tipo)}</p>
-                    <p style={styles.accountName}>{acc.nombre}</p>
-                    {hoveredAccount === acc.id && (
-                      <button
-                        style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
-                        onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}
-                      >✏️</button>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
+              )
+
+              const SectionHeader = ({ label, open, onToggle }) => (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 0', marginBottom: '6px' }} onClick={onToggle}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#8e8e93', letterSpacing: '0.1em' }}>{label}</span>
+                  <span style={{ fontSize: '9px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>▼</span>
+                </div>
+              )
+
+              const dupes = [...new Set(accounts.map(a => a.nombre).filter((n, i, arr) => arr.indexOf(n) !== i))]
+
+              return (
+                <>
+                  {dupes.length > 0 && (
+                    <div style={{ background: '#e74c3c22', border: '1px solid #e74c3c66', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '12px', color: '#e74c3c' }}>
+                      ⚠️ Cuentas duplicadas: {dupes.join(', ')}
+                      {dupes.map(nombre => (
+                        <button key={nombre} style={{ display: 'block', width: '100%', marginTop: '6px', padding: '5px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px' }}
+                          onClick={() => handleMergeDuplicateAccounts(nombre)} disabled={loading}>
+                          {loading ? 'Consolidando...' : `Consolidar "${nombre}"`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* RESUMEN siempre visible */}
+                  {accounts.length > 0 && (
+                    <div style={{ ...styles.accountCard, ...(selectedAccount === 'all' ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px' }}
+                      onClick={() => setSelectedAccount(selectedAccount === 'all' ? null : 'all')}>
+                      <p style={{ ...styles.accountType, marginBottom: '4px' }}>📊 RESUMEN</p>
+                      <p style={styles.accountName}>Resumen General</p>
+                    </div>
+                  )}
+
+                  {/* EGRESOS */}
+                  <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
+                  {egresosOpen && (
+                    <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
+                      {egresoCuentas.length === 0
+                        ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
+                        : egresoCuentas.map(renderAccount)
+                      }
+                    </div>
+                  )}
+
+                  {/* INGRESOS — solo si hay */}
+                  {ingresoCuentas.length > 0 && (
+                    <>
+                      <SectionHeader label="INGRESOS" open={ingresosOpen} onToggle={() => setIngresosOpen(o => !o)} />
+                      {ingresosOpen && (
+                        <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
+                          {ingresoCuentas.map(renderAccount)}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )
+            })()}
 
             {/* Tipo de cambio */}
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
