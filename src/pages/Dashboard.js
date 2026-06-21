@@ -1204,7 +1204,7 @@ export default function Dashboard() {
             {selectedAccount === 'all' ? (
               <div style={styles.section}>
                 {/* Tabs — General + hijos dinámicos */}
-                <div style={{ display: 'flex', overflowX: 'auto', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                <div className="tabs-scroll" style={{ display: 'flex', overflowX: 'auto', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                   {[
                     { key: 'resumen', label: '📊 Resumen' },
                     { key: 'vencimientos', label: '📅 Vencimientos' },
