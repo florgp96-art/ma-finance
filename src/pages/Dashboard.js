@@ -1451,12 +1451,12 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widget ahorro — solo desktop */}
+          {/* Widgets — solo desktop */}
           {!isMobile && (
-          <div style={styles.savingsPanel}>
+          <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
             {miniChartData.length > 0 && (
-              <div style={{ marginBottom: '24px' }}>
-                <h3 style={{ ...styles.savingsPanelTitle, marginBottom: '12px' }}>Últimos 6 meses</h3>
+              <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
+                <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
                 <ResponsiveContainer width="100%" height={130}>
                   <BarChart data={miniChartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                     <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
@@ -1474,6 +1474,7 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               </div>
             )}
+            <div style={styles.savingsPanel}>
             <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
 
             <div style={styles.savingsField}>
@@ -1536,6 +1537,7 @@ export default function Dashboard() {
                 </div>
               )
             })()}
+          </div>
           </div>
           )}
 
@@ -2378,9 +2380,9 @@ const getStyles = (dark) => {
     contextoCard: { textAlign: 'center', paddingTop: '8px' },
     contextoIcon: { fontSize: '48px', margin: '0 0 16px 0' },
     savingsPanel: {
-      width: '220px', flexShrink: 0, backgroundColor: panel, borderRadius: '16px',
+      backgroundColor: panel, borderRadius: '16px',
       padding: '20px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
-      gap: '0px', position: 'sticky', top: '24px', alignSelf: 'flex-start',
+      gap: '0px',
     },
     savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase' },
     savingsField: { marginBottom: '12px' },
