@@ -32,11 +32,7 @@ const CONTEXTO_LABELS = {
 }
 
 
-const SERVICIOS = [
-  { nombre: 'Edenor', link: 'https://autogestion.edenor.com.ar', usuario: '' },
-  { nombre: 'Metrogas', link: 'https://www.metrogas.com.ar', usuario: '' },
-  { nombre: 'Telecentro', link: 'https://www.telecentro.com.ar', usuario: '' },
-]
+const SERVICIOS_DEFAULT = [{ nombre: 'Luz', link: '' }]
 
 const parseFechaArgentina = (fecha) => {
   if (!fecha) return null
@@ -60,6 +56,9 @@ export default function Dashboard() {
 
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
+  const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
+  const [newServicio, setNewServicio] = useState({ nombre: '', link: '' })
+  const [showAddServicio, setShowAddServicio] = useState(false)
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
@@ -148,7 +147,15 @@ export default function Dashboard() {
   const [userAliases, setUserAliases] = useState([])
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
 
-  useEffect(() => { fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases() }, [])
+  useEffect(() => {
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        const saved = localStorage.getItem(`servicios_${user.id}`)
+        setServicios(saved ? JSON.parse(saved) : SERVICIOS_DEFAULT)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -1282,29 +1289,68 @@ export default function Dashboard() {
                     </div>
 
                     <div>
-                      <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 16px 0' }}>
-                        🔌 Servicios
-                      </h3>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0 }}>
+                          🔌 Servicios
+                        </h3>
+                        <button onClick={() => setShowAddServicio(o => !o)} style={{ padding: '6px 14px', borderRadius: '8px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#5C4F5C', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}>
+                          + Agregar
+                        </button>
+                      </div>
+                      {showAddServicio && (
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                          <input
+                            placeholder="Nombre (ej. Gas)"
+                            value={newServicio.nombre}
+                            onChange={e => setNewServicio(s => ({ ...s, nombre: e.target.value }))}
+                            style={{ flex: 1, minWidth: '120px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                          />
+                          <input
+                            placeholder="Link de pago (opcional)"
+                            value={newServicio.link}
+                            onChange={e => setNewServicio(s => ({ ...s, link: e.target.value }))}
+                            style={{ flex: 2, minWidth: '160px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                          />
+                          <button onClick={async () => {
+                            if (!newServicio.nombre.trim()) return
+                            const updated = [...servicios, { nombre: newServicio.nombre.trim(), link: newServicio.link.trim() }]
+                            setServicios(updated)
+                            const { data: { user } } = await supabase.auth.getUser()
+                            localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
+                            setNewServicio({ nombre: '', link: '' })
+                            setShowAddServicio(false)
+                          }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}>
+                            Guardar
+                          </button>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {SERVICIOS.map((s, i) => (
+                        {servicios.map((s, i) => (
                           <div key={i} style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '14px 18px', borderRadius: '12px',
                             backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
                             border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
                           }}>
-                            <div>
-                              <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
-                              {s.usuario && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>👤 {s.usuario}</p>}
+                            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {s.link && (
+                                <a href={s.link} target="_blank" rel="noopener noreferrer" style={{
+                                  padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white',
+                                  fontSize: '13px', fontWeight: '500', textDecoration: 'none', fontFamily: '"Montserrat", sans-serif'
+                                }}>
+                                  Pagar →
+                                </a>
+                              )}
+                              <button onClick={async () => {
+                                const updated = servicios.filter((_, j) => j !== i)
+                                setServicios(updated)
+                                const { data: { user } } = await supabase.auth.getUser()
+                                localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
+                              }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.5, padding: '4px' }}>
+                                🗑️
+                              </button>
                             </div>
-                            {s.link && (
-                              <a href={s.link} target="_blank" rel="noopener noreferrer" style={{
-                                padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white',
-                                fontSize: '13px', fontWeight: '500', textDecoration: 'none', fontFamily: '"Montserrat", sans-serif'
-                              }}>
-                                Pagar →
-                              </a>
-                            )}
                           </div>
                         ))}
                       </div>
