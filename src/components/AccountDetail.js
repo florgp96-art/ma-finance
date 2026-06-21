@@ -15,6 +15,7 @@ export const CATEGORY_CONFIG = {
   'Trabajo':         { icon: '💼', color: '#D4E8C2' },
   'Ingresos':        { icon: '💰', color: '#B5EAC8' },
   'Débitos':         { icon: '🏦', color: '#D0CCCE' },
+  'Hijos':           { icon: '👶', color: '#FDEBD0' },
   'A Identificar':   { icon: '❓', color: '#F9E4B7' },
 }
 
