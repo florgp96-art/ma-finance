@@ -124,6 +124,8 @@ export default function Dashboard() {
   const [configOpen, setConfigOpen] = useState(false)
   const [excelFile, setExcelFile] = useState(null)
   const [excelPreview, setExcelPreview] = useState(null)
+  const [excelDupReview, setExcelDupReview] = useState(null)
+  const [excelDupSelections, setExcelDupSelections] = useState(new Set())
   const [excelDragOver, setExcelDragOver] = useState(false)
   const [loadingExcel, setLoadingExcel] = useState(false)
   const [excelMsgIndex, setExcelMsgIndex] = useState(0)
@@ -557,41 +559,101 @@ export default function Dashboard() {
       const { data: existentes } = await supabase.from('transactions')
         .select('fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
 
-      const nuevasWithAccounts = excelPreview
-        .map((row, i) => ({ row, acc: accountsForRows[i] }))
-        .filter(({ row, acc }) =>
-          !existentes?.some(e =>
-            e.account_id === acc.id &&
-            e.fecha === row.fecha &&
-            Math.abs(Number(e.monto) - row.monto) < 0.01 &&
-            (e.detalle || '').toLowerCase() === (row.notas || row.descripcion || '').toLowerCase()
-          )
-        )
+      const rowsWithAccounts = excelPreview.map((row, i) => ({ row, acc: accountsForRows[i] }))
 
-      if (nuevasWithAccounts.length === 0) {
+      const exactDupes = []
+      const potentialDupes = []
+      const newRows = []
+
+      for (const item of rowsWithAccounts) {
+        const { row, acc } = item
+        const exactMatch = existentes?.find(e =>
+          e.account_id === acc.id &&
+          e.fecha === row.fecha &&
+          Math.abs(Number(e.monto) - row.monto) < 0.01 &&
+          (e.detalle || '').toLowerCase() === (row.notas || row.descripcion || '').toLowerCase()
+        )
+        if (exactMatch) { exactDupes.push(item); continue }
+
+        const sameAmountDate = existentes?.find(e =>
+          e.account_id === acc.id &&
+          e.fecha === row.fecha &&
+          Math.abs(Number(e.monto) - row.monto) < 0.01
+        )
+        if (sameAmountDate) { potentialDupes.push({ ...item, existing: sameAmountDate }); continue }
+
+        newRows.push(item)
+      }
+
+      if (potentialDupes.length > 0) {
+        setExcelDupReview({ potentialDupes, newRows, exactDupes, categorias, subcategorias })
+        setExcelDupSelections(new Set())
+        setLoadingExcel(false); return
+      }
+
+      if (newRows.length === 0) {
         showToast('Todas las transacciones ya existen (duplicadas).', 'error')
         setLoadingExcel(false); return
       }
 
-      const toInsert = nuevasWithAccounts.map(({ row, acc }) => {
+      const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
         return {
-          user_id: user.id, account_id: acc.id,
-          fecha: row.fecha,
+          user_id: user.id, account_id: acc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: 'gasto',
-          category_id: catId,
-          subcategory_id: getSubcatId(row.subcat, catId),
+          category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
           tag: row.hijo || null,
         }
       })
 
       await supabase.from('transactions').insert(toInsert)
-      const omitidas = excelPreview.length - nuevasWithAccounts.length
-      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas omitidas.` : ''}`)
+      const omitidas = exactDupes.length
+      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
+      setRefreshKey(k => k + 1); fetchAccounts()
+    } catch (err) {
+      showToast('Error al importar: ' + err.message, 'error')
+    }
+    setLoadingExcel(false)
+  }
+
+  const handleImportarFinal = async () => {
+    if (!excelDupReview) return
+    setLoadingExcel(true)
+    try {
+      const { newRows, potentialDupes, exactDupes, categorias, subcategorias } = excelDupReview
+      const { data: { user } } = await supabase.auth.getUser()
+      const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
+      const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
+
+      const selectedDupes = potentialDupes.filter((_, i) => excelDupSelections.has(i))
+      const toImport = [...newRows, ...selectedDupes]
+
+      if (toImport.length === 0) {
+        showToast('No seleccionaste ninguna transacción para importar.', 'error')
+        setLoadingExcel(false); return
+      }
+
+      const toInsert = toImport.map(({ row, acc }) => {
+        const catId = getCatId(row.cat)
+        return {
+          user_id: user.id, account_id: acc.id, fecha: row.fecha,
+          nombre: row.nombre || row.notas || row.descripcion || null,
+          detalle: row.notas || row.descripcion,
+          monto: row.monto, moneda: row.moneda, tipo: 'gasto',
+          category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
+          estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
+          tag: row.hijo || null,
+        }
+      })
+
+      await supabase.from('transactions').insert(toInsert)
+      const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
+      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
+      setShowExcel(false); setExcelFile(null); setExcelPreview(null); setExcelDupReview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
       showToast('Error al importar: ' + err.message, 'error')
@@ -2074,7 +2136,59 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showExcel && (
+      {showExcel && excelDupReview && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '640px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <h3 style={styles.modalTitle}>⚠️ Posibles duplicados</h3>
+            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', margin: '-12px 0 16px 0' }}>
+              {excelDupReview.potentialDupes.length} transacción{excelDupReview.potentialDupes.length !== 1 ? 'es' : ''} con mismo monto y fecha que algo ya cargado.
+              Marcá las que querés importar igual.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              {excelDupReview.potentialDupes.map((item, i) => {
+                const checked = excelDupSelections.has(i)
+                return (
+                  <div key={i} style={{ border: `1px solid ${checked ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, borderRadius: '10px', padding: '12px 14px', backgroundColor: checked ? (darkMode ? '#2A202A' : '#F5F0F5') : (darkMode ? '#1C1A1C' : '#fafafa'), cursor: 'pointer' }}
+                    onClick={() => {
+                      const next = new Set(excelDupSelections)
+                      if (next.has(i)) next.delete(i); else next.add(i)
+                      setExcelDupSelections(next)
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                      <input type="checkbox" checked={checked} onChange={() => {}} style={{ marginTop: '2px', accentColor: '#5C4F5C', width: '16px', height: '16px', flexShrink: 0 }} />
+                      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ya existe</p>
+                          <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.existing.detalle || item.existing.nombre || '—'}</p>
+                          <p style={{ fontSize: '11px', color: '#6e6e73', margin: 0 }}>{item.existing.fecha} · $ {Number(item.existing.monto).toLocaleString('es-AR')}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>En el Excel</p>
+                          <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.row.notas || item.row.descripcion || '—'}</p>
+                          <p style={{ fontSize: '11px', color: '#6e6e73', margin: 0 }}>{item.row.fecha} · {item.row.moneda === 'USD' ? 'U$S' : '$'} {Number(item.row.monto).toLocaleString('es-AR')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {excelDupReview.newRows.length > 0 && (
+              <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '16px' }}>
+                ✅ {excelDupReview.newRows.length} transacción{excelDupReview.newRows.length !== 1 ? 'es' : ''} nueva{excelDupReview.newRows.length !== 1 ? 's' : ''} se importarán automáticamente.
+              </p>
+            )}
+            <div style={styles.modalButtons}>
+              <button style={styles.cancelBtn} onClick={() => setExcelDupReview(null)}>← Atrás</button>
+              <button style={styles.saveBtn} onClick={handleImportarFinal} disabled={loadingExcel}>
+                {loadingExcel ? 'Importando...' : `Confirmar importación`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showExcel && !excelDupReview && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '600px' }}>
             {excelPreview === null ? (
