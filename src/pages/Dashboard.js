@@ -577,6 +577,48 @@ export default function Dashboard() {
     setLoadingExcel(false)
   }
 
+  const handleReclasificar = async () => {
+    showToast('Buscando transacciones sin clasificar...')
+    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: pendientes } = await supabase.from('transactions')
+      .select('*').eq('user_id', user.id).or('estado.eq.a_identificar,category_id.is.null')
+      .gt('monto', 0).limit(500)
+    if (!pendientes || pendientes.length === 0) { showToast('No hay transacciones sin clasificar.'); return }
+    showToast(`Reclasificando ${pendientes.length} transacciones con IA...`)
+    const { data: cats } = await supabase.from('categories').select('*')
+    const { data: children } = await supabase.from('children').select('*').eq('user_id', user.id)
+    const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
+    const rows = pendientes.map(t => ({ id: t.id, notas: t.notas || '', descripcion: t.detalle || t.nombre || '', monto: t.monto, moneda: t.moneda || 'ARS' }))
+    try {
+      const res = await fetch('/api/classifyRows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ rows, categories: cats, children: children || [], aliases: aliases || [] })
+      })
+      const { classifications } = await res.json()
+      const { data: subcats } = await supabase.from('subcategories').select('*')
+      let updated = 0
+      for (let i = 0; i < pendientes.length; i++) {
+        const cl = classifications[i]
+        if (!cl) continue
+        const catObj = cats?.find(c => c.nombre === cl.categoria)
+        const subcatObj = subcats?.find(s => s.nombre === cl.subcategoria && s.category_id === catObj?.id)
+        await supabase.from('transactions').update({
+          nombre: cl.nombre || pendientes[i].detalle,
+          category_id: catObj?.id || null,
+          subcategory_id: subcatObj?.id || null,
+          estado: catObj ? 'identificado' : 'a_identificar',
+        }).eq('id', pendientes[i].id)
+        updated++
+      }
+      showToast(`${updated} transacciones reclasificadas.`)
+      setRefreshKey(k => k + 1)
+    } catch (e) {
+      showToast('Error al reclasificar: ' + e.message, 'error')
+    }
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     navigate('/login')
@@ -1195,6 +1237,9 @@ export default function Dashboard() {
                   </button>
                   <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>
                     📋 REGLAS DE CLASIFICACIÓN
+                  </button>
+                  <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>
+                    🤖 RE-CLASIFICAR CON IA
                   </button>
                 </div>
               )}

@@ -19,23 +19,34 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
   const [selectedMeses, setSelectedMeses] = useState([])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const mesDropdownRef = useRef(null)
+  const [categories, setCategories] = useState([])
+  const [subcategories, setSubcategories] = useState([])
+  const [editingTx, setEditingTx] = useState(null)
+  const [editNombre, setEditNombre] = useState('')
+  const [editCategoria, setEditCategoria] = useState('')
+  const [editSubcategoria, setEditSubcategoria] = useState('')
 
   useEffect(() => {
     setLoading(true)
     setTransactions([])
     setSelectedMeses([])
+    setEditingTx(null)
     fetchTransactions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hijoNombre, refreshKey])
 
   const fetchTransactions = async () => {
-    const { data } = await supabase
-      .from('transactions')
-      .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
-      .ilike('tag', hijoNombre)
-      .gt('monto', 0)
-      .order('fecha', { ascending: false })
-    const txs = data || []
+    const [txRes, catRes, subcatRes] = await Promise.all([
+      supabase.from('transactions')
+        .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+        .ilike('tag', hijoNombre).gt('monto', 0).order('fecha', { ascending: false }),
+      supabase.from('categories').select('*').order('nombre'),
+      supabase.from('subcategories').select('*').order('nombre'),
+    ])
+    setCategories(catRes.data || [])
+    setSubcategories(subcatRes.data || [])
+    const data = txRes
+    const txs = data.data || []
     setTransactions(txs)
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
@@ -80,6 +91,37 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
     const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
     return { mes: mesLabel(ym), total: Math.round(ars + usd * tc) }
+  })
+
+  const startEdit = (tx) => {
+    setEditingTx(tx.id)
+    setEditNombre(tx.nombre || tx.detalle || '')
+    setEditCategoria(tx.categories?.nombre || 'A Identificar')
+    setEditSubcategoria(tx.subcategories?.nombre || '')
+  }
+
+  const handleSaveEdit = async (tx) => {
+    const catObj = categories.find(c => c.nombre === editCategoria)
+    const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
+    await supabase.from('transactions').update({
+      nombre: editNombre,
+      category_id: catObj?.id || null,
+      subcategory_id: subcatObj?.id || null,
+      estado: 'identificado',
+    }).eq('id', tx.id)
+    setTransactions(prev => prev.map(t => t.id === tx.id ? {
+      ...t,
+      nombre: editNombre,
+      categories: catObj ? { nombre: catObj.nombre } : null,
+      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+      estado: 'identificado',
+    } : t))
+    setEditingTx(null)
+  }
+
+  const subcatsParaEditar = subcategories.filter(s => {
+    const cat = categories.find(c => c.nombre === editCategoria)
+    return cat && s.category_id === cat.id
   })
 
   const s = getStyles(darkMode)
@@ -222,7 +264,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr>
-                  {['Fecha', 'Descripción', 'Categoría', 'Subcategoría', 'Monto'].map(h => (
+                  {['Fecha', 'Descripción', 'Categoría', 'Subcategoría', 'Monto', ''].map(h => (
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 10px',
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
@@ -233,39 +275,53 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
                 </tr>
               </thead>
               <tbody>
-                {filteredTx.map((t, i) => (
-                  <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
-                    <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>
-                      {t.fecha}
-                    </td>
-                    <td style={{
-                      padding: '9px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f',
-                      maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                    }}>
-                      {t.nombre || t.detalle || '—'}
-                    </td>
-                    <td style={{ padding: '9px 10px' }}>
-                      {t.categories?.nombre ? (
-                        <span style={{
-                          backgroundColor: darkMode ? '#3A333A' : '#EDE8EC',
-                          color: '#5C4F5C', padding: '2px 8px',
-                          borderRadius: '10px', fontWeight: '500', fontSize: '12px'
-                        }}>
-                          {CATEGORY_CONFIG[t.categories.nombre]?.icon} {t.categories.nombre}
-                        </span>
-                      ) : <span style={{ color: '#aaa' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
-                      {t.subcategories?.nombre || '—'}
-                    </td>
-                    <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                      {t.moneda === 'USD'
-                        ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
-                        : `$ ${formatMonto(t.monto)}`
-                      }
-                    </td>
-                  </tr>
-                ))}
+                {filteredTx.map((t, i) => {
+                  const isEditing = editingTx === t.id
+                  return (
+                    <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{t.fecha}</td>
+                      <td style={{ padding: '9px 10px', maxWidth: '200px' }}>
+                        {isEditing
+                          ? <input value={editNombre} onChange={e => setEditNombre(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }} />
+                          : <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{t.nombre || t.detalle || '—'}</span>
+                        }
+                      </td>
+                      <td style={{ padding: '9px 10px' }}>
+                        {isEditing
+                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                              {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            </select>
+                          : t.categories?.nombre
+                            ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{CATEGORY_CONFIG[t.categories.nombre]?.icon} {t.categories.nombre}</span>
+                            : <span style={{ color: '#aaa' }}>—</span>
+                        }
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
+                        {isEditing
+                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                              <option value="">—</option>
+                              {subcatsParaEditar.map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
+                            </select>
+                          : t.subcategories?.nombre || '—'
+                        }
+                      </td>
+                      <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                        {t.moneda === 'USD'
+                          ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
+                          : `$ ${formatMonto(t.monto)}`}
+                      </td>
+                      <td style={{ padding: '9px 10px', whiteSpace: 'nowrap' }}>
+                        {isEditing
+                          ? <>
+                              <button onClick={() => handleSaveEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 4px' }}>✅</button>
+                              <button onClick={() => setEditingTx(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 4px' }}>✕</button>
+                            </>
+                          : <button onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.5, padding: '2px 4px' }}>✏️</button>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
