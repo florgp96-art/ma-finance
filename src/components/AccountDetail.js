@@ -179,13 +179,13 @@ export function BubbleChart({ data, darkMode }) {
                   </text>
                 )}
                 {!hasARS && hasUSD && (
-                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill="#5588aa">
-                    U$S {formatMontoFull(tooltip.data.originalUSD)}
+                  <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill={darkMode ? '#9A8A9A' : '#6e6e73'}>
+                    $ {formatMontoFull(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))}
                   </text>
                 )}
                 {hasBoth && (
                   <text x={tx} y={ty + 26} textAnchor="middle" fontSize={10} fill="#5588aa">
-                    + U$S {formatMontoFull(tooltip.data.originalUSD)}
+                    + $ {formatMontoFull(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))}
                   </text>
                 )}
               </g>
@@ -201,8 +201,12 @@ export function BubbleChart({ data, darkMode }) {
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
               <span style={{ flex: 1, color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{cfg.icon} {b.name}</span>
               <span style={{ fontWeight: '500', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                $ {formatMonto(b.value)}
-                {(b.originalUSD || 0) > 0 && <span style={{ fontSize: '10px', color: '#5588aa', marginLeft: '3px' }}>+U$S {formatMonto(b.originalUSD)}</span>}
+                $ {formatMonto((b.originalARS || 0) > 0 ? b.originalARS : b.value)}
+                {(b.originalUSD || 0) > 0 && (b.originalARS || 0) > 0 && (
+                  <span style={{ fontSize: '10px', color: '#5588aa', marginLeft: '3px' }}>
+                    +$ {formatMonto(Math.round(b.originalUSD * (parseFloat(tipoCambio) || 0)))}
+                  </span>
+                )}
               </span>
             </div>
           )
