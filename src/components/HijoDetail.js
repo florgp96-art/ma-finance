@@ -39,7 +39,9 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     setTransactions(txs)
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
-      setSelectedMeses([meses[0]])
+      const now = new Date()
+      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      setSelectedMeses([meses.includes(mesActual) ? mesActual : meses[0]])
     }
     setLoading(false)
   }
