@@ -169,7 +169,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
         )}
         {totalARS > 0 && totalUSD > 0 && tc > 1 && (
           <div style={s.statCard}>
-            <p style={s.statLabel}>Total equiv. ARS</p>
+            <p style={s.statLabel}>Total equiv. en pesos</p>
             <p style={s.statValue}>$ {formatMonto(totalARS + totalUSD * tc)}</p>
           </div>
         )}
