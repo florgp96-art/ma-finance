@@ -1224,9 +1224,11 @@ export default function Dashboard() {
               )
 
               const SectionHeader = ({ label, open, onToggle }) => (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', padding: '4px 0', marginBottom: '6px' }} onClick={onToggle}>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#8e8e93', letterSpacing: '0.1em' }}>{label}</span>
-                  <span style={{ fontSize: '9px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>▼</span>
+                <div style={styles.sidebarHeader} onClick={onToggle}>
+                  <h2 style={{ ...styles.sidebarTitle, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    {label}
+                    <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
+                  </h2>
                 </div>
               )
 
