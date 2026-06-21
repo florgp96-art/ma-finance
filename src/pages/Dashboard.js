@@ -1462,7 +1462,9 @@ export default function Dashboard() {
                     <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
                     <Tooltip
                       formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Total']}
-                      contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#2A272A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
+                      contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
+                      labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
+                      itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
                       cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
                     />
                     <Bar dataKey="total" radius={[4, 4, 0, 0]}>
