@@ -1334,11 +1334,11 @@ export default function Dashboard() {
 
               {/* Configuración colapsable */}
               <button
-                style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
                 onClick={() => setConfigOpen(o => !o)}
               >
                 <span>⚙️ CONFIGURACIÓN</span>
-                <span>{configOpen ? '▴' : '▾'}</span>
+                <span style={{ fontSize: '10px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
               </button>
               {configOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
@@ -2551,7 +2551,7 @@ const getStyles = (dark) => {
       padding: '20px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
       gap: '0px',
     },
-    savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase' },
+    savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center' },
     savingsField: { marginBottom: '12px' },
     savingsLabel: { display: 'block', fontSize: '12px', fontWeight: '400', color: muted, marginBottom: '4px' },
     savingsInput: { width: '100%', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: txt, backgroundColor: inputBg },
