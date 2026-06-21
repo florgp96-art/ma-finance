@@ -59,6 +59,11 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete] = useState(null)
 
   const [archivo, setArchivo] = useState(null)
+  const [toast, setToast] = useState(null)
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3500)
+  }
   const [showUpload, setShowUpload] = useState(false)
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [step, setStep] = useState('upload')
@@ -242,7 +247,7 @@ export default function Dashboard() {
     if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
     const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id)
     if (count > 0) {
-      alert(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`)
+      showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
     await supabase.from('subcategories').delete().eq('category_id', cat.id)
@@ -254,7 +259,7 @@ export default function Dashboard() {
     if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
     const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id)
     if (count > 0) {
-      alert(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`)
+      showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
     await supabase.from('subcategories').delete().eq('id', subcat.id)
@@ -396,7 +401,7 @@ export default function Dashboard() {
     try {
       const rows = await parsearExcel(excelFile)
       if (rows.length === 0) {
-        alert('No se encontraron filas válidas en la hoja GASTOS.')
+        showToast('No se encontraron filas válidas en la hoja GASTOS.', 'error')
         setLoadingExcel(false)
         return
       }
@@ -465,7 +470,7 @@ export default function Dashboard() {
       }
       setExcelPreview(enriched)
     } catch (err) {
-      alert('Error procesando el archivo: ' + err.message)
+      showToast('Error procesando el archivo: ' + err.message, 'error')
     }
     clearInterval(excelMsgIntervalRef.current)
     clearInterval(excelTimerIntervalRef.current)
@@ -534,7 +539,7 @@ export default function Dashboard() {
         )
 
       if (nuevasWithAccounts.length === 0) {
-        alert('Todas las transacciones ya existen (duplicadas).')
+        showToast('Todas las transacciones ya existen (duplicadas).', 'error')
         setLoadingExcel(false); return
       }
 
@@ -555,11 +560,11 @@ export default function Dashboard() {
 
       await supabase.from('transactions').insert(toInsert)
       const omitidas = excelPreview.length - nuevasWithAccounts.length
-      alert(`✅ ${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas omitidas.` : ''}`)
+      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
-      alert('Error al importar: ' + err.message)
+      showToast('Error al importar: ' + err.message, 'error')
     }
     setLoadingExcel(false)
   }
@@ -614,7 +619,7 @@ export default function Dashboard() {
     }
     fetchAccounts()
     setLoading(false)
-    alert(`✅ ${toRemove.length} cuenta(s) duplicada(s) consolidadas en "${nombre}".`)
+    showToast(`${toRemove.length} cuenta(s) duplicada(s) consolidadas en "${nombre}".`)
   }
 
   const resetUpload = () => {
@@ -695,7 +700,7 @@ export default function Dashboard() {
         setStep('select_account')
       }
     } catch (err) {
-      alert('Error procesando el PDF: ' + err.message)
+      showToast('Error procesando el PDF: ' + err.message, 'error')
       setStep('upload')
     }
     setLoading(false)
@@ -869,7 +874,7 @@ export default function Dashboard() {
       const { data: existing } = await supabase.from('statements')
         .select('id').eq('account_id', cuentaEgresos.id).eq('periodo', statementData.periodo).maybeSingle()
       if (existing) {
-        alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
+        showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
         setLoading(false)
         return
       }
@@ -947,7 +952,7 @@ export default function Dashboard() {
       const { data: existing } = await supabase.from('statements')
         .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
       if (existing) {
-        alert(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`)
+        showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
         setLoading(false)
         return
       }
@@ -1008,7 +1013,7 @@ export default function Dashboard() {
     setUploadDragOver(false)
     const file = e.dataTransfer.files[0]
     if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) setArchivo(file)
-    else alert('Solo se aceptan archivos PDF o imágenes (PNG, JPG)')
+    else showToast('Solo se aceptan archivos PDF o imágenes (PNG, JPG)', 'error')
   }
 
   const tipoLabel = (tipo) => tipo === 'credito' ? 'Crédito' : tipo === 'debito' ? 'Débito' : 'Efectivo'
@@ -1960,7 +1965,7 @@ export default function Dashboard() {
                       style={{ ...styles.dropzone, ...(excelDragOver ? styles.dropzoneActive : {}), ...(excelFile ? styles.dropzoneDone : {}) }}
                       onDragOver={e => { e.preventDefault(); setExcelDragOver(true) }}
                       onDragLeave={() => setExcelDragOver(false)}
-                      onDrop={e => { e.preventDefault(); setExcelDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.xlsx')) setExcelFile(f); else alert('Solo se aceptan archivos .xlsx') }}
+                      onDrop={e => { e.preventDefault(); setExcelDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.xlsx')) setExcelFile(f); else showToast('Solo se aceptan archivos .xlsx', 'error') }}
                       onClick={() => document.getElementById('excelInput').click()}
                     >
                       {excelFile ? (
@@ -2103,6 +2108,21 @@ export default function Dashboard() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, padding: '12px 24px', borderRadius: '12px',
+          backgroundColor: toast.type === 'error' ? '#c0392b' : '#2e8b6a',
+          color: 'white', fontSize: '14px', fontWeight: '500',
+          fontFamily: '"Montserrat", sans-serif',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+          maxWidth: '90vw', textAlign: 'center',
+          animation: 'fadeInUp 0.2s ease'
+        }}>
+          {toast.type !== 'error' ? '✅ ' : '⚠️ '}{toast.msg}
         </div>
       )}
     </>
