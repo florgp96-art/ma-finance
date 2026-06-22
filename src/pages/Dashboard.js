@@ -1678,9 +1678,9 @@ export default function Dashboard() {
           </div>
 
           {/* Contenido derecho */}
-          <div style={styles.mainContent}>
+          <div style={{...styles.mainContent, overflowX: 'hidden'}}>
             {selectedAccount === 'all' ? (
-              <div style={styles.section}>
+              <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 {/* Tabs — General + hijos dinámicos */}
                 <div className="tabs-scroll" style={{ display: 'flex', overflowX: 'auto', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                   {[
@@ -1845,7 +1845,7 @@ export default function Dashboard() {
                 )}
               </div>
             ) : selectedAccount ? (
-              <div style={styles.section}>
+              <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
                 <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} />
               </div>

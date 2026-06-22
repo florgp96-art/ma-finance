@@ -602,7 +602,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           ))}
         </select>
       </td>
-      <td style={styles.td}>
+      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
         <select style={styles.editSelect} value={editSubcategoria}
           onChange={e => setEditSubcategoria(e.target.value)}>
           <option value="">— Sin subcategoría</option>
@@ -623,14 +623,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     </td>
   )
 
-  const thSortable = (label, key) => (
-    <th style={styles.thSortable} onClick={() => handleSort(key)}>
+  const thSortable = (label, key, hidden = false) => (
+    <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {})}} onClick={() => handleSort(key)}>
       {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
     </th>
   )
 
-  const styles = getStyles(darkMode)
   const isMobile = windowWidth < 768
+  const styles = getStyles(darkMode, isMobile)
 
   if (loading) return (
     <div style={styles.loading}>Cargando datos...</div>
@@ -855,15 +855,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
           <p style={styles.tableHint}>Editá el nombre, categoría y subcategoría de estos gastos</p>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', width: '100%' }}>
           <table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Fecha</th>
-                <th style={styles.th}>Detalle original</th>
+                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Detalle original</th>
                 <th style={styles.th}>Nombre</th>
                 <th style={styles.th}>Categoría</th>
-                <th style={styles.th}>Subcategoría</th>
+                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
                 <th style={styles.th}>Monto</th>
                 <th style={styles.th}></th>
               </tr>
@@ -872,12 +872,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{tx.fecha}</td>
-                  <td style={styles.td}><span style={styles.detalle}>{tx.detalle}</span></td>
+                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
                   {editingTx === tx.id ? renderEditCells() : (
                     <>
                       <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
                       <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
-                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
+                      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={{color:'#aaa'}}>—</span></td>
                     </>
                   )}
                   <td style={{...styles.td, textAlign:'right', fontWeight:'600'}}>
@@ -905,16 +905,16 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             </button>
           )}
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', width: '100%' }}>
         <table style={styles.table}>
           <thead>
             <tr>
               {thSortable('Fecha', 'fecha')}
               {thSortable('Nombre', 'nombre')}
               {thSortable('Categoría', 'categoria')}
-              {thSortable('Subcategoría', 'subcategoria')}
-              {thSortable('Cuotas', 'cuotas')}
-              {thSortable('Moneda', 'moneda')}
+              {thSortable('Subcategoría', 'subcategoria', isMobile)}
+              {thSortable('Cuotas', 'cuotas', isMobile)}
+              {thSortable('Moneda', 'moneda', isMobile)}
               {thSortable('Monto', 'monto')}
               <th style={styles.th}></th>
             </tr>
@@ -942,17 +942,17 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                         {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
                       </span>
                     </td>
-                    <td style={styles.td}>
+                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       <span style={{fontSize:'12px', color:'#888'}}>
                         {tx.subcategories?.nombre || '—'}
                       </span>
                     </td>
                   </>
                 )}
-                <td style={styles.td}>
+                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                   {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
                 </td>
-                <td style={styles.td}>
+                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                   <span style={{
                     fontSize: '11px', fontWeight: '500',
                     color: tx.moneda === 'USD' ? '#5588aa' : '#666',
@@ -1032,7 +1032,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   )
 }
 
-const getStyles = (dark) => {
+const getStyles = (dark, mobile) => {
   const p = dark ? '#8C7B8C' : '#5C4F5C'
   const panel = dark ? '#2A272A' : 'white'
   const txt = dark ? '#F0EDEC' : '#1d1d1f'
@@ -1044,10 +1044,10 @@ const getStyles = (dark) => {
   const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
   return {
     loading: { padding: '24px', color: muted, fontSize: '14px' },
-    summaryCards: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '28px' },
-    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
+    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
     summaryLabel: { fontSize: '11px', fontWeight: '400', color: muted, margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
-    summaryValue: { fontSize: '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
+    summaryValue: { fontSize: mobile ? '20px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
     chartTitle: { fontSize: '16px', fontWeight: '500', color: txt, margin: '0 0 16px 0' },
