@@ -155,6 +155,22 @@ export default function Dashboard() {
   const [showAliases, setShowAliases] = useState(false)
   const [userAliases, setUserAliases] = useState([])
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+  const [vencPagados, setVencPagados] = useState(new Set())
+
+  const toggleVencPagado = (id) => {
+    const next = new Set(vencPagados)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setVencPagados(next)
+    const mes = new Date().toISOString().slice(0, 7)
+    localStorage.setItem(`venc_pagados_${mes}`, JSON.stringify([...next]))
+  }
+
+  useEffect(() => {
+    const mes = new Date().toISOString().slice(0, 7)
+    const stored = localStorage.getItem(`venc_pagados_${mes}`)
+    setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
+  }, [])
 
   useEffect(() => {
     fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases()
@@ -1346,20 +1362,6 @@ export default function Dashboard() {
               )
             })()}
 
-            {/* Tipo de cambio */}
-            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
-              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em' }}>
-                U$S 1 = $
-              </label>
-              <input
-                type="number"
-                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
-                placeholder="ej. 1250"
-                value={tipoCambio}
-                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
-              />
-            </div>
-
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {/* Gasto en efectivo */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
@@ -1423,6 +1425,56 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* Tipo de cambio */}
+            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
+              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em', textAlign: 'center' }}>
+                U$S 1 = $
+              </label>
+              <input
+                type="number"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                placeholder="ej. 1250"
+                value={tipoCambio}
+                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
+              />
+            </div>
+
+            {/* Vencimientos del mes */}
+            {(() => {
+              const mesCurrent = new Date().toISOString().slice(0, 7)
+              const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesCurrent))
+              if (vencMes.length === 0) return null
+              return (
+                <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
+                  <p style={{ fontSize: '11px', color: '#6e6e73', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '8px', fontWeight: 600 }}>
+                    Vencimientos del mes
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {vencMes.map(v => {
+                      const pagado = vencPagados.has(v.id)
+                      return (
+                        <div key={v.id}
+                          onClick={() => toggleVencPagado(v.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '6px 8px', borderRadius: '8px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : (darkMode ? '#1C1A1C' : '#f7f5f6'), opacity: pagado ? 0.7 : 1 }}>
+                          <input type="checkbox" checked={pagado} readOnly
+                            style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {v.accounts?.nombre || v.periodo}
+                            </p>
+                            <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>
+                              Vence {v.fecha_vencimiento?.slice(8, 10)}/{v.fecha_vencimiento?.slice(5, 7)}
+                              {v.total_resumen ? ` · $${new Intl.NumberFormat('es-AR').format(v.total_resumen)}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
 
             <div style={styles.sidebarFooter}>
               <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
