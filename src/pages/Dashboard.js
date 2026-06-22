@@ -73,6 +73,8 @@ export default function Dashboard() {
   const [newAccountForUpload, setNewAccountForUpload] = useState({ nombre: '', tipo: 'credito' })
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
+  const [pdfTxSelections, setPdfTxSelections] = useState(new Set())
+  const [pdfTxDuplicadas, setPdfTxDuplicadas] = useState(new Set())
 
   // Paso identificar: transacciones sin clasificar post-carga
   const [txSinIdentificar, setTxSinIdentificar] = useState([])
@@ -841,6 +843,8 @@ export default function Dashboard() {
       }
 
       if (result.tipo_documento === 'banco') {
+        setPdfTxDuplicadas(new Set())
+        setPdfTxSelections(new Set(result.transacciones.map((_, i) => i)))
         setStep('preview')
       } else {
         setStep('select_account')
@@ -852,10 +856,52 @@ export default function Dashboard() {
     setLoading(false)
   }
 
+  const calcularDuplicadosPDF = async (transacciones, accountId, fechaFacturacion) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: txExistentes } = await supabase.from('transactions')
+        .select('fecha, monto')
+        .eq('user_id', user.id)
+        .eq('account_id', accountId)
+
+      let billingMes = null
+      if (fechaFacturacion) {
+        const parts = fechaFacturacion.split('/')
+        if (parts.length === 3) {
+          const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+          billingMes = `${year}-${parts[1].padStart(2,'0')}`
+        }
+      }
+
+      const dupes = new Set()
+      const selec = new Set()
+      transacciones.forEach((t, i) => {
+        const esCuota = t.cuotas_total > 1
+        const isDupe = txExistentes?.some(e => {
+          const montoMatch = Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
+          if (!montoMatch) return false
+          if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
+          return e.fecha === t.fecha
+        })
+        if (isDupe) dupes.add(i)
+        else selec.add(i)
+      })
+      setPdfTxDuplicadas(dupes)
+      setPdfTxSelections(selec)
+    } catch {
+      const allIdx = new Set(transacciones.map((_, i) => i))
+      setPdfTxSelections(allIdx)
+      setPdfTxDuplicadas(new Set())
+    }
+  }
+
   const handleSelectAccount = (acc) => {
     setTargetAccount(acc)
     if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
-    else setStep('preview')
+    else {
+      calcularDuplicadosPDF(statementData.transacciones, acc.id, statementData.fecha_facturacion)
+      setStep('preview')
+    }
   }
 
   const handleCreateNewForUpload = async (e) => {
@@ -869,11 +915,15 @@ export default function Dashboard() {
     fetchAccounts()
     setLoading(false)
     if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
-    else setStep('preview')
+    else {
+      calcularDuplicadosPDF(statementData.transacciones, account.id, statementData.fecha_facturacion)
+      setStep('preview')
+    }
   }
 
   const handleConfirmAdicionales = (separar) => {
     setSepararAdicionales(separar)
+    if (targetAccount) calcularDuplicadosPDF(statementData.transacciones, targetAccount.id, statementData.fecha_facturacion)
     setStep('preview')
   }
 
@@ -1112,77 +1162,34 @@ export default function Dashboard() {
       }).select().single()
 
       const fechaResumen = statementData.fecha_facturacion || null
-      const transacciones = statementData.transacciones.map(t => {
-        const categoryId = getCategoryId(t.categoria_sugerida)
-        let fechaFinal = t.fecha
-        if (t.cuotas_total > 1 && fechaResumen) {
-          const parts = fechaResumen.split('/')
-          if (parts.length === 3) {
-            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
-            fechaFinal = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+      // Solo importar las transacciones que el usuario seleccionó en el preview
+      const transacciones = statementData.transacciones
+        .filter((_, i) => pdfTxSelections.has(i))
+        .map(t => {
+          const categoryId = getCategoryId(t.categoria_sugerida)
+          let fechaFinal = t.fecha
+          if (t.cuotas_total > 1 && fechaResumen) {
+            const parts = fechaResumen.split('/')
+            if (parts.length === 3) {
+              const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+              fechaFinal = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+            }
           }
-        }
-        return {
-          user_id: user.id, account_id: account.id, statement_id: statement.id,
-          fecha: fechaFinal,
-          nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
-          detalle: t.nombre_original,
-          monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
-          moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
-          tipo: 'gasto', category_id: categoryId,
-          subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
-          estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
-          es_manual: false
-        }
-      })
+          return {
+            user_id: user.id, account_id: account.id, statement_id: statement.id,
+            fecha: fechaFinal,
+            nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+            detalle: t.nombre_original,
+            monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
+            moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
+            tipo: 'gasto', category_id: categoryId,
+            subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
+            estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+            es_manual: false
+          }
+        })
 
-      // Deduplicar: no insertar transacciones que ya existen para este usuario
-      const { data: txExistentes } = await supabase.from('transactions')
-        .select('account_id, detalle, cuota_numero, cuotas_total, fecha, monto')
-        .eq('user_id', user.id)
-
-      const esDuplicadoPDF = (t) => {
-        if (!txExistentes?.length) return false
-        if (t.cuotas_total > 1) {
-          // Match exacto (PDF vs PDF): mismo detalle + misma cuota
-          if (txExistentes.some(e =>
-            e.detalle === t.detalle &&
-            Number(e.cuota_numero) === Number(t.cuota_numero) &&
-            Number(e.cuotas_total) === Number(t.cuotas_total)
-          )) return true
-          // Fallback para Excel (sin cuota guardada): misma cuenta + mismo monto + mismo mes
-          const mes = t.fecha?.slice(0, 7)
-          return txExistentes.some(e =>
-            e.account_id === t.account_id &&
-            Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01 &&
-            e.fecha?.slice(0, 7) === mes
-          )
-        }
-        // Pagos simples: match por detalle+fecha+monto
-        if (txExistentes.some(e =>
-          e.detalle === t.detalle &&
-          e.fecha === t.fecha &&
-          Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
-        )) return true
-        // Fallback para Excel: misma cuenta + mismo monto + misma fecha exacta
-        return txExistentes.some(e =>
-          e.account_id === t.account_id &&
-          e.fecha === t.fecha &&
-          Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
-        )
-      }
-
-      const transaccionesFiltradas = transacciones.filter(t => !esDuplicadoPDF(t))
-      const omitidas = transacciones.length - transaccionesFiltradas.length
-
-      if (transaccionesFiltradas.length === 0) {
-        showToast('Todas las transacciones ya estaban cargadas. No se importó nada.', 'error')
-        setLoading(false)
-        return
-      }
-
-      const { data: inserted } = await supabase.from('transactions').insert(transaccionesFiltradas).select('id, detalle, estado')
-      if (omitidas > 0) showToast(`${omitidas} transacción${omitidas > 1 ? 'es' : ''} omitida${omitidas > 1 ? 's' : ''} (ya existían).`, 'warning')
+      const { data: inserted } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
 
       // Preparar paso identificar
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
@@ -2009,36 +2016,64 @@ export default function Dashboard() {
             {step === 'preview' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>
-                  {statementData?.tipo_documento === 'banco' ? 'Revisá los movimientos del banco 🏦' : 'Revisá las transacciones ✅'}
+                  {statementData?.tipo_documento === 'banco' ? 'Revisá los movimientos del banco 🏦' : 'Elegí qué importar ✅'}
                 </h3>
                 <div style={styles.previewStats}>
                   <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
                   <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
                   <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>
-                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Transacciones</span><span style={styles.previewStatValue}>{statementData.transacciones.length}</span></div>
+                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Seleccionadas</span><span style={styles.previewStatValue}>{pdfTxSelections.size} / {statementData.transacciones.length}</span></div>
                 </div>
-                <div style={styles.transactionsList}>
-                  {statementData.transacciones.slice(0, 10).map((t, i) => (
-                    <div key={i} style={styles.transactionItem}>
-                      <div style={styles.transactionLeft}>
-                        <p style={styles.transactionName}>{t.nombre_limpio || t.nombre_original}{t.nombre_limpio === t.nombre_original && <span> ❓</span>}</p>
-                        <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
-                      </div>
-                      <p style={{...styles.transactionMonto, color: t.es_credito ? '#27AE60' : '#2d2d2d'}}>
-                        {t.es_credito ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(t.monto)}
-                      </p>
+                {pdfTxDuplicadas.size > 0 && (
+                  <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: 'none', border: 'none', color: '#7c5cbf', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Seleccionar todo</button>
+                      <button onClick={() => setPdfTxSelections(new Set())} style={{ background: 'none', border: 'none', color: '#7c5cbf', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Ninguna</button>
                     </div>
-                  ))}
-                  {statementData.transacciones.length > 10 && <p style={styles.moreTransactions}>+ {statementData.transacciones.length - 10} transacciones más</p>}
+                  </div>
+                )}
+                <div style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto' }}>
+                  {statementData.transacciones.map((t, i) => {
+                    const isDupe = pdfTxDuplicadas.has(i)
+                    const isSelected = pdfTxSelections.has(i)
+                    return (
+                      <div key={i}
+                        onClick={() => {
+                          const next = new Set(pdfTxSelections)
+                          isSelected ? next.delete(i) : next.add(i)
+                          setPdfTxSelections(next)
+                        }}
+                        style={{ ...styles.transactionItem, cursor: 'pointer', opacity: isDupe && !isSelected ? 0.45 : 1,
+                          textDecoration: isDupe && !isSelected ? 'line-through' : 'none',
+                          backgroundColor: isSelected ? undefined : isDupe ? 'rgba(0,0,0,0.05)' : undefined }}>
+                        <input type="checkbox" checked={isSelected} readOnly
+                          style={{ marginRight: '10px', accentColor: '#7c5cbf', flexShrink: 0, cursor: 'pointer' }} />
+                        <div style={styles.transactionLeft}>
+                          <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {t.nombre_limpio || t.nombre_original}
+                            {t.nombre_limpio === t.nombre_original && <span style={{ textDecoration: 'none' }}>❓</span>}
+                            {isDupe && <span style={{ textDecoration: 'none', fontSize: '10px', color: '#8e8e93', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px' }}>ya cargada</span>}
+                          </p>
+                          <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
+                        </div>
+                        <p style={{ ...styles.transactionMonto, color: t.es_credito ? '#27AE60' : undefined }}>
+                          {t.es_credito ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(t.monto)}
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
-                {statementData.transacciones.some(t => t.categoria_sugerida === 'A Identificar') && (
+                {statementData.transacciones.some((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar') && (
                   <div style={styles.warningBox}>
-                    ❓ Hay {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length} {statementData.transacciones.filter(t => t.categoria_sugerida === 'A Identificar').length === 1 ? 'transacción' : 'transacciones'} sin identificar. Te vamos a pedir que las clasifiques antes de cerrar.
+                    ❓ Hay {statementData.transacciones.filter((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar').length} transacciones sin identificar entre las seleccionadas. Te vamos a pedir que las clasifiques antes de cerrar.
                   </div>
                 )}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setStep(statementData?.tipo_documento === 'banco' ? 'upload' : 'select_account')}>← Atrás</button>
-                  <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading}>{loading ? 'Guardando...' : 'Confirmar y guardar'}</button>
+                  <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading || pdfTxSelections.size === 0}>
+                    {loading ? 'Guardando...' : `Importar ${pdfTxSelections.size} transacción${pdfTxSelections.size !== 1 ? 'es' : ''}`}
+                  </button>
                 </div>
               </>
             )}

@@ -507,7 +507,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `ma-finance-${selectedMeses.join('-') || 'todos'}.csv`
+    const periodoLabel = selectedMeses.length === 0 ? 'todos'
+      : selectedMeses.length === 1 ? selectedMeses[0]
+      : `${selectedMeses[0]}_al_${selectedMeses[selectedMeses.length - 1]}`
+    a.download = `ma-finance-${periodoLabel}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
