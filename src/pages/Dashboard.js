@@ -225,8 +225,11 @@ export default function Dashboard() {
   }, [navigate])
 
   useEffect(() => {
-    if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight)
-  })
+    const measure = () => { if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight) }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [dolarRates, tcTipo])
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -1360,9 +1363,9 @@ export default function Dashboard() {
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
           const usdCard = (
-            <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
                 {['blue','mep','oficial','tarjeta'].map(t => (
                   <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
                     style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
