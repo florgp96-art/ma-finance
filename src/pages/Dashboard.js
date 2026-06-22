@@ -397,10 +397,11 @@ export default function Dashboard() {
       const arr = await res.json()
       const map = {}
       arr.forEach(d => {
-        if (d.casa === 'blue') map.blue = d.venta
-        else if (d.casa === 'bolsa') map.mep = d.venta
-        else if (d.casa === 'oficial') map.oficial = d.venta
-        else if (d.casa === 'tarjeta') map.tarjeta = d.venta
+        const avg = (d.compra != null && d.venta != null) ? Math.round((d.compra + d.venta) / 2) : (d.venta || d.compra || 0)
+        if (d.casa === 'blue') map.blue = avg
+        else if (d.casa === 'bolsa') map.mep = avg
+        else if (d.casa === 'oficial') map.oficial = avg
+        else if (d.casa === 'tarjeta') map.tarjeta = avg
       })
       setDolarRates(map)
     } catch {}
@@ -1327,104 +1328,94 @@ export default function Dashboard() {
     <>
       <div style={styles.container}>
 
-        <div style={styles.header}>
-          {isMobile && (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              style={{ position: 'absolute', left: '16px', top: '16px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', opacity: 0.8 }}
-            >
-              ☰
-            </button>
-          )}
-          <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '90px' : '220px' }} />
-          <button
-            onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }}
-            title={darkMode ? 'Modo claro' : 'Modo oscuro'}
-            style={{ position: 'absolute', top: '20px', right: isMobile ? '16px' : '32px', background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
-        </div>
-
-        {/* ===== WIDGETS ARRIBA IZQUIERDA (fuera del sidebar) ===== */}
+        {/* ===== HEADER: cards izq | logo centro | logout+darkmode der ===== */}
         {(() => {
-          const mesActual = new Date().toISOString().slice(0, 7)
           const rateVivo = dolarRates[tcTipo]
+          const mesActual = new Date().toISOString().slice(0, 7)
           const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
           const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
           const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
           const cardBg = darkMode ? '#1C1A1C' : '#F7F5F8'
           const cardBorder = darkMode ? '#3A333A' : '#E2DDE0'
-          const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesActual))
-          const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
+          const vencList = [...servicios].sort((a, b) => (a.dia || 0) - (b.dia || 0))
+          const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
           const usdCard = (
-            <div style={{ flex: 1, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <p style={{ fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            <div style={{ width: '116px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+              <p style={{ fontSize: '9px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
                 {['blue','mep','oficial','tarjeta'].map(t => (
                   <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '9px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    style={{ flex: '1 1 42%', padding: '3px 1px', fontSize: '8px', fontWeight: 700, borderRadius: '5px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
                     {tiposLabel[t]}
                   </button>
                 ))}
               </div>
               {rateActivo ? (
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93' }}>U$S 1 =</p>
-                  <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                  {rateVivo && <p style={{ margin: 0, fontSize: '8px', color: '#2ba36e' }}>● en vivo</p>}
+                  <p style={{ margin: 0, fontSize: '8px', color: '#8e8e93' }}>U$S 1 =</p>
+                  <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                  {rateVivo && <p style={{ margin: 0, fontSize: '7px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                 </div>
               ) : (
-                <input type="number"
-                  style={{ width: '100%', padding: '5px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '14px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
-                  placeholder="ej. 1600"
-                  value={tipoCambio}
-                  onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
-                />
+                <input type="number" style={{ width: '100%', padding: '4px 6px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                  placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
               )}
             </div>
           )
 
           const vencCard = (
-            <div style={{ flex: 1, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <p style={{ fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
-              {vencMes.length === 0 ? (
-                <p style={{ fontSize: '10px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic', lineHeight: 1.4 }}>Sin venc.<br/>este mes</p>
+            <div style={{ width: '116px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', maxHeight: '180px' }}>
+              <p style={{ fontSize: '9px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+              {vencList.length === 0 ? (
+                <p style={{ fontSize: '9px', color: '#8e8e93', textAlign: 'center', margin: '4px 0', fontStyle: 'italic' }}>Sin servicios</p>
               ) : (
                 <>
-                  <p style={{ fontSize: '10px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
-                    {pendientes.length > 0 ? `${pendientes.length} pendiente${pendientes.length > 1 ? 's' : ''}` : '✓ Al día'}
+                  <p style={{ fontSize: '9px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                    {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {vencMes.map(v => {
-                      const pagado = vencPagados.has(v.id)
-                      return (
-                        <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.6 : 1 }}>
-                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '12px', height: '12px' }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: '10px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {v.accounts?.nombre || v.periodo}
-                            </p>
-                            <p style={{ fontSize: '9px', color: '#8e8e93', margin: 0 }}>
-                              {v.fecha_vencimiento?.slice(8, 10)}/{v.fecha_vencimiento?.slice(5, 7)}
-                              {v.total_resumen ? ` · $${new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 0 }).format(v.total_resumen)}` : ''}
-                            </p>
-                          </div>
+                  {vencList.map(v => {
+                    const pagado = vencPagados.has(v.id)
+                    return (
+                      <div key={v.id} onClick={() => toggleVencPagado(v.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', padding: '3px 4px', borderRadius: '5px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
+                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '11px', height: '11px' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: '9px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
+                          <p style={{ fontSize: '8px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
                         </div>
-                      )
-                    })}
-                  </div>
+                      </div>
+                    )
+                  })}
                 </>
               )}
             </div>
           )
 
-          return isMobile ? null : (
-            <div style={{ padding: '0 32px 12px 32px', display: 'flex', gap: '10px', width: '240px' }}>
-              {usdCard}
-              {vencCard}
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : '160px' }}>
+              {/* Izquierda */}
+              {isMobile ? (
+                <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
+              ) : (
+                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignSelf: 'center' }}>
+                  {usdCard}
+                  {vencCard}
+                </div>
+              )}
+              {/* Centro: logo */}
+              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }} />
+              {/* Derecha */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
+                {!isMobile && (
+                  <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
+                    Cerrar sesión
+                  </button>
+                )}
+                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}>
+                  {darkMode ? '☀️' : '🌙'}
+                </button>
+              </div>
             </div>
           )
         })()}
@@ -1448,7 +1439,7 @@ export default function Dashboard() {
               const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
               const cardBg = darkMode ? '#252025' : '#F0ECF5'
               const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
-              const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesActual))
+              const vencMes = [...servicios].sort((a, b) => (a.dia || 0) - (b.dia || 0))
               const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
               return (
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
@@ -1471,7 +1462,7 @@ export default function Dashboard() {
                         <div key={v.id} onClick={() => toggleVencPagado(v.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', opacity: pagado ? 0.5 : 1 }}>
                           <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', width: '11px', height: '11px', flexShrink: 0 }} />
                           <p style={{ fontSize: '9px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                            {v.accounts?.nombre || v.periodo}
+                            {v.nombre || v.accounts?.nombre || v.periodo}
                           </p>
                         </div>
                       )
@@ -1625,9 +1616,11 @@ export default function Dashboard() {
             </div>
 
 
-            <div style={styles.sidebarFooter}>
-              <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
-            </div>
+            {isMobile && (
+              <div style={styles.sidebarFooter}>
+                <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
+              </div>
+            )}
           </div>
 
           {/* Contenido derecho */}
