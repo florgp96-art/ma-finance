@@ -917,7 +917,7 @@ export default function Dashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const { data: txHistorial } = await supabase.from('transactions')
-        .select('nombre_limpio, monto, cuota_numero, cuotas_total, category_id, categories(nombre), subcategories(nombre)')
+        .select('nombre, monto, cuota_numero, cuotas_total, category_id, categories(nombre), subcategories(nombre)')
         .eq('user_id', user.id).eq('account_id', accountId).gt('cuotas_total', 1)
       if (!txHistorial || txHistorial.length === 0) return transacciones
       return transacciones.map(t => {
@@ -930,10 +930,10 @@ export default function Dashboard() {
           e.cuota_numero === num - 1 &&
           Math.abs(Math.abs(Number(e.monto)) - monto) < monto * 0.03
         )
-        if (!prevMatch || !prevMatch.nombre_limpio) return t
+        if (!prevMatch || !prevMatch.nombre) return t
         return {
           ...t,
-          nombre_limpio: prevMatch.nombre_limpio,
+          nombre_limpio: prevMatch.nombre,
           categoria_sugerida: prevMatch.categories?.nombre || t.categoria_sugerida,
           subcategoria_sugerida: prevMatch.subcategories?.nombre || t.subcategoria_sugerida,
         }
