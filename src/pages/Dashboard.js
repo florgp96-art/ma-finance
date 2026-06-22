@@ -1387,38 +1387,39 @@ export default function Dashboard() {
           )
 
           const vencCard = (
-            <div style={{ width: '160px', display: 'flex', flexDirection: 'column' }}>
-              {/* card principal — maxHeight = altura real de la dólar card */}
-              <div style={{ borderRadius: '14px 14px 0 0', border: `1px solid ${cardBorder}`, borderBottom: 'none', backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', maxHeight: vencExpanded ? 'none' : (dolarCardH ? `${dolarCardH}px` : '200px') }}>
-                <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
-                {vencList.length === 0 ? (
-                  <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
-                ) : (
-                  <>
-                    <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
-                      {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                    </p>
-                    {vencList.map(v => {
-                      const pagado = vencPagados.has(v.id)
-                      return (
-                        <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
-                          <div style={{ minWidth: 0 }}>
-                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
-                            <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
-                          </div>
-                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+            <div style={{ width: '160px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', maxHeight: vencExpanded ? 'none' : (dolarCardH ? `${dolarCardH}px` : '180px') }}>
+              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+              {vencList.length === 0 ? (
+                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                    {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                  </p>
+                  {vencList.map(v => {
+                    const pagado = vencPagados.has(v.id)
+                    return (
+                      <div key={v.id} onClick={() => toggleVencPagado(v.id)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
+                          <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
                         </div>
-                      )
-                    })}
-                  </>
-                )}
-              </div>
-              {/* solapa ver más / ver menos */}
-              {vencList.length > 0 && (
-                <button onClick={() => setVencExpanded(x => !x)}
-                  style={{ border: `1px solid ${cardBorder}`, borderTop: 'none', borderRadius: '0 0 14px 14px', backgroundColor: darkMode ? '#161416' : '#EDEAED', padding: '4px 0', fontSize: '10px', color: '#8e8e93', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: 600, letterSpacing: '0.04em', textAlign: 'center' }}>
-                  {vencExpanded ? '▴ ver menos' : '▾ ver más'}
+                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+              {/* gradiente + botón VER MÁS dentro del card (no agrega altura extra) */}
+              {!vencExpanded && vencList.length > 2 && (
+                <div onClick={() => setVencExpanded(true)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '36px', background: `linear-gradient(transparent, ${cardBg})`, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px', cursor: 'pointer', borderRadius: '0 0 14px 14px' }}>
+                  <span style={{ fontSize: '10px', color: '#8e8e93', fontWeight: 600, fontFamily: '"Montserrat", sans-serif' }}>▾ ver más</span>
+                </div>
+              )}
+              {vencExpanded && (
+                <button onClick={() => setVencExpanded(false)} style={{ background: 'none', border: 'none', fontSize: '10px', color: '#8e8e93', cursor: 'pointer', fontWeight: 600, fontFamily: '"Montserrat", sans-serif', padding: '2px 0', textAlign: 'center' }}>
+                  ▴ ver menos
                 </button>
               )}
             </div>
