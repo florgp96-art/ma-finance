@@ -115,6 +115,7 @@ export default function Dashboard() {
   const [tipoCambio, setTipoCambio] = useState(() => localStorage.getItem('tc_ma') || '')
   const [tcTipo, setTcTipo] = useState(() => localStorage.getItem('tc_tipo_ma') || 'blue')
   const [exchangeRates, setExchangeRates] = useState([])
+  const [dolarRates, setDolarRates] = useState({})
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
@@ -174,15 +175,17 @@ export default function Dashboard() {
     setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
   }, [])
 
-  // Cuando cambia el tipo de TC o cargan los rates, auto-setear tipoCambio del mes actual
+  // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
+    const rateVivo = dolarRates[tcTipo]
+    if (rateVivo) { setTipoCambio(String(rateVivo)); localStorage.setItem('tc_ma', String(rateVivo)); return }
     const mesActual = new Date().toISOString().slice(0, 7)
     const rate = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
     if (rate) { setTipoCambio(String(rate.valor)); localStorage.setItem('tc_ma', String(rate.valor)) }
-  }, [exchangeRates, tcTipo])
+  }, [exchangeRates, dolarRates, tcTipo])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates()
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         const saved = localStorage.getItem(`servicios_${user.id}`)
@@ -384,6 +387,22 @@ export default function Dashboard() {
   const fetchExchangeRates = async () => {
     const { data } = await supabase.from('exchange_rates').select('periodo, tipo, valor').order('periodo', { ascending: false })
     setExchangeRates(data || [])
+  }
+
+  const fetchDolarRates = async () => {
+    try {
+      const res = await fetch('https://dolarapi.com/v1/dolares')
+      if (!res.ok) return
+      const arr = await res.json()
+      const map = {}
+      arr.forEach(d => {
+        if (d.casa === 'blue') map.blue = d.venta
+        else if (d.casa === 'bolsa') map.mep = d.venta
+        else if (d.casa === 'oficial') map.oficial = d.venta
+        else if (d.casa === 'tarjeta') map.tarjeta = d.venta
+      })
+      setDolarRates(map)
+    } catch {}
   }
 
   const fetchVencimientos = async () => {
@@ -1290,6 +1309,89 @@ export default function Dashboard() {
           </button>
         </div>
 
+        {/* ===== WIDGETS ARRIBA IZQUIERDA (fuera del sidebar) ===== */}
+        {(() => {
+          const mesActual = new Date().toISOString().slice(0, 7)
+          const rateVivo = dolarRates[tcTipo]
+          const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
+          const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
+          const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
+          const cardBg = darkMode ? '#1C1A1C' : '#F7F5F8'
+          const cardBorder = darkMode ? '#3A333A' : '#E2DDE0'
+          const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesActual))
+          const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
+
+          const usdCard = (
+            <div style={{ flex: 1, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {['blue','mep','oficial','tarjeta'].map(t => (
+                  <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
+                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '9px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {tiposLabel[t]}
+                  </button>
+                ))}
+              </div>
+              {rateActivo ? (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93' }}>U$S 1 =</p>
+                  <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                  {rateVivo && <p style={{ margin: 0, fontSize: '8px', color: '#2ba36e' }}>● en vivo</p>}
+                </div>
+              ) : (
+                <input type="number"
+                  style={{ width: '100%', padding: '5px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '14px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                  placeholder="ej. 1600"
+                  value={tipoCambio}
+                  onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
+                />
+              )}
+            </div>
+          )
+
+          const vencCard = (
+            <div style={{ flex: 1, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <p style={{ fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+              {vencMes.length === 0 ? (
+                <p style={{ fontSize: '10px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic', lineHeight: 1.4 }}>Sin venc.<br/>este mes</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: '10px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                    {pendientes.length > 0 ? `${pendientes.length} pendiente${pendientes.length > 1 ? 's' : ''}` : '✓ Al día'}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {vencMes.map(v => {
+                      const pagado = vencPagados.has(v.id)
+                      return (
+                        <div key={v.id} onClick={() => toggleVencPagado(v.id)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.6 : 1 }}>
+                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '12px', height: '12px' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '10px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {v.accounts?.nombre || v.periodo}
+                            </p>
+                            <p style={{ fontSize: '9px', color: '#8e8e93', margin: 0 }}>
+                              {v.fecha_vencimiento?.slice(8, 10)}/{v.fecha_vencimiento?.slice(5, 7)}
+                              {v.total_resumen ? ` · $${new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 0 }).format(v.total_resumen)}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+
+          return isMobile ? null : (
+            <div style={{ padding: '0 32px 12px 32px', display: 'flex', gap: '10px', width: '240px' }}>
+              {usdCard}
+              {vencCard}
+            </div>
+          )
+        })()}
+
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '0 12px 48px 12px' : '0 32px 48px 32px', gap: isMobile ? '12px' : '24px' }}>
 
           {/* Sidebar izquierdo */}
@@ -1302,6 +1404,45 @@ export default function Dashboard() {
                 ✕
               </button>
             )}
+            {isMobile && (() => {
+              const mesActual = new Date().toISOString().slice(0, 7)
+              const rateVivo = dolarRates[tcTipo]
+              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
+              const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
+              const cardBg = darkMode ? '#252025' : '#F0ECF5'
+              const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
+              const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesActual))
+              const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
+              return (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  <div style={{ flex: 1, borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <p style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar {tcTipo}</p>
+                    {rateActivo
+                      ? <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'center' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                      : <input type="number" style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', border: `1px solid ${cardBorder}`, fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
+                    }
+                  </div>
+                  <div style={{ flex: 1, borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <p style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Vencimientos</p>
+                    {vencMes.length === 0
+                      ? <p style={{ fontSize: '9px', color: '#8e8e93', textAlign: 'center', margin: '4px 0', fontStyle: 'italic' }}>Sin venc.</p>
+                      : <p style={{ fontSize: '10px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0 }}>{pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}</p>
+                    }
+                    {vencMes.slice(0, 3).map(v => {
+                      const pagado = vencPagados.has(v.id)
+                      return (
+                        <div key={v.id} onClick={() => toggleVencPagado(v.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', opacity: pagado ? 0.5 : 1 }}>
+                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', width: '11px', height: '11px', flexShrink: 0 }} />
+                          <p style={{ fontSize: '9px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                            {v.accounts?.nombre || v.periodo}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
             {(() => {
               const egresoCuentas = accounts.filter(a => !a.nombre?.toLowerCase().startsWith('ingresos'))
               const ingresoCuentas = accounts.filter(a => a.nombre?.toLowerCase().startsWith('ingresos'))
@@ -1446,74 +1587,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Tipo de cambio */}
-            {(() => {
-              const mesActual = new Date().toISOString().slice(0, 7)
-              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
-              const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
-              return (
-                <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
-                  <p style={{ fontSize: '11px', color: '#6e6e73', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '8px', fontWeight: 600 }}>Tipo de cambio</p>
-                  <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
-                    {['blue','mep','oficial','tarjeta'].map(t => (
-                      <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                        style={{ flex: 1, padding: '5px 0', fontSize: '10px', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
-                        {tiposLabel[t]}
-                      </button>
-                    ))}
-                  </div>
-                  {rateDB ? (
-                    <div style={{ textAlign: 'center', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fafafa' }}>
-                      <span style={{ fontSize: '13px', color: '#6e6e73' }}>U$S 1 = </span>
-                      <span style={{ fontSize: '16px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateDB.valor)}</span>
-                    </div>
-                  ) : (
-                    <input type="number"
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
-                      placeholder="ej. 1250"
-                      value={tipoCambio}
-                      onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
-                    />
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Vencimientos del mes */}
-            {(() => {
-              const mesCurrent = new Date().toISOString().slice(0, 7)
-              const vencMes = vencimientosList.filter(v => v.fecha_vencimiento?.startsWith(mesCurrent))
-              if (vencMes.length === 0) return null
-              return (
-                <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
-                  <p style={{ fontSize: '11px', color: '#6e6e73', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '8px', fontWeight: 600 }}>
-                    Vencimientos del mes
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {vencMes.map(v => {
-                      const pagado = vencPagados.has(v.id)
-                      return (
-                        <div key={v.id}
-                          onClick={() => toggleVencPagado(v.id)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '6px 8px', borderRadius: '8px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : (darkMode ? '#1C1A1C' : '#f7f5f6'), opacity: pagado ? 0.7 : 1 }}>
-                          <input type="checkbox" checked={pagado} readOnly
-                            style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {v.accounts?.nombre || v.periodo}
-                            </p>
-                            <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>
-                              Vence {v.fecha_vencimiento?.slice(8, 10)}/{v.fecha_vencimiento?.slice(5, 7)}
-                              {v.total_resumen ? ` · $${new Intl.NumberFormat('es-AR').format(v.total_resumen)}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
 
             <div style={styles.sidebarFooter}>
               <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
@@ -2644,7 +2717,7 @@ const getStyles = (dark) => {
     sidebar: {
       width: '240px', flexShrink: 0, backgroundColor: panel, borderRadius: '16px',
       padding: '24px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
-      gap: '10px', position: 'sticky', top: '24px', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
+      gap: '10px', alignSelf: 'flex-start',
     },
     sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
     sidebarTitle: { fontSize: '16px', fontWeight: '400', color: txt, margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
