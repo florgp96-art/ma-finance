@@ -489,20 +489,25 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
   const handleExportCSV = () => {
+    const q = (val) => {
+      const s = String(val ?? '')
+      return `"${s.replace(/"/g, '""')}"`
+    }
+    const txParaExportar = txFiltradas.filter(matchSearch)
     const rows = [
       ['Fecha', 'Nombre', 'Categoría', 'Subcategoría', 'Moneda', 'Monto', 'Tipo', 'Cuotas'],
-      ...txFiltradas.map(t => [
+      ...txParaExportar.map(t => [
         t.fecha || '',
-        (t.nombre || t.detalle || '').replace(/,/g, ' '),
-        (t.categories?.nombre || '').replace(/,/g, ' '),
-        (t.subcategories?.nombre || '').replace(/,/g, ' '),
+        (t.nombre || t.detalle || ''),
+        (t.categories?.nombre || ''),
+        (t.subcategories?.nombre || ''),
         t.moneda || 'ARS',
         t.monto || 0,
         t.tipo || '',
-        t.cuotas_total > 1 ? `${t.cuota_numero}/${t.cuotas_total}` : '1/1',
+        t.cuotas_total > 1 ? `cuota ${t.cuota_numero} de ${t.cuotas_total}` : '',
       ])
     ]
-    const csv = rows.map(r => r.join(',')).join('\n')
+    const csv = rows.map(r => r.map(q).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
