@@ -1405,15 +1405,31 @@ export default function Dashboard() {
               )}
               {/* Centro: logo */}
               <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : '20px', pointerEvents: 'none' }} />
-              {/* Derecha: luna + cerrar sesión */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
-                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}>
+              {/* Derecha: luna + config (desktop) + cerrar sesión */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
+                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
                   {darkMode ? '☀️' : '🌙'}
                 </button>
                 {!isMobile && (
-                  <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
-                    Cerrar sesión
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
+                      </button>
+                      <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
+                        Cerrar sesión
+                      </button>
+                    </div>
+                    {configOpen && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '200px' }}>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>+ CATEGORÍAS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1586,32 +1602,26 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Configuración colapsable */}
-              <button
-                style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
-                onClick={() => setConfigOpen(o => !o)}
-              >
-                <span>⚙️ CONFIGURACIÓN</span>
-                <span style={{ fontSize: '10px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
-              </button>
-              {configOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
-                  <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>
-                    + CUENTA
+              {/* Configuración colapsable — solo mobile (en desktop está en el header) */}
+              {isMobile && (
+                <>
+                  <button
+                    style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+                    onClick={() => setConfigOpen(o => !o)}
+                  >
+                    <span>⚙️ CONFIGURACIÓN</span>
+                    <span style={{ fontSize: '10px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                   </button>
-                  <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>
-                    + CATEGORÍAS
-                  </button>
-                  <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>
-                    👧 HIJOS
-                  </button>
-                  <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>
-                    📋 REGLAS DE CLASIFICACIÓN
-                  </button>
-                  <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>
-                    🤖 RE-CLASIFICAR CON IA
-                  </button>
-                </div>
+                  {configOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>+ CATEGORÍAS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
