@@ -624,8 +624,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     </td>
   )
 
-  const thSortable = (label, key, hidden = false) => (
-    <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {})}} onClick={() => handleSort(key)}>
+  const thSortable = (label, key, hidden = false, width = undefined) => (
+    <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {}), ...(width ? { width } : {})}} onClick={() => handleSort(key)}>
       {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
     </th>
   )
@@ -906,35 +906,41 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             </button>
           )}
         </div>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
+        <div style={{ overflowX: 'hidden', width: '100%' }}>
         <table style={styles.table}>
           <thead>
             <tr>
-              {thSortable('Fecha', 'fecha')}
-              {thSortable('Nombre', 'nombre')}
-              {thSortable('Categoría', 'categoria')}
+              {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : undefined)}
+              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
+              {thSortable('Categoría', 'categoria', isMobile)}
               {thSortable('Subcategoría', 'subcategoria', isMobile)}
               {thSortable('Cuotas', 'cuotas', isMobile)}
               {thSortable('Moneda', 'moneda', isMobile)}
-              {thSortable('Monto', 'monto')}
-              <th style={styles.th}></th>
+              {thSortable('Monto', 'monto', false, isMobile ? '25%' : undefined)}
+              <th style={{...styles.th, ...(isMobile ? { width: '13%' } : {})}}></th>
             </tr>
           </thead>
           <tbody>
             {identificadas.map(tx => (
               <tr key={tx.id} style={styles.tr}>
-                <td style={styles.td}>{tx.fecha}</td>
+                <td style={{...styles.td, whiteSpace: 'nowrap'}}>
+                  {isMobile
+                    ? (tx.fecha ? tx.fecha.slice(8) + '/' + tx.fecha.slice(5, 7) : '')
+                    : tx.fecha}
+                </td>
                 {editingTx === tx.id ? renderEditCells() : (
                   <>
-                    <td style={styles.td}>
-                      <div>{tx.nombre || tx.detalle}</div>
-                      {tx.tag && (
+                    <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
+                      <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
+                        {tx.nombre || tx.detalle}
+                      </div>
+                      {tx.tag && !isMobile && (
                         <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
                           👧 {tx.tag}
                         </span>
                       )}
                     </td>
-                    <td style={styles.td}>
+                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       <span style={{
                         backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),
                         color: '#3a3a3c',
@@ -963,7 +969,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                     {tx.moneda || 'ARS'}
                   </span>
                 </td>
-                <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace:'nowrap',
+                <td style={{...styles.td, textAlign:'right', fontWeight:'600',
+                  whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
                   color: tx.tipo === 'ingreso' ? '#4a9e7a' : (darkMode ? '#F0EDEC' : '#2d2d2d')}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
@@ -1044,9 +1051,9 @@ const getStyles = (dark, mobile) => {
   return {
     loading: { padding: '24px', color: muted, fontSize: '14px' },
     summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
-    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
-    summaryLabel: { fontSize: '11px', fontWeight: '400', color: muted, margin: '0 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
-    summaryValue: { fontSize: mobile ? '20px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '10px 12px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
+    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
+    summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
     chartTitle: { fontSize: '16px', fontWeight: '500', color: txt, margin: '0 0 16px 0' },
@@ -1061,18 +1068,18 @@ const getStyles = (dark, mobile) => {
     bubbleSection: { marginBottom: '32px' },
     tableSection: { marginBottom: '32px' },
     tableHint: { fontSize: '13px', color: muted, margin: '-8px 0 12px 0' },
-    table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+    table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: mobile ? 'fixed' : undefined },
     th: {
-      textAlign: 'left', padding: '10px 12px', fontSize: '11px',
+      textAlign: 'left', padding: mobile ? '6px 8px' : '10px 12px', fontSize: '11px',
       color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400'
     },
     thSortable: {
-      textAlign: 'left', padding: '10px 12px', fontSize: '11px',
+      textAlign: 'left', padding: mobile ? '6px 8px' : '10px 12px', fontSize: '11px',
       color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400',
       cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
     },
     sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
-    td: { padding: '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt },
+    td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt },
     tr: { transition: 'background 0.1s' },
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
     detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },

@@ -120,6 +120,7 @@ export default function Dashboard() {
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
   const [dashboardTab, setDashboardTab] = useState('resumen')
+  const tabsScrollRef = useRef(null)
   const [sharedPeriod, setSharedPeriod] = useState([])
   const [vencimientosList, setVencimientosList] = useState([])
   const [loadingVenc, setLoadingVenc] = useState(false)
@@ -1661,26 +1662,39 @@ export default function Dashboard() {
             {selectedAccount === 'all' ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 {/* Tabs — General + hijos dinámicos */}
-                <div className="tabs-scroll" style={{ display: 'flex', overflowX: 'auto', marginBottom: '24px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
-                  {[
-                    { key: 'resumen', label: '📊 Resumen' },
-                    { key: 'vencimientos', label: '📅 Vencimientos' },
-                    ...childrenDB.map(c => ({ key: c.nombre, label: `👧 ${c.nombre}` }))
-                  ].map(tab => (
-                    <button key={tab.key}
-                      onClick={() => setDashboardTab(tab.key)}
-                      style={{
-                        padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
-                        fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
-                        color: dashboardTab === tab.key ? '#5C4F5C' : '#6e6e73',
-                        borderBottom: dashboardTab === tab.key ? '2px solid #5C4F5C' : '2px solid transparent',
-                        marginBottom: '-2px', outline: 'none', transition: 'color 0.15s',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
+                <div style={{ position: 'relative', marginBottom: '24px' }}>
+                  <div
+                    ref={tabsScrollRef}
+                    className="tabs-scroll"
+                    style={{ display: 'flex', overflowX: 'auto', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}
+                  >
+                    {[
+                      { key: 'resumen', label: '📊 Resumen' },
+                      { key: 'vencimientos', label: '📅 Vencimientos' },
+                      ...childrenDB.map(c => ({ key: c.nombre, label: `👧 ${c.nombre}` }))
+                    ].map(tab => (
+                      <button key={tab.key}
+                        data-tab={tab.key}
+                        onClick={() => {
+                          setDashboardTab(tab.key)
+                          const el = tabsScrollRef.current?.querySelector(`[data-tab="${tab.key}"]`)
+                          el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+                        }}
+                        style={{
+                          padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
+                          fontSize: isMobile ? '13px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
+                          color: dashboardTab === tab.key ? '#5C4F5C' : '#6e6e73',
+                          borderBottom: dashboardTab === tab.key ? '2px solid #5C4F5C' : '2px solid transparent',
+                          marginBottom: '-2px', outline: 'none', transition: 'color 0.15s',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Gradiente para indicar que hay más tabs a la derecha */}
+                  <div style={{ position: 'absolute', right: 0, top: 0, height: 'calc(100% - 2px)', width: '48px', background: `linear-gradient(to right, transparent, ${darkMode ? '#2A272A' : 'white'})`, pointerEvents: 'none' }} />
                 </div>
 
                 {dashboardTab === 'resumen' && (
