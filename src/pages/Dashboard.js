@@ -1528,6 +1528,12 @@ export default function Dashboard() {
               const egresoCuentas = accounts.filter(a => !a.nombre?.toLowerCase().startsWith('ingresos'))
               const ingresoCuentas = accounts.filter(a => a.nombre?.toLowerCase().startsWith('ingresos'))
 
+              const accountIcon = (tipo) => {
+                if (tipo === 'efectivo') return '💵'
+                if (tipo === 'debito') return '🏦'
+                return '💳'
+              }
+
               const renderAccount = (acc) => (
                 <div key={acc.id}
                   style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
@@ -1535,7 +1541,7 @@ export default function Dashboard() {
                   onMouseEnter={() => setHoveredAccount(acc.id)}
                   onMouseLeave={() => setHoveredAccount(null)}
                 >
-                  <p style={{ ...styles.accountType, marginBottom: '4px' }}>💳 {tipoLabel(acc.tipo)}</p>
+                  <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
                   <p style={styles.accountName}>{acc.nombre}</p>
                   {hoveredAccount === acc.id && (
                     <button style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
