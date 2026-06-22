@@ -1580,11 +1580,11 @@ export default function Dashboard() {
                 </div>
               )
 
-              const SectionHeader = ({ label, open, onToggle, onAdd }) => (
+              const SectionHeader = ({ label, open, onToggle, onAdd, showArrow = true }) => (
                 <div style={{ ...styles.sidebarHeader, display: 'flex', alignItems: 'center' }} onClick={onToggle}>
-                  <h2 style={{ ...styles.sidebarTitle, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flex: 1 }}>
+                  <h2 style={{ ...styles.sidebarTitle, cursor: onToggle ? 'pointer' : 'default', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', flex: 1 }}>
                     {label}
-                    <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
+                    {showArrow && <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>}
                   </h2>
                   {onAdd && (
                     <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: darkMode ? '#9A8A9A' : '#5C4F5C', padding: '0 6px', outline: 'none', lineHeight: 1, flexShrink: 0 }}
@@ -1618,27 +1618,31 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* EGRESOS */}
-                  <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
-                  {egresosOpen && (
-                    <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
-                      {egresoCuentas.length === 0
-                        ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
-                        : egresoCuentas.map(renderAccount)
-                      }
+                  {/* EGRESOS + INGRESOS side by side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    {/* Columna EGRESOS */}
+                    <div>
+                      <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
+                      {egresosOpen && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+                          {egresoCuentas.length === 0
+                            ? <p style={{ ...styles.emptyText, fontSize: '11px' }}>Sin cuentas.</p>
+                            : egresoCuentas.map(renderAccount)
+                          }
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* INGRESOS — siempre visible */}
-                  <SectionHeader label="INGRESOS" open={ingresosOpen} onToggle={() => setIngresosOpen(o => !o)} onAdd={() => setShowAddFuente(true)} />
-                  {ingresosOpen && (
-                    <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
-                      {ingresoCuentas.length === 0
-                        ? <p style={{ ...styles.emptyText, cursor: 'pointer' }} onClick={() => setShowAddFuente(true)}>+ Agregar fuente de ingreso</p>
-                        : ingresoCuentas.map(renderAccount)
-                      }
+                    {/* Columna INGRESOS — sin flecha, siempre abierta */}
+                    <div>
+                      <SectionHeader label="INGRESOS" open={true} onToggle={() => {}} onAdd={() => setShowAddFuente(true)} showArrow={false} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+                        {ingresoCuentas.length === 0
+                          ? <p style={{ ...styles.emptyText, fontSize: '11px', cursor: 'pointer' }} onClick={() => setShowAddFuente(true)}>+ Agregar</p>
+                          : ingresoCuentas.map(renderAccount)
+                        }
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </>
               )
             })()}
