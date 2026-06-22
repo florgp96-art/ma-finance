@@ -120,6 +120,7 @@ export default function Dashboard() {
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
   const [dashboardTab, setDashboardTab] = useState('resumen')
+  const [sharedPeriod, setSharedPeriod] = useState([])
   const [vencimientosList, setVencimientosList] = useState([])
   const [loadingVenc, setLoadingVenc] = useState(false)
 
@@ -911,6 +912,34 @@ export default function Dashboard() {
     setLoading(false)
   }
 
+  const enrichirConHistorial = async (transacciones, accountId) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: txHistorial } = await supabase.from('transactions')
+        .select('nombre_limpio, monto, cuota_numero, cuotas_total, category_id, categories(nombre), subcategories(nombre)')
+        .eq('user_id', user.id).eq('account_id', accountId).gt('cuotas_total', 1)
+      if (!txHistorial || txHistorial.length === 0) return transacciones
+      return transacciones.map(t => {
+        const num = t.cuota_numero || 1
+        const total = t.cuotas_total || 1
+        if (total <= 1 || num <= 1) return t
+        const monto = Math.abs(Number(t.monto))
+        const prevMatch = txHistorial.find(e =>
+          e.cuotas_total === total &&
+          e.cuota_numero === num - 1 &&
+          Math.abs(Math.abs(Number(e.monto)) - monto) < monto * 0.03
+        )
+        if (!prevMatch || !prevMatch.nombre_limpio) return t
+        return {
+          ...t,
+          nombre_limpio: prevMatch.nombre_limpio,
+          categoria_sugerida: prevMatch.categories?.nombre || t.categoria_sugerida,
+          subcategoria_sugerida: prevMatch.subcategories?.nombre || t.subcategoria_sugerida,
+        }
+      })
+    } catch { return transacciones }
+  }
+
   const calcularDuplicadosPDF = async (transacciones, accountId, fechaFacturacion) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -950,11 +979,13 @@ export default function Dashboard() {
     }
   }
 
-  const handleSelectAccount = (acc) => {
+  const handleSelectAccount = async (acc) => {
     setTargetAccount(acc)
     if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
     else {
-      calcularDuplicadosPDF(statementData.transacciones, acc.id, statementData.fecha_facturacion)
+      const enriquecidas = await enrichirConHistorial(statementData.transacciones, acc.id)
+      setStatementData(prev => ({ ...prev, transacciones: enriquecidas }))
+      calcularDuplicadosPDF(enriquecidas, acc.id, statementData.fecha_facturacion)
       setStep('preview')
     }
   }
@@ -971,14 +1002,20 @@ export default function Dashboard() {
     setLoading(false)
     if (statementData.adicionales && statementData.adicionales.length > 0) setStep('adicionales')
     else {
-      calcularDuplicadosPDF(statementData.transacciones, account.id, statementData.fecha_facturacion)
+      const enriquecidas = await enrichirConHistorial(statementData.transacciones, account.id)
+      setStatementData(prev => ({ ...prev, transacciones: enriquecidas }))
+      calcularDuplicadosPDF(enriquecidas, account.id, statementData.fecha_facturacion)
       setStep('preview')
     }
   }
 
-  const handleConfirmAdicionales = (separar) => {
+  const handleConfirmAdicionales = async (separar) => {
     setSepararAdicionales(separar)
-    if (targetAccount) calcularDuplicadosPDF(statementData.transacciones, targetAccount.id, statementData.fecha_facturacion)
+    if (targetAccount) {
+      const enriquecidas = await enrichirConHistorial(statementData.transacciones, targetAccount.id)
+      setStatementData(prev => ({ ...prev, transacciones: enriquecidas }))
+      calcularDuplicadosPDF(enriquecidas, targetAccount.id, statementData.fecha_facturacion)
+    }
     setStep('preview')
   }
 
@@ -1621,11 +1658,11 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
-                  <HijoDetail hijoNombre={dashboardTab} darkMode={darkMode} tipoCambio={tipoCambio} refreshKey={refreshKey} />
+                  <HijoDetail hijoNombre={dashboardTab} darkMode={darkMode} tipoCambio={tipoCambio} refreshKey={refreshKey} initialPeriod={sharedPeriod} />
                 )}
 
                 {dashboardTab === 'vencimientos' && (

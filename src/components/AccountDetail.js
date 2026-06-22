@@ -47,7 +47,7 @@ const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, darkMode, tipoCambio, isMobile }) {
+export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -194,30 +194,56 @@ export function BubbleChart({ data, darkMode, tipoCambio, isMobile }) {
           })()}
         </svg>
       </div>
-      <div style={{ width: isMobile ? '100%' : '200px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: isMobile ? '0' : '16px' }}>
-        {[...bubbles].sort((a, b) => b.value - a.value).map((b, i) => {
+      <div style={{ width: isMobile ? '100%' : '210px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: isMobile ? '0' : '16px' }}>
+        {([...(legendData || bubbles)].sort((a, b) => b.value - a.value)).map((b, i) => {
           const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+          const arsAmt = (b.originalARS || 0)
+          const usdAmt = (b.originalUSD || 0)
+          const hasUSD = usdAmt > 0
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
-              <span style={{ flex: 1, color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{cfg.icon} {b.name}</span>
-              <span style={{ fontWeight: '500', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                $ {formatMonto((b.originalARS || 0) > 0 ? b.originalARS : b.value)}
-                {(b.originalUSD || 0) > 0 && (b.originalARS || 0) > 0 && (
-                  <span style={{ fontSize: '10px', color: '#5588aa', marginLeft: '3px' }}>
-                    +$ {formatMonto(Math.round(b.originalUSD * (parseFloat(tipoCambio) || 0)))}
-                  </span>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'flex-start', gap: '6px', fontSize: '12px' }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, marginTop: '2px', outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
+              <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', lineHeight: '1.3' }}>{cfg.icon} {b.name}</span>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                  $ {formatMonto(arsAmt > 0 ? arsAmt : b.value)}
+                </div>
+                {hasUSD && (
+                  <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
+                    +$ {formatMonto(Math.round(usdAmt * (parseFloat(tipoCambio) || 0)))}
+                  </div>
                 )}
-              </span>
+              </div>
             </div>
           )
         })}
+        {childRows && childRows.length > 0 && (
+          <>
+            <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, margin: '4px 0' }} />
+            {childRows.map((c, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'flex-start', gap: '6px', fontSize: '12px' }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#f5a623', flexShrink: 0, marginTop: '2px' }} />
+                <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>👧 {c.name}</span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                    $ {formatMonto(c.originalARS || 0)}
+                  </div>
+                  {(c.originalUSD || 0) > 0 && (
+                    <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
+                      +U$S {formatMonto(c.originalUSD)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -233,6 +259,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [sortDir, setSortDir] = useState('desc')
   const [selectedMeses, setSelectedMeses] = useState([])
   const [selectedCatEvol, setSelectedCatEvol] = useState('')
+
+  // Notificar al padre cuando cambia el período seleccionado
+  useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [stmtCollapsed, setStmtCollapsed] = useState(false)
   const mesDropdownRef = useRef(null)
@@ -452,6 +481,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }
 
   const bubbleData = buildBubbleData(mesTxs, tcEfectivo)
+
+  // Datos para legend: categorías sin hijos + child rows separadas
+  const childTags = [...new Set(mesTxs.filter(t => t.tag && t.tipo === 'gasto').map(t => t.tag))]
+  const netBubbleData = childTags.length > 0
+    ? buildBubbleData(mesTxs.filter(t => t.tipo === 'gasto' && !t.tag), tcEfectivo)
+    : null
+  const childTotals = childTags.map(tag => {
+    const txs = mesTxs.filter(t => t.tag === tag && t.tipo === 'gasto')
+    return {
+      name: tag,
+      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)), 0),
+      originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
+      originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
+    }
+  }).sort((a, b) => b.value - a.value)
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
@@ -745,7 +789,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+              <BubbleChart data={bubbleData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
@@ -754,31 +798,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </div>
       )}
 
-      {/* Gasto por hijo */}
-      {(() => {
-        const tagTxs = mesTxs.filter(t => t.tag && t.tipo === 'gasto')
-        if (tagTxs.length === 0) return null
-        const byTag = tagTxs.reduce((acc, t) => {
-          if (!acc[t.tag]) acc[t.tag] = { ARS: 0, USD: 0 }
-          if (t.moneda === 'USD') acc[t.tag].USD += Number(t.monto)
-          else acc[t.tag].ARS += Number(t.monto)
-          return acc
-        }, {})
-        return (
-          <div style={{ ...styles.chartSection, marginBottom: '28px' }}>
-            <h3 style={styles.chartTitle}>👧 Gasto por hijo/a</h3>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              {Object.entries(byTag).map(([nombre, totales]) => (
-                <div key={nombre} style={styles.summaryCard}>
-                  <p style={styles.summaryLabel}>{nombre}</p>
-                  {totales.ARS > 0 && <p style={styles.summaryValue}>$ {formatMonto(totales.ARS)}</p>}
-                  {totales.USD > 0 && <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMontoFull(totales.USD)}</p>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
 
       {/* Buscador */}
       <div style={{ marginBottom: '24px' }}>

@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKey }) {
+export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKey, initialPeriod }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -50,9 +50,15 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     setTransactions(txs)
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
-      const now = new Date()
-      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      setSelectedMeses([meses.includes(mesActual) ? mesActual : meses[0]])
+      // Usar período compartido si tiene meses con datos del hijo, sino caer al mes actual o primero disponible
+      const validShared = (initialPeriod || []).filter(m => meses.includes(m))
+      if (validShared.length > 0) {
+        setSelectedMeses(validShared)
+      } else {
+        const now = new Date()
+        const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+        setSelectedMeses([meses.includes(mesActual) ? mesActual : meses[0]])
+      }
     }
     setLoading(false)
   }
