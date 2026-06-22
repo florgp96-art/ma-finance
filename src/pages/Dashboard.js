@@ -1623,17 +1623,17 @@ export default function Dashboard() {
                     }
                     return (
                       <>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           {/* Header EGRESOS */}
-                          <div style={{ flex: 1, ...styles.sidebarHeader, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                             onClick={() => setEgresosOpen(o => !o)}>
                             <span style={styles.sidebarTitle}>EGRESOS</span>
                             <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: egresosOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
                           </div>
-                          {/* Botón INGRESOS */}
-                          <div style={{ flex: 1, ...styles.sidebarHeader, ...(isIngresosSelected ? { borderColor: darkMode ? '#8C7B8C' : '#5C4F5C', backgroundColor: darkMode ? 'rgba(140,123,140,0.15)' : 'rgba(92,79,92,0.08)' } : {}), cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          {/* Header INGRESOS — mismo estilo que EGRESOS, sin flecha */}
+                          <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             onClick={handleClickIngresos}>
-                            <span style={styles.sidebarTitle}>💰 INGRESOS</span>
+                            <span style={{ ...styles.sidebarTitle, color: isIngresosSelected ? (darkMode ? '#8C7B8C' : '#5C4F5C') : undefined, fontWeight: isIngresosSelected ? '600' : undefined }}>INGRESOS</span>
                           </div>
                         </div>
 
