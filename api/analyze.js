@@ -186,6 +186,8 @@ REGLAS DE ASIGNACIÓN PARA CUENTAS BANCARIAS:
 - DEBITO / DEBIN RECURRENTE → A Identificar, tipo: "gasto"
 - Impuestos/ARBA/AFIP debitados → Débitos / Impuestos, tipo: "gasto"
 
+IMPORTANTE: Respondé ÚNICAMENTE con el objeto JSON. Sin texto previo, sin explicaciones, sin bloques de código markdown. Tu respuesta debe empezar con { y terminar con }.
+
 EXTRACTO:
 ${pdfText}`
       }]
@@ -197,11 +199,11 @@ ${pdfText}`
   try {
     const textBlock = data?.content?.find(b => b.type === 'text')
     if (textBlock?.text) {
-      const clean = textBlock.text
-        .replace(/^```json\s*/i, '')
-        .replace(/\s*```\s*$/i, '')
-        .trim()
-      const parsed = JSON.parse(clean)
+      const text = textBlock.text
+      const jsonStart = text.indexOf('{')
+      const jsonEnd = text.lastIndexOf('}')
+      if (jsonStart === -1 || jsonEnd === -1) throw new Error('No JSON object found in response')
+      const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1))
       data.content[0].text = JSON.stringify(parsed)
     }
   } catch (e) {
