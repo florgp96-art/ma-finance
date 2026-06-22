@@ -1341,49 +1341,49 @@ export default function Dashboard() {
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
           const usdCard = (
-            <div style={{ width: '116px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-              <p style={{ fontSize: '9px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+            <div style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                 {['blue','mep','oficial','tarjeta'].map(t => (
                   <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                    style={{ flex: '1 1 42%', padding: '3px 1px', fontSize: '8px', fontWeight: 700, borderRadius: '5px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
+                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
                     {tiposLabel[t]}
                   </button>
                 ))}
               </div>
               {rateActivo ? (
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontSize: '8px', color: '#8e8e93' }}>U$S 1 =</p>
-                  <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                  {rateVivo && <p style={{ margin: 0, fontSize: '7px', color: '#2ba36e' }}>● en vivo · prom.</p>}
+                  <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>U$S 1 =</p>
+                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                  {rateVivo && <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                 </div>
               ) : (
-                <input type="number" style={{ width: '100%', padding: '4px 6px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                <input type="number" style={{ width: '100%', padding: '5px 8px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
                   placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
               )}
             </div>
           )
 
           const vencCard = (
-            <div style={{ width: '116px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', maxHeight: '180px' }}>
-              <p style={{ fontSize: '9px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+            <div style={{ width: '160px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
-                <p style={{ fontSize: '9px', color: '#8e8e93', textAlign: 'center', margin: '4px 0', fontStyle: 'italic' }}>Sin servicios</p>
+                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
               ) : (
                 <>
-                  <p style={{ fontSize: '9px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                  <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
                     {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                   </p>
                   {vencList.map(v => {
                     const pagado = vencPagados.has(v.id)
                     return (
                       <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', padding: '3px 4px', borderRadius: '5px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
-                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '11px', height: '11px' }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: '9px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
-                          <p style={{ fontSize: '8px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
+                          <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
                         </div>
+                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
                       </div>
                     )
                   })}
@@ -1393,28 +1393,28 @@ export default function Dashboard() {
           )
 
           return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : '160px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
                 <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
               ) : (
-                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignSelf: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', zIndex: 1 }}>
                   {usdCard}
                   {vencCard}
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }} />
-              {/* Derecha */}
+              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : '20px', pointerEvents: 'none' }} />
+              {/* Derecha: luna + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
+                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}>
+                  {darkMode ? '☀️' : '🌙'}
+                </button>
                 {!isMobile && (
                   <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
                     Cerrar sesión
                   </button>
                 )}
-                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7 }}>
-                  {darkMode ? '☀️' : '🌙'}
-                </button>
               </div>
             </div>
           )
