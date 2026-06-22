@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 export const CATEGORY_CONFIG = {
   'Comida':          { icon: '🍔', color: '#FADADD' },
@@ -265,6 +265,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   useEffect(() => { onTransactionsLoaded?.(transactions) }, [transactions, onTransactionsLoaded])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [stmtCollapsed, setStmtCollapsed] = useState(false)
+  const [chartType, setChartType] = useState(() => localStorage.getItem('chart_type_ma') || 'bubble')
   const mesDropdownRef = useRef(null)
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
@@ -790,7 +791,67 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+              {/* Selector de tipo de gráfico */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
+                {[
+                  { type: 'bubble', label: '◉ Burbujas' },
+                  { type: 'donut',  label: '◎ Donut' },
+                  { type: 'bars',   label: '▤ Barras' },
+                ].map(opt => (
+                  <button key={opt.type}
+                    onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
+                    style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: chartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Burbujas */}
+              {chartType === 'bubble' && (
+                <BubbleChart data={bubbleData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+              )}
+
+              {/* Donut */}
+              {chartType === 'donut' && (
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
+                  <ResponsiveContainer width={isMobile ? '100%' : 260} height={240}>
+                    <PieChart>
+                      <Pie data={bubbleData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
+                        {bubbleData.map((entry, idx) => (
+                          <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} stroke="none" />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
+                    {bubbleData.map((entry, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0', flexShrink: 0 }} />
+                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{CATEGORY_CONFIG[entry.name]?.icon || '❓'} {entry.name}</span>
+                        <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Barras horizontales */}
+              {chartType === 'bars' && (
+                <ResponsiveContainer width="100%" height={Math.max(200, bubbleData.length * 38)}>
+                  <BarChart data={[...bubbleData].reverse()} layout="vertical" margin={{ top: 0, right: 52, left: 0, bottom: 0 }}>
+                    <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                    <YAxis type="category" dataKey="name" width={isMobile ? 82 : 112} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                    <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {[...bubbleData].reverse().map((entry, idx) => (
+                        <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
