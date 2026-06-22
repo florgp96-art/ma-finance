@@ -1126,7 +1126,38 @@ export default function Dashboard() {
         }
       })
 
-      const { data: inserted } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+      // Deduplicar: no insertar transacciones que ya existen para este usuario
+      const { data: txExistentes } = await supabase.from('transactions')
+        .select('detalle, cuota_numero, cuotas_total, fecha, monto')
+        .eq('user_id', user.id)
+
+      const esDuplicadoPDF = (t) => {
+        if (!txExistentes?.length) return false
+        if (t.cuotas_total > 1) {
+          return txExistentes.some(e =>
+            e.detalle === t.detalle &&
+            Number(e.cuota_numero) === Number(t.cuota_numero) &&
+            Number(e.cuotas_total) === Number(t.cuotas_total)
+          )
+        }
+        return txExistentes.some(e =>
+          e.detalle === t.detalle &&
+          e.fecha === t.fecha &&
+          Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
+        )
+      }
+
+      const transaccionesFiltradas = transacciones.filter(t => !esDuplicadoPDF(t))
+      const omitidas = transacciones.length - transaccionesFiltradas.length
+
+      if (transaccionesFiltradas.length === 0) {
+        showToast('Todas las transacciones ya estaban cargadas. No se importó nada.', 'error')
+        setLoading(false)
+        return
+      }
+
+      const { data: inserted } = await supabase.from('transactions').insert(transaccionesFiltradas).select('id, detalle, estado')
+      if (omitidas > 0) showToast(`${omitidas} transacción${omitidas > 1 ? 'es' : ''} omitida${omitidas > 1 ? 's' : ''} (ya existían).`, 'warning')
 
       // Preparar paso identificar
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
@@ -2430,14 +2461,14 @@ export default function Dashboard() {
         <div style={{
           position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 9999, padding: '12px 24px', borderRadius: '12px',
-          backgroundColor: toast.type === 'error' ? '#c0392b' : '#2e8b6a',
+          backgroundColor: toast.type === 'error' ? '#c0392b' : toast.type === 'warning' ? '#c07a2b' : '#2e8b6a',
           color: 'white', fontSize: '14px', fontWeight: '500',
           fontFamily: '"Montserrat", sans-serif',
           boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           maxWidth: '90vw', textAlign: 'center',
           animation: 'fadeInUp 0.2s ease'
         }}>
-          {toast.type !== 'error' ? '✅ ' : '⚠️ '}{toast.msg}
+          {toast.type === 'error' ? '⚠️ ' : toast.type === 'warning' ? '⚠️ ' : '✅ '}{toast.msg}
         </div>
       )}
     </>
