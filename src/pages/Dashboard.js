@@ -134,7 +134,6 @@ export default function Dashboard() {
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [egresosOpen, setEgresosOpen] = useState(true)
-  const [ingresosOpen, setIngresosOpen] = useState(true)
   const [excelFile, setExcelFile] = useState(null)
   const [excelPreview, setExcelPreview] = useState(null)
   const [excelDupReview, setExcelDupReview] = useState(null)
@@ -1584,19 +1583,6 @@ export default function Dashboard() {
                 </div>
               )
 
-              const SectionHeader = ({ label, open, onToggle, onAdd, showArrow = true }) => (
-                <div style={{ ...styles.sidebarHeader, display: 'flex', alignItems: 'center' }} onClick={onToggle}>
-                  <h2 style={{ ...styles.sidebarTitle, cursor: onToggle ? 'pointer' : 'default', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', flex: 1 }}>
-                    {label}
-                    {showArrow && <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>}
-                  </h2>
-                  {onAdd && (
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: darkMode ? '#9A8A9A' : '#5C4F5C', padding: '0 6px', outline: 'none', lineHeight: 1, flexShrink: 0 }}
-                      onClick={(e) => { e.stopPropagation(); onAdd() }} title="Nueva fuente de ingreso">+</button>
-                  )}
-                </div>
-              )
-
               const dupes = [...new Set(accounts.map(a => a.nombre).filter((n, i, arr) => arr.indexOf(n) !== i))]
 
               return (
@@ -1670,12 +1656,6 @@ export default function Dashboard() {
 
             {/* Zona bottom fija: botones de acción — siempre visible */}
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-              {/* Registrar ingreso */}
-              <button style={{ ...styles.sidebarBtnPrimary, backgroundColor: darkMode ? '#1A2E1A' : '#EAF4EA', color: darkMode ? '#6BC46B' : '#2e7d32', borderColor: darkMode ? '#2A3E2A' : '#A5D6A7' }}
-                onClick={() => setShowIngreso(true)}>
-                + REGISTRAR INGRESO
-              </button>
-
               {/* Gasto en efectivo */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
