@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 export default function Register() {
   const [email, setEmail] = useState('')
@@ -8,7 +8,7 @@ export default function Register() {
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [sent, setSent] = useState(false)
 
   const handleRegister = async (e) => {
     e.preventDefault()
@@ -21,16 +21,38 @@ export default function Register() {
 
     setLoading(true)
 
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin }
+    })
 
     if (error) {
       setError(error.message)
     } else {
-      // Crear perfil de usuario
-      await supabase.from('user_profiles').insert({ id: data.user.id })
-      navigate('/onboarding')
+      setSent(true)
     }
     setLoading(false)
+  }
+
+  if (sent) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <h1 style={styles.title}>Moms Assist Finance</h1>
+          <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <p style={{ fontSize: '40px', margin: '0 0 16px' }}>📬</p>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#2d2d2d', margin: '0 0 10px' }}>¡Revisá tu email!</h2>
+            <p style={{ color: '#888', fontSize: '14px', lineHeight: 1.6, margin: '0 0 20px' }}>
+              Te mandamos un link de confirmación a <strong>{email}</strong>.<br />
+              Hacé click en el link para activar tu cuenta.
+            </p>
+            <p style={{ color: '#aaa', fontSize: '12px' }}>¿No llegó? Revisá spam o volvé a intentarlo.</p>
+          </div>
+          <p style={styles.link}><Link to="/login">Volver al inicio de sesión</Link></p>
+        </div>
+      </div>
+    )
   }
 
   return (

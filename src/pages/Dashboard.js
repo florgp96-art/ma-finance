@@ -189,6 +189,10 @@ export default function Dashboard() {
     fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        // Verificar onboarding completo
+        const { data: settings } = await supabase.from('user_settings').select('onboarding_completo').eq('user_id', user.id).maybeSingle()
+        if (!settings || !settings.onboarding_completo) { navigate('/onboarding'); return }
+
         const saved = localStorage.getItem(`servicios_${user.id}`)
         setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
 

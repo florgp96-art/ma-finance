@@ -15,6 +15,8 @@ export default function Onboarding() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
+    await supabase.from('user_profiles').upsert({ id: user.id }, { onConflict: 'id', ignoreDuplicates: true })
+
     await supabase.from('user_settings').insert({
       user_id: user.id,
       tiene_hijos: tieneHijos,
