@@ -1478,29 +1478,34 @@ export default function Dashboard() {
           {isMobile && sidebarOpen && (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
           )}
-          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 20px 20px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
+            {/* Zona top fija: solo mobile — botón cerrar + dólar blue */}
             {isMobile && (
-              <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
-                ✕
-              </button>
+              <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+                <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
+                  ✕
+                </button>
+                {(() => {
+                  const blueRate = dolarRates['blue']
+                  const mesActual = new Date().toISOString().slice(0, 7)
+                  const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === 'blue')
+                  const rateActivo = blueRate || (rateDB ? rateDB.valor : null)
+                  const cardBg = darkMode ? '#252025' : '#F0ECF5'
+                  const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
+                  return (
+                    <div style={{ borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <p style={{ fontSize: '11px', color: '#8e8e93', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar Blue</p>
+                      {rateActivo
+                        ? <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                        : <input type="number" style={{ width: '90px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'right' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
+                      }
+                    </div>
+                  )
+                })()}
+              </div>
             )}
-            {isMobile && (() => {
-              const blueRate = dolarRates['blue']
-              const mesActual = new Date().toISOString().slice(0, 7)
-              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === 'blue')
-              const rateActivo = blueRate || (rateDB ? rateDB.valor : null)
-              const cardBg = darkMode ? '#252025' : '#F0ECF5'
-              const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
-              return (
-                <div style={{ borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 16px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <p style={{ fontSize: '11px', color: '#8e8e93', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar Blue</p>
-                  {rateActivo
-                    ? <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                    : <input type="number" style={{ width: '90px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'right' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
-                  }
-                </div>
-              )
-            })()}
+            {/* Zona media scrollable: lista de cuentas */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', ...(isMobile ? { flex: 1, overflowY: 'auto', minHeight: 0, paddingTop: '8px' } : {}) }}>
             {(() => {
               const egresoCuentas = accounts.filter(a => !a.nombre?.toLowerCase().startsWith('ingresos'))
               const ingresoCuentas = accounts.filter(a => a.nombre?.toLowerCase().startsWith('ingresos'))
@@ -1586,8 +1591,10 @@ export default function Dashboard() {
                 </>
               )
             })()}
+            </div>{/* fin zona media scrollable */}
 
-            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Zona bottom fija: botones de acción — siempre visible */}
+            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
               {/* Gasto en efectivo */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
@@ -1643,14 +1650,10 @@ export default function Dashboard() {
                   )}
                 </>
               )}
+              {isMobile && (
+                <button style={{ ...styles.logoutBtn, marginTop: '4px' }} onClick={handleLogout}>Cerrar sesión</button>
+              )}
             </div>
-
-
-            {isMobile && (
-              <div style={styles.sidebarFooter}>
-                <button style={styles.logoutBtn} onClick={handleLogout}>Cerrar sesión</button>
-              </div>
-            )}
           </div>
 
           {/* Contenido derecho */}
