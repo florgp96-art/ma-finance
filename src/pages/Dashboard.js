@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
-import AccountDetail, { getLast6Months, mesLabel, formatMonto, formatMontoFull } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -1893,7 +1893,7 @@ export default function Dashboard() {
                     <ResponsiveContainer width="100%" height={170}>
                       <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${formatMonto(v)}`} width={65} />
+                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
                         <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, sidebarCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
                         <Bar dataKey="total" fill="#5C4F5C" radius={[4, 4, 0, 0]} />
                       </BarChart>
