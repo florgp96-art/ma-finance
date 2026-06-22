@@ -1298,23 +1298,6 @@ export default function Dashboard() {
             </div>
 
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* Importar gastos */}
-              <div style={{ position: 'relative' }}>
-                <button style={styles.sidebarBtnPrimary} onClick={() => setImportMenuOpen(o => !o)}>
-                  + IMPORTAR GASTOS {importMenuOpen ? '▴' : '▾'}
-                </button>
-                {importMenuOpen && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px', paddingLeft: '12px' }}>
-                    <button style={{ ...styles.sidebarBtnPrimary, fontSize: '12px', padding: '8px 12px' }} onClick={() => { resetUpload(); setShowUpload(true); setImportMenuOpen(false) }}>
-                      📄 PDF
-                    </button>
-                    <button style={{ ...styles.sidebarBtnPrimary, fontSize: '12px', padding: '8px 12px' }} onClick={() => { setExcelFile(null); setExcelPreview(null); setShowExcel(true); setImportMenuOpen(false) }}>
-                      📊 EXCEL
-                    </button>
-                  </div>
-                )}
-              </div>
-
               {/* Gasto en efectivo */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
@@ -1331,6 +1314,23 @@ export default function Dashboard() {
               }}>
                 + GASTO EN EFECTIVO
               </button>
+
+              {/* Importar gastos */}
+              <div style={{ position: 'relative' }}>
+                <button style={styles.sidebarBtnPrimary} onClick={() => setImportMenuOpen(o => !o)}>
+                  + IMPORTAR GASTOS {importMenuOpen ? '▴' : '▾'}
+                </button>
+                {importMenuOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px', paddingLeft: '12px' }}>
+                    <button style={{ ...styles.sidebarBtnPrimary, fontSize: '12px', padding: '8px 12px' }} onClick={() => { resetUpload(); setShowUpload(true); setImportMenuOpen(false) }}>
+                      📄 PDF
+                    </button>
+                    <button style={{ ...styles.sidebarBtnPrimary, fontSize: '12px', padding: '8px 12px' }} onClick={() => { setExcelFile(null); setExcelPreview(null); setShowExcel(true); setImportMenuOpen(false) }}>
+                      📊 EXCEL
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Configuración colapsable */}
               <button

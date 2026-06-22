@@ -47,7 +47,7 @@ const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, darkMode, tipoCambio }) {
+export function BubbleChart({ data, darkMode, tipoCambio, isMobile }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -110,7 +110,7 @@ export function BubbleChart({ data, darkMode, tipoCambio }) {
   if (!data || data.length === 0) return null
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
+    <div ref={containerRef} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
       <div style={{ flex: '1 1 0', minWidth: 0 }}>
         <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
           {bubbles.map((b, i) => {
@@ -194,7 +194,7 @@ export function BubbleChart({ data, darkMode, tipoCambio }) {
           })()}
         </svg>
       </div>
-      <div style={{ width: '200px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '16px' }}>
+      <div style={{ width: isMobile ? '100%' : '200px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: isMobile ? '0' : '16px' }}>
         {[...bubbles].sort((a, b) => b.value - a.value).map((b, i) => {
           const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
           return (
@@ -235,6 +235,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [selectedCatEvol, setSelectedCatEvol] = useState('')
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const mesDropdownRef = useRef(null)
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     if (allAccounts && accounts && accounts.length > 0) fetchAllData()
@@ -562,6 +569,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   )
 
   const styles = getStyles(darkMode)
+  const isMobile = windowWidth < 768
 
   if (loading) return (
     <div style={styles.loading}>Cargando datos...</div>
@@ -703,7 +711,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tipoCambio} />
+              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tipoCambio} isMobile={isMobile} />
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
@@ -756,6 +764,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>🔄 Movimientos neutros ({txNeutras.length})</h3>
           <p style={styles.tableHint}>Inversiones, pagos de tarjeta y transferencias propias — no se incluyen en los gráficos</p>
+          <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -785,6 +794,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -792,6 +802,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
           <p style={styles.tableHint}>Editá el nombre, categoría y subcategoría de estos gastos</p>
+          <div style={{ overflowX: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr>
@@ -828,6 +839,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -840,6 +852,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             </button>
           )}
         </div>
+        <div style={{ overflowX: 'auto' }}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -914,6 +927,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Evolución por categoría */}
