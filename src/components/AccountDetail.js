@@ -482,7 +482,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ).sort((a, b) => b.value - a.value)
   }
 
-  const bubbleData = buildBubbleData(mesTxs, tcEfectivo)
+  const gastosParaGrafico = mesTxs.filter(t => t.tipo === 'gasto')
+  const bubbleData = buildBubbleData(gastosParaGrafico, tcEfectivo)
 
   // Datos para legend: categorías sin hijos + child rows separadas
   const childTags = [...new Set(mesTxs.filter(t => t.tag && t.tipo === 'gasto').map(t => t.tag))]
@@ -501,6 +502,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
+  const totalIngresosARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
+  const totalIngresosUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
+  const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0)
 
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
@@ -684,14 +688,32 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       {/* Cards de resumen */}
       {selectedMeses.length > 0 && mesTxs.length > 0 && (
         <div style={styles.summaryCards}>
-          <div style={styles.summaryCard}>
-            <p style={styles.summaryLabel}>Total ARS</p>
-            <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
-          </div>
+          {/* Total ARS / Egresos ARS */}
+          {totalARS > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos ARS' : 'Total ARS'}</p>
+              <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
+            </div>
+          )}
+          {/* Total Ingresos ARS */}
+          {hayIngresos && totalIngresosARS > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total Ingresos ARS</p>
+              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
+            </div>
+          )}
+          {/* Total USD / Egresos USD */}
           {totalUSD > 0 && (
             <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total USD</p>
+              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos USD' : 'Total USD'}</p>
               <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+            </div>
+          )}
+          {/* Total Ingresos USD */}
+          {hayIngresos && totalIngresosUSD > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total Ingresos USD</p>
+              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
             </div>
           )}
           {diffPct !== null && mesAnterior && selectedMeses.length === 1 && (
@@ -716,11 +738,22 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           )}
           {tcEfectivo > 0 && (
             <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Final equiv. en pesos</p>
+              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos (equiv. pesos)' : 'Final equiv. en pesos'}</p>
               <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * tcEfectivo)}</p>
-              <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
-              <p style={styles.summaryLabel}>Final equiv. en USD</p>
-              <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / tcEfectivo)}</p>
+              {hayIngresos && (totalIngresosARS + totalIngresosUSD * tcEfectivo) > 0 && (
+                <>
+                  <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
+                  <p style={styles.summaryLabel}>Total Ingresos (equiv. pesos)</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS + totalIngresosUSD * tcEfectivo)}</p>
+                </>
+              )}
+              {!hayIngresos && (
+                <>
+                  <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
+                  <p style={styles.summaryLabel}>Final equiv. en USD</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / tcEfectivo)}</p>
+                </>
+              )}
             </div>
           )}
         </div>
