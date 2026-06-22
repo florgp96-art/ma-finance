@@ -40,6 +40,8 @@ export default async function handler(req, res) {
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
   const { pdfText, cardName, userRules } = req.body
+  if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })
+  if (pdfText.length > 200_000) return res.status(400).json({ error: 'PDF text too large' })
 
   // Construir bloque de reglas del usuario si existen
   let userRulesBlock = ''
