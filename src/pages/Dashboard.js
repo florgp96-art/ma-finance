@@ -598,15 +598,20 @@ export default function Dashboard() {
         setLoadingExcel(false); return
       }
 
+      const parseCuota = (texto) => {
+        const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
+        return m ? { cuota_numero: parseInt(m[1]), cuotas_total: parseInt(m[2]) } : { cuota_numero: 1, cuotas_total: 1 }
+      }
       const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
+        const cuota = parseCuota(row.descripcion || row.notas)
         return {
           user_id: user.id, account_id: acc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
+          estado: row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
@@ -639,15 +644,20 @@ export default function Dashboard() {
         setLoadingExcel(false); return
       }
 
+      const parseCuotaFinal = (texto) => {
+        const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
+        return m ? { cuota_numero: parseInt(m[1]), cuotas_total: parseInt(m[2]) } : { cuota_numero: 1, cuotas_total: 1 }
+      }
       const toInsert = toImport.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
+        const cuota = parseCuotaFinal(row.descripcion || row.notas)
         return {
           user_id: user.id, account_id: acc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.estado, es_manual: true, cuotas_total: 1, cuota_numero: 1,
+          estado: row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
@@ -1128,20 +1138,35 @@ export default function Dashboard() {
 
       // Deduplicar: no insertar transacciones que ya existen para este usuario
       const { data: txExistentes } = await supabase.from('transactions')
-        .select('detalle, cuota_numero, cuotas_total, fecha, monto')
+        .select('account_id, detalle, cuota_numero, cuotas_total, fecha, monto')
         .eq('user_id', user.id)
 
       const esDuplicadoPDF = (t) => {
         if (!txExistentes?.length) return false
         if (t.cuotas_total > 1) {
-          return txExistentes.some(e =>
+          // Match exacto (PDF vs PDF): mismo detalle + misma cuota
+          if (txExistentes.some(e =>
             e.detalle === t.detalle &&
             Number(e.cuota_numero) === Number(t.cuota_numero) &&
             Number(e.cuotas_total) === Number(t.cuotas_total)
+          )) return true
+          // Fallback para Excel (sin cuota guardada): misma cuenta + mismo monto + mismo mes
+          const mes = t.fecha?.slice(0, 7)
+          return txExistentes.some(e =>
+            e.account_id === t.account_id &&
+            Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01 &&
+            e.fecha?.slice(0, 7) === mes
           )
         }
-        return txExistentes.some(e =>
+        // Pagos simples: match por detalle+fecha+monto
+        if (txExistentes.some(e =>
           e.detalle === t.detalle &&
+          e.fecha === t.fecha &&
+          Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
+        )) return true
+        // Fallback para Excel: misma cuenta + mismo monto + misma fecha exacta
+        return txExistentes.some(e =>
+          e.account_id === t.account_id &&
           e.fecha === t.fecha &&
           Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
         )
