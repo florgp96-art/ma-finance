@@ -1622,37 +1622,45 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* EGRESOS */}
-                  <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
-                  {egresosOpen && (
-                    <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
-                      {egresoCuentas.length === 0
-                        ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
-                        : egresoCuentas.map(renderAccount)
-                      }
-                    </div>
-                  )}
-
-                  {/* INGRESOS — botón único */}
+                  {/* EGRESOS + INGRESOS en la misma fila */}
                   {(() => {
                     const cuentaIngresos = ingresoCuentas[0]
-                    const isSelected = selectedAccount?.id === cuentaIngresos?.id
+                    const isIngresosSelected = selectedAccount?.id === cuentaIngresos?.id
+                    const handleClickIngresos = async () => {
+                      if (isIngresosSelected) { setSelectedAccount(null); return }
+                      if (cuentaIngresos) { setSelectedAccount(cuentaIngresos); setSidebarOpen(false); return }
+                      const { data: { user } } = await supabase.auth.getUser()
+                      const { data: nueva } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
+                      fetchAccounts()
+                      setSelectedAccount(nueva)
+                      setSidebarOpen(false)
+                    }
                     return (
-                      <div
-                        style={{ ...styles.accountCard, ...(isSelected ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px', cursor: 'pointer' }}
-                        onClick={async () => {
-                          if (isSelected) { setSelectedAccount(null); return }
-                          if (cuentaIngresos) { setSelectedAccount(cuentaIngresos); setSidebarOpen(false); return }
-                          const { data: { user } } = await supabase.auth.getUser()
-                          const { data: nueva } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
-                          fetchAccounts()
-                          setSelectedAccount(nueva)
-                          setSidebarOpen(false)
-                        }}
-                      >
-                        <p style={{ ...styles.accountType, marginBottom: '4px' }}>💰 INGRESOS</p>
-                        <p style={styles.accountName}>Mis ingresos</p>
-                      </div>
+                      <>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                          {/* Header EGRESOS */}
+                          <div style={{ flex: 1, ...styles.sidebarHeader, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                            onClick={() => setEgresosOpen(o => !o)}>
+                            <span style={styles.sidebarTitle}>EGRESOS</span>
+                            <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: egresosOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
+                          </div>
+                          {/* Botón INGRESOS */}
+                          <div style={{ flex: 1, ...styles.sidebarHeader, ...(isIngresosSelected ? { borderColor: darkMode ? '#8C7B8C' : '#5C4F5C', backgroundColor: darkMode ? 'rgba(140,123,140,0.15)' : 'rgba(92,79,92,0.08)' } : {}), cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                            onClick={handleClickIngresos}>
+                            <span style={styles.sidebarTitle}>💰 INGRESOS</span>
+                          </div>
+                        </div>
+
+                        {/* Lista cuentas EGRESOS (solo cuando está abierta) */}
+                        {egresosOpen && (
+                          <div style={{ ...styles.accountsList, marginBottom: '12px', marginTop: '8px' }}>
+                            {egresoCuentas.length === 0
+                              ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
+                              : egresoCuentas.map(renderAccount)
+                            }
+                          </div>
+                        )}
+                      </>
                     )
                   })()}
                 </>
