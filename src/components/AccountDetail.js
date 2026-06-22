@@ -217,7 +217,7 @@ export function BubbleChart({ data, darkMode, tipoCambio, isMobile }) {
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, darkMode }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -423,6 +423,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
 
+  const getTC = (mes) => {
+    if (mes && tcMap && tcMap[mes]) return Number(tcMap[mes])
+    return parseFloat(tipoCambio) || 1
+  }
+
+  // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
+  const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+
   const buildBubbleData = (txList, tc) => {
     const tcNum = parseFloat(tc) || 0
     return Object.values(
@@ -443,7 +451,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ).sort((a, b) => b.value - a.value)
   }
 
-  const bubbleData = buildBubbleData(mesTxs, tipoCambio)
+  const bubbleData = buildBubbleData(mesTxs, tcEfectivo)
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
@@ -660,13 +668,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
             </div>
           )}
-          {tipoCambio && parseFloat(tipoCambio) > 0 && (
+          {tcEfectivo > 0 && (
             <div style={styles.summaryCard}>
               <p style={styles.summaryLabel}>Final equiv. en pesos</p>
-              <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * parseFloat(tipoCambio))}</p>
+              <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * tcEfectivo)}</p>
               <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
               <p style={styles.summaryLabel}>Final equiv. en USD</p>
-              <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / parseFloat(tipoCambio))}</p>
+              <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / tcEfectivo)}</p>
             </div>
           )}
         </div>
@@ -737,7 +745,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
-              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tipoCambio} isMobile={isMobile} />
+              <BubbleChart data={bubbleData} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
             </div>
           )}
           {selectedMeses.length > 0 && bubbleData.length === 0 && (
@@ -962,8 +970,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           transactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
             .map(t => t.categories.nombre)
         )].sort()
-        const tc = parseFloat(tipoCambio) || 0
         const evolData = getLast6Months().map(m => {
+          const tc = getTC(m)
           const total = transactions
             .filter(t => t.fecha?.startsWith(m) && t.tipo === 'gasto' && t.categories?.nombre === selectedCatEvol)
             .reduce((s, t) => {

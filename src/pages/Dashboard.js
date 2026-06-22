@@ -113,6 +113,8 @@ export default function Dashboard() {
 
   // Tipo de cambio
   const [tipoCambio, setTipoCambio] = useState(() => localStorage.getItem('tc_ma') || '')
+  const [tcTipo, setTcTipo] = useState(() => localStorage.getItem('tc_tipo_ma') || 'blue')
+  const [exchangeRates, setExchangeRates] = useState([])
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
@@ -172,8 +174,15 @@ export default function Dashboard() {
     setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
   }, [])
 
+  // Cuando cambia el tipo de TC o cargan los rates, auto-setear tipoCambio del mes actual
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases()
+    const mesActual = new Date().toISOString().slice(0, 7)
+    const rate = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
+    if (rate) { setTipoCambio(String(rate.valor)); localStorage.setItem('tc_ma', String(rate.valor)) }
+  }, [exchangeRates, tcTipo])
+
+  useEffect(() => {
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         const saved = localStorage.getItem(`servicios_${user.id}`)
@@ -370,6 +379,11 @@ export default function Dashboard() {
       const ef = data.find(a => a.nombre === 'Efectivo')
       if (ef) setSelectedAccount(prev => prev === null ? ef : prev)
     }
+  }
+
+  const fetchExchangeRates = async () => {
+    const { data } = await supabase.from('exchange_rates').select('periodo, tipo, valor').order('periodo', { ascending: false })
+    setExchangeRates(data || [])
   }
 
   const fetchVencimientos = async () => {
@@ -1433,18 +1447,37 @@ export default function Dashboard() {
             </div>
 
             {/* Tipo de cambio */}
-            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
-              <label style={{ fontSize: '11px', color: '#6e6e73', display: 'block', marginBottom: '4px', letterSpacing: '0.04em', textAlign: 'center' }}>
-                U$S 1 = $
-              </label>
-              <input
-                type="number"
-                style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
-                placeholder="ej. 1250"
-                value={tipoCambio}
-                onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
-              />
-            </div>
+            {(() => {
+              const mesActual = new Date().toISOString().slice(0, 7)
+              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
+              const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
+              return (
+                <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px' }}>
+                  <p style={{ fontSize: '11px', color: '#6e6e73', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '8px', fontWeight: 600 }}>Tipo de cambio</p>
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                    {['blue','mep','oficial','tarjeta'].map(t => (
+                      <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
+                        style={{ flex: 1, padding: '5px 0', fontSize: '10px', fontWeight: 600, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
+                        {tiposLabel[t]}
+                      </button>
+                    ))}
+                  </div>
+                  {rateDB ? (
+                    <div style={{ textAlign: 'center', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fafafa' }}>
+                      <span style={{ fontSize: '13px', color: '#6e6e73' }}>U$S 1 = </span>
+                      <span style={{ fontSize: '16px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateDB.valor)}</span>
+                    </div>
+                  ) : (
+                    <input type="number"
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                      placeholder="ej. 1250"
+                      value={tipoCambio}
+                      onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }}
+                    />
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Vencimientos del mes */}
             {(() => {
@@ -1515,7 +1548,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -1657,7 +1690,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={styles.section}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} darkMode={darkMode} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} />
               </div>
             ) : (
               <div style={styles.emptyState}>
