@@ -505,6 +505,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const totalIngresosARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const totalIngresosUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0)
+  // Vista de cuenta de ingresos: todas las txs son tipo ingreso
+  const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
@@ -688,8 +690,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       {/* Cards de resumen */}
       {selectedMeses.length > 0 && mesTxs.length > 0 && (
         <div style={styles.summaryCards}>
+          {/* Vista de cuenta de ingresos */}
+          {esVistaIngresos && totalIngresosARS > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total Ingresos ARS</p>
+              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
+            </div>
+          )}
+          {esVistaIngresos && totalIngresosUSD > 0 && (
+            <div style={styles.summaryCard}>
+              <p style={styles.summaryLabel}>Total Ingresos USD</p>
+              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+            </div>
+          )}
           {/* Total ARS / Egresos ARS */}
-          {totalARS > 0 && (
+          {!esVistaIngresos && totalARS > 0 && (
             <div style={styles.summaryCard}>
               <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos ARS' : 'Total ARS'}</p>
               <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
@@ -822,7 +837,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
           )}
 
-          {bubbleData.length > 0 && (
+          {!esVistaIngresos && bubbleData.length > 0 && (
             <div style={styles.bubbleSection}>
               {/* Selector de tipo de gráfico */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>

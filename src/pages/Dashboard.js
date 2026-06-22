@@ -102,9 +102,7 @@ export default function Dashboard() {
 
   // Modal ingresos
   const [showIngreso, setShowIngreso] = useState(false)
-  const [ingreso, setIngreso] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', fuente_id: '' })
-  const [showAddFuente, setShowAddFuente] = useState(false)
-  const [newFuente, setNewFuente] = useState('')
+  const [ingreso, setIngreso] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: '' })
 
   // Widget ahorro
   const [ahorro, setAhorro] = useState({ monto: '', moneda: 'USD', anos: '', tasa: '' })
@@ -403,39 +401,45 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  const handleAddFuente = async (e) => {
-    e.preventDefault()
-    if (!newFuente.trim()) return
-    setLoading(true)
+  const getOrCreateIngresosAccount = async (user) => {
+    let acc = accounts.find(a => a.tipo === 'ingreso')
+    if (!acc) {
+      const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
+      acc = data
+      await fetchAccountsAndReturn()
+    }
+    return acc
+  }
+
+  const fetchAccountsAndReturn = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: nueva } = await supabase.from('accounts').insert({ user_id: user.id, nombre: newFuente.trim(), tipo: 'ingreso' }).select().single()
-    setNewFuente('')
-    setShowAddFuente(false)
-    fetchAccounts()
-    if (showIngreso && nueva) setIngreso(prev => ({ ...prev, fuente_id: nueva.id }))
-    setLoading(false)
+    const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
+    setAccounts(data || [])
+    return data || []
   }
 
   const handleGuardarIngreso = async (e) => {
     e.preventDefault()
-    if (!ingreso.fuente_id) return
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
+    const acc = await getOrCreateIngresosAccount(user)
+    if (!acc) { setLoading(false); return }
     await supabase.from('transactions').insert({
       user_id: user.id,
-      account_id: ingreso.fuente_id,
+      account_id: acc.id,
       fecha: ingreso.fecha,
       nombre: ingreso.nombre,
       detalle: ingreso.nombre,
       monto: parseFloat(ingreso.monto),
       moneda: ingreso.moneda,
       tipo: 'ingreso',
+      tag: ingreso.tipo || null,
       estado: 'identificado',
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
     })
-    setIngreso({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', fuente_id: ingreso.fuente_id })
+    setIngreso({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: ingreso.tipo })
     setShowIngreso(false)
     setRefreshKey(k => k + 1)
     fetchAccounts()
@@ -1618,31 +1622,39 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* EGRESOS + INGRESOS side by side */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                    {/* Columna EGRESOS */}
-                    <div>
-                      <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
-                      {egresosOpen && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
-                          {egresoCuentas.length === 0
-                            ? <p style={{ ...styles.emptyText, fontSize: '11px' }}>Sin cuentas.</p>
-                            : egresoCuentas.map(renderAccount)
-                          }
-                        </div>
-                      )}
+                  {/* EGRESOS */}
+                  <SectionHeader label="EGRESOS" open={egresosOpen} onToggle={() => setEgresosOpen(o => !o)} />
+                  {egresosOpen && (
+                    <div style={{ ...styles.accountsList, marginBottom: '12px' }}>
+                      {egresoCuentas.length === 0
+                        ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
+                        : egresoCuentas.map(renderAccount)
+                      }
                     </div>
-                    {/* Columna INGRESOS — sin flecha, siempre abierta */}
-                    <div>
-                      <SectionHeader label="INGRESOS" open={true} onToggle={() => {}} onAdd={() => setShowAddFuente(true)} showArrow={false} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
-                        {ingresoCuentas.length === 0
-                          ? <p style={{ ...styles.emptyText, fontSize: '11px', cursor: 'pointer' }} onClick={() => setShowAddFuente(true)}>+ Agregar</p>
-                          : ingresoCuentas.map(renderAccount)
-                        }
+                  )}
+
+                  {/* INGRESOS — botón único */}
+                  {(() => {
+                    const cuentaIngresos = ingresoCuentas[0]
+                    const isSelected = selectedAccount?.id === cuentaIngresos?.id
+                    return (
+                      <div
+                        style={{ ...styles.accountCard, ...(isSelected ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px', cursor: 'pointer' }}
+                        onClick={async () => {
+                          if (isSelected) { setSelectedAccount(null); return }
+                          if (cuentaIngresos) { setSelectedAccount(cuentaIngresos); setSidebarOpen(false); return }
+                          const { data: { user } } = await supabase.auth.getUser()
+                          const { data: nueva } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
+                          fetchAccounts()
+                          setSelectedAccount(nueva)
+                          setSidebarOpen(false)
+                        }}
+                      >
+                        <p style={{ ...styles.accountType, marginBottom: '4px' }}>💰 INGRESOS</p>
+                        <p style={styles.accountName}>Mis ingresos</p>
                       </div>
-                    </div>
-                  </div>
+                    )
+                  })()}
                 </>
               )
             })()}
@@ -1652,11 +1664,7 @@ export default function Dashboard() {
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
               {/* Registrar ingreso */}
               <button style={{ ...styles.sidebarBtnPrimary, backgroundColor: darkMode ? '#1A2E1A' : '#EAF4EA', color: darkMode ? '#6BC46B' : '#2e7d32', borderColor: darkMode ? '#2A3E2A' : '#A5D6A7' }}
-                onClick={() => {
-                  const fuentes = accounts.filter(a => a.tipo === 'ingreso')
-                  if (fuentes.length === 0) { setShowAddFuente(true) }
-                  else { setIngreso(prev => ({ ...prev, fuente_id: fuentes[0].id })); setShowIngreso(true) }
-                }}>
+                onClick={() => setShowIngreso(true)}>
                 + REGISTRAR INGRESO
               </button>
 
@@ -2884,30 +2892,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Modal: nueva fuente de ingreso */}
-      {showAddFuente && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '380px', width: '90%' }}>
-            <h3 style={styles.modalTitle}>Nueva fuente de ingreso 💰</h3>
-            <form onSubmit={handleAddFuente}>
-              <div style={styles.field}>
-                <label style={styles.label}>Nombre <span style={{ color: '#c0392b' }}>*</span></label>
-                <input style={styles.input} type="text" value={newFuente}
-                  onChange={e => setNewFuente(e.target.value)}
-                  placeholder="Ej: Sueldo, Freelance, Cuota alimentaria..."
-                  required autoFocus />
-              </div>
-              <div style={styles.modalButtons}>
-                <button type="button" style={styles.cancelBtn} onClick={() => setShowAddFuente(false)}>Cancelar</button>
-                <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Creando...' : 'Crear fuente'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Modal: registrar ingreso */}
       {showIngreso && (
         <div style={styles.overlay}>
@@ -2931,6 +2915,12 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={styles.field}>
+                <label style={styles.label}>Categoría <span style={{ fontSize: '11px', color: '#8e8e93' }}>(opcional)</span></label>
+                <input style={styles.input} type="text" value={ingreso.tipo}
+                  onChange={e => setIngreso({ ...ingreso, tipo: e.target.value })}
+                  placeholder="Ej: Sueldo, Freelance, Cuota alimentaria..." />
+              </div>
+              <div style={styles.field}>
                 <label style={styles.label}>Descripción <span style={{ color: '#c0392b' }}>*</span></label>
                 <input style={styles.input} type="text" value={ingreso.nombre}
                   onChange={e => setIngreso({ ...ingreso, nombre: e.target.value })}
@@ -2941,23 +2931,6 @@ export default function Dashboard() {
                 <input style={styles.input} type="number" step="0.01" min="0" value={ingreso.monto}
                   onChange={e => setIngreso({ ...ingreso, monto: e.target.value })}
                   placeholder="0.00" required />
-              </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Fuente de ingreso <span style={{ color: '#c0392b' }}>*</span></label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <select style={{ ...styles.input, flex: 1 }} value={ingreso.fuente_id}
-                    onChange={e => setIngreso({ ...ingreso, fuente_id: e.target.value })} required>
-                    <option value="">— Elegir —</option>
-                    {accounts.filter(a => a.tipo === 'ingreso').map(a => (
-                      <option key={a.id} value={a.id}>{a.nombre}</option>
-                    ))}
-                  </select>
-                  <button type="button"
-                    style={{ padding: '9px 12px', borderRadius: '10px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#9A8A9A' : '#5C4F5C', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap', fontFamily: '"Montserrat", sans-serif' }}
-                    onClick={() => setShowAddFuente(true)}>
-                    + Nueva
-                  </button>
-                </div>
               </div>
               <div style={styles.modalButtons}>
                 <button type="button" style={styles.cancelBtn} onClick={() => setShowIngreso(false)}>Cancelar</button>
