@@ -1900,7 +1900,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} />
               </div>
             ) : (
               <div style={styles.emptyState}>

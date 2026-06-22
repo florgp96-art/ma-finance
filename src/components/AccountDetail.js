@@ -20,6 +20,7 @@ export const CATEGORY_CONFIG = {
 }
 
 const BAR_COLOR = '#A8B8D8'
+const INCOME_PALETTE = ['#A8D8B9','#7EC8A4','#B5EAC8','#81C784','#66BB6A','#A5D6A7','#C8E6C9','#9ECFB0']
 
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -243,7 +244,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -358,6 +359,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
+    if (account?.tipo === 'ingreso') {
+      await supabase.from('transactions').update({ nombre: editNombre, tag: editTag || null }).eq('id', tx.id)
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null } : t))
+      setEditingTx(null)
+      return
+    }
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
 
@@ -508,6 +515,24 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   // Vista de cuenta de ingresos: todas las txs son tipo ingreso
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
+  const ingresoBubbleData = esVistaIngresos
+    ? Object.values(
+        mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
+          const cat = t.tag || t.nombre || 'Sin categoría'
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (parseFloat(tcEfectivo) || 0) : Number(t.monto)
+          if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0 }
+          acc[cat].value += monto
+          if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
+          else acc[cat].originalUSD += Number(t.monto)
+          return acc
+        }, {})
+      ).sort((a, b) => b.value - a.value)
+    : []
+  const chartData = esVistaIngresos ? ingresoBubbleData : bubbleData
+  const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : (CATEGORY_CONFIG[name]?.color || '#E0E0E0')
+  const getChartIcon = (name) => esVistaIngresos ? '' : (CATEGORY_CONFIG[name]?.icon || '❓')
+  const effectiveChartType = (esVistaIngresos && chartType === 'bubble') ? 'donut' : chartType
+
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
     acc[cat] = (acc[cat] || 0) + Number(t.monto)
@@ -582,7 +607,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }
 
   const handleDeleteTx = async (tx) => {
-    if (!window.confirm('¿Eliminar este gasto?')) return
+    if (!window.confirm(account?.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?')) return
     await supabase.from('transactions').delete().eq('id', tx.id)
     setTransactions(prev => prev.filter(t => t.id !== tx.id))
   }
@@ -619,6 +644,18 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           ))}
         </select>
       </td>
+    </>
+  )
+
+  const renderEditCellsIngreso = () => (
+    <>
+      <td style={styles.td}>
+        <input style={styles.editInput} value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Descripción" />
+      </td>
+      <td style={styles.td}>
+        <input style={styles.editInput} value={editTag} onChange={e => setEditTag(e.target.value)} placeholder="Categoría (ej: Sueldo)" />
+      </td>
+      <td style={{...styles.td, display: isMobile ? 'none' : undefined}} />
     </>
   )
 
@@ -788,10 +825,23 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </div>
       )}
 
+      {esVistaIngresos && mesesDisponibles.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <p style={{ fontSize: '32px', marginBottom: '12px' }}>💰</p>
+          <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
+          <p style={{ fontSize: '13px', color: '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
+          {onAddIngreso && (
+            <button onClick={onAddIngreso} style={{ padding: '12px 24px', borderRadius: '12px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+              + Agregar primer ingreso
+            </button>
+          )}
+        </div>
+      )}
+
       {mesesDisponibles.length > 0 && (
         <div style={styles.chartSection}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <h3 style={{...styles.chartTitle, margin: 0}}>🫧 Gastos de:</h3>
+            <h3 style={{...styles.chartTitle, margin: 0}}>{esVistaIngresos ? '💰 Ingresos de:' : '🫧 Gastos de:'}</h3>
             <div ref={mesDropdownRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => setMesDropdownOpen(o => !o)}
@@ -831,53 +881,57 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </div>
               )}
             </div>
+            {esVistaIngresos && onAddIngreso && (
+              <button onClick={onAddIngreso} style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: '10px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                + Agregar ingreso
+              </button>
+            )}
           </div>
 
           {selectedMeses.length === 0 && (
             <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
           )}
 
-          {!esVistaIngresos && bubbleData.length > 0 && (
+          {chartData.length > 0 && (
             <div style={styles.bubbleSection}>
               {/* Selector de tipo de gráfico */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
-                {[
-                  { type: 'bubble', label: '◉ Burbujas' },
-                  { type: 'donut',  label: '◎ Donut' },
-                  { type: 'bars',   label: '▤ Barras' },
-                ].map(opt => (
+                {(esVistaIngresos
+                  ? [{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }]
+                  : [{ type: 'bubble', label: '◉ Burbujas' }, { type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }]
+                ).map(opt => (
                   <button key={opt.type}
                     onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
-                    style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: chartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                    style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
                     {opt.label}
                   </button>
                 ))}
               </div>
 
-              {/* Burbujas */}
-              {chartType === 'bubble' && (
-                <BubbleChart data={bubbleData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+              {/* Burbujas — solo egresos */}
+              {effectiveChartType === 'bubble' && !esVistaIngresos && (
+                <BubbleChart data={chartData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
               )}
 
               {/* Donut */}
-              {chartType === 'donut' && (
+              {effectiveChartType === 'donut' && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
                   <ResponsiveContainer width={isMobile ? '100%' : 260} height={240}>
                     <PieChart>
-                      <Pie data={bubbleData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
-                        {bubbleData.map((entry, idx) => (
-                          <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} stroke="none" />
+                      <Pie data={chartData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
+                        {chartData.map((entry, idx) => (
+                          <Cell key={idx} fill={getChartColor(entry.name, idx)} stroke="none" />
                         ))}
                       </Pie>
                       <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
-                    {bubbleData.map((entry, idx) => (
+                    {chartData.map((entry, idx) => (
                       <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0', flexShrink: 0 }} />
-                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{CATEGORY_CONFIG[entry.name]?.icon || '❓'} {entry.name}</span>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name, idx), flexShrink: 0 }} />
+                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{getChartIcon(entry.name)} {entry.name}</span>
                         <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
                       </div>
                     ))}
@@ -886,15 +940,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               )}
 
               {/* Barras verticales */}
-              {chartType === 'bars' && (
+              {effectiveChartType === 'bars' && (
                 <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={bubbleData} margin={{ top: 4, right: 8, left: 0, bottom: 48 }}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 48 }}>
                     <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 11, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} angle={-35} textAnchor="end" interval={0} />
                     <YAxis tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} width={isMobile ? 60 : 72} />
                     <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                      {bubbleData.map((entry, idx) => (
-                        <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} />
+                      {chartData.map((entry, idx) => (
+                        <Cell key={idx} fill={getChartColor(entry.name, idx)} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -902,8 +956,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               )}
             </div>
           )}
-          {selectedMeses.length > 0 && bubbleData.length === 0 && (
+          {selectedMeses.length > 0 && chartData.length === 0 && !esVistaIngresos && (
             <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
+          )}
+          {selectedMeses.length > 0 && chartData.length === 0 && esVistaIngresos && (
+            <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
           )}
         </div>
       )}
@@ -961,7 +1018,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </div>
       )}
 
-      {sinIdentificar.length > 0 && (
+      {!esVistaIngresos && sinIdentificar.length > 0 && (
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
           <p style={styles.tableHint}>Editá el nombre, categoría y subcategoría de estos gastos</p>
@@ -1008,7 +1065,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
       <div style={styles.tableSection}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ ...styles.chartTitle, margin: 0 }}>📋 Todas las transacciones ({identificadas.length})</h3>
+          <h3 style={{ ...styles.chartTitle, margin: 0 }}>{esVistaIngresos ? `💰 Todos los ingresos (${identificadas.length})` : `📋 Todas las transacciones (${identificadas.length})`}</h3>
           {txFiltradas.length > 0 && (
             <button onClick={handleExportCSV} style={styles.exportBtn}>
               ↓ Exportar CSV
@@ -1037,30 +1094,32 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                     ? (tx.fecha ? tx.fecha.slice(8) + '/' + tx.fecha.slice(5, 7) : '')
                     : tx.fecha}
                 </td>
-                {editingTx === tx.id ? renderEditCells() : (
+                {editingTx === tx.id ? (esVistaIngresos ? renderEditCellsIngreso() : renderEditCells()) : (
                   <>
                     <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
                       <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
                         {tx.nombre || tx.detalle}
                       </div>
-                      {tx.tag && !isMobile && (
+                      {tx.tag && !isMobile && !esVistaIngresos && (
                         <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
                           👧 {tx.tag}
                         </span>
                       )}
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                      <span style={{
-                        backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'),
-                        color: '#3a3a3c',
-                        padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500'
-                      }}>
-                        {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
-                      </span>
+                      {esVistaIngresos ? (
+                        <span style={{ backgroundColor: '#A8D8B9', color: '#2e7d32', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                          {tx.tag || '—'}
+                        </span>
+                      ) : (
+                        <span style={{ backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                          {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
+                        </span>
+                      )}
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       <span style={{fontSize:'12px', color:'#888'}}>
-                        {tx.subcategories?.nombre || '—'}
+                        {esVistaIngresos ? '' : (tx.subcategories?.nombre || '—')}
                       </span>
                     </td>
                   </>
