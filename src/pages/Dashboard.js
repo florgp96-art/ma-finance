@@ -33,7 +33,7 @@ const CONTEXTO_LABELS = {
 }
 
 
-const SERVICIOS_DEFAULT = [{ nombre: 'Luz', link: '' }]
+const SERVICIOS_DEFAULT = [{ id: 'luz_default', nombre: 'Luz', link: '' }]
 
 const parseFechaArgentina = (fecha) => {
   if (!fecha) return null
@@ -190,7 +190,7 @@ export default function Dashboard() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         const saved = localStorage.getItem(`servicios_${user.id}`)
-        setServicios(saved ? JSON.parse(saved) : SERVICIOS_DEFAULT)
+        setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
 
         // Mini chart: últimos 6 meses
         const now = new Date()
@@ -1742,7 +1742,7 @@ export default function Dashboard() {
                           </div>
                           <button onClick={async () => {
                             if (!newServicio.nombre.trim()) return
-                            const updated = [...servicios, { nombre: newServicio.nombre.trim(), link: newServicio.link.trim(), vencimiento: newServicio.vencimiento ? parseInt(newServicio.vencimiento) : null }]
+                            const updated = [...servicios, { id: `svc_${Date.now()}`, nombre: newServicio.nombre.trim(), link: newServicio.link.trim(), dia: newServicio.vencimiento ? parseInt(newServicio.vencimiento) : null }]
                             setServicios(updated)
                             const { data: { user } } = await supabase.auth.getUser()
                             localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
