@@ -1372,7 +1372,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
                 {['blue','mep','oficial','tarjeta'].map(t => (
                   <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#7c5cbf' : cardBorder}`, backgroundColor: tcTipo === t ? '#7c5cbf' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
+                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#5C4F5C' : cardBorder}`, backgroundColor: tcTipo === t ? '#5C4F5C' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
                     {tiposLabel[t]}
                   </button>
                 ))}
