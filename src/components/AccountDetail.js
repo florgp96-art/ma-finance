@@ -822,7 +822,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                           <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} stroke="none" />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                      <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
@@ -843,7 +843,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   <BarChart data={bubbleData} margin={{ top: 4, right: 8, left: 0, bottom: 48 }}>
                     <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 11, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} angle={-35} textAnchor="end" interval={0} />
                     <YAxis tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} width={isMobile ? 60 : 72} />
-                    <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                    <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                       {bubbleData.map((entry, idx) => (
                         <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} />
