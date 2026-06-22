@@ -1387,7 +1387,7 @@ export default function Dashboard() {
           )
 
           const vencCard = (
-            <div style={{ width: '160px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', maxHeight: vencExpanded ? 'none' : `${dolarCardH || 0}px` }}>
+            <div style={{ width: '160px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${dolarCardH || 0}px` }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
                 <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
