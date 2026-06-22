@@ -36,7 +36,7 @@ export const mesLabel = (yearMonth) => {
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
 
-const getLast6Months = () => {
+export const getLast6Months = () => {
   const months = []
   const now = new Date()
   for (let i = 5; i >= 0; i--) {
@@ -243,7 +243,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -262,6 +262,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
+  useEffect(() => { onTransactionsLoaded?.(transactions) }, [transactions, onTransactionsLoaded])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [stmtCollapsed, setStmtCollapsed] = useState(false)
   const mesDropdownRef = useRef(null)
@@ -983,8 +984,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </div>
       </div>
 
-      {/* Evolución por categoría */}
-      {transactions.length > 0 && (() => {
+      {/* Evolución por categoría — solo mobile; en desktop se muestra en el sidebar derecho */}
+      {isMobile && transactions.length > 0 && (() => {
         const categoriasConTx = [...new Set(
           transactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
             .map(t => t.categories.nombre)

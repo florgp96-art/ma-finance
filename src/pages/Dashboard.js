@@ -2,10 +2,10 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
-import AccountDetail from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMonto, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import * as XLSX from 'xlsx'
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
@@ -161,6 +161,8 @@ export default function Dashboard() {
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
+  const [accountTransactions, setAccountTransactions] = useState([])
+  const [sidebarCatEvol, setSidebarCatEvol] = useState('')
   const dolarCardRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
@@ -178,6 +180,8 @@ export default function Dashboard() {
     const stored = localStorage.getItem(`venc_pagados_${mes}`)
     setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
   }, [])
+
+  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
 
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
@@ -1819,7 +1823,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -1854,6 +1858,52 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               </div>
             )}
+            {selectedAccount && selectedAccount !== 'all' && accountTransactions.length > 0 && (() => {
+              const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
+              const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
+              const categoriasConTx = [...new Set(
+                accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
+                  .map(t => t.categories.nombre)
+              )].sort()
+              const evolData = getLast6Months().map(m => {
+                const tc = getTCEvol(m)
+                const total = accountTransactions
+                  .filter(t => t.fecha?.startsWith(m) && t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol)
+                  .reduce((s, t) => {
+                    const monto = Number(t.monto)
+                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'ARS' ? monto : 0)
+                  }, 0)
+                return { mes: mesLabel(m), total }
+              })
+              const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
+              const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
+              const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
+              return (
+                <div style={styles.savingsPanel}>
+                  <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
+                  <select
+                    style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '14px', cursor: 'pointer', width: '100%' }}
+                    value={sidebarCatEvol}
+                    onChange={e => setSidebarCatEvol(e.target.value)}
+                  >
+                    <option value="">— Elegir categoría —</option>
+                    {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  {sidebarCatEvol ? (
+                    <ResponsiveContainer width="100%" height={170}>
+                      <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${formatMonto(v)}`} width={65} />
+                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, sidebarCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
+                        <Bar dataKey="total" fill="#5C4F5C" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
+                  )}
+                </div>
+              )
+            })()}
             <div style={styles.savingsPanel}>
             <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
 
