@@ -1,8 +1,10 @@
-.tabs-scroll {
+.tabs-scroll,
+.sidebar-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.tabs-scroll::-webkit-scrollbar {
+.tabs-scroll::-webkit-scrollbar,
+.sidebar-scroll::-webkit-scrollbar {
   display: none;
 }
 

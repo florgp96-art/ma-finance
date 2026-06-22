@@ -1197,7 +1197,7 @@ export default function Dashboard() {
           {isMobile && sidebarOpen && (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
           )}
-          <div style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 16px 16px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '260px' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 16px 16px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '260px' } : {}) }}>
             {isMobile && (
               <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
                 ✕
