@@ -234,6 +234,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [selectedMeses, setSelectedMeses] = useState([])
   const [selectedCatEvol, setSelectedCatEvol] = useState('')
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
+  const [stmtCollapsed, setStmtCollapsed] = useState(false)
   const mesDropdownRef = useRef(null)
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
@@ -583,29 +584,46 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     <div style={styles.loading}>Cargando datos...</div>
   )
 
-  // Contar transacciones por período de cada extracto
-  const stmtsConTx = statements.map(s => {
-    const mes = s.fecha_hasta?.slice(0, 7) || ''
-    const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
-    return { ...s, txCount: count }
-  })
+  // Contar transacciones por período de cada extracto, ordenados por mes descendente
+  const stmtsConTx = [...statements]
+    .sort((a, b) => {
+      const pa = a.periodo || a.fecha_hasta?.slice(0, 7) || ''
+      const pb = b.periodo || b.fecha_hasta?.slice(0, 7) || ''
+      return pb.localeCompare(pa)
+    })
+    .map(s => {
+      const mes = s.fecha_hasta?.slice(0, 7) || ''
+      const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
+      return { ...s, txCount: count }
+    })
 
   return (
     <div>
       {/* Historial de extractos */}
       {!allAccounts && stmtsConTx.length > 0 && (
         <div style={styles.stmtHistory}>
-          <h3 style={styles.stmtHistoryTitle}>Extractos cargados</h3>
-          <div style={styles.stmtChips}>
-            {stmtsConTx.map(s => (
-              <div key={s.id} style={styles.stmtChip}>
-                <span style={styles.stmtChipPeriod}>{s.periodo || mesLabel(s.fecha_hasta?.slice(0,7) || '')}</span>
-                <span style={styles.stmtChipDetail}>
-                  {s.txCount} tx · {s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit', year:'2-digit'}) : '—'}
-                </span>
-              </div>
-            ))}
+          <div
+            onClick={() => setStmtCollapsed(c => !c)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
+            <h3 style={{ ...styles.stmtHistoryTitle, margin: 0 }}>
+              Extractos cargados ({stmtsConTx.length})
+            </h3>
+            <span style={{ fontSize: '11px', color: styles.stmtHistoryTitle.color, opacity: 0.7 }}>
+              {stmtCollapsed ? '▾' : '▴'}
+            </span>
           </div>
+          {!stmtCollapsed && (
+            <div style={{ ...styles.stmtChips, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible' }}>
+              {stmtsConTx.map(s => (
+                <div key={s.id} style={{ ...styles.stmtChip, flexShrink: isMobile ? 0 : undefined }}>
+                  <span style={styles.stmtChipPeriod}>{s.periodo || mesLabel(s.fecha_hasta?.slice(0,7) || '')}</span>
+                  <span style={styles.stmtChipDetail}>
+                    {s.txCount} tx · {s.created_at ? new Date(s.created_at).toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit', year:'2-digit'}) : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
