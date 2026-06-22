@@ -160,6 +160,7 @@ export default function Dashboard() {
   const [userAliases, setUserAliases] = useState([])
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
   const [vencPagados, setVencPagados] = useState(new Set())
+  const [vencExpanded, setVencExpanded] = useState(false)
 
   const toggleVencPagado = (id) => {
     const next = new Set(vencPagados)
@@ -216,7 +217,7 @@ export default function Dashboard() {
         setMiniChartData(totales)
       }
     })
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -1341,7 +1342,12 @@ export default function Dashboard() {
           const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
           const cardBg = darkMode ? '#1C1A1C' : '#F7F5F8'
           const cardBorder = darkMode ? '#3A333A' : '#E2DDE0'
-          const vencList = [...servicios].sort((a, b) => (a.dia || 0) - (b.dia || 0))
+          const vencList = [...servicios].sort((a, b) => {
+            const aPagado = vencPagados.has(a.id) ? 1 : 0
+            const bPagado = vencPagados.has(b.id) ? 1 : 0
+            if (aPagado !== bPagado) return aPagado - bPagado
+            return (a.dia || 0) - (b.dia || 0)
+          })
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
           const usdCard = (
@@ -1369,29 +1375,39 @@ export default function Dashboard() {
           )
 
           const vencCard = (
-            <div style={{ width: '160px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
-              {vencList.length === 0 ? (
-                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
-              ) : (
-                <>
-                  <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
-                    {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                  </p>
-                  {vencList.map(v => {
-                    const pagado = vencPagados.has(v.id)
-                    return (
-                      <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
-                          <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
+            <div style={{ width: '160px', display: 'flex', flexDirection: 'column' }}>
+              {/* card principal — se estira igual que la de dólar, overflow hidden cuando no expandida */}
+              <div style={{ flex: 1, borderRadius: vencExpanded ? '14px' : '14px 14px 0 0', border: `1px solid ${cardBorder}`, borderBottom: vencExpanded ? `1px solid ${cardBorder}` : 'none', backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' }}>
+                <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+                {vencList.length === 0 ? (
+                  <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                      {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                    </p>
+                    {vencList.map(v => {
+                      const pagado = vencPagados.has(v.id)
+                      return (
+                        <div key={v.id} onClick={() => toggleVencPagado(v.id)}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
+                            <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
+                          </div>
+                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
                         </div>
-                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
-                      </div>
-                    )
-                  })}
-                </>
+                      )
+                    })}
+                  </>
+                )}
+              </div>
+              {/* solapa ver más / ver menos */}
+              {vencList.length > 0 && (
+                <button onClick={() => setVencExpanded(x => !x)}
+                  style={{ border: `1px solid ${cardBorder}`, borderTop: 'none', borderRadius: '0 0 14px 14px', backgroundColor: darkMode ? '#161416' : '#EDEAED', padding: '4px 0', fontSize: '10px', color: '#8e8e93', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: 600, letterSpacing: '0.04em', textAlign: 'center' }}>
+                  {vencExpanded ? '▴ ver menos' : '▾ ver más'}
+                </button>
               )}
             </div>
           )
@@ -1402,7 +1418,7 @@ export default function Dashboard() {
               {isMobile ? (
                 <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
               ) : (
-                <div style={{ display: 'flex', gap: '10px', zIndex: 1 }}>
+                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignItems: 'stretch' }}>
                   {usdCard}
                   {vencCard}
                 </div>
@@ -1459,7 +1475,12 @@ export default function Dashboard() {
               const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
               const cardBg = darkMode ? '#252025' : '#F0ECF5'
               const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
-              const vencMes = [...servicios].sort((a, b) => (a.dia || 0) - (b.dia || 0))
+              const vencMes = [...servicios].sort((a, b) => {
+                const aPagado = vencPagados.has(a.id) ? 1 : 0
+                const bPagado = vencPagados.has(b.id) ? 1 : 0
+                if (aPagado !== bPagado) return aPagado - bPagado
+                return (a.dia || 0) - (b.dia || 0)
+              })
               const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
               return (
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
