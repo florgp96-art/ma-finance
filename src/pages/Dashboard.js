@@ -1472,7 +1472,7 @@ export default function Dashboard() {
           )
         })()}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', padding: isMobile ? '0 12px 48px 12px' : '0 32px 48px 32px', gap: isMobile ? '12px' : '24px' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : '0 32px 48px 32px', gap: isMobile ? '12px' : '24px' }}>
 
           {/* Sidebar izquierdo */}
           {isMobile && sidebarOpen && (
