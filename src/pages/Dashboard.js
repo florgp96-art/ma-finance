@@ -1475,53 +1475,26 @@ export default function Dashboard() {
           {isMobile && sidebarOpen && (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
           )}
-          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 16px 16px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '260px' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', borderRadius: '0 20px 20px 0', overflowY: 'auto', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
             {isMobile && (
               <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
                 ✕
               </button>
             )}
             {isMobile && (() => {
+              const blueRate = dolarRates['blue']
               const mesActual = new Date().toISOString().slice(0, 7)
-              const rateVivo = dolarRates[tcTipo]
-              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
-              const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
+              const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === 'blue')
+              const rateActivo = blueRate || (rateDB ? rateDB.valor : null)
               const cardBg = darkMode ? '#252025' : '#F0ECF5'
               const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
-              const vencMes = [...servicios].sort((a, b) => {
-                const aPagado = vencPagados.has(a.id) ? 1 : 0
-                const bPagado = vencPagados.has(b.id) ? 1 : 0
-                if (aPagado !== bPagado) return aPagado - bPagado
-                return (a.dia || 0) - (b.dia || 0)
-              })
-              const pendientes = vencMes.filter(v => !vencPagados.has(v.id))
               return (
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <div style={{ flex: 1, borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <p style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar {tcTipo}</p>
-                    {rateActivo
-                      ? <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'center' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                      : <input type="number" style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', border: `1px solid ${cardBorder}`, fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
-                    }
-                  </div>
-                  <div style={{ flex: 1, borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <p style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Vencimientos</p>
-                    {vencMes.length === 0
-                      ? <p style={{ fontSize: '9px', color: '#8e8e93', textAlign: 'center', margin: '4px 0', fontStyle: 'italic' }}>Sin venc.</p>
-                      : <p style={{ fontSize: '10px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0 }}>{pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}</p>
-                    }
-                    {vencMes.slice(0, 3).map(v => {
-                      const pagado = vencPagados.has(v.id)
-                      return (
-                        <div key={v.id} onClick={() => toggleVencPagado(v.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', opacity: pagado ? 0.5 : 1 }}>
-                          <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', width: '11px', height: '11px', flexShrink: 0 }} />
-                          <p style={{ fontSize: '9px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                            {v.nombre || v.accounts?.nombre || v.periodo}
-                          </p>
-                        </div>
-                      )
-                    })}
-                  </div>
+                <div style={{ borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 16px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <p style={{ fontSize: '11px', color: '#8e8e93', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar Blue</p>
+                  {rateActivo
+                    ? <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
+                    : <input type="number" style={{ width: '90px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'right' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
+                  }
                 </div>
               )
             })()}
@@ -1538,7 +1511,7 @@ export default function Dashboard() {
               const renderAccount = (acc) => (
                 <div key={acc.id}
                   style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
-                  onClick={() => setSelectedAccount(selectedAccount?.id === acc.id ? null : acc)}
+                  onClick={() => { setSelectedAccount(selectedAccount?.id === acc.id ? null : acc); setSidebarOpen(false) }}
                   onMouseEnter={() => setHoveredAccount(acc.id)}
                   onMouseLeave={() => setHoveredAccount(null)}
                 >
@@ -1579,7 +1552,7 @@ export default function Dashboard() {
                   {/* RESUMEN siempre visible */}
                   {accounts.length > 0 && (
                     <div style={{ ...styles.accountCard, ...(selectedAccount === 'all' ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px' }}
-                      onClick={() => setSelectedAccount(selectedAccount === 'all' ? null : 'all')}>
+                      onClick={() => { setSelectedAccount(selectedAccount === 'all' ? null : 'all'); setSidebarOpen(false) }}>
                       <p style={{ ...styles.accountType, marginBottom: '4px' }}>📊 RESUMEN</p>
                       <p style={styles.accountName}>Resumen General</p>
                     </div>
