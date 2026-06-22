@@ -1681,7 +1681,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -1858,7 +1858,7 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               </div>
             )}
-            {selectedAccount && selectedAccount !== 'all' && accountTransactions.length > 0 && (() => {
+            {(() => {
               const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
               const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
               const categoriasConTx = [...new Set(
