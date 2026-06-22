@@ -397,8 +397,7 @@ export default function Dashboard() {
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
     if (data && data.length > 0) {
-      const ef = data.find(a => a.nombre === 'Efectivo')
-      if (ef) setSelectedAccount(prev => prev === null ? ef : prev)
+      setSelectedAccount(prev => prev === null ? 'all' : prev)
     }
   }
 
@@ -1343,7 +1342,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <div style={styles.container}>
+      <div style={{...styles.container, overflowX: 'hidden', width: '100%', boxSizing: 'border-box'}}>
 
         {/* ===== HEADER: cards izq | logo centro | logout+darkmode der ===== */}
         {(() => {
