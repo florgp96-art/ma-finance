@@ -7,6 +7,10 @@
 .sidebar-scroll::-webkit-scrollbar {
   display: none;
 }
+/* En mobile el sidebar es flex column con overflowY auto — los hijos no deben shrinkear para que el scroll funcione */
+.sidebar-scroll > * {
+  flex-shrink: 0;
+}
 
 body {
   margin: 0;

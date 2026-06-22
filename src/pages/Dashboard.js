@@ -1340,7 +1340,7 @@ export default function Dashboard() {
   }
 
   const styles = getStyles(darkMode)
-  const isMobile = windowWidth < 768
+  const isMobile = windowWidth < 640
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -1833,8 +1833,8 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — solo desktop */}
-          {!isMobile && (
+          {/* Widgets — solo desktop ancho (>= 1024px) */}
+          {windowWidth >= 1024 && (
           <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
             {miniChartData.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
