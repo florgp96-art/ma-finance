@@ -1868,10 +1868,19 @@ export default function Dashboard() {
                 accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
                   .map(t => t.categories.nombre)
               )].sort()
+              const hijosConTx = [...new Set(
+                accountTransactions.filter(t => t.tipo === 'gasto' && t.hijo)
+                  .map(t => t.hijo)
+              )].sort()
+              const esHijo = sidebarCatEvol.startsWith('hijo:')
+              const filtroValor = esHijo ? sidebarCatEvol.slice(5) : sidebarCatEvol
               const evolData = getLast6Months().map(m => {
                 const tc = getTCEvol(m)
                 const total = accountTransactions
-                  .filter(t => t.fecha?.startsWith(m) && t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol)
+                  .filter(t => {
+                    if (!t.fecha?.startsWith(m) || t.tipo !== 'gasto') return false
+                    return esHijo ? t.hijo === filtroValor : t.categories?.nombre === sidebarCatEvol
+                  })
                   .reduce((s, t) => {
                     const monto = Number(t.monto)
                     return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'ARS' ? monto : 0)
@@ -1889,20 +1898,27 @@ export default function Dashboard() {
                     value={sidebarCatEvol}
                     onChange={e => setSidebarCatEvol(e.target.value)}
                   >
-                    <option value="">— Elegir categoría —</option>
-                    {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
+                    <option value="">— Elegir —</option>
+                    <optgroup label="Categorías">
+                      {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
+                    </optgroup>
+                    {hijosConTx.length > 0 && (
+                      <optgroup label="Hijos">
+                        {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>👧 {h}</option>)}
+                      </optgroup>
+                    )}
                   </select>
                   {sidebarCatEvol ? (
                     <ResponsiveContainer width="100%" height={170}>
                       <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                         <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
-                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, sidebarCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
+                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, esHijo ? `👧 ${filtroValor}` : sidebarCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
                         <Bar dataKey="total" fill="#5C4F5C" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
-                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
+                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría o hijo para ver su evolución.</p>
                   )}
                 </div>
               )
