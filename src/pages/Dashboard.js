@@ -161,6 +161,8 @@ export default function Dashboard() {
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
+  const dolarCardRef = useRef(null)
+  const [dolarCardH, setDolarCardH] = useState(null)
 
   const toggleVencPagado = (id) => {
     const next = new Set(vencPagados)
@@ -221,6 +223,10 @@ export default function Dashboard() {
       }
     })
   }, [navigate])
+
+  useEffect(() => {
+    if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight)
+  })
 
   useEffect(() => {
     if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
@@ -1354,7 +1360,7 @@ export default function Dashboard() {
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
           const usdCard = (
-            <div style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                 {['blue','mep','oficial','tarjeta'].map(t => (
@@ -1379,8 +1385,8 @@ export default function Dashboard() {
 
           const vencCard = (
             <div style={{ width: '160px', display: 'flex', flexDirection: 'column' }}>
-              {/* card principal — se estira igual que la de dólar, overflow hidden cuando no expandida */}
-              <div style={{ flex: 1, borderRadius: vencExpanded ? '14px' : '14px 14px 0 0', border: `1px solid ${cardBorder}`, borderBottom: vencExpanded ? `1px solid ${cardBorder}` : 'none', backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' }}>
+              {/* card principal — maxHeight = altura real de la dólar card */}
+              <div style={{ borderRadius: '14px 14px 0 0', border: `1px solid ${cardBorder}`, borderBottom: 'none', backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', maxHeight: vencExpanded ? 'none' : (dolarCardH ? `${dolarCardH}px` : '200px') }}>
                 <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
                 {vencList.length === 0 ? (
                   <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
@@ -1421,7 +1427,7 @@ export default function Dashboard() {
               {isMobile ? (
                 <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
               ) : (
-                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignItems: 'stretch' }}>
+                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
                   {vencCard}
                 </div>
