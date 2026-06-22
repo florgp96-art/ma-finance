@@ -618,7 +618,10 @@ export default function Dashboard() {
 
       const parseCuota = (texto) => {
         const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
-        return m ? { cuota_numero: parseInt(m[1]), cuotas_total: parseInt(m[2]) } : { cuota_numero: 1, cuotas_total: 1 }
+        if (!m) return { cuota_numero: 1, cuotas_total: 1 }
+        const num = parseInt(m[1]), total = parseInt(m[2])
+        if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
+        return { cuota_numero: 1, cuotas_total: 1 }
       }
       const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
@@ -664,7 +667,10 @@ export default function Dashboard() {
 
       const parseCuotaFinal = (texto) => {
         const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
-        return m ? { cuota_numero: parseInt(m[1]), cuotas_total: parseInt(m[2]) } : { cuota_numero: 1, cuotas_total: 1 }
+        if (!m) return { cuota_numero: 1, cuotas_total: 1 }
+        const num = parseInt(m[1]), total = parseInt(m[2])
+        if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
+        return { cuota_numero: 1, cuotas_total: 1 }
       }
       const toInsert = toImport.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
