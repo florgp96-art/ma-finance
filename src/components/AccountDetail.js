@@ -971,9 +971,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   <td style={styles.td}>
                     <div style={{display:'flex', gap:'4px'}}>
                       <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
-                      {tx.es_manual && (
-                        <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
-                      )}
+                      <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
                     </div>
                   </td>
                 )}
