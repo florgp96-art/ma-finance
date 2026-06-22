@@ -837,15 +837,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </div>
               )}
 
-              {/* Barras horizontales */}
+              {/* Barras verticales */}
               {chartType === 'bars' && (
-                <ResponsiveContainer width="100%" height={Math.max(200, bubbleData.length * 38)}>
-                  <BarChart data={[...bubbleData].reverse()} layout="vertical" margin={{ top: 0, right: 52, left: 0, bottom: 0 }}>
-                    <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                    <YAxis type="category" dataKey="name" width={isMobile ? 82 : 112} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={bubbleData} margin={{ top: 4, right: 8, left: 0, bottom: 48 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 11, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} angle={-35} textAnchor="end" interval={0} />
+                    <YAxis tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} width={isMobile ? 60 : 72} />
                     <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                      {[...bubbleData].reverse().map((entry, idx) => (
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {bubbleData.map((entry, idx) => (
                         <Cell key={idx} fill={CATEGORY_CONFIG[entry.name]?.color || '#E0E0E0'} />
                       ))}
                     </Bar>
