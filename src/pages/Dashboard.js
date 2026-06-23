@@ -2,8 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, CATEGORY_CONFIG } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
+import ConfigPanel from '../components/ConfigPanel'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
@@ -113,12 +114,6 @@ export default function Dashboard() {
   })
 
   // Categorías
-  const [showCategorias, setShowCategorias] = useState(false)
-  const [newCatNombre, setNewCatNombre] = useState('')
-  const [editingCat, setEditingCat] = useState(null)
-  const [editingCatNombre, setEditingCatNombre] = useState('')
-  const [newSubcatCatId, setNewSubcatCatId] = useState(null)
-  const [newSubcatNombre, setNewSubcatNombre] = useState('')
 
   // Tipo de cambio
   const [tipoCambio, setTipoCambio] = useState(() => localStorage.getItem('tc_ma') || '')
@@ -159,28 +154,15 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Hijos
-  const [showHijos, setShowHijos] = useState(false)
   const [childrenDB, setChildrenDB] = useState([])
-  const [newHijoNombre, setNewHijoNombre] = useState('')
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
-  // Cambiar contraseña
-  const [showCambiarClave, setShowCambiarClave] = useState(false)
-  const [nuevaClave, setNuevaClave] = useState('')
-  const [confirmarClave, setConfirmarClave] = useState('')
-  const [claveMsg, setClaveMsg] = useState(null)
-
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
-  const [showIconos, setShowIconos] = useState(false)
-  const [iconEditingCat, setIconEditingCat] = useState(null)
-  const [iconInput, setIconInput] = useState('')
 
   // Aliases
-  const [showAliases, setShowAliases] = useState(false)
   const [userAliases, setUserAliases] = useState([])
-  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
   const [accountTransactions, setAccountTransactions] = useState([])
@@ -188,6 +170,7 @@ export default function Dashboard() {
   const [sidebarCatEvolOpen, setSidebarCatEvolOpen] = useState(false)
   const sidebarCatEvolRef = useRef(null)
   const dolarCardRef = useRef(null)
+  const configPanelRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
   const toggleVencPagado = (id) => {
@@ -349,93 +332,8 @@ export default function Dashboard() {
         setCustomIcons(prev => icono ? { ...prev, [categoria]: icono } : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== categoria)))
       }
     }
-    setIconEditingCat(null)
-    setIconInput('')
   }
 
-  const handleAddAlias = async (e) => {
-    e.preventDefault()
-    if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('user_aliases').insert({
-      user_id: user.id,
-      alias: newAlias.alias.trim().toUpperCase(),
-      tipo: newAlias.tipo,
-      valor: newAlias.valor.trim(),
-      descripcion: newAlias.descripcion.trim() || null
-    })
-    setNewAlias({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
-    fetchUserAliases()
-  }
-
-  const handleDeleteAlias = async (id) => {
-    if (!window.confirm('¿Eliminar este alias?')) return
-    await supabase.from('user_aliases').delete().eq('id', id)
-    fetchUserAliases()
-  }
-
-  const handleAddCategoria = async (e) => {
-    e.preventDefault()
-    if (!newCatNombre.trim()) return
-    await supabase.from('categories').insert({ nombre: newCatNombre.trim(), orden: categoriasDB.length + 1 })
-    setNewCatNombre('')
-    fetchCategorias()
-  }
-
-  const handleSaveEditCat = async (cat) => {
-    if (!editingCatNombre.trim()) return
-    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id)
-    setEditingCat(null)
-    fetchCategorias()
-  }
-
-  const handleAddSubcat = async (e) => {
-    e.preventDefault()
-    if (!newSubcatNombre.trim() || !newSubcatCatId) return
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId, user_id: user.id })
-    setNewSubcatNombre('')
-    setNewSubcatCatId(null)
-    fetchCategorias()
-  }
-
-  const handleDeleteCategoria = async (cat) => {
-    if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id)
-    if (count > 0) {
-      showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
-      return
-    }
-    await supabase.from('subcategories').delete().eq('category_id', cat.id)
-    await supabase.from('categories').delete().eq('id', cat.id)
-    fetchCategorias()
-  }
-
-  const handleDeleteSubcat = async (subcat) => {
-    if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id)
-    if (count > 0) {
-      showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
-      return
-    }
-    await supabase.from('subcategories').delete().eq('id', subcat.id)
-    fetchCategorias()
-  }
-
-  const handleAddHijo = async (e) => {
-    e.preventDefault()
-    if (!newHijoNombre.trim()) return
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('children').insert({ user_id: user.id, nombre: newHijoNombre.trim() })
-    setNewHijoNombre('')
-    fetchChildren()
-  }
-
-  const handleDeleteHijo = async (nombre) => {
-    if (!window.confirm(`¿Eliminar a "${nombre}"?`)) return
-    await supabase.from('children').delete().eq('nombre', nombre)
-    fetchChildren()
-  }
 
   const handleGuardarEfectivo = async (e) => {
     e.preventDefault()
@@ -943,17 +841,6 @@ export default function Dashboard() {
     }
   }
 
-  const handleCambiarClave = async (e) => {
-    e.preventDefault()
-    setClaveMsg(null)
-    if (nuevaClave.length < 6) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 6 caracteres.' }); return }
-    if (nuevaClave !== confirmarClave) { setClaveMsg({ tipo: 'error', texto: 'Las contraseñas no coinciden.' }); return }
-    const { error } = await supabase.auth.updateUser({ password: nuevaClave })
-    if (error) { setClaveMsg({ tipo: 'error', texto: error.message }); return }
-    setClaveMsg({ tipo: 'ok', texto: '¡Contraseña actualizada correctamente!' })
-    setNuevaClave('')
-    setConfirmarClave('')
-  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -1659,12 +1546,12 @@ export default function Dashboard() {
                     {configOpen && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '200px' }}>
                         <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>+ CATEGORÍAS</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchCustomIcons(); setShowIconos(true) }}>🎨 ÍCONOS DE CATEGORÍAS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openIconos()}>🎨 ÍCONOS DE CATEGORÍAS</button>
                       </div>
                     )}
                   </div>
@@ -1872,12 +1759,12 @@ export default function Dashboard() {
                   {configOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
                       <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => setShowCategorias(true)}>+ CATEGORÍAS</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchCustomIcons(); setShowIconos(true) }}>🎨 ÍCONOS DE CATEGORÍAS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openIconos()}>🎨 ÍCONOS DE CATEGORÍAS</button>
                     </div>
                   )}
                 </>
@@ -2279,174 +2166,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Modales */}
-      {/* Modal hijos */}
-      {showHijos && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '400px' }}>
-            <h3 style={styles.modalTitle}>👧 Hijos / personas</h3>
-            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
-              {childrenDB.length === 0 ? (
-                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '16px 0' }}>Sin hijos registrados.</p>
-              ) : (
-                childrenDB.map(c => (
-                  <div key={c.nombre} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
-                    <span style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>👧 {c.nombre}</span>
-                    <button style={styles.actionBtn} onClick={() => handleDeleteHijo(c.nombre)}>🗑️</button>
-                  </div>
-                ))
-              )}
-            </div>
-            <form onSubmit={handleAddHijo} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              <input
-                style={{ ...styles.input, flex: 1 }}
-                placeholder="Agregar nombre..."
-                value={newHijoNombre}
-                onChange={e => setNewHijoNombre(e.target.value)}
-              />
-              <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
-            </form>
-            <div style={{ textAlign: 'right' }}>
-              <button style={styles.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: íconos de categorías */}
-      {showIconos && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '480px', width: '92%', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h3 style={styles.modalTitle}>🎨 Íconos de categorías</h3>
-            <p style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '16px', marginTop: '-8px' }}>Tocá una categoría para cambiar su ícono</p>
-            {[...categoriasDB.map(c => c.nombre), ...(childrenDB || []).map(c => c.nombre)].map(nombre => {
-              const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || '👧'
-              const currentIcon = customIcons[nombre] || defaultIcon
-              const isEditing = iconEditingCat === nombre
-              const EMOJI_GRID = ['🏠','🍔','🚗','💊','🎬','📱','👕','📚','💼','💰','🏦','👶','✈️','🎵','🐾','💄','🌿','🍕','☕','🎮','📦','🛒','🎁','🍷','🎨','🧴','💅','🐶','🎯','🏊']
-              return (
-                <div key={nombre} style={{ borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDEC'}`, paddingBottom: isEditing ? '12px' : '0' }}>
-                  <div
-                    onClick={() => { if (!isEditing) { setIconEditingCat(nombre); setIconInput(customIcons[nombre] || '') } }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 4px', cursor: isEditing ? 'default' : 'pointer', borderRadius: '8px' }}
-                  >
-                    <span style={{ fontSize: '22px', width: '28px', textAlign: 'center' }}>{currentIcon}</span>
-                    <span style={{ flex: 1, fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}>{nombre}</span>
-                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: '#8e8e93' }}>custom</span>}
-                    {!isEditing && <span style={{ fontSize: '12px', color: '#8e8e93' }}>✏️</span>}
-                  </div>
-                  {isEditing && (
-                    <div style={{ paddingLeft: '38px' }}>
-                      {!isMobile && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
-                          {EMOJI_GRID.map(e => (
-                            <button key={e} onClick={() => setIconInput(e)} style={{ fontSize: '20px', padding: '4px', borderRadius: '6px', border: iconInput === e ? `2px solid #5C4F5C` : '2px solid transparent', background: 'none', cursor: 'pointer' }}>{e}</button>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <input
-                          value={iconInput}
-                          onChange={e => setIconInput(e.target.value)}
-                          placeholder={isMobile ? 'Escribí o pegá un emoji' : 'O escribí uno personalizado'}
-                          maxLength={4}
-                          style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '20px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
-                        />
-                        <button onClick={() => saveCustomIcon(nombre, iconInput.trim())} style={{ padding: '7px 14px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>
-                          Guardar
-                        </button>
-                        {customIcons[nombre] && (
-                          <button onClick={() => saveCustomIcon(nombre, '')} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid #c0392b`, color: '#c0392b', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
-                            Reset
-                          </button>
-                        )}
-                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, color: '#8e8e93', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ marginTop: '20px', width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: '#5C4F5C', color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal categorías */}
-      {showCategorias && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '520px' }}>
-            <h3 style={styles.modalTitle}>Categorías y subcategorías</h3>
-            <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
-              {categoriasDB.map(cat => (
-                <div key={cat.id} style={{ marginBottom: '16px', borderBottom: '1px solid #EDE8EC', paddingBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    {editingCat === cat.id ? (
-                      <>
-                        <input
-                          style={{ ...styles.input, flex: 1, padding: '6px 10px', fontSize: '13px' }}
-                          value={editingCatNombre}
-                          onChange={e => setEditingCatNombre(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && handleSaveEditCat(cat)}
-                          autoFocus
-                        />
-                        <button style={{ ...styles.saveBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => handleSaveEditCat(cat)}>✓</button>
-                        <button style={{ ...styles.cancelBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => setEditingCat(null)}>✕</button>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontWeight: '500', fontSize: '14px', flex: 1 }}>{cat.nombre}</span>
-                        <button style={styles.actionBtn} onClick={() => { setEditingCat(cat.id); setEditingCatNombre(cat.nombre) }}>✏️</button>
-                        <button style={styles.actionBtn} onClick={() => handleDeleteCategoria(cat)}>🗑️</button>
-                      </>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: '4px' }}>
-                    {subcategoriasDB.filter(s => s.category_id === cat.id).map(s => (
-                      <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
-                        {s.nombre}
-                        <button onClick={() => handleDeleteSubcat(s)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#999', padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
-                      </span>
-                    ))}
-                    {newSubcatCatId === cat.id ? (
-                      <form onSubmit={handleAddSubcat} style={{ display: 'flex', gap: '4px' }}>
-                        <input
-                          style={{ ...styles.input, padding: '3px 8px', fontSize: '12px', width: '120px' }}
-                          placeholder="Nueva subcategoría"
-                          value={newSubcatNombre}
-                          onChange={e => setNewSubcatNombre(e.target.value)}
-                          autoFocus
-                        />
-                        <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '3px 10px', fontSize: '12px' }}>+</button>
-                        <button type="button" style={{ ...styles.cancelBtn, flex: 'none', padding: '3px 8px', fontSize: '12px' }} onClick={() => setNewSubcatCatId(null)}>✕</button>
-                      </form>
-                    ) : (
-                      <button
-                        onClick={() => { setNewSubcatCatId(cat.id); setNewSubcatNombre('') }}
-                        style={{ fontSize: '11px', color: '#5C4F5C', background: 'none', border: '1px dashed #5C4F5C', borderRadius: '6px', padding: '2px 8px', cursor: 'pointer' }}
-                      >+ sub</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <form onSubmit={handleAddCategoria} style={{ display: 'flex', gap: '8px' }}>
-              <input
-                style={{ ...styles.input, flex: 1 }}
-                placeholder="Nueva categoría"
-                value={newCatNombre}
-                onChange={e => setNewCatNombre(e.target.value)}
-              />
-              <button type="submit" style={{ ...styles.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
-            </form>
-            <div style={{ marginTop: '16px', textAlign: 'right' }}>
-              <button style={styles.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null) }}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showAddAccount && (
         <div style={styles.overlay}>
@@ -2876,108 +2595,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showAliases && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '580px' }}>
-            <h3 style={styles.modalTitle}>📋 Reglas de clasificación</h3>
-            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-              Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
-            </p>
-            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
-              {userAliases.length === 0 ? (
-                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas. Agregá la primera abajo.</p>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr>
-                      {['Palabra clave', 'Tipo', 'Valor', ''].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {userAliases.map(a => (
-                      <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
-                        <td style={{ padding: '8px', fontFamily: 'monospace', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
-                        <td style={{ padding: '8px' }}>
-                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: '#5C4F5C', padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
-                        </td>
-                        <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>{a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}</td>
-                        <td style={{ padding: '8px' }}>
-                          <button style={styles.actionBtn} onClick={() => handleDeleteAlias(a.id)}>🗑️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr auto', gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
-              <div>
-                <label style={styles.label}>Palabra clave</label>
-                <input style={styles.input} placeholder="ej. OSDE, DISCO, UBER" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
-              </div>
-              <div>
-                <label style={styles.label}>Tipo</label>
-                <select style={styles.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value})}>
-                  <option value="categoria">Cat.</option>
-                  <option value="hijo">Hijo/a</option>
-                  <option value="cuenta">Cuenta</option>
-                </select>
-              </div>
-              <div>
-                <label style={styles.label}>{newAlias.tipo === 'hijo' ? 'Nombre del hijo/a' : newAlias.tipo === 'cuenta' ? 'Nombre de la cuenta' : 'Categoría asignada'}</label>
-                <input style={styles.input} placeholder={newAlias.tipo === 'hijo' ? 'ej. Amelia' : newAlias.tipo === 'cuenta' ? 'ej. Tarjeta Visa' : 'ej. Salud'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
-              </div>
-              <button type="submit" style={{ ...styles.saveBtn, padding: '11px 18px', marginTop: '20px' }}>+</button>
-            </form>
-            <div style={{ textAlign: 'right' }}>
-              <button style={styles.cancelBtn} onClick={() => setShowAliases(false)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCambiarClave && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '380px' }}>
-            <h3 style={styles.modalTitle}>🔑 Cambiar contraseña</h3>
-            <form onSubmit={handleCambiarClave} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={styles.label}>Nueva contraseña</label>
-                <input
-                  type="password"
-                  style={styles.input}
-                  placeholder="Mínimo 6 caracteres"
-                  value={nuevaClave}
-                  onChange={e => setNuevaClave(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label style={styles.label}>Confirmar contraseña</label>
-                <input
-                  type="password"
-                  style={styles.input}
-                  placeholder="Repetí la contraseña"
-                  value={confirmarClave}
-                  onChange={e => setConfirmarClave(e.target.value)}
-                  required
-                />
-              </div>
-              {claveMsg && (
-                <p style={{ margin: 0, fontSize: '13px', fontWeight: 500, color: claveMsg.tipo === 'ok' ? '#3a7d44' : '#c0392b' }}>
-                  {claveMsg.texto}
-                </p>
-              )}
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                <button type="button" style={styles.cancelBtn} onClick={() => setShowCambiarClave(false)}>Cancelar</button>
-                <button type="submit" style={styles.saveBtn}>Guardar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {showExcel && excelDupReview && (
         <div style={styles.overlay}>
@@ -3304,6 +2921,22 @@ export default function Dashboard() {
           {toast.type === 'error' ? '⚠️ ' : toast.type === 'warning' ? '⚠️ ' : '✅ '}{toast.msg}
         </div>
       )}
+
+      <ConfigPanel
+        ref={configPanelRef}
+        darkMode={darkMode}
+        isMobile={isMobile}
+        categoriasDB={categoriasDB}
+        subcategoriasDB={subcategoriasDB}
+        childrenDB={childrenDB}
+        customIcons={customIcons}
+        userAliases={userAliases}
+        fetchCategorias={fetchCategorias}
+        fetchChildren={fetchChildren}
+        fetchUserAliases={fetchUserAliases}
+        saveCustomIcon={saveCustomIcon}
+        showToast={showToast}
+      />
     </>
   )
 }

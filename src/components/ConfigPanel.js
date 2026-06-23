@@ -1,0 +1,452 @@
+import React, { useState, forwardRef, useImperativeHandle } from 'react'
+import { supabase } from '../lib/supabase'
+import { CATEGORY_CONFIG } from './AccountDetail'
+
+const ConfigPanel = forwardRef(function ConfigPanel({
+  darkMode,
+  isMobile,
+  categoriasDB,
+  subcategoriasDB,
+  childrenDB,
+  customIcons,
+  userAliases,
+  fetchCategorias,
+  fetchChildren,
+  fetchUserAliases,
+  saveCustomIcon,
+  showToast,
+}, ref) {
+  // Modal visibility
+  const [showHijos, setShowHijos] = useState(false)
+  const [showCategorias, setShowCategorias] = useState(false)
+  const [showIconos, setShowIconos] = useState(false)
+  const [showAliases, setShowAliases] = useState(false)
+  const [showCambiarClave, setShowCambiarClave] = useState(false)
+
+  // Hijos form
+  const [newHijoNombre, setNewHijoNombre] = useState('')
+
+  // Categorías form
+  const [newCatNombre, setNewCatNombre] = useState('')
+  const [editingCat, setEditingCat] = useState(null)
+  const [editingCatNombre, setEditingCatNombre] = useState('')
+  const [newSubcatCatId, setNewSubcatCatId] = useState(null)
+  const [newSubcatNombre, setNewSubcatNombre] = useState('')
+
+  // Cambiar contraseña form
+  const [nuevaClave, setNuevaClave] = useState('')
+  const [confirmarClave, setConfirmarClave] = useState('')
+  const [claveMsg, setClaveMsg] = useState(null)
+
+  // Íconos
+  const [iconEditingCat, setIconEditingCat] = useState(null)
+  const [iconInput, setIconInput] = useState('')
+
+  // Aliases form
+  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+
+  // Expose imperative methods
+  useImperativeHandle(ref, () => ({
+    openHijos: () => { fetchChildren(); setShowHijos(true) },
+    openCategorias: () => setShowCategorias(true),
+    openAliases: () => { fetchUserAliases(); setShowAliases(true) },
+    openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
+    openIconos: () => setShowIconos(true),
+  }))
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+
+  const handleAddHijo = async (e) => {
+    e.preventDefault()
+    if (!newHijoNombre.trim()) return
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('children').insert({ user_id: user.id, nombre: newHijoNombre.trim() })
+    setNewHijoNombre('')
+    fetchChildren()
+  }
+
+  const handleDeleteHijo = async (nombre) => {
+    if (!window.confirm(`¿Eliminar a "${nombre}"?`)) return
+    await supabase.from('children').delete().eq('nombre', nombre)
+    fetchChildren()
+  }
+
+  const handleAddCategoria = async (e) => {
+    e.preventDefault()
+    if (!newCatNombre.trim()) return
+    await supabase.from('categories').insert({ nombre: newCatNombre.trim(), orden: (categoriasDB?.length || 0) + 1 })
+    setNewCatNombre('')
+    fetchCategorias()
+  }
+
+  const handleSaveEditCat = async (cat) => {
+    if (!editingCatNombre.trim()) return
+    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id)
+    setEditingCat(null)
+    fetchCategorias()
+  }
+
+  const handleAddSubcat = async (e) => {
+    e.preventDefault()
+    if (!newSubcatNombre.trim() || !newSubcatCatId) return
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId, user_id: user.id })
+    setNewSubcatNombre('')
+    setNewSubcatCatId(null)
+    fetchCategorias()
+  }
+
+  const handleDeleteCategoria = async (cat) => {
+    if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id)
+    if (count > 0) {
+      showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
+      return
+    }
+    await supabase.from('subcategories').delete().eq('category_id', cat.id)
+    await supabase.from('categories').delete().eq('id', cat.id)
+    fetchCategorias()
+  }
+
+  const handleDeleteSubcat = async (subcat) => {
+    if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id)
+    if (count > 0) {
+      showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
+      return
+    }
+    await supabase.from('subcategories').delete().eq('id', subcat.id)
+    fetchCategorias()
+  }
+
+  const handleCambiarClave = async (e) => {
+    e.preventDefault()
+    setClaveMsg(null)
+    if (nuevaClave.length < 6) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 6 caracteres.' }); return }
+    if (nuevaClave !== confirmarClave) { setClaveMsg({ tipo: 'error', texto: 'Las contraseñas no coinciden.' }); return }
+    const { error } = await supabase.auth.updateUser({ password: nuevaClave })
+    if (error) { setClaveMsg({ tipo: 'error', texto: error.message }); return }
+    setClaveMsg({ tipo: 'ok', texto: '¡Contraseña actualizada correctamente!' })
+    setNuevaClave('')
+    setConfirmarClave('')
+  }
+
+  const handleAddAlias = async (e) => {
+    e.preventDefault()
+    if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('user_aliases').insert({
+      user_id: user.id,
+      alias: newAlias.alias.trim().toUpperCase(),
+      tipo: newAlias.tipo,
+      valor: newAlias.valor.trim(),
+      descripcion: newAlias.descripcion.trim() || null
+    })
+    setNewAlias({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+    fetchUserAliases()
+  }
+
+  const handleDeleteAlias = async (id) => {
+    if (!window.confirm('¿Eliminar este alias?')) return
+    await supabase.from('user_aliases').delete().eq('id', id)
+    fetchUserAliases()
+  }
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+
+  const p = darkMode ? '#8C7B8C' : '#5C4F5C'
+  const panel = darkMode ? '#2A272A' : 'white'
+  const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
+  const border = darkMode ? '#3A333A' : '#E2DDE0'
+
+  const s = {
+    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+    modal: { backgroundColor: panel, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto' },
+    modalTitle: { fontSize: '18px', fontWeight: '600', color: txt, margin: '0 0 20px' },
+    input: { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: txt, fontFamily: '"Montserrat", sans-serif' },
+    saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
+    cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
+    actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
+    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: '"Montserrat", sans-serif' },
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <>
+      {/* Modal: Hijos */}
+      {showHijos && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '380px' }}>
+            <h3 style={s.modalTitle}>👧 Mis hijos</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+              {(childrenDB || []).map(h => (
+                <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
+                  <span style={{ fontSize: '14px', color: txt }}>{h.icono || '👧'} {h.nombre}</span>
+                  <button style={s.actionBtn} onClick={() => handleDeleteHijo(h.nombre)}>🗑️</button>
+                </div>
+              ))}
+              {(childrenDB || []).length === 0 && (
+                <p style={{ fontSize: '13px', color: '#aaa', textAlign: 'center', padding: '16px 0' }}>Sin hijos registrados.</p>
+              )}
+            </div>
+            <form onSubmit={handleAddHijo} style={{ display: 'flex', gap: '8px' }}>
+              <input
+                style={{ ...s.input, flex: 1 }}
+                placeholder="Nombre del hijo/a"
+                value={newHijoNombre}
+                onChange={e => setNewHijoNombre(e.target.value)}
+              />
+              <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
+            </form>
+            <div style={{ marginTop: '16px', textAlign: 'right' }}>
+              <button style={s.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Íconos */}
+      {showIconos && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '480px', width: '92%', maxHeight: '80vh', overflowY: 'auto' }}>
+            <h3 style={s.modalTitle}>🎨 Íconos de categorías</h3>
+            <p style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '16px', marginTop: '-8px' }}>Tocá una categoría para cambiar su ícono</p>
+            {[...(categoriasDB || []).map(c => c.nombre), ...(childrenDB || []).map(c => c.nombre)].map(nombre => {
+              const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || '👧'
+              const currentIcon = customIcons[nombre] || defaultIcon
+              const isEditing = iconEditingCat === nombre
+              const EMOJI_GRID = ['🏠','🍔','🚗','💊','🎬','📱','👕','📚','💼','💰','🏦','👶','✈️','🎵','🐾','💄','🌿','🍕','☕','🎮','📦','🛒','🎁','🍷','🎨','🧴','💅','🐶','🎯','🏊']
+              return (
+                <div key={nombre} style={{ borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDEC'}`, paddingBottom: isEditing ? '12px' : '0' }}>
+                  <div
+                    onClick={() => { if (!isEditing) { setIconEditingCat(nombre); setIconInput(customIcons[nombre] || '') } }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 4px', cursor: isEditing ? 'default' : 'pointer', borderRadius: '8px' }}
+                  >
+                    <span style={{ fontSize: '22px', width: '28px', textAlign: 'center' }}>{currentIcon}</span>
+                    <span style={{ flex: 1, fontSize: '14px', color: txt, fontFamily: '"Montserrat", sans-serif' }}>{nombre}</span>
+                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: '#8e8e93' }}>custom</span>}
+                    {!isEditing && <span style={{ fontSize: '12px', color: '#8e8e93' }}>✏️</span>}
+                  </div>
+                  {isEditing && (
+                    <div style={{ paddingLeft: '38px' }}>
+                      {!isMobile && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
+                          {EMOJI_GRID.map(e => (
+                            <button key={e} onClick={() => setIconInput(e)} style={{ fontSize: '20px', padding: '4px', borderRadius: '6px', border: iconInput === e ? `2px solid ${p}` : '2px solid transparent', background: 'none', cursor: 'pointer' }}>{e}</button>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          value={iconInput}
+                          onChange={e => setIconInput(e.target.value)}
+                          placeholder={isMobile ? 'Escribí o pegá un emoji' : 'O escribí uno personalizado'}
+                          maxLength={4}
+                          style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, fontSize: '20px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : 'white', color: txt, fontFamily: '"Montserrat", sans-serif' }}
+                        />
+                        <button onClick={() => { saveCustomIcon(nombre, iconInput.trim()); setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 14px', borderRadius: '8px', backgroundColor: p, color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>
+                          Guardar
+                        </button>
+                        {customIcons[nombre] && (
+                          <button onClick={() => { saveCustomIcon(nombre, ''); setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid #c0392b`, color: '#c0392b', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                            Reset
+                          </button>
+                        )}
+                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, color: '#8e8e93', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ marginTop: '20px', width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: p, color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Categorías */}
+      {showCategorias && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '520px' }}>
+            <h3 style={s.modalTitle}>Categorías y subcategorías</h3>
+            <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
+              {(categoriasDB || []).map(cat => (
+                <div key={cat.id} style={{ marginBottom: '16px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    {editingCat === cat.id ? (
+                      <>
+                        <input
+                          style={{ ...s.input, flex: 1, padding: '6px 10px', fontSize: '13px' }}
+                          value={editingCatNombre}
+                          onChange={e => setEditingCatNombre(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleSaveEditCat(cat)}
+                          autoFocus
+                        />
+                        <button style={{ ...s.saveBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => handleSaveEditCat(cat)}>✓</button>
+                        <button style={{ ...s.cancelBtn, flex: 'none', padding: '6px 12px', fontSize: '12px' }} onClick={() => setEditingCat(null)}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: '500', fontSize: '14px', flex: 1, color: txt }}>{cat.nombre}</span>
+                        <button style={s.actionBtn} onClick={() => { setEditingCat(cat.id); setEditingCatNombre(cat.nombre) }}>✏️</button>
+                        <button style={s.actionBtn} onClick={() => handleDeleteCategoria(cat)}>🗑️</button>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: '4px' }}>
+                    {(subcategoriasDB || []).filter(s2 => s2.category_id === cat.id).map(sub => (
+                      <span key={sub.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
+                        {sub.nombre}
+                        <button onClick={() => handleDeleteSubcat(sub)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#999', padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
+                      </span>
+                    ))}
+                    {newSubcatCatId === cat.id ? (
+                      <form onSubmit={handleAddSubcat} style={{ display: 'flex', gap: '4px' }}>
+                        <input
+                          style={{ ...s.input, padding: '3px 8px', fontSize: '12px', width: '120px' }}
+                          placeholder="Nueva subcategoría"
+                          value={newSubcatNombre}
+                          onChange={e => setNewSubcatNombre(e.target.value)}
+                          autoFocus
+                        />
+                        <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '3px 10px', fontSize: '12px' }}>+</button>
+                        <button type="button" style={{ ...s.cancelBtn, flex: 'none', padding: '3px 8px', fontSize: '12px' }} onClick={() => setNewSubcatCatId(null)}>✕</button>
+                      </form>
+                    ) : (
+                      <button
+                        onClick={() => { setNewSubcatCatId(cat.id); setNewSubcatNombre('') }}
+                        style={{ fontSize: '11px', color: p, background: 'none', border: `1px dashed ${p}`, borderRadius: '6px', padding: '2px 8px', cursor: 'pointer' }}
+                      >+ sub</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <form onSubmit={handleAddCategoria} style={{ display: 'flex', gap: '8px' }}>
+              <input
+                style={{ ...s.input, flex: 1 }}
+                placeholder="Nueva categoría"
+                value={newCatNombre}
+                onChange={e => setNewCatNombre(e.target.value)}
+              />
+              <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
+            </form>
+            <div style={{ marginTop: '16px', textAlign: 'right' }}>
+              <button style={s.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null) }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Reglas de clasificación */}
+      {showAliases && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '580px' }}>
+            <h3 style={s.modalTitle}>📋 Reglas de clasificación</h3>
+            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+              Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
+            </p>
+            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
+              {(userAliases || []).length === 0 ? (
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas. Agregá la primera abajo.</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr>
+                      {['Palabra clave', 'Tipo', 'Valor', ''].map(h => (
+                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(userAliases || []).map(a => (
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
+                        </td>
+                        <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>{a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}</td>
+                        <td style={{ padding: '8px' }}>
+                          <button style={s.actionBtn} onClick={() => handleDeleteAlias(a.id)}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 100px 1fr auto', gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
+              <div>
+                <label style={s.label}>Palabra clave</label>
+                <input style={s.input} placeholder="ej. OSDE, DISCO, UBER" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
+              </div>
+              <div>
+                <label style={s.label}>Tipo</label>
+                <select style={s.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value})}>
+                  <option value="categoria">Cat.</option>
+                  <option value="hijo">Hijo/a</option>
+                  <option value="cuenta">Cuenta</option>
+                </select>
+              </div>
+              <div>
+                <label style={s.label}>{newAlias.tipo === 'hijo' ? 'Nombre del hijo/a' : newAlias.tipo === 'cuenta' ? 'Nombre de la cuenta' : 'Categoría asignada'}</label>
+                <input style={s.input} placeholder={newAlias.tipo === 'hijo' ? 'ej. Amelia' : newAlias.tipo === 'cuenta' ? 'ej. Tarjeta Visa' : 'ej. Salud'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
+              </div>
+              <button type="submit" style={{ ...s.saveBtn, padding: '11px 18px', marginTop: isMobile ? '0' : '20px' }}>+</button>
+            </form>
+            <div style={{ textAlign: 'right' }}>
+              <button style={s.cancelBtn} onClick={() => setShowAliases(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Cambiar contraseña */}
+      {showCambiarClave && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '380px' }}>
+            <h3 style={s.modalTitle}>🔑 Cambiar contraseña</h3>
+            <form onSubmit={handleCambiarClave} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={s.label}>Nueva contraseña</label>
+                <input
+                  type="password"
+                  style={s.input}
+                  placeholder="Mínimo 6 caracteres"
+                  value={nuevaClave}
+                  onChange={e => setNuevaClave(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label style={s.label}>Confirmar contraseña</label>
+                <input
+                  type="password"
+                  style={s.input}
+                  placeholder="Repetí la contraseña"
+                  value={confirmarClave}
+                  onChange={e => setConfirmarClave(e.target.value)}
+                  required
+                />
+              </div>
+              {claveMsg && (
+                <p style={{ margin: 0, fontSize: '13px', fontWeight: 500, color: claveMsg.tipo === 'ok' ? '#3a7d44' : '#c0392b' }}>
+                  {claveMsg.texto}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" style={s.cancelBtn} onClick={() => setShowCambiarClave(false)}>Cancelar</button>
+                <button type="submit" style={s.saveBtn}>Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
+})
+
+export default ConfigPanel
