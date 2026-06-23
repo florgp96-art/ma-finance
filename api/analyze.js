@@ -47,6 +47,7 @@ export default async function handler(req, res) {
   let userRulesBlock = ''
   if (userRules && userRules.length > 0) {
     const rulesText = userRules
+      .filter(r => !r.texto_original?.startsWith('contexto_') && r.categoria)
       .map(r => `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"`)
       .join('\n')
     userRulesBlock = `

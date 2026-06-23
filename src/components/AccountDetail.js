@@ -289,7 +289,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }, [account, accounts, allAccounts, refreshKey])
 
   useEffect(() => {
-    supabase.from('children').select('id, nombre').order('nombre').then(({ data }) => setChildren(data || []))
+    supabase.from('children').select('id, nombre, icono').order('nombre').then(({ data }) => setChildren(data || []))
   }, [])
 
   const fetchAllPages = async (buildQuery) => {
@@ -408,8 +408,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         user_id: user.id,
         texto_original: texto_original,
         nombre_asignado: editNombre || texto_original,
-        categoria: catObj.nombre,
-        subcategoria: subcatObj?.nombre || null,
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
         veces_confirmado: 1,
@@ -588,7 +586,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const childExtraConfig = Object.fromEntries(
     childTotals.map((c, i) => [c.name, { icon: '👧', color: CHILDREN_PALETTE[i % CHILDREN_PALETTE.length] }])
   )
-  const resolveIcon = (name) => (customIcons?.[name]) || CATEGORY_CONFIG[name]?.icon || childExtraConfig[name]?.icon || '❓'
+  const resolveIcon = (name) => {
+    const child = children.find(c => c.nombre === name)
+    return customIcons?.[name] || CATEGORY_CONFIG[name]?.icon || childExtraConfig[name]?.icon || child?.icono || (child ? '👧' : '❓')
+  }
   const resolveColor = (name) => CATEGORY_CONFIG[name]?.color || childExtraConfig[name]?.color || '#E0E0E0'
   const getFullChartColor = (entry, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(entry.name)
   const mergedExtraConfig = {

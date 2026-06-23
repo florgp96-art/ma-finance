@@ -319,18 +319,20 @@ export default function Dashboard() {
   const fetchCustomIcons = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data } = await supabase.from('user_category_icons').select('categoria, icono').eq('user_id', user.id)
-    if (data) setCustomIcons(Object.fromEntries(data.map(r => [r.categoria, r.icono])))
+    const { data } = await supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id)
+    if (data) setCustomIcons(Object.fromEntries(data.filter(r => r.categories?.nombre).map(r => [r.categories.nombre, r.icono])))
   }
 
   const saveCustomIcon = async (categoria, icono) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    const catObj = categoriasDB.find(c => c.nombre === categoria)
+    if (!catObj) return
     if (icono) {
-      await supabase.from('user_category_icons').upsert({ user_id: user.id, categoria, icono }, { onConflict: 'user_id,categoria' })
+      await supabase.from('user_category_icons').upsert({ user_id: user.id, category_id: catObj.id, icono }, { onConflict: 'user_id,category_id' })
       setCustomIcons(prev => ({ ...prev, [categoria]: icono }))
     } else {
-      await supabase.from('user_category_icons').delete().eq('user_id', user.id).eq('categoria', categoria)
+      await supabase.from('user_category_icons').delete().eq('user_id', user.id).eq('category_id', catObj.id)
       setCustomIcons(prev => { const n = {...prev}; delete n[categoria]; return n })
     }
     setIconEditingCat(null)
@@ -1041,7 +1043,15 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser()
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
-      const { data: rules } = await supabase.from('user_rules').select('*').eq('user_id', user.id)
+      const { data: rulesRaw } = await supabase.from('user_rules')
+        .select('texto_original, categories(nombre), subcategories(nombre)')
+        .eq('user_id', user.id)
+        .not('texto_original', 'like', 'contexto_%')
+      const rules = (rulesRaw || []).map(r => ({
+        texto_original: r.texto_original,
+        categoria: r.categories?.nombre || null,
+        subcategoria: r.subcategories?.nombre || null,
+      })).filter(r => r.categoria)
 
       // Fetch ingresos existentes para dar contexto al análisis
       const ingresosAcc = accounts.find(a => a.tipo === 'ingreso')
@@ -1217,8 +1227,6 @@ export default function Dashboard() {
         user_id: user.id,
         texto_original: detalle.trim(),
         nombre_asignado: txEditTemp.nombre || detalle.trim(),
-        categoria: catObj.nombre,
-        subcategoria: subcatObj?.nombre || null,
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
         veces_confirmado: 1,
@@ -1285,8 +1293,6 @@ export default function Dashboard() {
         user_id: user.id,
         texto_original: `contexto_${clave}`,
         nombre_asignado: clave,
-        categoria: 'Personal',
-        subcategoria: null,
         category_id: null,
         subcategory_id: null,
         veces_confirmado: 1,
