@@ -476,20 +476,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   // Vista de cuenta de ingresos: todas las txs son tipo ingreso
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
-  const barData = esVistaIngresos
-    ? (() => {
-        const byMonth = {}
-        transactions.filter(t => t.moneda === 'ARS').forEach(t => {
-          const m = t.fecha?.slice(0, 7)
-          if (!m) return
-          byMonth[m] = (byMonth[m] || 0) + Number(t.monto)
-        })
-        return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
-      })()
-    : statements.map(s => ({
-        mes: s.periodo || s.fecha_hasta?.slice(0, 7),
-        total: Number(s.total_resumen) || 0
-      }))
+  const barData = statements.map(s => ({
+    mes: s.periodo || s.fecha_hasta?.slice(0, 7),
+    total: Number(s.total_resumen) || 0
+  }))
+
+  const ingresosBarData = (() => {
+    const byMonth = {}
+    transactions.filter(t => t.tipo === 'ingreso' && t.moneda === 'ARS').forEach(t => {
+      const m = t.fecha?.slice(0, 7)
+      if (!m) return
+      byMonth[m] = (byMonth[m] || 0) + Number(t.monto)
+    })
+    return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
+  })()
 
   const mesTxs = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
@@ -560,10 +560,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         }, {})
       ).sort((a, b) => b.value - a.value)
     : []
-  const chartData = esVistaIngresos ? ingresoBubbleData : bubbleData
+  const chartData = esVistaIngresos ? ingresoBubbleData : (netBubbleData || bubbleData)
   const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : (CATEGORY_CONFIG[name]?.color || '#E0E0E0')
   const getChartIcon = (name) => esVistaIngresos ? '' : (CATEGORY_CONFIG[name]?.icon || '❓')
-  const effectiveChartType = (esVistaIngresos && chartType === 'bubble') ? 'donut' : chartType
+  const effectiveChartType = chartType
 
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
@@ -971,7 +971,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         )
       })()}
 
-      {barData.length > 0 && !allAccounts && (
+      {esVistaIngresos && ingresosBarData.length > 0 && (
+        <div style={styles.chartSection}>
+          <h3 style={styles.chartTitle}>📊 Total por mes</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={ingresosBarData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
+              <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
+              <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      {!esVistaIngresos && barData.length > 0 && !allAccounts && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
           <ResponsiveContainer width="100%" height={220}>
@@ -1012,10 +1025,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               {/* Selector de tipo de gráfico */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
-                {(esVistaIngresos
-                  ? [{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }]
-                  : [{ type: 'bubble', label: '◉ Burbujas' }, { type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }]
-                ).map(opt => (
+                {[{ type: 'bubble', label: '◉ Burbujas' }, { type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
                   <button key={opt.type}
                     onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
                     style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
@@ -1024,8 +1034,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 ))}
               </div>
 
-              {/* Burbujas — solo egresos */}
-              {effectiveChartType === 'bubble' && !esVistaIngresos && (
+              {effectiveChartType === 'bubble' && (
                 <BubbleChart data={chartData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
               )}
 
@@ -1054,21 +1063,27 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </div>
               )}
 
-              {/* Barras verticales */}
-              {effectiveChartType === 'bars' && (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 48 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: isMobile ? 9 : 11, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} angle={-35} textAnchor="end" interval={0} />
-                    <YAxis tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} width={isMobile ? 60 : 72} />
-                    <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                      {chartData.map((entry, idx) => (
-                        <Cell key={idx} fill={getChartColor(entry.name, idx)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+              {/* Barras horizontales */}
+              {effectiveChartType === 'bars' && (() => {
+                const fullBarData = childTotals.length > 0 ? [...chartData, ...childTotals] : chartData
+                const rowH = 36
+                const chartH = Math.max(180, fullBarData.length * rowH + 24)
+                return (
+                  <ResponsiveContainer width="100%" height={chartH}>
+                    <BarChart data={fullBarData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+                      <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                      <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                      <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                        {fullBarData.map((entry, idx) => {
+                          const isChild = childTotals.some(c => c.name === entry.name)
+                          return <Cell key={idx} fill={isChild ? '#C8A84B' : getChartColor(entry.name, idx)} />
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )
+              })()}
             </div>
           )}
           {selectedMeses.length > 0 && chartData.length === 0 && !esVistaIngresos && (
@@ -1365,7 +1380,7 @@ const getStyles = (dark, mobile) => {
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
     detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },
     editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
-    editSelect: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
+    editSelect: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, colorScheme: dark ? 'dark' : 'light' },
     editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },

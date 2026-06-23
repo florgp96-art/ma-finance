@@ -1736,7 +1736,11 @@ export default function Dashboard() {
 
             {/* Zona bottom fija: botones de acción — siempre visible */}
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-              {/* Gasto en efectivo */}
+              {/* Agregar ingreso */}
+              <button style={styles.sidebarBtnPrimary} onClick={() => setShowIngreso(true)}>
+                + Agregar ingreso
+              </button>
+              {/* Agregar gasto */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
                 let { data: ce } = await supabase.from('accounts')
@@ -1750,7 +1754,7 @@ export default function Dashboard() {
                 setCuentaEfectivoId(ce.id)
                 setShowEfectivo(true)
               }}>
-                + GASTO EN EFECTIVO
+                + Agregar gasto
               </button>
 
               {/* Importar */}
@@ -2053,40 +2057,41 @@ export default function Dashboard() {
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
               const barColor = esIngreso ? '#7C5CBF' : '#5C4F5C'
-              const tooltipLabel = esIngreso ? `💜 ${filtroValor}` : esHijo ? `👧 ${filtroValor}` : sidebarCatEvol
-              const multigrupo = categoriasConTx.length > 0 && (ingresosConTx.length > 0 || hijosConTx.length > 0)
+              const tooltipLabel = filtroValor || sidebarCatEvol
+              const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
+              const multigrupo = tiposPresentes >= 2
               return (
                 <div style={styles.savingsPanel}>
                   <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
                   <select
-                    style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '14px', cursor: 'pointer', width: '100%' }}
+                    style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '14px', cursor: 'pointer', width: '100%', colorScheme: darkMode ? 'dark' : 'light' }}
                     value={sidebarCatEvol}
                     onChange={e => setSidebarCatEvol(e.target.value)}
                   >
                     <option value="">— Elegir —</option>
                     {multigrupo ? (
                       <>
+                        {ingresosConTx.length > 0 && (
+                          <optgroup label="── Ingresos ──">
+                            {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>{t}</option>)}
+                          </optgroup>
+                        )}
                         {categoriasConTx.length > 0 && (
                           <optgroup label="── Egresos ──">
                             {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
                           </optgroup>
                         )}
-                        {ingresosConTx.length > 0 && (
-                          <optgroup label="── Ingresos ──">
-                            {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>💜 {t}</option>)}
-                          </optgroup>
-                        )}
                         {hijosConTx.length > 0 && (
                           <optgroup label="── Hijos ──">
-                            {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>👧 {h}</option>)}
+                            {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>{h}</option>)}
                           </optgroup>
                         )}
                       </>
                     ) : (
                       <>
+                        {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>{t}</option>)}
                         {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
-                        {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>💜 {t}</option>)}
-                        {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>👧 {h}</option>)}
+                        {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>{h}</option>)}
                       </>
                     )}
                   </select>
