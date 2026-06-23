@@ -2516,12 +2516,25 @@ export default function Dashboard() {
                 <h3 style={styles.modalTitle}>
                   {statementData?.tipo_documento === 'banco' ? 'Revisá los movimientos del banco 🏦' : 'Elegí qué importar ✅'}
                 </h3>
-                <div style={styles.previewStats}>
-                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
-                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
-                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>
-                  <div style={styles.previewStat}><span style={styles.previewStatLabel}>Seleccionadas</span><span style={styles.previewStatValue}>{pdfTxSelections.size} / {statementData.transacciones.length}</span></div>
-                </div>
+                {(() => {
+                  const esBancoPreview = statementData?.tipo_documento === 'banco'
+                  const txSelec = statementData.transacciones.filter((_, i) => pdfTxSelections.has(i))
+                  const totalARS = txSelec.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+                  const totalUSD = txSelec.filter(t => t.moneda === 'USD').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+                  return (
+                    <div style={styles.previewStats}>
+                      <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
+                      {esBancoPreview ? <>
+                        {totalARS > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(totalARS)}</span></div>}
+                        {totalUSD > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total USD</span><span style={styles.previewStatValue}>U$S {formatMontoFull(totalUSD)}</span></div>}
+                      </> : <>
+                        <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
+                        {statementData.fecha_vencimiento && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>}
+                      </>}
+                      <div style={styles.previewStat}><span style={styles.previewStatLabel}>Seleccionadas</span><span style={styles.previewStatValue}>{pdfTxSelections.size} / {statementData.transacciones.length}</span></div>
+                    </div>
+                  )
+                })()}
                 {pdfTxDuplicadas.size > 0 && (
                   <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.</span>
