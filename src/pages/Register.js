@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 
 const PURPLE = '#7C5CBF'
-const PURPLE_LIGHT = '#F0EAF8'
 const FONT = '"Montserrat", sans-serif'
 
 export default function Register() {
