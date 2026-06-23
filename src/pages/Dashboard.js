@@ -948,13 +948,26 @@ export default function Dashboard() {
       const token = session?.access_token
       const { data: rules } = await supabase.from('user_rules').select('*').eq('user_id', user.id)
 
+      // Fetch ingresos existentes para dar contexto al análisis
+      const ingresosAcc = accounts.find(a => a.tipo === 'ingreso')
+      let incomeExamples = []
+      if (ingresosAcc) {
+        const { data: incomeTxs } = await supabase
+          .from('transactions')
+          .select('nombre, detalle, tag')
+          .eq('account_id', ingresosAcc.id)
+          .eq('tipo', 'ingreso')
+          .limit(40)
+        incomeExamples = incomeTxs || []
+      }
+
       const isImage = archivo.type.startsWith('image/')
       let result
       if (isImage) {
         result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
         const pdfText = await extractTextFromPDF(archivo)
-        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token)
+        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples)
       }
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
@@ -1391,6 +1404,7 @@ export default function Dashboard() {
 
   const styles = getStyles(darkMode)
   const isMobile = windowWidth < 640
+  const isTablet = windowWidth >= 640 && windowWidth < 960
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -1479,18 +1493,18 @@ export default function Dashboard() {
           )
 
           return (
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : '160px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '110px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
                 <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
               ) : (
-                <div style={{ display: 'flex', gap: '10px', zIndex: 1, alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
-                  {vencCard}
+                  {!isTablet && vencCard}
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : '20px', pointerEvents: 'none' }} />
+              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '100px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '10px' : '20px', pointerEvents: 'none' }} />
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
@@ -1522,13 +1536,13 @@ export default function Dashboard() {
           )
         })()}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : '0 32px 48px 32px', gap: isMobile ? '12px' : '24px' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
           {/* Sidebar izquierdo */}
           {isMobile && sidebarOpen && (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
           )}
-          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
             {/* Zona top fija: solo mobile — botón cerrar + dólar blue */}
             {isMobile && (
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
@@ -1673,10 +1687,10 @@ export default function Dashboard() {
                 + GASTO EN EFECTIVO
               </button>
 
-              {/* Importar gastos */}
+              {/* Importar */}
               <div style={{ position: 'relative' }}>
                 <button style={styles.sidebarBtnPrimary} onClick={() => setImportMenuOpen(o => !o)}>
-                  + IMPORTAR GASTOS {importMenuOpen ? '▴' : '▾'}
+                  + IMPORTAR PDF / EXCEL {importMenuOpen ? '▴' : '▾'}
                 </button>
                 {importMenuOpen && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px', paddingLeft: '12px' }}>

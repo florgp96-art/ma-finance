@@ -39,7 +39,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { pdfText, cardName, userRules } = req.body
+  const { pdfText, cardName, userRules, incomeExamples } = req.body
   if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })
   if (pdfText.length > 200_000) return res.status(400).json({ error: 'PDF text too large' })
 
@@ -56,6 +56,30 @@ REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
 Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada:
 ${rulesText}
 `
+  }
+
+  // Construir bloque de ejemplos de ingresos conocidos
+  let incomeExamplesBlock = ''
+  if (incomeExamples && incomeExamples.length > 0) {
+    const seen = new Set()
+    const uniqueExamples = incomeExamples.filter(t => {
+      const key = (t.detalle || t.nombre || '').trim().toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 30)
+    if (uniqueExamples.length > 0) {
+      const exText = uniqueExamples
+        .map(t => `- "${t.detalle || t.nombre}"${t.tag ? ` → tag: "${t.tag}"` : ''}`)
+        .join('\n')
+      incomeExamplesBlock = `
+═══════════════════════════════
+INGRESOS YA REGISTRADOS POR EL USUARIO (referencia):
+═══════════════════════════════
+Si encontrás transacciones similares, clasificalas como tipo "ingreso" con el mismo tag cuando corresponda:
+${exText}
+`
+    }
   }
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -91,7 +115,7 @@ Si no detectás ninguno, devolvé array vacío [].
 Ejemplos: ["hijo","auto_propio"] o [] o ["mascota"]
 
 ${userRulesBlock}
-
+${incomeExamplesBlock}
 ═══════════════════════════════
 CAMPO tipo_documento:
 ═══════════════════════════════

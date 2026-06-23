@@ -260,6 +260,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [sortDir, setSortDir] = useState('desc')
   const [selectedMeses, setSelectedMeses] = useState([])
   const [selectedCatEvol, setSelectedCatEvol] = useState('')
+  const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -725,91 +726,134 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       )}
 
       {/* Cards de resumen */}
-      {selectedMeses.length > 0 && mesTxs.length > 0 && (
-        <div style={styles.summaryCards}>
-          {/* Vista de cuenta de ingresos */}
-          {esVistaIngresos && totalIngresosARS > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total Ingresos ARS</p>
-              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
-            </div>
-          )}
-          {esVistaIngresos && totalIngresosUSD > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total Ingresos USD</p>
-              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
-            </div>
-          )}
-          {/* Total ARS / Egresos ARS */}
-          {!esVistaIngresos && totalARS > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos ARS' : 'Total ARS'}</p>
-              <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
-            </div>
-          )}
-          {/* Total Ingresos ARS */}
-          {hayIngresos && totalIngresosARS > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total Ingresos ARS</p>
-              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
-            </div>
-          )}
-          {/* Total USD / Egresos USD */}
-          {totalUSD > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos USD' : 'Total USD'}</p>
-              <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
-            </div>
-          )}
-          {/* Total Ingresos USD */}
-          {hayIngresos && totalIngresosUSD > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Total Ingresos USD</p>
-              <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
-            </div>
-          )}
-          {diffPct !== null && mesAnterior && selectedMeses.length === 1 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>vs {mesLabel(mesAnterior)}</p>
-              <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '22px'}}>
-                {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
-              </p>
-              <p style={styles.summarySubval}>
-                {diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}
-              </p>
-            </div>
-          )}
-          {catTop && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>Categoría top</p>
-              <p style={{...styles.summaryValue, fontSize: '18px'}}>
-                {CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}
-              </p>
-              <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
-            </div>
-          )}
-          {tcEfectivo > 0 && (
-            <div style={styles.summaryCard}>
-              <p style={styles.summaryLabel}>{hayIngresos ? 'Total Egresos (equiv. pesos)' : 'Final equiv. en pesos'}</p>
-              <p style={styles.summaryValue}>$ {formatMonto(totalARS + totalUSD * tcEfectivo)}</p>
-              {hayIngresos && (totalIngresosARS + totalIngresosUSD * tcEfectivo) > 0 && (
-                <>
-                  <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
-                  <p style={styles.summaryLabel}>Total Ingresos (equiv. pesos)</p>
-                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS + totalIngresosUSD * tcEfectivo)}</p>
-                </>
-              )}
-              {!hayIngresos && (
-                <>
-                  <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
-                  <p style={styles.summaryLabel}>Final equiv. en USD</p>
-                  <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(totalUSD + totalARS / tcEfectivo)}</p>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {selectedMeses.length > 0 && mesTxs.length > 0 && (() => {
+        const divider = <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
+        const egresosEquivARS = totalARS + totalUSD * tcEfectivo
+        const ingresosEquivARS = totalIngresosARS + totalIngresosUSD * tcEfectivo
+        const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + totalARS / tcEfectivo : 0
+        const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + totalIngresosARS / tcEfectivo : 0
+        return (
+          <div style={styles.summaryCards}>
+
+            {/* === Vista cuenta de ingresos individual === */}
+            {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0) && (
+              <div style={styles.summaryCard}>
+                {totalIngresosARS > 0 && <>
+                  <p style={styles.summaryLabel}>Total Ingresos ARS</p>
+                  <p style={{ ...styles.summaryValue, color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
+                </>}
+                {totalIngresosARS > 0 && totalIngresosUSD > 0 && divider}
+                {totalIngresosUSD > 0 && <>
+                  <p style={{ ...styles.summaryLabel, marginTop: totalIngresosARS > 0 ? 0 : undefined }}>Total Ingresos USD</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                </>}
+              </div>
+            )}
+
+            {/* === Vista cuenta individual (no ingresos) === */}
+            {!esVistaIngresos && !allAccounts && totalARS > 0 && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Total ARS</p>
+                <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
+              </div>
+            )}
+            {!esVistaIngresos && !allAccounts && totalUSD > 0 && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Total USD</p>
+                <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+              </div>
+            )}
+
+            {/* === Resumen general: card ARS combinada === */}
+            {!esVistaIngresos && allAccounts && (totalARS > 0 || totalIngresosARS > 0) && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Egresos ARS</p>
+                <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
+                {hayIngresos && <>{divider}
+                  <p style={styles.summaryLabel}>Ingresos ARS</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
+                  {divider}
+                  <p style={styles.summaryLabel}>Balance ARS</p>
+                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
+                </>}
+              </div>
+            )}
+
+            {/* === Resumen general: card USD combinada === */}
+            {!esVistaIngresos && allAccounts && (totalUSD > 0 || totalIngresosUSD > 0) && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Egresos USD</p>
+                <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+                {hayIngresos && totalIngresosUSD > 0 && <>{divider}
+                  <p style={styles.summaryLabel}>Ingresos USD</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                  {divider}
+                  <p style={styles.summaryLabel}>Balance USD</p>
+                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                </>}
+              </div>
+            )}
+
+            {/* vs mes anterior */}
+            {diffPct !== null && mesAnterior && selectedMeses.length === 1 && !esVistaIngresos && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>vs {mesLabel(mesAnterior)}</p>
+                <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '22px'}}>
+                  {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
+                </p>
+                <p style={styles.summarySubval}>{diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}</p>
+              </div>
+            )}
+
+            {/* Categoría top */}
+            {catTop && !esVistaIngresos && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Categoría top</p>
+                <p style={{...styles.summaryValue, fontSize: '18px'}}>{CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}</p>
+                <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
+              </div>
+            )}
+
+            {/* Equiv con toggle ARS⇌USD */}
+            {tcEfectivo > 0 && !esVistaIngresos && (
+              <div style={styles.summaryCard}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <p style={{ ...styles.summaryLabel, margin: 0 }}>{equivEnUSD ? 'EQUIV. USD' : 'EQUIV. PESOS'}</p>
+                  <button onClick={() => setEquivEnUSD(v => !v)} style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '6px', border: `1px solid ${darkMode ? '#4A3F4A' : '#D0C8CC'}`, background: 'none', cursor: 'pointer', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                    {equivEnUSD ? 'ARS' : 'USD'}
+                  </button>
+                </div>
+                {equivEnUSD ? <>
+                  <p style={styles.summaryLabel}>Egresos</p>
+                  <p style={styles.summaryValue}>U$S {formatMonto(egresosEquivUSD)}</p>
+                  {hayIngresos && ingresosEquivUSD > 0 && <>{divider}
+                    <p style={styles.summaryLabel}>Ingresos</p>
+                    <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>U$S {formatMonto(ingresosEquivUSD)}</p>
+                    {divider}
+                    <p style={styles.summaryLabel}>Balance</p>
+                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
+                  </>}
+                </> : <>
+                  <p style={styles.summaryLabel}>Egresos</p>
+                  <p style={styles.summaryValue}>$ {formatMonto(egresosEquivARS)}</p>
+                  {hayIngresos && ingresosEquivARS > 0 && <>{divider}
+                    <p style={styles.summaryLabel}>Ingresos</p>
+                    <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>$ {formatMonto(ingresosEquivARS)}</p>
+                    {divider}
+                    <p style={styles.summaryLabel}>Balance</p>
+                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
+                  </>}
+                  {!hayIngresos && <>{divider}
+                    <p style={styles.summaryLabel}>Final equiv. en USD</p>
+                    <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(egresosEquivUSD)}</p>
+                  </>}
+                </>}
+              </div>
+            )}
+
+          </div>
+        )
+      })()}
 
       {barData.length > 0 && !allAccounts && (
         <div style={styles.chartSection}>
@@ -1218,8 +1262,8 @@ const getStyles = (dark, mobile) => {
   const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
   return {
     loading: { padding: '24px', color: muted, fontSize: '14px' },
-    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
-    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '10px 12px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}` },
+    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
     summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
     summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
