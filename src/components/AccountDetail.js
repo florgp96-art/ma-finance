@@ -444,7 +444,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
-      else if (sortKey === 'categoria') { valA = (a.categories?.nombre || a.tag || '').toLowerCase(); valB = (b.categories?.nombre || b.tag || '').toLowerCase() }
+      else if (sortKey === 'categoria') { valA = (a.tag || a.categories?.nombre || '').toLowerCase(); valB = (b.tag || b.categories?.nombre || '').toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'monto') {
         valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
