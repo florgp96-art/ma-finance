@@ -21,6 +21,7 @@ export const CATEGORY_CONFIG = {
 
 const BAR_COLOR = '#B0A4CC'
 const INCOME_PALETTE = ['#C8B4E8','#B8A0D8','#D4C8F0','#A890C8','#BCA8D8','#CCC0E8','#D8D0F0','#B4A4D0']
+const CHILDREN_PALETTE = ['#A8C4E8', '#E8C4A8', '#C4E8A8', '#E8A8C4', '#C4A8E8']
 
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -51,7 +52,7 @@ export const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile }) {
+export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -118,7 +119,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
       <div style={{ flex: '1 1 0', minWidth: 0 }}>
         <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
           {bubbles.map((b, i) => {
-            const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+            const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
             const isHovered = hoveredIdx === i
             const iconSize = b.r > 50 ? 26 : b.r > 35 ? 20 : 14
             const pctSize = b.r > 50 ? 11 : b.r > 35 ? 9 : 7
@@ -163,7 +164,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
             )
           })}
           {tooltip.visible && tooltip.data && (() => {
-            const cfg = CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
+            const cfg = (extraConfig?.[tooltip.data.name]) || CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
             const tx = Math.max(85, Math.min(WIDTH - 85, tooltip.x))
             const ty = Math.max(30, tooltip.y)
             const hasARS = (tooltip.data.originalARS || 0) > 0
@@ -200,7 +201,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
       </div>
       <div style={{ width: isMobile ? '100%' : '210px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: isMobile ? '0' : '16px' }}>
         {([...(legendData || bubbles)].sort((a, b) => b.value - a.value)).map((b, i) => {
-          const cfg = CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+          const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
           const arsAmt = (b.originalARS || 0)
           const usdAmt = (b.originalUSD || 0)
           const hasUSD = usdAmt > 0
@@ -247,7 +248,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -567,9 +568,18 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     : childTotals.length > 0
       ? [...(netBubbleData || bubbleData), ...childTotals].sort((a, b) => b.value - a.value)
       : (netBubbleData || bubbleData)
-  const getFullChartColor = (entry, idx) => childTotals.some(c => c.name === entry.name) ? '#C8A84B' : getChartColor(entry.name, idx)
-  const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : (CATEGORY_CONFIG[name]?.color || '#E0E0E0')
-  const getChartIcon = (name) => esVistaIngresos ? '' : (CATEGORY_CONFIG[name]?.icon || '❓')
+  const childExtraConfig = Object.fromEntries(
+    childTotals.map((c, i) => [c.name, { icon: '👧', color: CHILDREN_PALETTE[i % CHILDREN_PALETTE.length] }])
+  )
+  const resolveIcon = (name) => (customIcons?.[name]) || CATEGORY_CONFIG[name]?.icon || childExtraConfig[name]?.icon || '❓'
+  const resolveColor = (name) => CATEGORY_CONFIG[name]?.color || childExtraConfig[name]?.color || '#E0E0E0'
+  const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(name)
+  const getChartIcon = (name) => esVistaIngresos ? '' : resolveIcon(name)
+  const getFullChartColor = (entry, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(entry.name)
+  const mergedExtraConfig = {
+    ...childExtraConfig,
+    ...Object.fromEntries(Object.entries(customIcons || {}).map(([n, icon]) => [n, { ...(childExtraConfig[n] || CATEGORY_CONFIG[n] || { color: '#E0E0E0' }), icon }]))
+  }
   const effectiveChartType = chartType
 
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
@@ -929,7 +939,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             {catTop && !esVistaIngresos && (
               <div style={{ ...styles.summaryCard, textAlign: 'center' }}>
                 <p style={styles.summaryLabel}>Categoría top</p>
-                <p style={{...styles.summaryValue, fontSize: '18px'}}>{CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}</p>
+                <p style={{...styles.summaryValue, fontSize: '18px'}}>{resolveIcon(catTop[0])} {catTop[0]}</p>
                 <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
               </div>
             )}
@@ -1042,7 +1052,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               </div>
 
               {effectiveChartType === 'bubble' && (
-                <BubbleChart data={chartData} legendData={netBubbleData} childRows={childTotals.length > 0 ? childTotals : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+                <BubbleChart data={fullChartData} legendData={null} childRows={undefined} extraConfig={Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
               )}
 
               {/* Donut */}
@@ -1062,7 +1072,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                     {fullChartData.map((entry, idx) => (
                       <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                         <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getFullChartColor(entry, idx), flexShrink: 0 }} />
-                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{esVistaIngresos ? '' : resolveIcon(entry.name)} {entry.name}</span>
                         <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
                       </div>
                     ))}
@@ -1245,8 +1255,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                           {tx.tag || '—'}
                         </span>
                       ) : (
-                        <span style={{ backgroundColor: (CATEGORY_CONFIG[tx.categories?.nombre]?.color || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                          {CATEGORY_CONFIG[tx.categories?.nombre]?.icon || '❓'} {tx.categories?.nombre || '—'}
+                        <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                          {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                         </span>
                       )}
                     </td>

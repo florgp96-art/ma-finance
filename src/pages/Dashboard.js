@@ -2,10 +2,10 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, CATEGORY_CONFIG } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import * as XLSX from 'xlsx'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
@@ -171,6 +171,12 @@ export default function Dashboard() {
   const [confirmarClave, setConfirmarClave] = useState('')
   const [claveMsg, setClaveMsg] = useState(null)
 
+  // Íconos de categorías
+  const [customIcons, setCustomIcons] = useState({})
+  const [showIconos, setShowIconos] = useState(false)
+  const [iconEditingCat, setIconEditingCat] = useState(null)
+  const [iconInput, setIconInput] = useState('')
+
   // Aliases
   const [showAliases, setShowAliases] = useState(false)
   const [userAliases, setUserAliases] = useState([])
@@ -214,7 +220,7 @@ export default function Dashboard() {
   }, [exchangeRates, dolarRates, tcTipo])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates()
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
@@ -235,7 +241,7 @@ export default function Dashboard() {
         })
         const desde = meses[0] + '-01'
         const { data: txs } = await supabase.from('transactions')
-          .select('fecha, monto, moneda').eq('user_id', user.id)
+          .select('fecha, monto, moneda').eq('user_id', user.id).eq('tipo', 'gasto')
           .gte('fecha', desde).gt('monto', 0)
         const tc = parseFloat(localStorage.getItem('tc_ma')) || 1
         const totales = meses.map(ym => {
@@ -311,6 +317,27 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
     setUserAliases(data || [])
+  }
+
+  const fetchCustomIcons = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase.from('user_category_icons').select('categoria, icono').eq('user_id', user.id)
+    if (data) setCustomIcons(Object.fromEntries(data.map(r => [r.categoria, r.icono])))
+  }
+
+  const saveCustomIcon = async (categoria, icono) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    if (icono) {
+      await supabase.from('user_category_icons').upsert({ user_id: user.id, categoria, icono }, { onConflict: 'user_id,categoria' })
+      setCustomIcons(prev => ({ ...prev, [categoria]: icono }))
+    } else {
+      await supabase.from('user_category_icons').delete().eq('user_id', user.id).eq('categoria', categoria)
+      setCustomIcons(prev => { const n = {...prev}; delete n[categoria]; return n })
+    }
+    setIconEditingCat(null)
+    setIconInput('')
   }
 
   const handleAddAlias = async (e) => {
@@ -1593,6 +1620,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { fetchCustomIcons(); setShowIconos(true) }}>🎨 ÍCONOS DE CATEGORÍAS</button>
                       </div>
                     )}
                   </div>
@@ -1714,16 +1742,16 @@ export default function Dashboard() {
                     return (
                       <>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          {/* Header EGRESOS */}
+                          {/* Header INGRESOS — izquierda, sin flecha */}
+                          <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onClick={handleClickIngresos}>
+                            <span style={{ ...styles.sidebarTitle, color: isIngresosSelected ? (darkMode ? '#8C7B8C' : '#5C4F5C') : undefined, fontWeight: isIngresosSelected ? '600' : undefined }}>INGRESOS</span>
+                          </div>
+                          {/* Header EGRESOS — derecha, con flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                             onClick={() => setEgresosOpen(o => !o)}>
                             <span style={styles.sidebarTitle}>EGRESOS</span>
                             <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: egresosOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
-                          </div>
-                          {/* Header INGRESOS — mismo estilo que EGRESOS, sin flecha */}
-                          <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            onClick={handleClickIngresos}>
-                            <span style={{ ...styles.sidebarTitle, color: isIngresosSelected ? (darkMode ? '#8C7B8C' : '#5C4F5C') : undefined, fontWeight: isIngresosSelected ? '600' : undefined }}>INGRESOS</span>
                           </div>
                         </div>
 
@@ -1805,6 +1833,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { fetchCustomIcons(); setShowIconos(true) }}>🎨 ÍCONOS DE CATEGORÍAS</button>
                     </div>
                   )}
                 </>
@@ -1856,7 +1885,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -1998,7 +2027,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -2014,23 +2043,29 @@ export default function Dashboard() {
             {miniChartData.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
                 <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
-                <ResponsiveContainer width="100%" height={130}>
-                  <BarChart data={miniChartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Total']}
-                      contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
-                      labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
-                      itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
-                      cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-                    />
-                    <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                      {miniChartData.map((_, i) => (
-                        <Cell key={i} fill={i === miniChartData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                {(() => {
+                  const miniAvg = miniChartData.length > 0 ? Math.round(miniChartData.reduce((s, d) => s + d.total, 0) / miniChartData.length) : 0
+                  return (
+                    <ResponsiveContainer width="100%" height={130}>
+                      <BarChart data={miniChartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
+                          contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
+                          labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
+                          itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
+                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+                        />
+                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {miniChartData.map((_, i) => (
+                            <Cell key={i} fill={i === miniChartData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )
+                })()}
               </div>
             )}
             {(() => {
@@ -2106,7 +2141,11 @@ export default function Dashboard() {
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                         <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
                         <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
-                        <Bar dataKey="total" fill={barColor} radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {evolData.map((_, i) => (
+                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          ))}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
@@ -2126,20 +2165,12 @@ export default function Dashboard() {
 
             <div style={styles.savingsField}>
               <label style={styles.savingsLabel}>Moneda</label>
-              <div ref={ahorroMonedaRef} style={{ position: 'relative' }}>
-                <button onClick={() => setAhorroMonedaOpen(o => !o)} style={{ ...styles.savingsInput, cursor: 'pointer', textAlign: 'left', position: 'relative', paddingRight: '28px', display: 'block' }}>
-                  {ahorro.moneda}
-                  <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
-                </button>
-                {ahorroMonedaOpen && (
-                  <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
-                    {['USD', 'ARS'].map(m => (
-                      <button key={m} onClick={() => { setAhorro({...ahorro, moneda: m}); setAhorroMonedaOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: ahorro.moneda === m ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: ahorro.moneda === m ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#F0EDEC' : '#1d1d1f'), fontFamily: '"Montserrat", sans-serif' }}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {['USD', 'ARS'].map(m => (
+                  <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: ahorro.moneda === m ? '#5C4F5C' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
+                    {m}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -2227,6 +2258,67 @@ export default function Dashboard() {
             <div style={{ textAlign: 'right' }}>
               <button style={styles.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: íconos de categorías */}
+      {showIconos && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '480px', width: '92%', maxHeight: '80vh', overflowY: 'auto' }}>
+            <h3 style={styles.modalTitle}>🎨 Íconos de categorías</h3>
+            <p style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '16px', marginTop: '-8px' }}>Tocá una categoría para cambiar su ícono</p>
+            {[...categoriasDB.map(c => c.nombre), ...(childrenDB || []).map(c => c.nombre)].map(nombre => {
+              const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || '👧'
+              const currentIcon = customIcons[nombre] || defaultIcon
+              const isEditing = iconEditingCat === nombre
+              const EMOJI_GRID = ['🏠','🍔','🚗','💊','🎬','📱','👕','📚','💼','💰','🏦','👶','✈️','🎵','🐾','💄','🌿','🍕','☕','🎮','📦','🛒','🎁','🍷','🎨','🧴','💅','🐶','🎯','🏊']
+              return (
+                <div key={nombre} style={{ borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDEC'}`, paddingBottom: isEditing ? '12px' : '0' }}>
+                  <div
+                    onClick={() => { if (!isEditing) { setIconEditingCat(nombre); setIconInput(customIcons[nombre] || '') } }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 4px', cursor: isEditing ? 'default' : 'pointer', borderRadius: '8px' }}
+                  >
+                    <span style={{ fontSize: '22px', width: '28px', textAlign: 'center' }}>{currentIcon}</span>
+                    <span style={{ flex: 1, fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}>{nombre}</span>
+                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: '#8e8e93' }}>custom</span>}
+                    {!isEditing && <span style={{ fontSize: '12px', color: '#8e8e93' }}>✏️</span>}
+                  </div>
+                  {isEditing && (
+                    <div style={{ paddingLeft: '38px' }}>
+                      {!isMobile && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
+                          {EMOJI_GRID.map(e => (
+                            <button key={e} onClick={() => setIconInput(e)} style={{ fontSize: '20px', padding: '4px', borderRadius: '6px', border: iconInput === e ? `2px solid #5C4F5C` : '2px solid transparent', background: 'none', cursor: 'pointer' }}>{e}</button>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          value={iconInput}
+                          onChange={e => setIconInput(e.target.value)}
+                          placeholder={isMobile ? 'Escribí o pegá un emoji' : 'O escribí uno personalizado'}
+                          maxLength={4}
+                          style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '20px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif' }}
+                        />
+                        <button onClick={() => saveCustomIcon(nombre, iconInput.trim())} style={{ padding: '7px 14px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>
+                          Guardar
+                        </button>
+                        {customIcons[nombre] && (
+                          <button onClick={() => saveCustomIcon(nombre, '')} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid #c0392b`, color: '#c0392b', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                            Reset
+                          </button>
+                        )}
+                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, color: '#8e8e93', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ marginTop: '20px', width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: '#5C4F5C', color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
           </div>
         </div>
       )}
