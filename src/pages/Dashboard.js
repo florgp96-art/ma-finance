@@ -333,7 +333,8 @@ export default function Dashboard() {
   const handleAddSubcat = async (e) => {
     e.preventDefault()
     if (!newSubcatNombre.trim() || !newSubcatCatId) return
-    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId })
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId, user_id: user.id })
     setNewSubcatNombre('')
     setNewSubcatCatId(null)
     fetchCategorias()
