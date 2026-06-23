@@ -3177,8 +3177,10 @@ const getStyles = (dark) => {
     sidebarHeader: { marginBottom: '8px', textAlign: 'center' },
     sidebarTitle: { fontSize: '16px', fontWeight: '400', color: txt, margin: 0, textAlign: 'center', letterSpacing: '0.08em' },
     sidebarBtnPrimary: {
-      width: '100%', padding: '10px', backgroundColor: p, color: 'white',
-      border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
+      width: '100%', padding: '9px 10px', backgroundColor: 'transparent', color: p,
+      border: `1px solid ${p}`, borderRadius: '10px', cursor: 'pointer',
+      fontSize: '12px', fontWeight: '400', letterSpacing: '0.08em', textTransform: 'uppercase',
+      textAlign: 'center', outline: 'none', fontFamily: '"Montserrat", sans-serif'
     },
     sidebarBtnSecondary: {
       width: '100%', padding: '10px', backgroundColor: 'transparent', color: p,
