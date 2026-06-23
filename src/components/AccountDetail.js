@@ -30,6 +30,9 @@ export const formatMonto = (monto) =>
 export const formatMontoFull = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
 
+export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
+export const formatFechaCorta = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) : ''
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : '$'
 
 export const mesLabel = (yearMonth) => {
@@ -362,7 +365,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
-    if (account?.tipo === 'ingreso') {
+    if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
       await supabase.from('transactions').update({ nombre: editNombre, tag: editTag || null }).eq('id', tx.id)
       setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null } : t))
       setEditingTx(null)
@@ -812,12 +815,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               <div style={styles.summaryCard}>
                 {totalIngresosARS > 0 && <>
                   <p style={styles.summaryLabel}>Total Ingresos ARS</p>
-                  <p style={{ ...styles.summaryValue, color: '#7C5CBF' }}>$ {formatMonto(totalIngresosARS)}</p>
+                  <p style={styles.summaryValue}>$ {formatMonto(totalIngresosARS)}</p>
                 </>}
                 {totalIngresosARS > 0 && totalIngresosUSD > 0 && divider}
                 {totalIngresosUSD > 0 && <>
                   <p style={{ ...styles.summaryLabel, marginTop: totalIngresosARS > 0 ? 0 : undefined }}>Total Ingresos USD</p>
-                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#7C5CBF' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
                 </>}
               </div>
             )}
@@ -843,10 +846,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>$ {formatMonto(totalARS)}</p>
                 {hayIngresos && <>{divider}
                   <p style={styles.summaryLabel}>Ingresos ARS</p>
-                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: '#7C5CBF' }}>$ {formatMonto(totalIngresosARS)}</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>$ {formatMonto(totalIngresosARS)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance ARS</p>
-                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#7C5CBF' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
+                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
                 </>}
               </div>
             )}
@@ -858,10 +861,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>U$S {formatMontoFull(totalUSD)}</p>
                 {hayIngresos && totalIngresosUSD > 0 && <>{divider}
                   <p style={styles.summaryLabel}>Ingresos USD</p>
-                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: '#7C5CBF' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance USD</p>
-                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#7C5CBF' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -914,20 +917,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   <p style={styles.summaryValue}>U$S {formatMonto(egresosEquivUSD)}</p>
                   {hayIngresos && ingresosEquivUSD > 0 && <>{divider}
                     <p style={styles.summaryLabel}>Ingresos</p>
-                    <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#7C5CBF' }}>U$S {formatMonto(ingresosEquivUSD)}</p>
+                    <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(ingresosEquivUSD)}</p>
                     {divider}
                     <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#7C5CBF' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
+                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
                   </>}
                 </> : <>
                   <p style={styles.summaryLabel}>Egresos</p>
                   <p style={styles.summaryValue}>$ {formatMonto(egresosEquivARS)}</p>
                   {hayIngresos && ingresosEquivARS > 0 && <>{divider}
                     <p style={styles.summaryLabel}>Ingresos</p>
-                    <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#7C5CBF' }}>$ {formatMonto(ingresosEquivARS)}</p>
+                    <p style={{ ...styles.summaryValue, fontSize: '18px' }}>$ {formatMonto(ingresosEquivARS)}</p>
                     {divider}
                     <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#7C5CBF' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
+                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
                   </>}
                   {!hayIngresos && <>{divider}
                     <p style={styles.summaryLabel}>Final equiv. en USD</p>
@@ -1079,7 +1082,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             <tbody>
               {txNeutras.map(tx => (
                 <tr key={tx.id} style={{...styles.tr, opacity: 0.7}}>
-                  <td style={styles.td}>{tx.fecha}</td>
+                  <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                   <td style={styles.td}>
                     <span style={{
@@ -1120,7 +1123,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             <tbody>
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
-                  <td style={styles.td}>{tx.fecha}</td>
+                  <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
                   {editingTx === tx.id ? renderEditCells() : (
                     <>
@@ -1172,11 +1175,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             {identificadas.map(tx => (
               <tr key={tx.id} style={styles.tr}>
                 <td style={{...styles.td, whiteSpace: 'nowrap'}}>
-                  {isMobile
-                    ? (tx.fecha ? tx.fecha.slice(8) + '/' + tx.fecha.slice(5, 7) : '')
-                    : tx.fecha}
+                  {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
                 </td>
-                {editingTx === tx.id ? (esVistaIngresos ? renderEditCellsIngreso() : renderEditCells()) : (
+                {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
                   <>
                     <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
                       <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
@@ -1221,7 +1222,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600',
                   whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
-                  color: tx.tipo === 'ingreso' ? (darkMode ? '#C8B4E8' : '#7C5CBF') : (darkMode ? '#F0EDEC' : '#2d2d2d')}}>
+                  color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (
