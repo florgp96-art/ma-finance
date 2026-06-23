@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKey, initialPeriod }) {
+export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, refreshKey, initialPeriod }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -33,24 +33,32 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     setEditingTx(null)
     fetchTransactions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hijoNombre, refreshKey])
+  }, [hijoId, hijoNombre, refreshKey])
 
   const fetchTransactions = async () => {
+    // Usa child_id si está disponible (modelo nuevo), sino cae a tag (compatibilidad)
+    let txQuery = supabase.from('transactions')
+      .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+      .gt('monto', 0)
+      .order('fecha', { ascending: false })
+
+    if (hijoId) {
+      txQuery = txQuery.eq('child_id', hijoId)
+    } else {
+      txQuery = txQuery.ilike('tag', hijoNombre)
+    }
+
     const [txRes, catRes, subcatRes] = await Promise.all([
-      supabase.from('transactions')
-        .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
-        .ilike('tag', hijoNombre).gt('monto', 0).order('fecha', { ascending: false }),
+      txQuery,
       supabase.from('categories').select('*').order('nombre'),
       supabase.from('subcategories').select('*').order('nombre'),
     ])
     setCategories(catRes.data || [])
     setSubcategories(subcatRes.data || [])
-    const data = txRes
-    const txs = data.data || []
+    const txs = txRes.data || []
     setTransactions(txs)
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
-      // Usar período compartido si tiene meses con datos del hijo, sino caer al mes actual o primero disponible
       const validShared = (initialPeriod || []).filter(m => meses.includes(m))
       if (validShared.length > 0) {
         setSelectedMeses(validShared)
@@ -77,7 +85,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
   const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
   const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
 
-  // Bubble chart data
+  // Bubble chart data agrupado por categoría
   const catMap = {}
   filteredTx.forEach(t => {
     const cat = t.categories?.nombre || 'A Identificar'
@@ -90,7 +98,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
     .map(([name, val]) => ({ name, ...val }))
     .sort((a, b) => b.value - a.value)
 
-  // Monthly evolution
+  // Evolución mensual (últimos 6 meses)
   const last6 = getLast6Months()
   const monthlyData = last6.map(ym => {
     const txs = transactions.filter(t => t.fecha?.startsWith(ym))
@@ -145,7 +153,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
         Sin gastos registrados para {hijoNombre}
       </p>
       <p style={{ fontSize: '14px', margin: 0 }}>
-        Los gastos con el tag "{hijoNombre}" aparecerán acá.
+        Los gastos con child_id de {hijoNombre} aparecerán acá.
       </p>
     </div>
   )
@@ -294,7 +302,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
                       </td>
                       <td style={{ padding: '9px 10px' }}>
                         {isEditing
-                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: 'light' }}>
                               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
                           : t.categories?.nombre
@@ -304,7 +312,7 @@ export default function HijoDetail({ hijoNombre, darkMode, tipoCambio, refreshKe
                       </td>
                       <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
                         {isEditing
-                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: 'light' }}>
                               <option value="">—</option>
                               {subcatsParaEditar.map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
                             </select>

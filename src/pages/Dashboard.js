@@ -306,7 +306,7 @@ export default function Dashboard() {
   }
 
   const fetchChildren = async () => {
-    const { data } = await supabase.from('children').select('nombre').order('nombre')
+    const { data } = await supabase.from('children').select('id, nombre').order('nombre')
     setChildrenDB(data || [])
   }
 
@@ -617,6 +617,33 @@ export default function Dashboard() {
         showToast('No se encontraron filas válidas en la hoja GASTOS.', 'error')
         setLoadingExcel(false)
         return
+      }
+
+      // Pre-clasificar usando historial de transacciones ya identificadas (aprende del pasado)
+      const { data: { user: userForHistory } } = await supabase.auth.getUser()
+      if (userForHistory) {
+        const { data: historyTxs } = await supabase.from('transactions')
+          .select('notas, detalle, categories(nombre), tag')
+          .eq('user_id', userForHistory.id)
+          .eq('estado', 'identificado')
+          .not('category_id', 'is', null)
+          .limit(5000)
+        const historyMap = {}
+        historyTxs?.forEach(t => {
+          [t.notas, t.detalle].filter(Boolean).forEach(k => {
+            const key = k.toLowerCase().trim()
+            if (key && !historyMap[key]) historyMap[key] = { cat: t.categories?.nombre, hijo: t.tag || null }
+          })
+        })
+        rows.forEach(r => {
+          if (r.cat && r.cat !== 'A Identificar') return
+          const key = (r.notas || r.descripcion || '').toLowerCase().trim()
+          const match = historyMap[key]
+          if (match?.cat && match.cat !== 'A Identificar') {
+            r.cat = match.cat
+            if (!r.hijo && match.hijo) r.hijo = match.hijo
+          }
+        })
       }
 
       const rowsNeedingClassification = rows.filter(r => !r.cat || r.cat === 'A Identificar')
@@ -1742,7 +1769,7 @@ export default function Dashboard() {
                           {/* Header INGRESOS — izquierda, sin flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             onClick={handleClickIngresos}>
-                            <span style={{ ...styles.sidebarTitle, color: isIngresosSelected ? (darkMode ? '#8C7B8C' : '#5C4F5C') : undefined, fontWeight: isIngresosSelected ? '600' : undefined }}>INGRESOS</span>
+                            <span style={{ ...styles.sidebarTitle, ...(isIngresosSelected ? { color: darkMode ? '#8C7B8C' : '#5C4F5C', fontWeight: '600' } : {}) }}>INGRESOS</span>
                           </div>
                           {/* Header EGRESOS — derecha, con flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
@@ -1886,7 +1913,14 @@ export default function Dashboard() {
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
-                  <HijoDetail hijoNombre={dashboardTab} darkMode={darkMode} tipoCambio={tipoCambio} refreshKey={refreshKey} initialPeriod={sharedPeriod} />
+                  <HijoDetail
+                    hijoNombre={dashboardTab}
+                    hijoId={childrenDB.find(c => c.nombre === dashboardTab)?.id}
+                    darkMode={darkMode}
+                    tipoCambio={tipoCambio}
+                    refreshKey={refreshKey}
+                    initialPeriod={sharedPeriod}
+                  />
                 )}
 
                 {dashboardTab === 'vencimientos' && (
@@ -3310,7 +3344,7 @@ const getStyles = (dark) => {
     modalTitle: { fontSize: '20px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
-    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt },
+    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: 'light' },
     dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px' },
     dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
     dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },

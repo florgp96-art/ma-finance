@@ -272,6 +272,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [stmtCollapsed, setStmtCollapsed] = useState(false)
   const [chartType, setChartType] = useState(() => localStorage.getItem('chart_type_ma') || 'bubble')
+  const [bubbleGroupBy, setBubbleGroupBy] = useState('categoria')
   const mesDropdownRef = useRef(null)
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
@@ -288,7 +289,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   }, [account, accounts, allAccounts, refreshKey])
 
   useEffect(() => {
-    supabase.from('children').select('nombre').order('nombre').then(({ data }) => setChildren(data || []))
+    supabase.from('children').select('id, nombre').order('nombre').then(({ data }) => setChildren(data || []))
   }, [])
 
   const fetchAllPages = async (buildQuery) => {
@@ -310,7 +311,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
       fetchAllPages(() =>
         supabase.from('transactions')
-          .select('*, categories(nombre, color), subcategories(nombre)')
+          .select('*, categories(nombre, color), subcategories(nombre), children(id, nombre)')
           .eq('account_id', account.id)
           .order('fecha', { ascending: false })
       ),
@@ -340,7 +341,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
       fetchAllPages(() =>
         supabase.from('transactions')
-          .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+          .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
           .in('account_id', accountIds)
           .order('fecha', { ascending: false })
       ),
@@ -460,7 +461,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
-      else if (sortKey === 'categoria') { valA = (a.tag || a.categories?.nombre || '').toLowerCase(); valB = (b.tag || b.categories?.nombre || '').toLowerCase() }
+      else if (sortKey === 'categoria') { valA = (a.children?.nombre || a.tag || a.categories?.nombre || '').toLowerCase(); valB = (b.children?.nombre || b.tag || b.categories?.nombre || '').toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'monto') {
         valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
@@ -528,19 +529,35 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const bubbleData = buildBubbleData(gastosParaGrafico, tcEfectivo)
 
   // Datos para legend: categorías sin hijos + child rows separadas
-  const childTags = [...new Set(mesTxs.filter(t => t.tag && t.tipo === 'gasto').map(t => t.tag))]
-  const netBubbleData = childTags.length > 0
-    ? buildBubbleData(mesTxs.filter(t => t.tipo === 'gasto' && !t.tag), tcEfectivo)
+  // Usa child_id (modelo nuevo) con fallback a tag (modelo viejo)
+  const getChildName = (t) => t.children?.nombre || (t.child_id ? children.find(c => c.id === t.child_id)?.nombre : null) || (t.tag || null)
+  const gastosConHijo = mesTxs.filter(t => t.tipo === 'gasto' && getChildName(t))
+  const childNames = [...new Set(gastosConHijo.map(t => getChildName(t)))]
+  const netBubbleData = childNames.length > 0
+    ? buildBubbleData(mesTxs.filter(t => t.tipo === 'gasto' && !getChildName(t)), tcEfectivo)
     : null
-  const childTotals = childTags.map(tag => {
-    const txs = mesTxs.filter(t => t.tag === tag && t.tipo === 'gasto')
+  const childTotals = childNames.map(name => {
+    const txs = mesTxs.filter(t => getChildName(t) === name && t.tipo === 'gasto')
     return {
-      name: tag,
+      name,
       value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)), 0),
       originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
       originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
     }
   }).sort((a, b) => b.value - a.value)
+
+  // Modo "Persona": agrupa todo el gasto por persona (null child = "Personal")
+  const personaBubbleData = Object.values(
+    mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
+      const persona = getChildName(t) || 'Personal'
+      if (!acc[persona]) acc[persona] = { name: persona, value: 0, originalARS: 0, originalUSD: 0 }
+      const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)
+      acc[persona].value += monto
+      if (t.moneda === 'ARS') acc[persona].originalARS += Number(t.monto)
+      else acc[persona].originalUSD += Number(t.monto)
+      return acc
+    }, {})
+  ).sort((a, b) => b.value - a.value)
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
@@ -561,7 +578,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         }, {})
       ).sort((a, b) => b.value - a.value)
     : []
-  const chartData = esVistaIngresos ? ingresoBubbleData : (netBubbleData || bubbleData)
+  const chartData = esVistaIngresos ? ingresoBubbleData : bubbleGroupBy === 'persona' ? personaBubbleData : (netBubbleData || bubbleData)
   // Para donut y barras: incluye hijos como slices/barras separadas, ordenadas por monto
   const fullChartData = esVistaIngresos
     ? ingresoBubbleData
@@ -1050,7 +1067,19 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               </div>
 
               {effectiveChartType === 'bubble' && (
-                <BubbleChart data={fullChartData} legendData={null} childRows={undefined} extraConfig={Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+                <>
+                  {!esVistaIngresos && childNames.length > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', alignSelf: 'center', marginRight: '2px' }}>Agrupar:</span>
+                      {[{ key: 'categoria', label: 'Categoría' }, { key: 'persona', label: 'Persona' }].map(({ key, label }) => (
+                        <button key={key} onClick={() => setBubbleGroupBy(key)} style={{ padding: '4px 12px', borderRadius: '20px', border: `1px solid ${bubbleGroupBy === key ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: bubbleGroupBy === key ? '#5C4F5C' : 'transparent', color: bubbleGroupBy === key ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), fontSize: '11px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: bubbleGroupBy === key ? '600' : '400', outline: 'none' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? undefined : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+                </>
               )}
 
               {/* Donut */}
@@ -1241,9 +1270,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
                         {tx.nombre || tx.detalle}
                       </div>
-                      {tx.tag && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
+                      {(tx.children?.nombre || tx.tag) && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
                         <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
-                          👧 {tx.tag}
+                          👧 {tx.children?.nombre || tx.tag}
                         </span>
                       )}
                     </td>
@@ -1393,7 +1422,7 @@ const getStyles = (dark, mobile) => {
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
     detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },
     editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
-    editSelect: { width: '100%', padding: '4px 28px 4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, appearance: 'none', WebkitAppearance: 'none' },
+    editSelect: { width: '100%', padding: '4px 28px 4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, appearance: 'none', WebkitAppearance: 'none', colorScheme: 'light' },
     editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
