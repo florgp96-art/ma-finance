@@ -2110,9 +2110,10 @@ export default function Dashboard() {
                 accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
                   .map(t => t.tag)
               )].sort()
+              const getHijoName = (t) => t.children?.nombre || t.tag || null
               const hijosConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'gasto' && t.hijo)
-                  .map(t => t.hijo)
+                accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
+                  .map(t => getHijoName(t))
               )].sort()
               const esHijo = sidebarCatEvol.startsWith('hijo:')
               const esIngreso = sidebarCatEvol.startsWith('ingreso:')
@@ -2123,7 +2124,7 @@ export default function Dashboard() {
                   .filter(t => {
                     if (!t.fecha?.startsWith(m)) return false
                     if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
-                    if (esHijo) return t.tipo === 'gasto' && t.hijo === filtroValor
+                    if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
                     return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
                   })
                   .reduce((s, t) => {
