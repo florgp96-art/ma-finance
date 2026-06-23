@@ -1285,12 +1285,19 @@ export default function Dashboard() {
       const hayIngresosEnExtracto = statementData.transacciones.some(t => (t.tipo || (t.es_credito ? 'ingreso' : 'gasto')) === 'ingreso')
       let stmtIngresos = null
       if (hayIngresosEnExtracto && cuentaIngresos) {
-        const { data: si } = await supabase.from('statements').insert({
-          user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
-          periodo: statementData.periodo, fecha_desde: null,
-          fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
-        }).select().single()
-        stmtIngresos = si
+        // Verificar si ya existe statement para ingresos en este periodo
+        const { data: existingIngreso } = await supabase.from('statements')
+          .select('id').eq('account_id', cuentaIngresos.id).eq('periodo', statementData.periodo).maybeSingle()
+        if (existingIngreso) {
+          stmtIngresos = existingIngreso
+        } else {
+          const { data: si } = await supabase.from('statements').insert({
+            user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
+            periodo: statementData.periodo, fecha_desde: null,
+            fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+          }).select().single()
+          stmtIngresos = si
+        }
       }
 
       const txEgresos = []
@@ -1300,7 +1307,7 @@ export default function Dashboard() {
         const categoryId = getCategoryId(t.categoria_sugerida)
         const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
         const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
-        if (tipoTx === 'ingreso' && cuentaIngresos && stmtIngresos) {
+        if (tipoTx === 'ingreso' && cuentaIngresos) {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
           txIngresos.push({
             user_id: user.id, fecha: t.fecha,
@@ -1311,7 +1318,7 @@ export default function Dashboard() {
             category_id: null, subcategory_id: null,
             tag: t.subcategoria_sugerida || null,
             estado: 'identificado', es_manual: false,
-            account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso'
+            account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso'
           })
         } else if (tipoTx !== 'ingreso') {
           txEgresos.push({
