@@ -181,6 +181,8 @@ export default function Dashboard() {
   const [sidebarCatEvol, setSidebarCatEvol] = useState('')
   const [sidebarCatEvolOpen, setSidebarCatEvolOpen] = useState(false)
   const [ahorroMonedaOpen, setAhorroMonedaOpen] = useState(false)
+  const sidebarCatEvolRef = useRef(null)
+  const ahorroMonedaRef = useRef(null)
   const dolarCardRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
@@ -246,6 +248,15 @@ export default function Dashboard() {
       }
     })
   }, [navigate])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (sidebarCatEvolRef.current && !sidebarCatEvolRef.current.contains(e.target)) setSidebarCatEvolOpen(false)
+      if (ahorroMonedaRef.current && !ahorroMonedaRef.current.contains(e.target)) setAhorroMonedaOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   useLayoutEffect(() => {
     const measure = () => { if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight) }
@@ -2066,7 +2077,7 @@ export default function Dashboard() {
                 <div style={styles.savingsPanel}>
                   <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
                   {/* Custom dropdown evolución */}
-                  <div style={{ position: 'relative', marginBottom: '14px' }} onMouseLeave={() => setSidebarCatEvolOpen(false)}>
+                  <div ref={sidebarCatEvolRef} style={{ position: 'relative', marginBottom: '14px' }}>
                     <button onClick={() => setSidebarCatEvolOpen(o => !o)} style={{ width: '100%', padding: '7px 28px 7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: sidebarCatEvol ? txtClr : '#8e8e93', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer', textAlign: 'left', position: 'relative', boxSizing: 'border-box' }}>
                       {sidebarCatEvol === '' ? '— Elegir —' : filtroValor || sidebarCatEvol}
                       <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
@@ -2115,7 +2126,7 @@ export default function Dashboard() {
 
             <div style={styles.savingsField}>
               <label style={styles.savingsLabel}>Moneda</label>
-              <div style={{ position: 'relative' }} onMouseLeave={() => setAhorroMonedaOpen(false)}>
+              <div ref={ahorroMonedaRef} style={{ position: 'relative' }}>
                 <button onClick={() => setAhorroMonedaOpen(o => !o)} style={{ ...styles.savingsInput, cursor: 'pointer', textAlign: 'left', position: 'relative', paddingRight: '28px', display: 'block' }}>
                   {ahorro.moneda}
                   <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
