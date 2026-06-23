@@ -1611,7 +1611,7 @@ export default function Dashboard() {
                   {/* EGRESOS + INGRESOS en la misma fila */}
                   {(() => {
                     const cuentaIngresos = ingresoCuentas[0]
-                    const isIngresosSelected = selectedAccount?.id === cuentaIngresos?.id
+                    const isIngresosSelected = !!(cuentaIngresos?.id && selectedAccount?.id === cuentaIngresos.id)
                     const handleClickIngresos = async () => {
                       if (isIngresosSelected) { setSelectedAccount(null); return }
                       if (cuentaIngresos) { setSelectedAccount(cuentaIngresos); setSidebarOpen(false); return }
