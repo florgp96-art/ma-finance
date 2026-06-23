@@ -1342,12 +1342,19 @@ export default function Dashboard() {
 
       const insertedIds = []
       if (txEgresos.length > 0) {
-        const { data: ins } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado, nombre_original')
+        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado, nombre_original')
+        if (errEg) { showToast(`Error egresos: ${errEg.message}`, 'error'); setLoading(false); return }
         if (ins) insertedIds.push(...ins)
       }
       if (txIngresos.length > 0) {
-        const { data: ins } = await supabase.from('transactions').insert(txIngresos).select('id, detalle, estado, nombre_original')
+        const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresos).select('id, detalle, estado, nombre_original')
+        if (errIn) { showToast(`Error ingresos: ${errIn.message}`, 'error'); setLoading(false); return }
         if (ins) insertedIds.push(...ins)
+      }
+      if (txEgresos.length === 0 && txIngresos.length === 0) {
+        showToast('No se detectaron transacciones para importar.', 'error')
+        setLoading(false)
+        return
       }
 
       // Preparar paso identificar
