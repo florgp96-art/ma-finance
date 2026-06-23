@@ -293,7 +293,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       supabase.from('transactions')
         .select('*, categories(nombre, color), subcategories(nombre)')
         .eq('account_id', account.id)
-        .order('fecha', { ascending: false }),
+        .order('fecha', { ascending: false })
+        .limit(5000),
       supabase.from('categories').select('*').order('orden'),
       supabase.from('subcategories').select('*').order('nombre'),
       supabase.from('statements')
@@ -322,7 +323,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       supabase.from('transactions')
         .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
         .in('account_id', accountIds)
-        .order('fecha', { ascending: false }),
+        .order('fecha', { ascending: false })
+        .limit(5000),
       supabase.from('categories').select('*').order('orden'),
       supabase.from('subcategories').select('*').order('nombre'),
       supabase.from('statements')
@@ -653,17 +655,31 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     </>
   )
 
-  const renderEditCellsIngreso = () => (
-    <>
-      <td style={styles.td}>
-        <input style={styles.editInput} value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Descripción" />
-      </td>
-      <td style={styles.td}>
-        <input style={styles.editInput} value={editTag} onChange={e => setEditTag(e.target.value)} placeholder="Categoría (ej: Sueldo)" />
-      </td>
-      <td style={{...styles.td, display: isMobile ? 'none' : undefined}} />
-    </>
-  )
+  const renderEditCellsIngreso = () => {
+    const ingresosCat = categories.find(c => c.nombre === 'Ingresos')
+    const ingresosSubcats = ingresosCat ? subcategories.filter(s => s.category_id === ingresosCat.id).map(s => s.nombre) : []
+    const existingTags = [...new Set(transactions.filter(t => t.tipo === 'ingreso' && t.tag).map(t => t.tag))]
+    const allOpts = [...new Set([...ingresosSubcats, ...existingTags])].sort()
+    const valueIsCustom = editTag && !allOpts.includes(editTag)
+    return (
+      <>
+        <td style={styles.td}>
+          <input style={styles.editInput} value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Descripción" />
+        </td>
+        <td style={styles.td}>
+          <select style={styles.editSelect} value={valueIsCustom ? '__custom__' : (editTag || '')} onChange={e => {
+            if (e.target.value === '__custom__') return
+            setEditTag(e.target.value)
+          }}>
+            <option value="">— Sin categoría —</option>
+            {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            {valueIsCustom && <option value="__custom__">{editTag}</option>}
+          </select>
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}} />
+      </>
+    )
+  }
 
   const renderEditActions = (tx) => (
     <td style={styles.td}>
@@ -773,13 +789,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             {!esVistaIngresos && allAccounts && (totalARS > 0 || totalIngresosARS > 0) && (
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Egresos ARS</p>
-                <p style={styles.summaryValue}>$ {formatMonto(totalARS)}</p>
+                <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>$ {formatMonto(totalARS)}</p>
                 {hayIngresos && <>{divider}
                   <p style={styles.summaryLabel}>Ingresos ARS</p>
-                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: '#2e7d32' }}>$ {formatMonto(totalIngresosARS)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance ARS</p>
-                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
+                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
                 </>}
               </div>
             )}
@@ -788,13 +804,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             {!esVistaIngresos && allAccounts && (totalUSD > 0 || totalIngresosUSD > 0) && (
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Egresos USD</p>
-                <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+                <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px' }}>U$S {formatMontoFull(totalUSD)}</p>
                 {hayIngresos && totalIngresosUSD > 0 && <>{divider}
                   <p style={styles.summaryLabel}>Ingresos USD</p>
-                  <p style={{ ...styles.summaryValue, fontSize: '18px', color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: '#2e7d32' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance USD</p>
-                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: '18px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '15px' : '20px', color: b >= 0 ? '#2e7d32' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -1170,7 +1186,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       )}
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                      {esVistaIngresos ? (
+                      {(esVistaIngresos || tx.tipo === 'ingreso') ? (
                         <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                           {tx.tag || '—'}
                         </span>

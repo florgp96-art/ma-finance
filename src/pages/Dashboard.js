@@ -1234,12 +1234,12 @@ export default function Dashboard() {
 
 
     if (esBanco) {
-      // Verificar duplicado en egresos (representativa)
+      // Cuenta de egresos del banco
       let { data: cuentaEgresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Egresos - ${nombreBase}`).maybeSingle()
+        .select('*').eq('user_id', user.id).ilike('nombre', nombreBase).maybeSingle()
       if (!cuentaEgresos) {
         const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Egresos - ${nombreBase}`, tipo: 'debito'
+          user_id: user.id, nombre: nombreBase, tipo: 'debito'
         }).select().single()
         cuentaEgresos = nueva
       }
@@ -1252,14 +1252,8 @@ export default function Dashboard() {
         return
       }
 
-      let { data: cuentaIngresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', `Ingresos - ${nombreBase}`).maybeSingle()
-      if (!cuentaIngresos) {
-        const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: `Ingresos - ${nombreBase}`, tipo: 'debito'
-        }).select().single()
-        cuentaIngresos = nueva
-      }
+      // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
+      const cuentaIngresos = await getOrCreateIngresosAccount(user)
 
       const { data: stmtEgresos } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
@@ -1267,11 +1261,17 @@ export default function Dashboard() {
         fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
       }).select().single()
 
-      const { data: stmtIngresos } = await supabase.from('statements').insert({
-        user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
-        periodo: statementData.periodo, fecha_desde: null,
-        fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
-      }).select().single()
+      // Statement de ingresos solo si hay transacciones de ingreso
+      const hayIngresosEnExtracto = statementData.transacciones.some(t => (t.tipo || (t.es_credito ? 'ingreso' : 'gasto')) === 'ingreso')
+      let stmtIngresos = null
+      if (hayIngresosEnExtracto && cuentaIngresos) {
+        const { data: si } = await supabase.from('statements').insert({
+          user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
+          periodo: statementData.periodo, fecha_desde: null,
+          fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+        }).select().single()
+        stmtIngresos = si
+      }
 
       const txEgresos = []
       const txIngresos = []
@@ -1280,21 +1280,31 @@ export default function Dashboard() {
         const categoryId = getCategoryId(t.categoria_sugerida)
         const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
         const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
-        const base = {
-          user_id: user.id, fecha: t.fecha,
-          nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
-          detalle: t.nombre_original,
-          monto: Math.abs(t.monto),
-          moneda: t.moneda || 'ARS',
-          cuotas_total: null, cuota_numero: null,
-          category_id: categoryId, subcategory_id: subcategoryId,
-          estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
-          es_manual: false
-        }
-        if (tipoTx === 'ingreso') {
-          txIngresos.push({ ...base, account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso' })
-        } else {
-          txEgresos.push({ ...base, account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto' })
+        if (tipoTx === 'ingreso' && cuentaIngresos && stmtIngresos) {
+          // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
+          txIngresos.push({
+            user_id: user.id, fecha: t.fecha,
+            nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : (t.nombre_limpio || null),
+            detalle: t.nombre_original,
+            monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
+            cuotas_total: null, cuota_numero: null,
+            category_id: null, subcategory_id: null,
+            tag: t.subcategoria_sugerida || null,
+            estado: 'identificado', es_manual: false,
+            account_id: cuentaIngresos.id, statement_id: stmtIngresos.id, tipo: 'ingreso'
+          })
+        } else if (tipoTx !== 'ingreso') {
+          txEgresos.push({
+            user_id: user.id, fecha: t.fecha,
+            nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
+            detalle: t.nombre_original,
+            monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
+            cuotas_total: null, cuota_numero: null,
+            category_id: categoryId, subcategory_id: subcategoryId,
+            estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+            es_manual: false,
+            account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
+          })
         }
       })
 
@@ -3065,8 +3075,8 @@ const getStyles = (dark) => {
     previewStat: { backgroundColor: cardBg, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
     previewStatLabel: { fontSize: '11px', color: muted, textTransform: 'uppercase' },
     previewStatValue: { fontSize: '15px', fontWeight: '500', color: txt },
-    transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' },
-    transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${border}` },
+    transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px', paddingRight: '6px', scrollbarWidth: 'thin' },
+    transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 4px', borderBottom: `1px solid ${border}` },
     transactionLeft: { flex: 1, paddingRight: '12px' },
     transactionName: { fontSize: '14px', fontWeight: '500', color: txt, margin: '0 0 2px 0' },
     transactionDetail: { fontSize: '12px', color: muted, margin: 0 },
