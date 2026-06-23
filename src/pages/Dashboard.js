@@ -186,9 +186,7 @@ export default function Dashboard() {
   const [accountTransactions, setAccountTransactions] = useState([])
   const [sidebarCatEvol, setSidebarCatEvol] = useState('')
   const [sidebarCatEvolOpen, setSidebarCatEvolOpen] = useState(false)
-  const [ahorroMonedaOpen, setAhorroMonedaOpen] = useState(false)
   const sidebarCatEvolRef = useRef(null)
-  const ahorroMonedaRef = useRef(null)
   const dolarCardRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
@@ -258,7 +256,6 @@ export default function Dashboard() {
   useEffect(() => {
     const handler = (e) => {
       if (sidebarCatEvolRef.current && !sidebarCatEvolRef.current.contains(e.target)) setSidebarCatEvolOpen(false)
-      if (ahorroMonedaRef.current && !ahorroMonedaRef.current.contains(e.target)) setAhorroMonedaOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -2104,7 +2101,6 @@ export default function Dashboard() {
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-              const barColor = esIngreso ? '#7C5CBF' : '#5C4F5C'
               const tooltipLabel = filtroValor || sidebarCatEvol
               const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
               const multigrupo = tiposPresentes >= 2

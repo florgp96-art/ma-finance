@@ -573,8 +573,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   )
   const resolveIcon = (name) => (customIcons?.[name]) || CATEGORY_CONFIG[name]?.icon || childExtraConfig[name]?.icon || '❓'
   const resolveColor = (name) => CATEGORY_CONFIG[name]?.color || childExtraConfig[name]?.color || '#E0E0E0'
-  const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(name)
-  const getChartIcon = (name) => esVistaIngresos ? '' : resolveIcon(name)
   const getFullChartColor = (entry, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(entry.name)
   const mergedExtraConfig = {
     ...childExtraConfig,
