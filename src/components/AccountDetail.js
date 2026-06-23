@@ -561,6 +561,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       ).sort((a, b) => b.value - a.value)
     : []
   const chartData = esVistaIngresos ? ingresoBubbleData : (netBubbleData || bubbleData)
+  // Para donut y barras: incluye hijos como slices/barras separadas, ordenadas por monto
+  const fullChartData = esVistaIngresos
+    ? ingresoBubbleData
+    : childTotals.length > 0
+      ? [...(netBubbleData || bubbleData), ...childTotals].sort((a, b) => b.value - a.value)
+      : (netBubbleData || bubbleData)
+  const getFullChartColor = (entry, idx) => childTotals.some(c => c.name === entry.name) ? '#C8A84B' : getChartColor(entry.name, idx)
   const getChartColor = (name, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : (CATEGORY_CONFIG[name]?.color || '#E0E0E0')
   const getChartIcon = (name) => esVistaIngresos ? '' : (CATEGORY_CONFIG[name]?.icon || '❓')
   const effectiveChartType = chartType
@@ -1043,18 +1050,18 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
                   <ResponsiveContainer width={isMobile ? '100%' : 260} height={240}>
                     <PieChart>
-                      <Pie data={chartData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
-                        {chartData.map((entry, idx) => (
-                          <Cell key={idx} fill={getChartColor(entry.name, idx)} stroke="none" />
+                      <Pie data={fullChartData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
+                        {fullChartData.map((entry, idx) => (
+                          <Cell key={idx} fill={getFullChartColor(entry, idx)} stroke="none" />
                         ))}
                       </Pie>
                       <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
-                    {chartData.map((entry, idx) => (
+                    {fullChartData.map((entry, idx) => (
                       <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name, idx), flexShrink: 0 }} />
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getFullChartColor(entry, idx), flexShrink: 0 }} />
                         <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{getChartIcon(entry.name)} {entry.name}</span>
                         <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
                       </div>
@@ -1065,20 +1072,18 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
               {/* Barras horizontales */}
               {effectiveChartType === 'bars' && (() => {
-                const fullBarData = childTotals.length > 0 ? [...chartData, ...childTotals] : chartData
                 const rowH = 36
-                const chartH = Math.max(180, fullBarData.length * rowH + 24)
+                const chartH = Math.max(180, fullChartData.length * rowH + 24)
                 return (
                   <ResponsiveContainer width="100%" height={chartH}>
-                    <BarChart data={fullBarData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+                    <BarChart data={fullChartData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
                       <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                       <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
                       <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                       <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {fullBarData.map((entry, idx) => {
-                          const isChild = childTotals.some(c => c.name === entry.name)
-                          return <Cell key={idx} fill={isChild ? '#C8A84B' : getChartColor(entry.name, idx)} />
-                        })}
+                        {fullChartData.map((entry, idx) => (
+                          <Cell key={idx} fill={getFullChartColor(entry, idx)} />
+                        ))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -1380,7 +1385,7 @@ const getStyles = (dark, mobile) => {
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
     detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },
     editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
-    editSelect: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, colorScheme: dark ? 'dark' : 'light' },
+    editSelect: { width: '100%', padding: '4px 28px 4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, appearance: 'none', WebkitAppearance: 'none' },
     editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },

@@ -179,6 +179,8 @@ export default function Dashboard() {
   const [vencExpanded, setVencExpanded] = useState(false)
   const [accountTransactions, setAccountTransactions] = useState([])
   const [sidebarCatEvol, setSidebarCatEvol] = useState('')
+  const [sidebarCatEvolOpen, setSidebarCatEvolOpen] = useState(false)
+  const [ahorroMonedaOpen, setAhorroMonedaOpen] = useState(false)
   const dolarCardRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
@@ -2063,38 +2065,30 @@ export default function Dashboard() {
               return (
                 <div style={styles.savingsPanel}>
                   <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
-                  <select
-                    style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '14px', cursor: 'pointer', width: '100%', colorScheme: darkMode ? 'dark' : 'light' }}
-                    value={sidebarCatEvol}
-                    onChange={e => setSidebarCatEvol(e.target.value)}
-                  >
-                    <option value="">— Elegir —</option>
-                    {multigrupo ? (
-                      <>
-                        {ingresosConTx.length > 0 && (
-                          <optgroup label="── Ingresos ──">
-                            {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>{t}</option>)}
-                          </optgroup>
-                        )}
-                        {categoriasConTx.length > 0 && (
-                          <optgroup label="── Egresos ──">
-                            {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
-                          </optgroup>
-                        )}
-                        {hijosConTx.length > 0 && (
-                          <optgroup label="── Hijos ──">
-                            {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>{h}</option>)}
-                          </optgroup>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {ingresosConTx.map(t => <option key={`ingreso:${t}`} value={`ingreso:${t}`}>{t}</option>)}
-                        {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
-                        {hijosConTx.map(h => <option key={`hijo:${h}`} value={`hijo:${h}`}>{h}</option>)}
-                      </>
+                  {/* Custom dropdown evolución */}
+                  <div style={{ position: 'relative', marginBottom: '14px' }} onMouseLeave={() => setSidebarCatEvolOpen(false)}>
+                    <button onClick={() => setSidebarCatEvolOpen(o => !o)} style={{ width: '100%', padding: '7px 28px 7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: sidebarCatEvol ? txtClr : '#8e8e93', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer', textAlign: 'left', position: 'relative', boxSizing: 'border-box' }}>
+                      {sidebarCatEvol === '' ? '— Elegir —' : filtroValor || sidebarCatEvol}
+                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
+                    </button>
+                    {sidebarCatEvolOpen && (
+                      <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
+                        <button onClick={() => { setSidebarCatEvol(''); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif' }}>— Elegir —</button>
+                        {ingresosConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Ingresos</div>}
+                          {ingresosConTx.map(t => <button key={`ingreso:${t}`} onClick={() => { setSidebarCatEvol(`ingreso:${t}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{t}</button>)}
+                        </>)}
+                        {categoriasConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Egresos</div>}
+                          {categoriasConTx.map(c => <button key={c} onClick={() => { setSidebarCatEvol(c); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === c ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === c ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{c}</button>)}
+                        </>)}
+                        {hijosConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Hijos</div>}
+                          {hijosConTx.map(h => <button key={`hijo:${h}`} onClick={() => { setSidebarCatEvol(`hijo:${h}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{h}</button>)}
+                        </>)}
+                      </div>
                     )}
-                  </select>
+                  </div>
                   {sidebarCatEvol ? (
                     <ResponsiveContainer width="100%" height={170}>
                       <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
@@ -2121,10 +2115,21 @@ export default function Dashboard() {
 
             <div style={styles.savingsField}>
               <label style={styles.savingsLabel}>Moneda</label>
-              <select style={styles.savingsInput} value={ahorro.moneda} onChange={e => setAhorro({...ahorro, moneda: e.target.value})}>
-                <option value="USD">USD</option>
-                <option value="ARS">ARS</option>
-              </select>
+              <div style={{ position: 'relative' }} onMouseLeave={() => setAhorroMonedaOpen(false)}>
+                <button onClick={() => setAhorroMonedaOpen(o => !o)} style={{ ...styles.savingsInput, cursor: 'pointer', textAlign: 'left', position: 'relative', paddingRight: '28px', display: 'block' }}>
+                  {ahorro.moneda}
+                  <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
+                </button>
+                {ahorroMonedaOpen && (
+                  <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+                    {['USD', 'ARS'].map(m => (
+                      <button key={m} onClick={() => { setAhorro({...ahorro, moneda: m}); setAhorroMonedaOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: ahorro.moneda === m ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: ahorro.moneda === m ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#F0EDEC' : '#1d1d1f'), fontFamily: '"Montserrat", sans-serif' }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={styles.savingsField}>
