@@ -1195,7 +1195,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       {(esVistaIngresos || tx.tipo === 'ingreso') ? (
-                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
                           {tx.tag || '—'}
                         </span>
                       ) : (
