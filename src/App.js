@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
+import { COLORS, FONT } from './theme'
 
 // Pages
 import Login from './pages/Login'
@@ -13,13 +14,14 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
         height: '100vh',
-        fontFamily: 'Arial, sans-serif',
-        color: '#888'
+        fontFamily: FONT.family,
+        color: COLORS.textSecondary,
+        backgroundColor: COLORS.bg,
       }}>
         Cargando...
       </div>

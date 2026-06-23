@@ -496,6 +496,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     : []
 
   const getTC = (mes) => {
+    const mesActual = new Date().toISOString().slice(0, 7)
+    if (mes === mesActual) return parseFloat(tipoCambio) || 1
     if (mes && tcMap && tcMap[mes]) return Number(tcMap[mes])
     return parseFloat(tipoCambio) || 1
   }

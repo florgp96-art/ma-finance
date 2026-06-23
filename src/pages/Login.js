@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, Link } from 'react-router-dom'
+import { COLORS, FONT, RADIUS } from '../theme'
+
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 export default function Login() {
@@ -47,7 +49,7 @@ export default function Login() {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoWrap}>
-          <img src={logo} alt="Mom's Assist Finance" style={styles.logo} />
+          <img src={logo} alt="MA Finance" style={styles.logo} />
         </div>
 
         <p style={styles.subtitle}>Iniciá sesión en tu cuenta</p>
@@ -93,8 +95,8 @@ export default function Login() {
             ✅ Te enviamos un email para restablecer tu contraseña.
           </p>
         ) : (
-          <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: '#6e6e73' }}>
-            <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: '#5C4F5C', cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
+          <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: COLORS.textSecondary }}>
+            <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: COLORS.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
               ¿Olvidaste tu contraseña?
             </button>
           </p>
@@ -114,16 +116,16 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0EDEC',
-    fontFamily: '"Montserrat", sans-serif',
+    backgroundColor: COLORS.bg,
+    fontFamily: FONT.family,
   },
   card: {
-    backgroundColor: 'white',
-    borderRadius: '24px',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     padding: '48px 40px 36px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 8px 40px rgba(92,79,92,0.10)',
+    boxShadow: '0 8px 40px rgba(107,123,184,0.10)',
   },
   logoWrap: {
     display: 'flex',
@@ -135,7 +137,7 @@ const styles = {
     objectFit: 'contain',
   },
   subtitle: {
-    color: '#6e6e73',
+    color: COLORS.textSecondary,
     textAlign: 'center',
     marginBottom: '32px',
     fontSize: '15px',
@@ -146,29 +148,29 @@ const styles = {
     display: 'block',
     fontSize: '13px',
     fontWeight: '400',
-    color: '#1d1d1f',
+    color: COLORS.text,
     marginBottom: '6px',
     letterSpacing: '0.02em',
   },
   input: {
     width: '100%',
     padding: '13px 14px',
-    borderRadius: '12px',
-    border: '1.5px solid #D0C8CC',
+    borderRadius: RADIUS.md,
+    border: `1.5px solid ${COLORS.inputBorder}`,
     fontSize: '15px',
     outline: 'none',
     boxSizing: 'border-box',
-    color: '#1d1d1f',
-    backgroundColor: '#F7F5F6',
+    color: COLORS.text,
+    backgroundColor: COLORS.inputBg,
     transition: 'border-color 0.2s',
   },
   button: {
     width: '100%',
     padding: '14px',
-    backgroundColor: '#5C4F5C',
+    backgroundColor: COLORS.primary,
     color: 'white',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: RADIUS.md,
     fontSize: '15px',
     fontWeight: '500',
     cursor: 'pointer',
@@ -178,22 +180,22 @@ const styles = {
     outline: 'none',
   },
   error: {
-    backgroundColor: '#fff0f0',
-    color: '#c0392b',
+    backgroundColor: COLORS.errorBg,
+    color: COLORS.errorText,
     padding: '12px 16px',
-    borderRadius: '10px',
+    borderRadius: RADIUS.sm,
     marginBottom: '16px',
     fontSize: '14px',
-    border: '1px solid #fcc',
+    border: `1px solid ${COLORS.errorBorder}`,
   },
   link: {
     textAlign: 'center',
     marginTop: '24px',
     fontSize: '14px',
-    color: '#6e6e73',
+    color: COLORS.textSecondary,
   },
   linkAnchor: {
-    color: '#5C4F5C',
+    color: COLORS.primary,
     fontWeight: '500',
     textDecoration: 'none',
   },
