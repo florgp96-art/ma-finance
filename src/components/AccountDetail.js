@@ -20,7 +20,7 @@ export const CATEGORY_CONFIG = {
 }
 
 const BAR_COLOR = '#A8B8D8'
-const INCOME_PALETTE = ['#A8D8B9','#7EC8A4','#B5EAC8','#81C784','#66BB6A','#A5D6A7','#C8E6C9','#9ECFB0']
+const INCOME_PALETTE = ['#C8B4E8','#B8A0D8','#D4C8F0','#A890C8','#BCA8D8','#CCC0E8','#D8D0F0','#B4A4D0']
 
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -439,7 +439,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
-      else if (sortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
+      else if (sortKey === 'categoria') { valA = (a.categories?.nombre || a.tag || '').toLowerCase(); valB = (b.categories?.nombre || b.tag || '').toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'monto') {
         valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
@@ -553,6 +553,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const totalAnteriorMonto = txMesAnterior.reduce((s, t) => s + Number(t.monto), 0)
   const diffPct = puedeComparar && totalAnteriorMonto > 0 ? Math.round(((totalSeleccionado - totalAnteriorMonto) / totalAnteriorMonto) * 100) : null
   const diffMonto = totalSeleccionado - totalAnteriorMonto
+  // Comparativa de ingresos vs mes anterior
+  const totalIngSeleccionado = mesSeleccionado ? transactions.filter(t => t.fecha?.startsWith(mesSeleccionado) && t.tipo === 'ingreso' && t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0) : 0
+  const totalIngAnterior = mesAnterior ? transactions.filter(t => t.fecha?.startsWith(mesAnterior) && t.tipo === 'ingreso' && t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0) : 0
+  const diffIngPct = puedeComparar && mesAnterior && totalIngAnterior > 0 ? Math.round(((totalIngSeleccionado - totalIngAnterior) / totalIngAnterior) * 100) : null
+  const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
   const txFiltradas = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
@@ -795,19 +800,30 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             )}
 
             {/* vs mes anterior */}
-            {diffPct !== null && mesAnterior && selectedMeses.length === 1 && !esVistaIngresos && (
+            {(diffPct !== null || diffIngPct !== null) && mesAnterior && selectedMeses.length === 1 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
-                <p style={styles.summaryLabel}>vs {mesLabel(mesAnterior)}</p>
-                <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '22px'}}>
-                  {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
-                </p>
-                <p style={styles.summarySubval}>{diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}</p>
+                <p style={{ ...styles.summaryLabel, marginBottom: '6px' }}>vs {mesLabel(mesAnterior)}</p>
+                {diffPct !== null && <>
+                  <p style={{ ...styles.summaryLabel, marginBottom: '2px', opacity: 0.7 }}>GASTOS</p>
+                  <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '20px', marginBottom: '2px'}}>
+                    {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
+                  </p>
+                  <p style={{...styles.summarySubval, marginBottom: diffIngPct !== null ? '8px' : 0}}>{diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}</p>
+                </>}
+                {diffIngPct !== null && <>
+                  {diffPct !== null && <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '4px 0 6px' }} />}
+                  <p style={{ ...styles.summaryLabel, marginBottom: '2px', opacity: 0.7 }}>INGRESOS</p>
+                  <p style={{...styles.summaryValue, color: diffIngPct > 0 ? '#2e8b6a' : '#c0392b', fontSize: '20px', marginBottom: '2px'}}>
+                    {diffIngPct > 0 ? '↑' : '↓'} {Math.abs(diffIngPct)}%
+                  </p>
+                  <p style={styles.summarySubval}>{diffIngMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffIngMonto))}</p>
+                </>}
               </div>
             )}
 
             {/* Categoría top */}
             {catTop && !esVistaIngresos && (
-              <div style={styles.summaryCard}>
+              <div style={{ ...styles.summaryCard, textAlign: 'center' }}>
                 <p style={styles.summaryLabel}>Categoría top</p>
                 <p style={{...styles.summaryValue, fontSize: '18px'}}>{CATEGORY_CONFIG[catTop[0]]?.icon || '❓'} {catTop[0]}</p>
                 <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
@@ -817,11 +833,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             {/* Equiv con toggle ARS⇌USD */}
             {tcEfectivo > 0 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <p style={{ ...styles.summaryLabel, margin: 0 }}>{equivEnUSD ? 'EQUIV. USD' : 'EQUIV. PESOS'}</p>
-                  <button onClick={() => setEquivEnUSD(v => !v)} style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '6px', border: `1px solid ${darkMode ? '#4A3F4A' : '#D0C8CC'}`, background: 'none', cursor: 'pointer', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
-                    {equivEnUSD ? 'ARS' : 'USD'}
-                  </button>
+                <p style={{ ...styles.summaryLabel, marginBottom: '8px' }}>EQUIV. TOTALES</p>
+                <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${darkMode ? '#4A3F4A' : '#C8C0CC'}`, overflow: 'hidden', marginBottom: '10px' }}>
+                  {[{ v: false, label: 'ARS' }, { v: true, label: 'USD' }].map(opt => (
+                    <button key={opt.label} onClick={() => setEquivEnUSD(opt.v)}
+                      style={{ flex: 1, padding: '6px 0', border: 'none', background: equivEnUSD === opt.v ? '#5C4F5C' : 'transparent', color: equivEnUSD === opt.v ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
                 {equivEnUSD ? <>
                   <p style={styles.summaryLabel}>Egresos</p>
@@ -875,7 +894,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
           <p style={{ fontSize: '13px', color: '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
           {onAddIngreso && (
-            <button onClick={onAddIngreso} style={{ padding: '12px 24px', borderRadius: '12px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+            <button onClick={onAddIngreso} style={{ padding: '12px 24px', borderRadius: '12px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
               + Agregar primer ingreso
             </button>
           )}
@@ -926,7 +945,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               )}
             </div>
             {esVistaIngresos && onAddIngreso && (
-              <button onClick={onAddIngreso} style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: '10px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              <button onClick={onAddIngreso} style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: '10px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 + Agregar ingreso
               </button>
             )}
@@ -1152,7 +1171,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       {esVistaIngresos ? (
-                        <span style={{ backgroundColor: '#A8D8B9', color: '#2e7d32', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                           {tx.tag || '—'}
                         </span>
                       ) : (
@@ -1183,7 +1202,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 </td>
                 <td style={{...styles.td, textAlign:'right', fontWeight:'600',
                   whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
-                  color: tx.tipo === 'ingreso' ? '#4a9e7a' : (darkMode ? '#F0EDEC' : '#2d2d2d')}}>
+                  color: tx.tipo === 'ingreso' ? (darkMode ? '#C8B4E8' : '#7C5CBF') : (darkMode ? '#F0EDEC' : '#2d2d2d')}}>
                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                 </td>
                 {editingTx === tx.id ? renderEditActions(tx) : (

@@ -150,6 +150,7 @@ export default function Dashboard() {
 
   // Responsive
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Hijos
@@ -247,7 +248,7 @@ export default function Dashboard() {
   }, [dashboardTab, selectedAccount])
 
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth)
+    const handleResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight) }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
@@ -1405,6 +1406,7 @@ export default function Dashboard() {
   const styles = getStyles(darkMode)
   const isMobile = windowWidth < 640
   const isTablet = windowWidth >= 640 && windowWidth < 960
+  const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -1535,6 +1537,16 @@ export default function Dashboard() {
             </div>
           )
         })()}
+
+        {/* Banner: rotar teléfono — solo mobile portrait */}
+        {isPortraitMobile && (
+          <div style={{ margin: '0 12px 10px', padding: '10px 14px', borderRadius: '12px', backgroundColor: darkMode ? '#2A202A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#D0C8CC'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '20px' }}>📱↔️</span>
+            <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#C8B4E8' : '#5C4F5C', fontWeight: '500' }}>
+              Girá el teléfono en horizontal para mejor experiencia
+            </p>
+          </div>
+        )}
 
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
