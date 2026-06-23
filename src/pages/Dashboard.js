@@ -415,13 +415,18 @@ export default function Dashboard() {
   }
 
   const getOrCreateIngresosAccount = async (user) => {
+    // Primero buscar en el estado local
     let acc = accounts.find(a => a.tipo === 'ingreso')
-    if (!acc) {
-      const { data } = await supabase.from('accounts').insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
-      acc = data
-      await fetchAccountsAndReturn()
-    }
-    return acc
+    if (acc) return acc
+    // El estado puede estar desactualizado — consultar la DB directamente
+    const { data: dbAcc } = await supabase.from('accounts')
+      .select('*').eq('user_id', user.id).eq('tipo', 'ingreso').maybeSingle()
+    if (dbAcc) return dbAcc
+    // No existe: crear
+    const { data } = await supabase.from('accounts')
+      .insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
+    if (data) await fetchAccountsAndReturn()
+    return data
   }
 
   const fetchAccountsAndReturn = async () => {
