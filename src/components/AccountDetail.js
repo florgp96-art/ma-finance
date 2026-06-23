@@ -578,7 +578,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       (t.detalle || '').toLowerCase().includes(q) ||
       (t.categories?.nombre || '').toLowerCase().includes(q) ||
       (t.subcategories?.nombre || '').toLowerCase().includes(q) ||
-      (t.tag || '').toLowerCase().includes(q)
+      (t.tag || '').toLowerCase().includes(q) ||
+      (t.tipo || '').toLowerCase().includes(q)
     )
   }
 
