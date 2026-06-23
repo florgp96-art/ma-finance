@@ -979,6 +979,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
           {chartData.length > 0 && (
             <div style={styles.bubbleSection}>
+              <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
+                {esVistaIngresos ? 'Gráficos de ingresos' : 'Gráficos de gastos'}
+              </p>
               {/* Selector de tipo de gráfico */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
