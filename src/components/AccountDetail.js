@@ -920,7 +920,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       {mesesDisponibles.length > 0 && (
         <div style={styles.chartSection}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <h3 style={{...styles.chartTitle, margin: 0}}>{esVistaIngresos ? '💰 Ingresos de:' : '🫧 Gastos de:'}</h3>
+            <h3 style={{...styles.chartTitle, margin: 0}}>{esVistaIngresos ? '💰 Ingresos de:' : '🫧 Movimientos de:'}</h3>
             <div ref={mesDropdownRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => setMesDropdownOpen(o => !o)}

@@ -104,8 +104,13 @@ export default function Dashboard() {
   const [showIngreso, setShowIngreso] = useState(false)
   const [ingreso, setIngreso] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: '' })
 
-  // Widget ahorro
-  const [ahorro, setAhorro] = useState({ monto: '', moneda: 'USD', anos: '', tasa: '' })
+  // Widget ahorro — persiste en localStorage
+  const [ahorro, setAhorro] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ma_ahorro')
+      return saved ? JSON.parse(saved) : { monto: '', moneda: 'USD', anos: '', tasa: '' }
+    } catch { return { monto: '', moneda: 'USD', anos: '', tasa: '' } }
+  })
 
   // Categorías
   const [showCategorias, setShowCategorias] = useState(false)
@@ -187,6 +192,7 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
+  useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {} }, [ahorro])
 
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
