@@ -1682,6 +1682,9 @@ export default function Dashboard() {
                               ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
                               : egresoCuentas.map(renderAccount)
                             }
+                            <p style={{ fontSize: '11px', color: '#9A8A9A', margin: '8px 0 0', textAlign: 'center', fontStyle: 'italic' }}>
+                              Agregá más cuentas en Configuración ⚙️
+                            </p>
                           </div>
                         )}
                       </>
@@ -1714,7 +1717,7 @@ export default function Dashboard() {
               {/* Importar */}
               <div style={{ position: 'relative' }}>
                 <button style={styles.sidebarBtnPrimary} onClick={() => setImportMenuOpen(o => !o)}>
-                  + IMPORTAR PDF / EXCEL {importMenuOpen ? '▴' : '▾'}
+                  + IMPORTAR {importMenuOpen ? '▴' : '▾'}
                 </button>
                 {importMenuOpen && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px', paddingLeft: '12px' }}>

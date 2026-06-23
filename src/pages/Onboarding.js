@@ -29,6 +29,12 @@ export default function Onboarding() {
       if (hijosData.length > 0) await supabase.from('children').insert(hijosData)
     }
 
+    // Crear cuentas predeterminadas
+    await supabase.from('accounts').insert([
+      { user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' },
+      { user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' },
+    ])
+
     navigate('/dashboard')
     setLoading(false)
   }
