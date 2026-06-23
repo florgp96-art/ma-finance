@@ -165,6 +165,12 @@ export default function Dashboard() {
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
+  // Cambiar contraseña
+  const [showCambiarClave, setShowCambiarClave] = useState(false)
+  const [nuevaClave, setNuevaClave] = useState('')
+  const [confirmarClave, setConfirmarClave] = useState('')
+  const [claveMsg, setClaveMsg] = useState(null)
+
   // Aliases
   const [showAliases, setShowAliases] = useState(false)
   const [userAliases, setUserAliases] = useState([])
@@ -850,6 +856,18 @@ export default function Dashboard() {
     } catch (e) {
       showToast('Error al reclasificar: ' + e.message, 'error')
     }
+  }
+
+  const handleCambiarClave = async (e) => {
+    e.preventDefault()
+    setClaveMsg(null)
+    if (nuevaClave.length < 6) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 6 caracteres.' }); return }
+    if (nuevaClave !== confirmarClave) { setClaveMsg({ tipo: 'error', texto: 'Las contraseñas no coinciden.' }); return }
+    const { error } = await supabase.auth.updateUser({ password: nuevaClave })
+    if (error) { setClaveMsg({ tipo: 'error', texto: error.message }); return }
+    setClaveMsg({ tipo: 'ok', texto: '¡Contraseña actualizada correctamente!' })
+    setNuevaClave('')
+    setConfirmarClave('')
   }
 
   const handleLogout = async () => {
@@ -1541,6 +1559,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
                       </div>
                     )}
                   </div>
@@ -1748,6 +1767,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => { fetchChildren(); setShowHijos(true) }}>👧 HIJOS</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { fetchUserAliases(); setShowAliases(true) }}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setShowCambiarClave(true); setClaveMsg(null); setNuevaClave(''); setConfirmarClave('') }}>🔑 CAMBIAR CONTRASEÑA</button>
                     </div>
                   )}
                 </>
@@ -2712,6 +2732,47 @@ export default function Dashboard() {
             <div style={{ textAlign: 'right' }}>
               <button style={styles.cancelBtn} onClick={() => setShowAliases(false)}>Cerrar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showCambiarClave && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '380px' }}>
+            <h3 style={styles.modalTitle}>🔑 Cambiar contraseña</h3>
+            <form onSubmit={handleCambiarClave} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={styles.label}>Nueva contraseña</label>
+                <input
+                  type="password"
+                  style={styles.input}
+                  placeholder="Mínimo 6 caracteres"
+                  value={nuevaClave}
+                  onChange={e => setNuevaClave(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Confirmar contraseña</label>
+                <input
+                  type="password"
+                  style={styles.input}
+                  placeholder="Repetí la contraseña"
+                  value={confirmarClave}
+                  onChange={e => setConfirmarClave(e.target.value)}
+                  required
+                />
+              </div>
+              {claveMsg && (
+                <p style={{ margin: 0, fontSize: '13px', fontWeight: 500, color: claveMsg.tipo === 'ok' ? '#3a7d44' : '#c0392b' }}>
+                  {claveMsg.texto}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" style={styles.cancelBtn} onClick={() => setShowCambiarClave(false)}>Cancelar</button>
+                <button type="submit" style={styles.saveBtn}>Guardar</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
