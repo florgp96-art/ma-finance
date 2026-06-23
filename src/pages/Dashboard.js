@@ -319,21 +319,35 @@ export default function Dashboard() {
   const fetchCustomIcons = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data } = await supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id)
-    if (data) setCustomIcons(Object.fromEntries(data.filter(r => r.categories?.nombre).map(r => [r.categories.nombre, r.icono])))
+    const [{ data: catIcons }, { data: childIcons }] = await Promise.all([
+      supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id),
+      supabase.from('children').select('nombre, icono').eq('user_id', user.id).not('icono', 'is', null)
+    ])
+    const icons = {}
+    if (catIcons) catIcons.filter(r => r.categories?.nombre).forEach(r => { icons[r.categories.nombre] = r.icono })
+    if (childIcons) childIcons.forEach(r => { icons[r.nombre] = r.icono })
+    setCustomIcons(icons)
   }
 
   const saveCustomIcon = async (categoria, icono) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const catObj = categoriasDB.find(c => c.nombre === categoria)
-    if (!catObj) return
-    if (icono) {
-      await supabase.from('user_category_icons').upsert({ user_id: user.id, category_id: catObj.id, icono }, { onConflict: 'user_id,category_id' })
-      setCustomIcons(prev => ({ ...prev, [categoria]: icono }))
+    if (catObj) {
+      if (icono) {
+        await supabase.from('user_category_icons').upsert({ user_id: user.id, category_id: catObj.id, icono }, { onConflict: 'user_id,category_id' })
+        setCustomIcons(prev => ({ ...prev, [categoria]: icono }))
+      } else {
+        await supabase.from('user_category_icons').delete().eq('user_id', user.id).eq('category_id', catObj.id)
+        setCustomIcons(prev => { const n = {...prev}; delete n[categoria]; return n })
+      }
     } else {
-      await supabase.from('user_category_icons').delete().eq('user_id', user.id).eq('category_id', catObj.id)
-      setCustomIcons(prev => { const n = {...prev}; delete n[categoria]; return n })
+      const childObj = childrenDB.find(c => c.nombre === categoria)
+      if (childObj) {
+        await supabase.from('children').update({ icono: icono || null }).eq('id', childObj.id)
+        setChildrenDB(prev => prev.map(c => c.id === childObj.id ? { ...c, icono: icono || null } : c))
+        setCustomIcons(prev => icono ? { ...prev, [categoria]: icono } : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== categoria)))
+      }
     }
     setIconEditingCat(null)
     setIconInput('')
