@@ -459,10 +459,20 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     })
   }
 
-  const barData = statements.map(s => ({
-    mes: s.periodo || s.fecha_hasta?.slice(0, 7),
-    total: Number(s.total_resumen) || 0
-  }))
+  const barData = esVistaIngresos
+    ? (() => {
+        const byMonth = {}
+        transactions.filter(t => t.moneda === 'ARS').forEach(t => {
+          const m = t.fecha?.slice(0, 7)
+          if (!m) return
+          byMonth[m] = (byMonth[m] || 0) + Number(t.monto)
+        })
+        return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
+      })()
+    : statements.map(s => ({
+        mes: s.periodo || s.fecha_hasta?.slice(0, 7),
+        total: Number(s.total_resumen) || 0
+      }))
 
   const mesTxs = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
