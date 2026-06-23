@@ -422,7 +422,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     setEditNombre(tx.nombre || tx.detalle)
     setEditCategoria(tx.categories?.nombre || 'A Identificar')
     setEditSubcategoria(tx.subcategories?.nombre || '')
-    setEditTag(tx.tag || '')
+    const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
+    setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
   }
 
   const handleSort = (key) => {

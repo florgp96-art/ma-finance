@@ -1308,7 +1308,8 @@ export default function Dashboard() {
       const txEgresos = []
       const txIngresos = []
 
-      statementData.transacciones.forEach(t => {
+      statementData.transacciones.forEach((t, i) => {
+        if (!pdfTxSelections.has(i)) return
         const categoryId = getCategoryId(t.categoria_sugerida)
         const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
         const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
