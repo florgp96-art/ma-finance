@@ -1188,7 +1188,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
                         {tx.nombre || tx.detalle}
                       </div>
-                      {tx.tag && !isMobile && !esVistaIngresos && (
+                      {tx.tag && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
                         <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
                           👧 {tx.tag}
                         </span>
