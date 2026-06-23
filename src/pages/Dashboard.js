@@ -2548,9 +2548,14 @@ export default function Dashboard() {
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                         </div>
-                        <p style={{ ...styles.transactionMonto, color: t.es_credito ? '#27AE60' : undefined }}>
-                          {t.es_credito ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(t.monto)}
-                        </p>
+                        {(() => {
+                          const esPos = statementData?.tipo_documento === 'banco' ? t.tipo === 'ingreso' : t.es_credito
+                          return (
+                            <p style={{ ...styles.transactionMonto, color: esPos ? '#3a7d44' : undefined }}>
+                              {esPos ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(Math.abs(t.monto))}
+                            </p>
+                          )
+                        })()}
                       </div>
                     )
                   })}
