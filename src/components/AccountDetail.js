@@ -290,14 +290,29 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     supabase.from('children').select('nombre').order('nombre').then(({ data }) => setChildren(data || []))
   }, [])
 
+  const fetchAllPages = async (buildQuery) => {
+    const PAGE = 1000
+    let all = []
+    let page = 0
+    while (true) {
+      const { data } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
+      if (!data || data.length === 0) break
+      all = all.concat(data)
+      if (data.length < PAGE) break
+      page++
+    }
+    return all
+  }
+
   const fetchData = async () => {
     setLoading(true)
-    const [txRes, catRes, subcatRes, stmtRes] = await Promise.all([
-      supabase.from('transactions')
-        .select('*, categories(nombre, color), subcategories(nombre)')
-        .eq('account_id', account.id)
-        .order('fecha', { ascending: false })
-        .limit(5000),
+    const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
+      fetchAllPages(() =>
+        supabase.from('transactions')
+          .select('*, categories(nombre, color), subcategories(nombre)')
+          .eq('account_id', account.id)
+          .order('fecha', { ascending: false })
+      ),
       supabase.from('categories').select('*').order('orden'),
       supabase.from('subcategories').select('*').order('nombre'),
       supabase.from('statements')
@@ -305,7 +320,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         .eq('account_id', account.id)
         .order('fecha_hasta', { ascending: true }),
     ])
-    const txs = txRes.data || []
     setTransactions(txs)
     setCategories(catRes.data || [])
     setSubcategories(subcatRes.data || [])
@@ -322,12 +336,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const fetchAllData = async () => {
     setLoading(true)
     const accountIds = accounts.map(a => a.id)
-    const [txRes, catRes, subcatRes, stmtRes] = await Promise.all([
-      supabase.from('transactions')
-        .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
-        .in('account_id', accountIds)
-        .order('fecha', { ascending: false })
-        .limit(5000),
+    const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
+      fetchAllPages(() =>
+        supabase.from('transactions')
+          .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+          .in('account_id', accountIds)
+          .order('fecha', { ascending: false })
+      ),
       supabase.from('categories').select('*').order('orden'),
       supabase.from('subcategories').select('*').order('nombre'),
       supabase.from('statements')
@@ -335,7 +350,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         .in('account_id', accountIds)
         .order('fecha_hasta', { ascending: true }),
     ])
-    const txs = txRes.data || []
     setTransactions(txs)
     setCategories(catRes.data || [])
     setSubcategories(subcatRes.data || [])
