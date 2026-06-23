@@ -986,7 +986,7 @@ export default function Dashboard() {
       if (result.tipo_documento === 'banco') {
         setPdfTxDuplicadas(new Set())
         setPdfTxSelections(new Set(result.transacciones.map((_, i) => i)))
-        setStep('preview')
+        setStep('select_account_banco')
       } else {
         setStep('select_account')
       }
@@ -1217,9 +1217,6 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const esBanco = statementData.tipo_documento === 'banco'
-    const nombreBase = esBanco
-      ? (statementData.tarjeta_detectada || 'Cuenta Bancaria')
-      : null
 
     const { data: categorias } = await supabase.from('categories').select('id, nombre')
     const getCategoryId = (cat) => {
@@ -1234,14 +1231,12 @@ export default function Dashboard() {
 
 
     if (esBanco) {
-      // Cuenta de egresos del banco
-      let { data: cuentaEgresos } = await supabase.from('accounts')
-        .select('*').eq('user_id', user.id).ilike('nombre', nombreBase).maybeSingle()
+      // Cuenta de egresos: la que el usuario eligió en el paso select_account_banco
+      const cuentaEgresos = targetAccount
       if (!cuentaEgresos) {
-        const { data: nueva } = await supabase.from('accounts').insert({
-          user_id: user.id, nombre: nombreBase, tipo: 'debito'
-        }).select().single()
-        cuentaEgresos = nueva
+        showToast('No se seleccionó la cuenta de destino', 'error')
+        setLoading(false)
+        return
       }
 
       const { data: existing } = await supabase.from('statements')
@@ -2334,6 +2329,34 @@ export default function Dashboard() {
               </div>
             )}
 
+            {step === 'select_account_banco' && statementData && (
+              <>
+                <h3 style={styles.modalTitle}>¿A qué cuenta bancaria pertenece? 🏦</h3>
+                <p style={{fontSize: '14px', color: '#666', marginBottom: '4px'}}>
+                  Detectamos: <strong>{statementData.tarjeta_detectada}</strong>
+                </p>
+                <p style={{fontSize: '13px', color: '#aaa', marginBottom: '16px'}}>
+                  Los egresos e inversiones se guardarán aquí. Los ingresos van automáticamente a tu cuenta de Ingresos.
+                </p>
+                <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
+                  {accounts.filter(a => a.tipo !== 'ingreso').map(acc => (
+                    <button key={acc.id} style={styles.selectAccountBtn}
+                      onClick={() => handleSelectAccount(acc)}>
+                      🏦 {acc.nombre}
+                      <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
+                    </button>
+                  ))}
+                  <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                    onClick={() => { setNewAccountForUpload({ nombre: '', tipo: 'debito' }); setStep('new_account') }}>
+                    + Crear nueva cuenta bancaria
+                  </button>
+                </div>
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
+                </div>
+              </>
+            )}
+
             {step === 'select_account' && statementData && (
               <>
                 <h3 style={styles.modalTitle}>¿A qué tarjeta pertenece? 💳</h3>
@@ -2382,7 +2405,7 @@ export default function Dashboard() {
                     </select>
                   </div>
                   <div style={styles.modalButtons}>
-                    <button type="button" style={styles.cancelBtn} onClick={() => setStep('select_account')}>← Volver</button>
+                    <button type="button" style={styles.cancelBtn} onClick={() => setStep(statementData?.tipo_documento === 'banco' ? 'select_account_banco' : 'select_account')}>← Volver</button>
                     <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Creando...' : 'Crear y continuar'}</button>
                   </div>
                 </form>
