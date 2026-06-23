@@ -459,6 +459,9 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     })
   }
 
+  // Vista de cuenta de ingresos: todas las txs son tipo ingreso
+  const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
+
   const barData = esVistaIngresos
     ? (() => {
         const byMonth = {}
@@ -529,8 +532,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const totalIngresosARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const totalIngresosUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0)
-  // Vista de cuenta de ingresos: todas las txs son tipo ingreso
-  const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
   const ingresoBubbleData = esVistaIngresos
     ? Object.values(
