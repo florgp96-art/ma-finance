@@ -2100,9 +2100,9 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — solo desktop ancho (>= 1024px) */}
-          {windowWidth >= 1024 && (
-          <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
+          {/* Widgets — desktop: columna fija derecha · mobile/tablet: fila abajo */}
+          {(
+          <div style={{ width: windowWidth >= 1024 ? '220px' : '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: windowWidth >= 1024 ? '16px' : '12px', position: windowWidth >= 1024 ? 'sticky' : 'static', top: '24px', alignSelf: 'flex-start' }}>
             {miniChartDataComputed.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
                 <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
