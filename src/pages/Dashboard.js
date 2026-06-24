@@ -705,7 +705,10 @@ export default function Dashboard() {
         const applyAliases = (cat, subcat, descripcion) => {
           const desc = (descripcion || '').toUpperCase()
           const match = (userAliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
-          return match ? { cat: match.valor, subcat: null } : { cat, subcat }
+          if (match) return { cat: match.valor, subcat: null }
+          // Personal siempre sin subcategoria — evita inventar "Peluqueria", "Varios", etc.
+          if ((cat || '').toLowerCase() === 'personal') return { cat, subcat: null }
+          return { cat, subcat }
         }
 
         let clIdx = 0
@@ -946,6 +949,8 @@ export default function Dashboard() {
         const desc = (tx.detalle || tx.nombre || '').toUpperCase()
         const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
         if (aliasMatch) { cl.categoria = aliasMatch.valor; cl.subcategoria = null }
+        // Personal nunca tiene subcategoria — evita inventar "Peluqueria", "Varios", etc.
+        if ((cl.categoria || '').toLowerCase() === 'personal') cl.subcategoria = null
         const catObj = cats?.find(c => c.nombre.toLowerCase() === (cl.categoria || '').toLowerCase())
         const subcatObj = subcats?.find(s => s.nombre.toLowerCase() === (cl.subcategoria || '').toLowerCase() && s.category_id === catObj?.id)
         return supabase.from('transactions').update({
