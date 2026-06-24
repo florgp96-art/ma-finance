@@ -23,10 +23,13 @@ function checkRateLimit(ip) {
   return true
 }
 
-async function classifyBatch(batch, categories, children, aliases) {
+async function classifyBatch(batch, categories, subcategories, children, aliases) {
   const EXCLUDED_FOR_EXPENSES = ['ingresos', 'devoluciones']
   const expenseCategories = (categories || []).filter(c => !EXCLUDED_FOR_EXPENSES.includes(c.nombre.toLowerCase()))
-  const categoriesText = expenseCategories.map(c => `- ${c.nombre}`).join('\n') || '- A Identificar'
+  const categoriesText = expenseCategories.map(c => {
+    const subs = (subcategories || []).filter(s => s.category_id === c.id).map(s => s.nombre)
+    return subs.length > 0 ? `- ${c.nombre}: ${subs.join(', ')}` : `- ${c.nombre}`
+  }).join('\n') || '- A Identificar'
   const childrenText = (children || []).length > 0
     ? children.map(c => `- ${c.nombre}`).join('\n')
     : 'Ninguno'
@@ -44,7 +47,7 @@ async function classifyBatch(batch, categories, children, aliases) {
 
 Cada objeto: {"categoria": string, "subcategoria": string|null, "hijo": string|null, "nombre": string}
 
-CATEGORÍAS DISPONIBLES:
+CATEGORÍAS Y SUBCATEGORÍAS DISPONIBLES (formato: Categoría: sub1, sub2, ...):
 ${categoriesText}
 
 HIJOS REGISTRADOS (nombres exactos para el campo "hijo"):
@@ -115,7 +118,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { rows, categories, children, aliases } = req.body
+  const { rows, categories, subcategories, children, aliases } = req.body
   if (!rows || rows.length === 0) return res.status(400).json({ error: 'No rows provided' })
   if (rows.length > MAX_ROWS) return res.status(400).json({ error: `Too many rows (max ${MAX_ROWS})` })
 
@@ -123,7 +126,7 @@ export default async function handler(req, res) {
     const allClassifications = []
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE)
-      const batchResult = await classifyBatch(batch, categories, children, aliases)
+      const batchResult = await classifyBatch(batch, categories, subcategories, children, aliases)
       // Safety: if Claude returned fewer items, pad with nulls
       while (batchResult.length < batch.length) {
         batchResult.push({ categoria: 'A Identificar', subcategoria: null, hijo: null, nombre: batch[batchResult.length]?.notas || '' })

@@ -914,10 +914,11 @@ export default function Dashboard() {
     const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
     const rows = pendientes.map(t => ({ id: t.id, notas: t.notas || '', descripcion: t.detalle || t.nombre || '', monto: t.monto, moneda: t.moneda || 'ARS' }))
     try {
+      const { data: subcats } = await supabase.from('subcategories').select('*')
       const res = await fetch('/api/classifyRows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ rows, categories: cats, children: children || [], aliases: aliases || [] })
+        body: JSON.stringify({ rows, categories: cats, subcategories: subcats || [], children: children || [], aliases: aliases || [] })
       })
       const resData = await res.json()
       if (!res.ok) {
@@ -929,7 +930,6 @@ export default function Dashboard() {
         showToast('El clasificador no devolvió resultados.', 'error')
         return
       }
-      const { data: subcats } = await supabase.from('subcategories').select('*')
       const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
         if (!cl) return null
