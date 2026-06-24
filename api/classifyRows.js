@@ -24,7 +24,9 @@ function checkRateLimit(ip) {
 }
 
 async function classifyBatch(batch, categories, children, aliases) {
-  const categoriesText = (categories || []).map(c => `- ${c.nombre}`).join('\n') || '- A Identificar'
+  const EXCLUDED_FOR_EXPENSES = ['ingresos', 'devoluciones']
+  const expenseCategories = (categories || []).filter(c => !EXCLUDED_FOR_EXPENSES.includes(c.nombre.toLowerCase()))
+  const categoriesText = expenseCategories.map(c => `- ${c.nombre}`).join('\n') || '- A Identificar'
   const childrenText = (children || []).length > 0
     ? children.map(c => `- ${c.nombre}`).join('\n')
     : 'Ninguno'
@@ -60,6 +62,8 @@ REGLAS GENERALES:
 - CAMPO "nombre": usá NOTAS como base. Si está vacío, usá DESCRIPCION. Hacelo legible.
 - CAMPO "hijo": si DESCRIPCION contiene el nombre de un hijo registrado, asignarlo. Si no aplica, null.
 - Si no podés determinar la categoría → usá "A Identificar"
+- Estas filas son GASTOS — nunca uses "Ingresos" ni "Devoluciones"
+- Si la descripción es solo un nombre de persona y no es clara → "A Identificar"
 
 FILAS:
 ${rowsText}
