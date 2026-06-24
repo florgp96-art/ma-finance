@@ -2431,15 +2431,13 @@ export default function Dashboard() {
                     </div>
                   )
                 })()}
-                {pdfTxDuplicadas.size > 0 && (
-                  <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.</span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: 'none', border: 'none', color: '#7c5cbf', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Seleccionar todo</button>
-                      <button onClick={() => setPdfTxSelections(new Set())} style={{ background: 'none', border: 'none', color: '#7c5cbf', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Ninguna</button>
-                    </div>
+                <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
+                  <span>{pdfTxDuplicadas.size > 0 ? 'Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.' : ''}</span>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: darkMode ? '#3A2F4A' : '#f0ebfa', border: `1px solid ${darkMode ? '#5C4F8C' : '#c9b8f0'}`, borderRadius: '6px', color: '#7c5cbf', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Seleccionar todo</button>
+                    <button onClick={() => setPdfTxSelections(new Set())} style={{ background: darkMode ? '#2A232A' : '#f5f5f5', border: `1px solid ${darkMode ? '#3A333A' : '#ddd'}`, borderRadius: '6px', color: darkMode ? '#9e9e9e' : '#6e6e73', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Ninguna</button>
                   </div>
-                )}
+                </div>
                 <div style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto' }}>
                   {statementData.transacciones.map((t, i) => {
                     const isDupe = pdfTxDuplicadas.has(i)

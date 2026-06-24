@@ -626,12 +626,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const diffIngPct = puedeComparar && mesAnterior && totalIngAnterior > 0 ? Math.round(((totalIngSeleccionado - totalIngAnterior) / totalIngAnterior) * 100) : null
   const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
-  const txFiltradas = selectedMeses.length > 0
-    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
-    : transactions
-  const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
-  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
-
   const matchSearch = (t) => {
     if (!searchQuery) return true
     const q = searchQuery.toLowerCase()
@@ -649,6 +643,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       String(t.monto || '').includes(q)
     )
   }
+
+  const txFiltradas = selectedMeses.length > 0
+    ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
+    : transactions
+  const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
+  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
 
   const sinIdentificar = txNoNeutras.filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
