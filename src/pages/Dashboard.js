@@ -588,7 +588,7 @@ export default function Dashboard() {
         const ws = wb.Sheets['GASTOS']
         if (!ws) { reject(new Error('No se encontró la hoja "GASTOS". Usá la plantilla descargable.')); return }
         const rows = XLSX.utils.sheet_to_json(ws, { defval: null })
-        const toNum = (v) => parseFloat(String(v || '').replace(/[^0-9.,\-]/g, '').replace(',', '.')) || 0
+        const toNum = (v) => parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0
         const parsed = rows
           .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
           .map(row => {
@@ -2328,6 +2328,80 @@ export default function Dashboard() {
                 })()}
               </div>
             )}
+            {/* Widget: Cuotas pendientes */}
+            {(() => {
+              const conCuotas = accountTransactions.filter(t =>
+                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha
+              )
+              if (conCuotas.length === 0) return null
+
+              // Por cada compra, quedarse con el último registro (cuota más reciente)
+              const groupKey = t => `${(t.nombre || t.detalle || '').toLowerCase().trim()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
+              const latestByPurchase = {}
+              conCuotas.forEach(t => {
+                const key = groupKey(t)
+                if (!latestByPurchase[key] || (t.cuota_numero || 0) > (latestByPurchase[key].cuota_numero || 0)) latestByPurchase[key] = t
+              })
+
+              const today = new Date()
+              const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
+              const tc = parseFloat(tipoCambio) || 0
+              const byPeriod = {}
+
+              Object.values(latestByPurchase).forEach(t => {
+                const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
+                if (remaining <= 0) return
+                const baseDate = new Date(t.fecha + 'T12:00:00')
+                for (let i = 1; i <= remaining; i++) {
+                  const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
+                  const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+                  if (period < todayPeriod) continue
+                  if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
+                  const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
+                  byPeriod[period].total_ars += arsEquiv
+                  byPeriod[period].items.push({
+                    nombre: t.nombre || t.detalle || 'Sin nombre',
+                    monto: t.monto,
+                    moneda: t.moneda || 'ARS',
+                    cuotaNum: (t.cuota_numero || 1) + i,
+                    cuotasTotal: t.cuotas_total,
+                    cuenta: t.accounts?.nombre || ''
+                  })
+                }
+              })
+
+              const periods = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
+              if (periods.length === 0) return null
+
+              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const borderClr = darkMode ? '#3A333A' : '#EDE8EC'
+              const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
+              const mutedClr = darkMode ? '#9A8A9A' : '#6e6e73'
+
+              return (
+                <div style={{ ...styles.savingsPanel }}>
+                  <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
+                  {periods.map(([period, data], pi) => (
+                    <div key={period} style={{ marginBottom: pi < periods.length - 1 ? '10px' : 0, paddingBottom: pi < periods.length - 1 ? '10px' : 0, borderBottom: pi < periods.length - 1 ? `1px solid ${borderClr}` : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
+                      </div>
+                      {data.items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '2px 0', gap: '4px' }}>
+                          <span style={{ color: mutedClr, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
+                          <span style={{ color: mutedClr, flexShrink: 0, fontSize: '10px' }}>{item.cuotaNum}/{item.cuotasTotal}</span>
+                          <span style={{ fontWeight: '600', color: txtClr, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            {item.moneda === 'USD' ? 'U$S' : '$'} {fmt(item.monto)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
             {(() => {
               const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
               const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
