@@ -569,13 +569,14 @@ export default function Dashboard() {
 
   const downloadExcelTemplate = () => {
     const wb = XLSX.utils.book_new()
-    const headers = [['FECHA', 'DESCRIPCION', 'MONTO_ARS', 'MONTO_USD', 'CATEGORIA', 'SUBCATEGORIA', 'HIJO', 'MODO_PAGO']]
+    const headers = [['FECHA', 'DESCRIPCION', 'TIPO', 'MONTO_ARS', 'MONTO_USD', 'CATEGORIA', 'SUBCATEGORIA', 'HIJO', 'MODO_PAGO']]
     const examples = [
-      ['01/06/2026', 'Supermercado Día', 15000, '', 'Alimentos', 'Verduras', '', 'Efectivo'],
-      ['10/06/2026', 'Netflix', '', 8.99, 'Entretenimiento', '', '', 'Tarjeta'],
+      ['01/06/2026', 'Supermercado Día', 'gasto', 15000, '', 'Alimentos', 'Verduras', '', 'Efectivo'],
+      ['10/06/2026', 'Netflix', 'gasto', '', 8.99, 'Entretenimiento', '', '', 'Tarjeta'],
+      ['15/06/2026', 'Sueldo', 'ingreso', 500000, '', '', '', '', ''],
     ]
     const ws = XLSX.utils.aoa_to_sheet([...headers, ...examples])
-    ws['!cols'] = [{ width: 14 }, { width: 30 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 20 }, { width: 15 }, { width: 18 }]
+    ws['!cols'] = [{ width: 14 }, { width: 30 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 20 }, { width: 15 }, { width: 18 }]
     XLSX.utils.book_append_sheet(wb, ws, 'GASTOS')
     XLSX.writeFile(wb, 'plantilla_gastos.xlsx')
   }
@@ -601,9 +602,11 @@ export default function Dashboard() {
             const hijoRaw = String(row['HIJO'] || '').trim()
             const hijo = hijoRaw ? hijoRaw.charAt(0).toUpperCase() + hijoRaw.slice(1).toLowerCase() : null
             const modo_pago = String(row['MODO_PAGO'] || '').trim()
+            const tipoRaw = String(row['TIPO'] || '').trim().toLowerCase()
+            const tipo = ['ingreso', 'neutro', 'gasto'].includes(tipoRaw) ? tipoRaw : 'gasto'
             const monto = monto_usd > 0 ? monto_usd : monto_ars
             const moneda = monto_usd > 0 ? 'USD' : 'ARS'
-            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas: descripcion, modo_pago, cat, subcat, hijo }
+            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo }
           })
           .filter(r => r.fecha && r.monto > 0)
         resolve(parsed)
@@ -824,7 +827,7 @@ export default function Dashboard() {
           user_id: user.id, account_id: acc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
-          monto: row.monto, moneda: row.moneda, tipo: 'gasto',
+          monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
@@ -873,7 +876,7 @@ export default function Dashboard() {
           user_id: user.id, account_id: acc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
-          monto: row.monto, moneda: row.moneda, tipo: 'gasto',
+          monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
@@ -3160,7 +3163,7 @@ export default function Dashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
                       <tr>
-                        {['Fecha', 'Descripción', 'Cuenta', 'Monto', 'Categoría', ...(tieneHijos !== false ? ['Hijo'] : [])].map(h => (
+                        {['Fecha', 'Descripción', 'Tipo', 'Cuenta', 'Monto', 'Categoría', ...(childrenDB.length > 0 ? ['Hijo'] : [])].map(h => (
                           <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
@@ -3170,6 +3173,11 @@ export default function Dashboard() {
                         <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nombre || row.notas || '—'}</td>
+                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: '11px' }}>
+                            <span style={{ padding: '2px 7px', borderRadius: '8px', fontWeight: '500', backgroundColor: row.tipo === 'ingreso' ? '#e8f5e9' : row.tipo === 'neutro' ? '#f3f3f3' : (darkMode ? '#3A333A' : '#EDE8EC'), color: row.tipo === 'ingreso' ? '#2e7d32' : row.tipo === 'neutro' ? '#8e8e93' : '#5C4F5C' }}>
+                              {row.tipo || 'gasto'}
+                            </span>
+                          </td>
                           <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '11px' }}>{row.modo_pago || 'Efectivo'}</td>
                           <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#2d2d2d' }}>
                             {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
@@ -3181,7 +3189,7 @@ export default function Dashboard() {
                               <span style={{ backgroundColor: '#fff8e1', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>❓ Sin identificar</span>
                             )}
                           </td>
-                          {tieneHijos !== false && <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>}
+                          {childrenDB.length > 0 && <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>}
                         </tr>
                       ))}
                     </tbody>
