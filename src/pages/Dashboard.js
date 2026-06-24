@@ -2441,7 +2441,8 @@ export default function Dashboard() {
               if (conCuotas.length === 0) return null
 
               // Por cada compra, quedarse con el último registro (cuota más reciente)
-              const groupKey = t => `${(t.nombre || t.detalle || '').toLowerCase().trim()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
+              const stripCuotaSuffix = n => (n || '').replace(/\s+\d+\/\d+\s*$/, '').trim()
+              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
               const latestByPurchase = {}
               conCuotas.forEach(t => {
                 const key = groupKey(t)
@@ -2465,7 +2466,7 @@ export default function Dashboard() {
                   const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
                   byPeriod[period].total_ars += arsEquiv
                   byPeriod[period].items.push({
-                    nombre: t.nombre || t.detalle || 'Sin nombre',
+                    nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
                     monto: t.monto,
                     moneda: t.moneda || 'ARS',
                     cuotaNum: (t.cuota_numero || 1) + i,
