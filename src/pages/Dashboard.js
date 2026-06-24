@@ -1585,18 +1585,18 @@ export default function Dashboard() {
           })
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
+          const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
           const eurCard = (
-            <div style={{ width: '120px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
+            <div style={{ width: isMobile ? '100px' : '120px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Euro</p>
-              {dolarRates.eur ? (
+              {eurValor ? (
                 <div style={{ textAlign: 'center' }}>
                   <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>€1 =</p>
-                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(dolarRates.eur)}</p>
-                  <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>
+                  <p style={{ margin: 0, fontSize: isMobile ? '15px' : '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}</p>
+                  {dolarRates.eur && <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                 </div>
               ) : (
-                <input type="number" style={{ width: '100%', padding: '5px 8px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
-                  placeholder="1800" value={tipoCambioEUR} onChange={e => { setTipoCambioEUR(e.target.value); localStorage.setItem('tc_eur', e.target.value) }} />
+                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>Cargando...</p>
               )}
             </div>
           )
@@ -1668,7 +1668,15 @@ export default function Dashboard() {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '110px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
-                <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
+                  <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
+                  {eurValor && (
+                    <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '6px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.06em' }}>Euro</p>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}</p>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
@@ -2203,9 +2211,58 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — solo desktop (>= 1024px) · mobile/tablet usan sidebar izq */}
-          {windowWidth >= 1024 && (
-          <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
+          {/* Widgets — todos los tamaños; desktop: col 220px fija; mobile/tablet: full-width debajo */}
+          {(
+          <div style={{ width: windowWidth >= 1024 ? '220px' : '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: windowWidth >= 1024 ? 'sticky' : 'static', top: '24px', alignSelf: 'flex-start' }}>
+            {/* Mis Ahorros — solo en mobile (en desktop está bajo el sidebar) */}
+            {isMobile && (() => {
+              const tc = parseFloat(tipoCambio) || 0
+              const mesActual = new Date().toISOString().slice(0,7)
+              const tcELive = parseFloat(tipoCambioEUR) || 0
+              const tcEDB = Number(exchangeRates.find(r => r.tipo === 'euro' && r.periodo === mesActual)?.valor || 0)
+              const tcE = tcELive || tcEDB
+              const fmtA = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const symA = m => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
+              const totalAhorro = cuentasAhorro.reduce((s, c) => { const m = parseFloat(c.monto)||0; return s + (c.moneda==='ARS'?m:c.moneda==='USD'?m*tc:c.moneda==='EUR'?m*tcE:0) }, 0)
+              const addA = () => { const m=parseFloat(newCuentaAhorro.monto); if(!newCuentaAhorro.cuenta.trim()||!m||m<=0)return; setCuentasAhorro(p=>[...p,{id:Date.now(),...newCuentaAhorro,monto:m}]); setNewCuentaAhorro({cuenta:'',monto:'',moneda:newCuentaAhorro.moneda}); setShowAddCuentaAhorro(false) }
+              return (
+                <div style={{ ...styles.savingsPanel }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
+                    <h3 style={{ ...styles.savingsPanelTitle, margin:0 }}>Mis ahorros</h3>
+                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background:'none', border:`1px solid #5C4F5C`, borderRadius:'6px', color:'#5C4F5C', cursor:'pointer', fontSize:'16px', width:'26px', height:'26px', display:'flex', alignItems:'center', justifyContent:'center', outline:'none', lineHeight:1 }}>{showAddCuentaAhorro?'✕':'+'}</button>
+                  </div>
+                  {cuentasAhorro.length===0&&!showAddCuentaAhorro&&<p style={{fontSize:'12px',color:darkMode?'#6e6e73':'#aaa',textAlign:'center',margin:'4px 0 8px'}}>Sin cuentas cargadas</p>}
+                  {cuentasAhorro.map(c=>(
+                    <div key={c.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:`1px solid ${darkMode?'#2A272A':'#F0EDF0'}`}}>
+                      <span style={{fontSize:'12px',color:darkMode?'#e0e0e0':'#3a3a3c',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{c.cuenta}</span>
+                      <span style={{fontSize:'12px',fontWeight:'600',color:darkMode?'#F0EDEC':'#1d1d1f',marginLeft:'8px',flexShrink:0}}>{symA(c.moneda)} {fmtA(c.monto)}</span>
+                      <button onClick={()=>setCuentasAhorro(p=>p.filter(x=>x.id!==c.id))} style={{background:'none',border:'none',cursor:'pointer',color:'#aaa',fontSize:'14px',padding:'0 0 0 6px',outline:'none',flexShrink:0}}>×</button>
+                    </div>
+                  ))}
+                  {showAddCuentaAhorro&&(
+                    <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'10px'}}>
+                      <input style={{...styles.savingsInput,fontSize:'12px',padding:'6px 8px'}} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e=>setNewCuentaAhorro(p=>({...p,cuenta:e.target.value}))} />
+                      <input style={{...styles.savingsInput,fontSize:'12px',padding:'6px 8px'}} type="number" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e=>setNewCuentaAhorro(p=>({...p,monto:e.target.value}))} />
+                      <div style={{display:'flex',gap:'4px'}}>
+                        {['ARS','USD','EUR'].map(m=>(
+                          <button key={m} onClick={()=>setNewCuentaAhorro(p=>({...p,moneda:m}))} style={{flex:1,padding:'5px 0',borderRadius:'6px',border:`1px solid ${newCuentaAhorro.moneda===m?'#5C4F5C':(darkMode?'#3A333A':'#E2DDE0')}`,backgroundColor:newCuentaAhorro.moneda===m?'#5C4F5C':'transparent',color:newCuentaAhorro.moneda===m?'#fff':(darkMode?'#9A8A9A':'#6e6e73'),cursor:'pointer',fontSize:'11px',fontFamily:'"Montserrat", sans-serif',fontWeight:newCuentaAhorro.moneda===m?'600':'400',outline:'none'}}>{m}</button>
+                        ))}
+                      </div>
+                      <button onClick={addA} style={{...styles.savingsInput,backgroundColor:'#5C4F5C',color:'white',border:'none',cursor:'pointer',fontWeight:'600',fontSize:'12px',textAlign:'center',padding:'7px'}}>Agregar</button>
+                    </div>
+                  )}
+                  {cuentasAhorro.length>0&&(
+                    <div style={{marginTop:'12px',paddingTop:'10px',borderTop:`2px solid ${darkMode?'#3A333A':'#EDE8EC'}`}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'4px'}}>
+                        <span style={{fontSize:'11px',color:darkMode?'#9A8A9A':'#6e6e73',textTransform:'uppercase',letterSpacing:'0.06em'}}>Total equiv.</span>
+                        <span style={{fontSize:'15px',fontWeight:'700',color:darkMode?'#F0EDEC':'#1d1d1f'}}>$ {fmtA(totalAhorro)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {miniChartDataComputed.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
                 <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
