@@ -720,6 +720,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ...childExtraConfig,
     ...Object.fromEntries(Object.entries(customIcons || {}).map(([n, icon]) => [n, { ...(childExtraConfig[n] || CATEGORY_CONFIG[n] || { color: '#E0E0E0' }), icon }]))
   }
+  const ingresoExtraConfig = Object.fromEntries(
+    ingresoBubbleData.map((entry, i) => [
+      entry.name,
+      { icon: customIcons?.[entry.name] || CATEGORY_CONFIG[entry.name]?.icon || '💰', color: INCOME_PALETTE[i % INCOME_PALETTE.length] }
+    ])
+  )
   const effectiveChartType = chartType
 
   // Subcategory breakdown por categoría para drill-down en BubbleChart
@@ -1234,7 +1240,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       ))}
                     </div>
                   )}
-                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? { Personal: { icon: '👤', color: '#9A8A9A' }, ...mergedExtraConfig } : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
+                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={esVistaIngresos ? ingresoExtraConfig : bubbleGroupBy === 'persona' ? { Personal: { icon: '👤', color: '#9A8A9A' }, ...mergedExtraConfig } : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
                 </>
               )}
 

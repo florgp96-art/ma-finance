@@ -1329,7 +1329,7 @@ export default function Dashboard() {
 
       const inferirTagIngreso = (detalle, nombreLimpio, subcatSugerida) => {
         const txt = ((detalle || '') + ' ' + (nombreLimpio || '')).toLowerCase()
-        if (txt.includes('rendimiento') || txt.includes('interes') || txt.includes('interés')) return 'Rendimientos'
+        if (txt.includes('rendimiento') || txt.includes('interes') || txt.includes('interés')) return 'Inversiones'
         if (txt.includes('cuota alimentaria') || txt.includes('alimentos')) return 'Cuota Alimentaria'
         if (subcatSugerida && subcatSugerida !== 'Otros') return subcatSugerida
         return null
