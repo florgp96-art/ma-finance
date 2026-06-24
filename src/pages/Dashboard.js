@@ -1294,6 +1294,14 @@ export default function Dashboard() {
       const txEgresos = []
       const txIngresos = []
 
+      const inferirTagIngreso = (detalle, nombreLimpio, subcatSugerida) => {
+        const txt = ((detalle || '') + ' ' + (nombreLimpio || '')).toLowerCase()
+        if (txt.includes('rendimiento') || txt.includes('interes') || txt.includes('interés')) return 'Rendimientos'
+        if (txt.includes('cuota alimentaria') || txt.includes('alimentos')) return 'Cuota Alimentaria'
+        if (subcatSugerida && subcatSugerida !== 'Otros') return subcatSugerida
+        return null
+      }
+
       statementData.transacciones.forEach((t, i) => {
         if (!pdfTxSelections.has(i)) return
         const categoryId = getCategoryId(t.categoria_sugerida)
@@ -1308,7 +1316,7 @@ export default function Dashboard() {
             monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
             cuotas_total: null, cuota_numero: null,
             category_id: null, subcategory_id: null,
-            tag: t.subcategoria_sugerida || null,
+            tag: inferirTagIngreso(t.nombre_original, t.nombre_limpio, t.subcategoria_sugerida),
             estado: 'identificado', es_manual: false,
             account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso'
           })
