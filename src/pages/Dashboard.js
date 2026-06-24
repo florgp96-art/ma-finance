@@ -1168,12 +1168,23 @@ export default function Dashboard() {
     const catObj = categoriasDB.find(c => c.nombre === txEditTemp.categoria)
     const subcatObj = subcategoriasDB.find(s => s.nombre === txEditTemp.subcategoria && s.category_id === catObj?.id)
 
-    await supabase.from('transactions').update({
-      nombre: txEditTemp.nombre,
-      category_id: catObj?.id || null,
-      subcategory_id: subcatObj?.id || null,
-      estado: 'identificado'
-    }).eq('id', txId)
+    // Actualizar todas las transacciones con el mismo detalle (no solo la actual)
+    const { data: { user: uClasif } } = await supabase.auth.getUser()
+    if (detalle) {
+      await supabase.from('transactions').update({
+        nombre: txEditTemp.nombre,
+        category_id: catObj?.id || null,
+        subcategory_id: subcatObj?.id || null,
+        estado: 'identificado'
+      }).eq('user_id', uClasif.id).eq('detalle', detalle).eq('estado', 'a_identificar')
+    } else {
+      await supabase.from('transactions').update({
+        nombre: txEditTemp.nombre,
+        category_id: catObj?.id || null,
+        subcategory_id: subcatObj?.id || null,
+        estado: 'identificado'
+      }).eq('id', txId)
+    }
 
     // Guardar regla aprendida
     if (detalle && catObj) {
@@ -1211,7 +1222,13 @@ export default function Dashboard() {
   }
 
   const handleMarcarNeutro = async (txId) => {
-    await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', txId)
+    const txDet = txSinIdentificar[txIdentificarIdx]?.detalle
+    const { data: { user: uNeutro } } = await supabase.auth.getUser()
+    if (txDet) {
+      await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('user_id', uNeutro.id).eq('detalle', txDet).eq('estado', 'a_identificar')
+    } else {
+      await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', txId)
+    }
     if (txIdentificarIdx + 1 < txSinIdentificar.length) {
       const next = txSinIdentificar[txIdentificarIdx + 1]
       setTxIdentificarIdx(i => i + 1)
@@ -1424,12 +1441,14 @@ export default function Dashboard() {
         return
       }
 
-      // Preparar paso identificar
+      // Preparar paso identificar — deduplicar por detalle (una pregunta por nombre único)
       const sinId = insertedIds.filter(t => t.estado === 'a_identificar')
-      if (sinId.length > 0) {
-        setTxSinIdentificar(sinId)
+      const seen = new Set()
+      const sinIdUnicos = sinId.filter(t => { const k = (t.detalle || String(t.id)).toLowerCase().trim(); if (seen.has(k)) return false; seen.add(k); return true })
+      if (sinIdUnicos.length > 0) {
+        setTxSinIdentificar(sinIdUnicos)
         setTxIdentificarIdx(0)
-        setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
+        setTxEditTemp({ nombre: sinIdUnicos[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
         setStep('identificar')
       } else {
         finalizarCarga()
@@ -1484,12 +1503,14 @@ export default function Dashboard() {
 
       const { data: inserted } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
 
-      // Preparar paso identificar
+      // Preparar paso identificar — deduplicar por detalle
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
-      if (sinId.length > 0) {
-        setTxSinIdentificar(sinId)
+      const seen2 = new Set()
+      const sinIdUnicos2 = sinId.filter(t => { const k = (t.detalle || String(t.id)).toLowerCase().trim(); if (seen2.has(k)) return false; seen2.add(k); return true })
+      if (sinIdUnicos2.length > 0) {
+        setTxSinIdentificar(sinIdUnicos2)
         setTxIdentificarIdx(0)
-        setTxEditTemp({ nombre: sinId[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
+        setTxEditTemp({ nombre: sinIdUnicos2[0].detalle || '', categoria: 'A Identificar', subcategoria: '' })
         setStep('identificar')
       } else {
         finalizarCarga()
@@ -2332,11 +2353,12 @@ export default function Dashboard() {
                 total = monto * 12 * anos
               }
               const anioFin = new Date().getFullYear() + Math.floor(anos)
-              const tc = parseFloat(tipoCambio)
-              const tcE = parseFloat(tipoCambioEUR)
+              const tc = parseFloat(tipoCambio) || 0
+              const tcE = parseFloat(tipoCambioEUR) || 0
+              if (ahorro.moneda === 'EUR' && tcE === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio EUR para ver la proyección</p>
+              if (ahorro.moneda === 'USD' && tc === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio USD para ver la proyección</p>
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const totalEnARS = ahorro.moneda === 'ARS' ? total : ahorro.moneda === 'USD' ? total * tc : ahorro.moneda === 'EUR' ? total * tcE : total
-              const totalARS = totalEnARS
+              const totalEnARS = ahorro.moneda === 'ARS' ? total : ahorro.moneda === 'USD' ? total * tc : total * tcE
               const totalUSD = tc > 0 ? totalEnARS / tc : null
               const totalEURres = tcE > 0 ? totalEnARS / tcE : null
               return (
@@ -2344,7 +2366,7 @@ export default function Dashboard() {
                   <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
                   {tasa > 0 && <p style={{ ...styles.savingsResultNote, marginBottom: '10px' }}>interés compuesto mensual</p>}
                   {ahorro.moneda !== 'ARS' && <><p style={styles.savingsResultLabel}>Final en pesos</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>$ {fmt(totalARS)}</p></>}
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>$ {fmt(totalEnARS)}</p></>}
                   {ahorro.moneda !== 'USD' && totalUSD != null && <><p style={styles.savingsResultLabel}>Final equiv. en USD</p>
                   <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>U$S {fmt(totalUSD)}</p></>}
                   {ahorro.moneda !== 'EUR' && totalEURres != null && <><p style={styles.savingsResultLabel}>Final equiv. en EUR</p>
