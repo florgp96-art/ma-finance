@@ -498,22 +498,26 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
+    const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
     if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
-      await supabase.from('transactions').update({ nombre: editNombre, tag: editTag || null }).eq('id', tx.id)
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null } : t))
+      const upd = { nombre: editNombre, tag: editTag || null }
+      if (montoCorregido !== undefined) upd.monto = montoCorregido
+      await supabase.from('transactions').update(upd).eq('id', tx.id)
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
 
-    // Actualizar la transacción
+    // Actualizar la transacción — monto siempre positivo (el tipo determina el signo en pantalla)
     await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj ? catObj.id : tx.category_id,
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado',
-      tag: editTag || null
+      tag: editTag || null,
+      ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
 
     // Guardar regla aprendida en user_rules si hay un detalle original
@@ -543,7 +547,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       subcategory_id: subcatObj?.id || null,
       estado: 'identificado',
       categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
-      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null
+      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+      ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     } : t))
     setEditingTx(null)
   }
