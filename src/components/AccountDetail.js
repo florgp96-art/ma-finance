@@ -52,11 +52,12 @@ export const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig }) {
+export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig, subcatMap }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, data: null })
+  const [selectedBubble, setSelectedBubble] = useState(null)
   const WIDTH = 600
   const HEIGHT = 340
   const MIN_R = 32
@@ -110,7 +111,34 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
       nodes = simulate(nodes)
     }
     setBubbles(nodes)
+    setSelectedBubble(null)
   }, [data])
+
+  // Compute radial sub-bubbles when a category is selected
+  const subBubbles = (() => {
+    if (!selectedBubble || !subcatMap?.[selectedBubble.name]) return []
+    const subcats = subcatMap[selectedBubble.name].filter(s => s.value > 0)
+    if (subcats.length === 0) return []
+    const maxSub = Math.max(...subcats.map(s => s.value))
+    const dist = 140
+    return subcats.map((s, i) => {
+      const angle = (2 * Math.PI * i / subcats.length) - Math.PI / 2
+      const subR = Math.max(18, Math.min(40, 18 + (s.value / maxSub) * 26))
+      const cx = selectedBubble.x + Math.cos(angle) * dist
+      const cy = selectedBubble.y + Math.sin(angle) * dist
+      return {
+        ...s,
+        r: subR,
+        x: Math.max(subR + 4, Math.min(WIDTH - subR - 4, cx)),
+        y: Math.max(subR + 4, Math.min(HEIGHT - subR - 4, cy)),
+        pct: selectedBubble.value > 0 ? Math.round((s.value / selectedBubble.value) * 100) : 0,
+      }
+    })
+  })()
+
+  const parentCfg = selectedBubble
+    ? ((extraConfig?.[selectedBubble.name]) || CATEGORY_CONFIG[selectedBubble.name] || { color: '#C4B8C4' })
+    : { color: '#C4B8C4' }
 
   if (!data || data.length === 0) return null
 
@@ -118,17 +146,39 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
     <div ref={containerRef} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start', width: '100%' }}>
       <div style={{ flex: '1 1 0', minWidth: 0 }}>
         <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ display: 'block' }}>
+          {/* Hilitos a subcategorías */}
+          {subBubbles.map((sub, i) => (
+            <line key={`line-${i}`}
+              x1={selectedBubble.x} y1={selectedBubble.y}
+              x2={sub.x} y2={sub.y}
+              stroke={darkMode ? 'rgba(200,185,200,0.45)' : 'rgba(92,79,92,0.3)'}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+            />
+          ))}
+
+          {/* Burbujas principales */}
           {bubbles.map((b, i) => {
             const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
-            const isHovered = hoveredIdx === i
+            const isSelected = selectedBubble?.name === b.name
+            const isHovered = hoveredIdx === i && !selectedBubble
+            const isDimmed = selectedBubble && !isSelected
+            const hasSubcats = subcatMap?.[b.name]?.length > 0
             const iconSize = b.r > 50 ? 26 : b.r > 35 ? 20 : 14
             const pctSize = b.r > 50 ? 11 : b.r > 35 ? 9 : 7
             const iconY = b.r > 30 ? b.y - b.r * 0.22 : b.y
             const pctY = b.r > 30 ? b.y + b.r * 0.28 : b.y + b.r * 0.5 + 8
             return (
               <g key={i}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: hasSubcats ? 'pointer' : 'default' }}
+                onClick={() => {
+                  if (!hasSubcats) return
+                  setSelectedBubble(prev => prev?.name === b.name ? null : b)
+                  setHoveredIdx(null)
+                  setTooltip({ visible: false, x: 0, y: 0, data: null })
+                }}
                 onMouseEnter={() => {
+                  if (selectedBubble) return
                   setHoveredIdx(i)
                   setTooltip({ visible: true, x: b.x, y: b.y - b.r - 8, data: b })
                 }}
@@ -137,23 +187,38 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                   setTooltip({ visible: false, x: 0, y: 0, data: null })
                 }}
               >
+                {isSelected && (
+                  <circle cx={b.x} cy={b.y} r={b.r + 9}
+                    fill="none"
+                    stroke={darkMode ? 'rgba(200,185,200,0.55)' : 'rgba(92,79,92,0.35)'}
+                    strokeWidth={2}
+                    strokeDasharray="6 3"
+                  />
+                )}
                 <circle
-                  cx={b.x} cy={b.y} r={isHovered ? b.r + 4 : b.r}
+                  cx={b.x} cy={b.y} r={isHovered || isSelected ? b.r + 4 : b.r}
                   fill={cfg.color}
-                  opacity={hoveredIdx !== null && !isHovered ? 0.45 : 1}
+                  opacity={isDimmed ? 0.22 : 1}
                   style={{ transition: 'all 0.2s' }}
                 />
                 <text x={b.x} y={iconY}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={iconSize}>
+                  fontSize={iconSize}
+                  opacity={isDimmed ? 0.3 : 1}>
                   {cfg.icon}
                 </text>
                 <text x={b.x} y={pctY}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700">
+                  fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700"
+                  opacity={isDimmed ? 0.3 : 1}>
                   {b.pct}%
                 </text>
-                {(b.originalUSD || 0) > 0 && b.r > 28 && (
+                {/* Indicador de drill-down disponible */}
+                {hasSubcats && !isSelected && !isDimmed && (
+                  <circle cx={b.x} cy={b.y + b.r - 8} r={3}
+                    fill={darkMode ? '#9A8A9A' : '#5C4F5C'} opacity={0.55} />
+                )}
+                {(b.originalUSD || 0) > 0 && b.r > 28 && !isDimmed && (
                   <text x={b.x} y={b.y + b.r - 10}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
@@ -163,7 +228,38 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
               </g>
             )
           })}
-          {tooltip.visible && tooltip.data && (() => {
+
+          {/* Sub-burbujas de subcategorías */}
+          {subBubbles.map((sub, i) => (
+            <g key={`sub-${i}`} style={{ pointerEvents: 'none' }}>
+              <circle
+                cx={sub.x} cy={sub.y} r={sub.r}
+                fill={parentCfg.color}
+                opacity={0.72}
+                stroke={darkMode ? 'rgba(255,255,255,0.28)' : 'rgba(92,79,92,0.22)'}
+                strokeWidth={1.5}
+              />
+              <text x={sub.x} y={sub.r > 28 ? sub.y - 7 : sub.y}
+                textAnchor="middle" dominantBaseline="middle"
+                fontSize={sub.r > 30 ? 9 : 8}
+                fill={darkMode ? '#f0f0f0' : '#2d2d2d'}
+                fontWeight="700">
+                {sub.name.length > 11 ? sub.name.slice(0, 10) + '…' : sub.name}
+              </text>
+              {sub.r > 22 && (
+                <text x={sub.x} y={sub.y + 9}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={7}
+                  fill={darkMode ? 'rgba(255,255,255,0.6)' : '#5C4F5C'}
+                  fontWeight="600">
+                  {sub.pct}%
+                </text>
+              )}
+            </g>
+          ))}
+
+          {/* Tooltip (oculto en modo drill-down) */}
+          {!selectedBubble && tooltip.visible && tooltip.data && (() => {
             const cfg = (extraConfig?.[tooltip.data.name]) || CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
             const tx = Math.max(85, Math.min(WIDTH - 85, tooltip.x))
             const ty = Math.max(30, tooltip.y)
@@ -197,6 +293,16 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
               </g>
             )
           })()}
+
+          {/* Hint para cerrar */}
+          {selectedBubble && (
+            <text x={WIDTH - 6} y={HEIGHT - 6}
+              textAnchor="end" dominantBaseline="auto"
+              fontSize={9} fill={darkMode ? '#6A5A6A' : '#bbb'}
+              fontFamily='"Montserrat", sans-serif'>
+              Tocá la burbuja para cerrar
+            </text>
+          )}
         </svg>
       </div>
       <div style={{ width: isMobile ? '100%' : '210px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: isMobile ? '0' : '16px' }}>
@@ -600,6 +706,26 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ...Object.fromEntries(Object.entries(customIcons || {}).map(([n, icon]) => [n, { ...(childExtraConfig[n] || CATEGORY_CONFIG[n] || { color: '#E0E0E0' }), icon }]))
   }
   const effectiveChartType = chartType
+
+  // Subcategory breakdown por categoría para drill-down en BubbleChart
+  const subcatDataMap = bubbleGroupBy === 'categoria' && !esVistaIngresos
+    ? (() => {
+        const raw = {}
+        mesTxs.filter(t => t.tipo === 'gasto').forEach(t => {
+          const cat = t.categories?.nombre || 'A Identificar'
+          const sub = t.subcategories?.nombre || 'General'
+          const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)
+          if (!raw[cat]) raw[cat] = {}
+          raw[cat][sub] = (raw[cat][sub] || 0) + monto
+        })
+        return Object.fromEntries(
+          Object.entries(raw).map(([cat, subs]) => [
+            cat,
+            Object.entries(subs).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+          ])
+        )
+      })()
+    : {}
 
   const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
@@ -1092,7 +1218,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       ))}
                     </div>
                   )}
-                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? undefined : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} />
+                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? undefined : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
                 </>
               )}
 

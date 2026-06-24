@@ -125,7 +125,7 @@ const styles = {
     padding: '48px 40px 36px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 8px 40px rgba(107,123,184,0.10)',
+    boxShadow: '0 8px 40px rgba(92,79,92,0.12)',
   },
   logoWrap: {
     display: 'flex',

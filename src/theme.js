@@ -1,13 +1,13 @@
 export const APP_NAME = 'MA Finance'
 
 export const COLORS = {
-  bg:             '#E4E7F3',
-  primary:        '#6B7BB8',
+  bg:             '#F0EDEC',
+  primary:        '#5C4F5C',
   surface:        '#FFFFFF',
   text:           '#1d1d1f',
   textSecondary:  '#6e6e73',
   textTertiary:   '#8e8e93',
-  border:         '#E2E2E2',
+  border:         '#E2DDE0',
   inputBg:        '#F7F5F6',
   inputBorder:    '#D0C8CC',
   errorText:      '#c0392b',
