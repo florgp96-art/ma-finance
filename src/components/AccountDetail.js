@@ -120,17 +120,17 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
     const subcats = subcatMap[selectedBubble.name].filter(s => s.value > 0)
     if (subcats.length === 0) return []
     const maxSub = Math.max(...subcats.map(s => s.value))
-    const dist = 140
+    const dist = 165
     return subcats.map((s, i) => {
       const angle = (2 * Math.PI * i / subcats.length) - Math.PI / 2
-      const subR = Math.max(18, Math.min(40, 18 + (s.value / maxSub) * 26))
+      const subR = Math.max(26, Math.min(52, 26 + (s.value / maxSub) * 32))
       const cx = selectedBubble.x + Math.cos(angle) * dist
       const cy = selectedBubble.y + Math.sin(angle) * dist
       return {
         ...s,
         r: subR,
-        x: Math.max(subR + 4, Math.min(WIDTH - subR - 4, cx)),
-        y: Math.max(subR + 4, Math.min(HEIGHT - subR - 4, cy)),
+        x: Math.max(subR + 6, Math.min(WIDTH - subR - 6, cx)),
+        y: Math.max(subR + 6, Math.min(HEIGHT - subR - 6, cy)),
         pct: selectedBubble.value > 0 ? Math.round((s.value / selectedBubble.value) * 100) : 0,
       }
     })
@@ -157,19 +157,21 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
             />
           ))}
 
-          {/* Burbujas principales */}
-          {bubbles.map((b, i) => {
+          {/* Burbujas principales — primero las no seleccionadas, la seleccionada al final (z-order SVG) */}
+          {[...bubbles.filter(b => selectedBubble?.name !== b.name), ...bubbles.filter(b => selectedBubble?.name === b.name)].map((b) => {
             const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
             const isSelected = selectedBubble?.name === b.name
-            const isHovered = hoveredIdx === i && !selectedBubble
+            const globalIdx = bubbles.findIndex(x => x.name === b.name)
+            const isHovered = hoveredIdx === globalIdx && !selectedBubble
             const isDimmed = selectedBubble && !isSelected
             const hasSubcats = subcatMap?.[b.name]?.length > 0
-            const iconSize = b.r > 50 ? 26 : b.r > 35 ? 20 : 14
-            const pctSize = b.r > 50 ? 11 : b.r > 35 ? 9 : 7
-            const iconY = b.r > 30 ? b.y - b.r * 0.22 : b.y
-            const pctY = b.r > 30 ? b.y + b.r * 0.28 : b.y + b.r * 0.5 + 8
+            const effectiveR = isSelected ? b.r + 14 : isHovered ? b.r + 4 : b.r
+            const iconSize = effectiveR > 60 ? 30 : effectiveR > 45 ? 24 : effectiveR > 35 ? 18 : 14
+            const pctSize = effectiveR > 60 ? 13 : effectiveR > 45 ? 11 : effectiveR > 35 ? 9 : 7
+            const iconY = effectiveR > 30 ? b.y - effectiveR * 0.22 : b.y
+            const pctY = effectiveR > 30 ? b.y + effectiveR * 0.28 : b.y + effectiveR * 0.5 + 8
             return (
-              <g key={i}
+              <g key={b.name}
                 style={{ cursor: hasSubcats ? 'pointer' : 'default' }}
                 onClick={() => {
                   if (!hasSubcats) return
@@ -179,7 +181,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                 }}
                 onMouseEnter={() => {
                   if (selectedBubble) return
-                  setHoveredIdx(i)
+                  setHoveredIdx(globalIdx)
                   setTooltip({ visible: true, x: b.x, y: b.y - b.r - 8, data: b })
                 }}
                 onMouseLeave={() => {
@@ -188,38 +190,39 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                 }}
               >
                 {isSelected && (
-                  <circle cx={b.x} cy={b.y} r={b.r + 9}
+                  <circle cx={b.x} cy={b.y} r={effectiveR + 10}
                     fill="none"
-                    stroke={darkMode ? 'rgba(200,185,200,0.55)' : 'rgba(92,79,92,0.35)'}
+                    stroke={darkMode ? 'rgba(220,205,220,0.5)' : 'rgba(92,79,92,0.3)'}
                     strokeWidth={2}
                     strokeDasharray="6 3"
                   />
                 )}
                 <circle
-                  cx={b.x} cy={b.y} r={isHovered || isSelected ? b.r + 4 : b.r}
+                  cx={b.x} cy={b.y} r={effectiveR}
                   fill={cfg.color}
-                  opacity={isDimmed ? 0.22 : 1}
-                  style={{ transition: 'all 0.2s' }}
+                  opacity={isDimmed ? 0.09 : 1}
+                  style={{ transition: 'r 0.25s, opacity 0.2s' }}
                 />
                 <text x={b.x} y={iconY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={iconSize}
-                  opacity={isDimmed ? 0.3 : 1}>
+                  opacity={isDimmed ? 0.12 : 1}
+                  style={{ transition: 'opacity 0.2s' }}>
                   {cfg.icon}
                 </text>
                 <text x={b.x} y={pctY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700"
-                  opacity={isDimmed ? 0.3 : 1}>
+                  opacity={isDimmed ? 0.12 : 1}
+                  style={{ transition: 'opacity 0.2s' }}>
                   {b.pct}%
                 </text>
-                {/* Indicador de drill-down disponible */}
                 {hasSubcats && !isSelected && !isDimmed && (
                   <circle cx={b.x} cy={b.y + b.r - 8} r={3}
-                    fill={darkMode ? '#9A8A9A' : '#5C4F5C'} opacity={0.55} />
+                    fill={darkMode ? '#9A8A9A' : '#5C4F5C'} opacity={0.5} />
                 )}
                 {(b.originalUSD || 0) > 0 && b.r > 28 && !isDimmed && (
-                  <text x={b.x} y={b.y + b.r - 10}
+                  <text x={b.x} y={b.y + effectiveR - 10}
                     textAnchor="middle" dominantBaseline="middle"
                     fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
                     U$S
@@ -230,33 +233,40 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
           })}
 
           {/* Sub-burbujas de subcategorías */}
-          {subBubbles.map((sub, i) => (
-            <g key={`sub-${i}`} style={{ pointerEvents: 'none' }}>
-              <circle
-                cx={sub.x} cy={sub.y} r={sub.r}
-                fill={parentCfg.color}
-                opacity={0.72}
-                stroke={darkMode ? 'rgba(255,255,255,0.28)' : 'rgba(92,79,92,0.22)'}
-                strokeWidth={1.5}
-              />
-              <text x={sub.x} y={sub.r > 28 ? sub.y - 7 : sub.y}
-                textAnchor="middle" dominantBaseline="middle"
-                fontSize={sub.r > 30 ? 9 : 8}
-                fill={darkMode ? '#f0f0f0' : '#2d2d2d'}
-                fontWeight="700">
-                {sub.name.length > 11 ? sub.name.slice(0, 10) + '…' : sub.name}
-              </text>
-              {sub.r > 22 && (
-                <text x={sub.x} y={sub.y + 9}
+          {subBubbles.map((sub, i) => {
+            const hasRoom = sub.r > 32
+            const nameY = hasRoom ? sub.y - 9 : sub.y - 4
+            const pctY = hasRoom ? sub.y + 7 : sub.y + 9
+            const shortName = sub.name.length > 12 ? sub.name.slice(0, 11) + '…' : sub.name
+            return (
+              <g key={`sub-${i}`} style={{ pointerEvents: 'none' }}>
+                {/* Sombra */}
+                <circle cx={sub.x + 2} cy={sub.y + 3} r={sub.r}
+                  fill="rgba(0,0,0,0.18)" />
+                {/* Círculo principal blanco/oscuro con borde de color */}
+                <circle
+                  cx={sub.x} cy={sub.y} r={sub.r}
+                  fill={darkMode ? '#2C262C' : '#FAFAFA'}
+                  stroke={parentCfg.color}
+                  strokeWidth={2.5}
+                />
+                <text x={sub.x} y={nameY}
                   textAnchor="middle" dominantBaseline="middle"
-                  fontSize={7}
-                  fill={darkMode ? 'rgba(255,255,255,0.6)' : '#5C4F5C'}
+                  fontSize={sub.r > 38 ? 10 : 9}
+                  fill={darkMode ? '#EEE8EE' : '#2d2d2d'}
+                  fontWeight="700">
+                  {shortName}
+                </text>
+                <text x={sub.x} y={pctY}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={sub.r > 38 ? 9 : 8}
+                  fill={darkMode ? parentCfg.color : '#5C4F5C'}
                   fontWeight="600">
                   {sub.pct}%
                 </text>
-              )}
-            </g>
-          ))}
+              </g>
+            )
+          })}
 
           {/* Tooltip (oculto en modo drill-down) */}
           {!selectedBubble && tooltip.visible && tooltip.data && (() => {
