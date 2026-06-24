@@ -832,7 +832,7 @@ export default function Dashboard() {
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.estado, es_manual: true, ...cuota,
+          estado: row.tipo === 'neutro' ? 'identificado' : row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
@@ -884,7 +884,7 @@ export default function Dashboard() {
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.estado, es_manual: true, ...cuota,
+          estado: row.tipo === 'neutro' ? 'identificado' : row.estado, es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
