@@ -43,31 +43,25 @@ async function classifyBatch(batch, categories, subcategories, children, aliases
     `${i + 1}. NOTAS: "${r.notas || ''}", DESCRIPCION: "${r.descripcion || ''}", MONTO: ${r.monto} ${r.moneda}`
   ).join('\n')
 
-  const prompt = `Clasificá estas ${batch.length} filas de gastos personales argentinos. Devolvé SOLO un JSON array con exactamente ${batch.length} objetos en el mismo orden.
+  const prompt = `Sos un clasificador de gastos personales argentinos. Devolvé SOLO un JSON array con exactamente ${batch.length} objetos en el mismo orden que las filas.
 
-Cada objeto: {"categoria": string, "subcategoria": string|null, "hijo": string|null, "nombre": string}
+Formato de cada objeto: {"categoria": string, "subcategoria": string|null, "hijo": string|null, "nombre": string}
 
-CATEGORÍAS Y SUBCATEGORÍAS DISPONIBLES (formato: Categoría: sub1, sub2, ...):
+CATEGORÍAS Y SUBCATEGORÍAS DISPONIBLES:
 ${categoriesText}
 
-HIJOS REGISTRADOS (nombres exactos para el campo "hijo"):
-${childrenText}
-
-REGLAS DEL USUARIO (prioridad máxima):
+REGLAS DEL USUARIO (prioridad absoluta sobre todo lo demás):
 ${aliasesText}
 
-CÓMO APLICAR LAS REGLAS:
-- Si DESCRIPCION **contiene** la palabra clave del alias (parcial, sin importar mayúsculas), aplicar la regla. Ejemplo: alias "CUMPLE AMIG" matchea "AMELIA - CUMPLE AMIGUITO" y "CUMPLE AMIGA".
-- Si hay múltiples aliases que coinciden, usar el más específico (el más largo).
-- Las reglas de tipo "hijo" asignan el campo "hijo", las de "categoria" asignan "categoria".
+HIJOS REGISTRADOS:
+${childrenText}
 
-REGLAS GENERALES:
-- CAMPO "nombre": usá NOTAS como base. Si está vacío, usá DESCRIPCION. Hacelo legible.
-- CAMPO "hijo": si DESCRIPCION contiene el nombre de un hijo registrado, asignarlo. Si no aplica, null.
-- Si no podés determinar la categoría → usá "A Identificar"
-- Estas filas son GASTOS — nunca uses "Ingresos" ni "Devoluciones"
-- Si la descripción parece un nombre de persona (ej: "Juan Pablo García", "María Soledad López") → usá "A Identificar"
-- CAMPO "subcategoria": solo asignala si estás MUY seguro por el nombre del comercio (ej: "Shell" → Nafta, "Carrefour" → Supermercado). Si hay duda, null
+INSTRUCCIONES:
+1. "nombre": usá NOTAS si tiene contenido útil, sino DESCRIPCION. Título legible, sin códigos.
+2. "categoria": elegí solo de la lista. Si la descripción parece un nombre de persona → "A Identificar". Si no estás seguro → "A Identificar". Nunca inventes categorías.
+3. "subcategoria": solo si estás 100% seguro por el comercio (Shell→Nafta, Carrefour→Supermercado, Spotify→Streaming). En caso de duda → null.
+4. "hijo": si DESCRIPCION contiene exactamente un nombre de hijo registrado → asignarlo. Sino null.
+5. Reglas del usuario: si DESCRIPCION contiene la palabra clave (sin importar mayúsculas) → aplicar esa categoría sin excepciones.
 
 FILAS:
 ${rowsText}
@@ -82,7 +76,7 @@ Devolvé SOLO el JSON array, sin texto ni markdown.`
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }]
     })
