@@ -159,6 +159,7 @@ export default function Dashboard() {
 
   // Hijos
   const [childrenDB, setChildrenDB] = useState([])
+  const [tieneHijos, setTieneHijos] = useState(null)
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
@@ -214,11 +215,12 @@ export default function Dashboard() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
-        const { data: settings } = await supabase.from('user_settings').select('onboarding_completo').eq('user_id', user.id).maybeSingle()
+        const { data: settings } = await supabase.from('user_settings').select('onboarding_completo, tiene_hijos').eq('user_id', user.id).maybeSingle()
         if (!settings || !settings.onboarding_completo) {
           const { count } = await supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
           if ((count || 0) === 0) { navigate('/onboarding'); return }
         }
+        if (settings?.tiene_hijos === false) setTieneHijos(false)
 
         const saved = localStorage.getItem(`servicios_${user.id}`)
         setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
@@ -1654,7 +1656,7 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '200px' }}>
                         <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>
+                        {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
@@ -1868,7 +1870,7 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
                       <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>
+                      {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
@@ -2213,7 +2215,7 @@ export default function Dashboard() {
             <div style={styles.savingsField}>
               <label style={styles.savingsLabel}>Moneda</label>
               <div style={{ display: 'flex', gap: '6px' }}>
-                {['USD', 'ARS'].map(m => (
+                {['ARS', 'USD', 'EUR'].map(m => (
                   <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: ahorro.moneda === m ? '#5C4F5C' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
                     {m}
                   </button>
@@ -2250,20 +2252,27 @@ export default function Dashboard() {
               }
               const anioFin = new Date().getFullYear() + Math.floor(anos)
               const tc = parseFloat(tipoCambio)
+              const tcE = parseFloat(tipoCambioEUR)
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const totalUSD = ahorro.moneda === 'USD' ? total : (tc > 0 ? total / tc : null)
-              const totalARS = ahorro.moneda === 'ARS' ? total : (tc > 0 ? total * tc : null)
+              const totalEnARS = ahorro.moneda === 'ARS' ? total : ahorro.moneda === 'USD' ? total * tc : ahorro.moneda === 'EUR' ? total * tcE : total
+              const totalARS = totalEnARS
+              const totalUSD = tc > 0 ? totalEnARS / tc : null
+              const totalEURres = tcE > 0 ? totalEnARS / tcE : null
               return (
                 <div style={styles.savingsResult}>
                   <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
                   {tasa > 0 && <p style={{ ...styles.savingsResultNote, marginBottom: '10px' }}>interés compuesto mensual</p>}
-                  <p style={styles.savingsResultLabel}>Final equiv. en USD</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>
-                    {totalUSD != null ? `U$S ${fmt(totalUSD)}` : '—'}
+                  {ahorro.moneda !== 'ARS' && <><p style={styles.savingsResultLabel}>Final en pesos</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>$ {fmt(totalARS)}</p></>}
+                  {ahorro.moneda !== 'USD' && totalUSD != null && <><p style={styles.savingsResultLabel}>Final equiv. en USD</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>U$S {fmt(totalUSD)}</p></>}
+                  {ahorro.moneda !== 'EUR' && totalEURres != null && <><p style={styles.savingsResultLabel}>Final equiv. en EUR</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>€ {fmt(totalEURres)}</p></>}
+                  <p style={styles.savingsResultLabel}>
+                    {ahorro.moneda === 'ARS' ? 'Total acumulado' : ahorro.moneda === 'USD' ? 'Total en USD' : 'Total en EUR'}
                   </p>
-                  <p style={styles.savingsResultLabel}>Final equiv. en pesos</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: 0 }}>
-                    {totalARS != null ? `$ ${fmt(totalARS)}` : '—'}
+                  <p style={{ ...styles.savingsResultAmount, marginBottom: 0 }}>
+                    {ahorro.moneda === 'ARS' ? `$ ${fmt(total)}` : ahorro.moneda === 'USD' ? `U$S ${fmt(total)}` : `€ ${fmt(total)}`}
                   </p>
                 </div>
               )
