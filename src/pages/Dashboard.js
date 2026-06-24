@@ -1245,6 +1245,18 @@ export default function Dashboard() {
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
 
+    // Historial de ingresos ya editados: si el usuario cambió el nombre/tag antes, aplicarlo automáticamente
+    const { data: incomeHistory } = await supabase.from('transactions')
+      .select('detalle, nombre, tag').eq('user_id', user.id).eq('tipo', 'ingreso').not('nombre', 'is', null).not('tag', 'is', null)
+    const matchIngresoHistorial = (detalle) => {
+      if (!incomeHistory || !detalle) return null
+      const exacto = incomeHistory.find(h => h.detalle === detalle && h.nombre && h.tag)
+      if (exacto) return { nombre: exacto.nombre, tag: exacto.tag }
+      // fuzzy: si el detalle comienza igual (primer 30 chars) — captura variaciones de monto/referencia
+      const prefix = detalle.trim().slice(0, 30).toLowerCase()
+      const fuzzy = incomeHistory.find(h => h.detalle && h.detalle.trim().toLowerCase().startsWith(prefix) && h.nombre && h.tag)
+      return fuzzy ? { nombre: fuzzy.nombre, tag: fuzzy.tag } : null
+    }
 
     if (esBanco) {
       // Cuenta de egresos: la que el usuario eligió en el paso select_account_banco
@@ -1309,14 +1321,15 @@ export default function Dashboard() {
         const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
         if (tipoTx === 'ingreso' && cuentaIngresos) {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
+          const histMatch = matchIngresoHistorial(t.nombre_original)
           txIngresos.push({
             user_id: user.id, fecha: t.fecha,
-            nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : (t.nombre_limpio || null),
+            nombre: histMatch?.nombre || (t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : (t.nombre_limpio || null)),
             detalle: t.nombre_original,
             monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
             cuotas_total: null, cuota_numero: null,
             category_id: null, subcategory_id: null,
-            tag: inferirTagIngreso(t.nombre_original, t.nombre_limpio, t.subcategoria_sugerida),
+            tag: histMatch?.tag || inferirTagIngreso(t.nombre_original, t.nombre_limpio, t.subcategoria_sugerida),
             estado: 'identificado', es_manual: false,
             account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso'
           })
