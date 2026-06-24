@@ -67,6 +67,7 @@ REGLAS GENERALES:
 - Si no podés determinar la categoría → usá "A Identificar"
 - Estas filas son GASTOS — nunca uses "Ingresos" ni "Devoluciones"
 - Si la descripción es solo un nombre de persona y no es clara → "A Identificar"
+- CAMPO "subcategoria": solo asignala si estás MUY seguro por el nombre del comercio (ej: "Shell" → Nafta, "Carrefour" → Supermercado). Si es un nombre de persona o hay duda, devolvé null
 
 FILAS:
 ${rowsText}
