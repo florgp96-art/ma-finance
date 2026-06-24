@@ -832,7 +832,7 @@ export default function Dashboard() {
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.tipo === 'neutro' ? 'identificado' : row.estado, es_manual: true, ...cuota,
+          estado: row.tipo === 'neutro' ? 'identificado' : (catId ? 'identificado' : 'a_identificar'), es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
@@ -884,7 +884,7 @@ export default function Dashboard() {
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
-          estado: row.tipo === 'neutro' ? 'identificado' : row.estado, es_manual: true, ...cuota,
+          estado: row.tipo === 'neutro' ? 'identificado' : (catId ? 'identificado' : 'a_identificar'), es_manual: true, ...cuota,
           tag: row.hijo || null,
         }
       })
@@ -905,7 +905,8 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession()
     const { data: { user } } = await supabase.auth.getUser()
     const { data: pendientes } = await supabase.from('transactions')
-      .select('*').eq('user_id', user.id).or('estado.eq.a_identificar,category_id.is.null')
+      .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
+      .or('estado.eq.a_identificar,category_id.is.null')
       .gt('monto', 0).limit(500)
     if (!pendientes || pendientes.length === 0) { showToast('No hay transacciones sin clasificar.'); return }
     showToast(`Reclasificando ${pendientes.length} transacciones con IA...`)
@@ -924,8 +925,8 @@ export default function Dashboard() {
       const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
         if (!cl) return null
-        const catObj = cats?.find(c => c.nombre === cl.categoria)
-        const subcatObj = subcats?.find(s => s.nombre === cl.subcategoria && s.category_id === catObj?.id)
+        const catObj = cats?.find(c => c.nombre.toLowerCase() === (cl.categoria || '').toLowerCase())
+        const subcatObj = subcats?.find(s => s.nombre.toLowerCase() === (cl.subcategoria || '').toLowerCase() && s.category_id === catObj?.id)
         return supabase.from('transactions').update({
           nombre: cl.nombre || tx.detalle,
           category_id: catObj?.id || null,
