@@ -769,7 +769,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     return acc
   }, {})
   const catTopList = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).slice(0, 3)
-  const catTop = catTopList[0]
 
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
