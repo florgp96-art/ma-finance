@@ -120,6 +120,7 @@ export default function Dashboard() {
 
   // Tipo de cambio
   const [tipoCambio, setTipoCambio] = useState(() => localStorage.getItem('tc_ma') || '')
+  const [tipoCambioEUR, setTipoCambioEUR] = useState(() => localStorage.getItem('tc_eur') || '')
   const [tcTipo, setTcTipo] = useState(() => localStorage.getItem('tc_tipo_ma') || 'blue')
   const [exchangeRates, setExchangeRates] = useState([])
   const [dolarRates, setDolarRates] = useState({})
@@ -203,6 +204,10 @@ export default function Dashboard() {
     const rate = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
     if (rate) { setTipoCambio(String(rate.valor)); localStorage.setItem('tc_ma', String(rate.valor)) }
   }, [exchangeRates, dolarRates, tcTipo])
+
+  useEffect(() => {
+    if (dolarRates.eur) { setTipoCambioEUR(String(dolarRates.eur)); localStorage.setItem('tc_eur', String(dolarRates.eur)) }
+  }, [dolarRates])
 
   useEffect(() => {
     fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons(); fetchIngresoTags()
@@ -457,17 +462,28 @@ export default function Dashboard() {
 
   const fetchDolarRates = async () => {
     try {
-      const res = await fetch('https://dolarapi.com/v1/dolares')
-      if (!res.ok) return
-      const arr = await res.json()
       const map = {}
-      arr.forEach(d => {
-        const avg = (d.compra != null && d.venta != null) ? Math.round((d.compra + d.venta) / 2) : (d.venta || d.compra || 0)
-        if (d.casa === 'blue') map.blue = avg
-        else if (d.casa === 'bolsa') map.mep = avg
-        else if (d.casa === 'oficial') map.oficial = avg
-        else if (d.casa === 'tarjeta') map.tarjeta = avg
-      })
+      try {
+        const res = await fetch('https://dolarapi.com/v1/dolares')
+        if (res.ok) {
+          const arr = await res.json()
+          arr.forEach(d => {
+            const avg = (d.compra != null && d.venta != null) ? Math.round((d.compra + d.venta) / 2) : (d.venta || d.compra || 0)
+            if (d.casa === 'blue') map.blue = avg
+            else if (d.casa === 'bolsa') map.mep = avg
+            else if (d.casa === 'oficial') map.oficial = avg
+            else if (d.casa === 'tarjeta') map.tarjeta = avg
+          })
+        }
+      } catch {}
+      try {
+        const resEur = await fetch('https://dolarapi.com/v1/cotizaciones/euro')
+        if (resEur.ok) {
+          const eur = await resEur.json()
+          const avg = (eur.compra != null && eur.venta != null) ? Math.round((eur.compra + eur.venta) / 2) : (eur.venta || eur.compra || 0)
+          if (avg > 0) map.eur = avg
+        }
+      } catch {}
       setDolarRates(map)
     } catch {}
   }
@@ -1495,7 +1511,7 @@ export default function Dashboard() {
         ? (parseFloat(tipoCambio) || 1)
         : (tcMap[ym] ? Number(tcMap[ym]) : parseFloat(tipoCambio) || 1)
       const txsMes = miniChartTxs.filter(t => t.fecha?.startsWith(ym))
-      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.monto), 0)
+      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * (parseFloat(tipoCambioEUR) || 0) : t.monto), 0)
       const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
       return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
     })
@@ -1525,6 +1541,17 @@ export default function Dashboard() {
             return (a.dia || 0) - (b.dia || 0)
           })
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
+
+          const eurCard = dolarRates.eur ? (
+            <div style={{ width: '120px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
+              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Euro</p>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>€1 =</p>
+                <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(dolarRates.eur)}</p>
+                <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>
+              </div>
+            </div>
+          ) : null
 
           const usdCard = (
             <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
@@ -1597,6 +1624,7 @@ export default function Dashboard() {
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
+                  {!isTablet && eurCard}
                   {!isTablet && vencCard}
                 </div>
               )}
@@ -1891,7 +1919,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -1900,6 +1928,7 @@ export default function Dashboard() {
                     hijoId={childrenDB.find(c => c.nombre === dashboardTab)?.id}
                     darkMode={darkMode}
                     tipoCambio={tipoCambio}
+                    tipoCambioEUR={tipoCambioEUR}
                     refreshKey={refreshKey}
                     initialPeriod={sharedPeriod}
                   />
@@ -2040,7 +2069,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -2111,7 +2140,7 @@ export default function Dashboard() {
                   })
                   .reduce((s, t) => {
                     const monto = Number(t.monto)
-                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'ARS' ? monto : 0)
+                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && parseFloat(tipoCambioEUR) > 0 ? monto * parseFloat(tipoCambioEUR) : t.moneda === 'ARS' ? monto : 0)
                   }, 0)
                 return { mes: mesLabel(m), total }
               })
@@ -2480,12 +2509,14 @@ export default function Dashboard() {
                   const txSelec = statementData.transacciones.filter((_, i) => pdfTxSelections.has(i))
                   const totalARS = txSelec.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
                   const totalUSD = txSelec.filter(t => t.moneda === 'USD').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
+                  const totalEURprev = txSelec.filter(t => t.moneda === 'EUR').reduce((s, t) => s + Math.abs(Number(t.monto)), 0)
                   return (
                     <div style={styles.previewStats}>
                       <div style={styles.previewStat}><span style={styles.previewStatLabel}>Período</span><span style={styles.previewStatValue}>{statementData.periodo}</span></div>
                       {esBancoPreview ? <>
                         {totalARS > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(totalARS)}</span></div>}
                         {totalUSD > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total USD</span><span style={styles.previewStatValue}>U$S {formatMontoFull(totalUSD)}</span></div>}
+                        {totalEURprev > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total EUR</span><span style={styles.previewStatValue}>€ {formatMontoFull(totalEURprev)}</span></div>}
                       </> : <>
                         <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
                         {statementData.fecha_vencimiento && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>}
@@ -2529,7 +2560,7 @@ export default function Dashboard() {
                           const esPos = statementData?.tipo_documento === 'banco' ? t.tipo === 'ingreso' : t.es_credito
                           return (
                             <p style={{ ...styles.transactionMonto, color: esPos ? '#3a7d44' : undefined }}>
-                              {esPos ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(Math.abs(t.monto))}
+                              {esPos ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : t.moneda === 'EUR' ? '€' : '$'} {formatMonto(Math.abs(t.monto))}
                             </p>
                           )
                         })()}

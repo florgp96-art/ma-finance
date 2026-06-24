@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, refreshKey, initialPeriod }) {
+export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tipoCambioEUR, refreshKey, initialPeriod }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -81,17 +81,20 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, r
     : transactions
 
   const tc = parseFloat(tipoCambio) || 1
+  const tcEUR = parseFloat(tipoCambioEUR) || 0
 
   const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
   const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
+  const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
 
   // Bubble chart data agrupado por categoría
   const catMap = {}
   filteredTx.forEach(t => {
     const cat = t.categories?.nombre || 'A Identificar'
-    if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0 }
-    catMap[cat].value += t.moneda === 'USD' ? t.monto * tc : t.monto
+    if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
+    catMap[cat].value += t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
     if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
+    else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
     else catMap[cat].originalUSD += t.monto
   })
   const bubbleData = Object.entries(catMap)
@@ -104,7 +107,8 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, r
     const txs = transactions.filter(t => t.fecha?.startsWith(ym))
     const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
     const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
-    return { mes: mesLabel(ym), total: Math.round(ars + usd * tc) }
+    const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
+    return { mes: mesLabel(ym), total: Math.round(ars + usd * tc + eur * tcEUR) }
   })
 
   const startEdit = (tx) => {
@@ -223,10 +227,16 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, r
             <p style={{ ...s.statValue, color: '#5588aa' }}>U$S {formatMontoFull(totalUSD)}</p>
           </div>
         )}
-        {totalARS > 0 && totalUSD > 0 && tc > 1 && (
+        {totalEUR > 0 && (
+          <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
+            <p style={{ ...s.statLabel, color: '#3a7d44' }}>Total EUR</p>
+            <p style={{ ...s.statValue, color: '#3a7d44' }}>€ {formatMontoFull(totalEUR)}</p>
+          </div>
+        )}
+        {totalARS > 0 && (totalUSD > 0 || totalEUR > 0) && (tc > 1 || tcEUR > 0) && (
           <div style={s.statCard}>
             <p style={s.statLabel}>Total equiv. en pesos</p>
-            <p style={s.statValue}>$ {formatMonto(totalARS + totalUSD * tc)}</p>
+            <p style={s.statValue}>$ {formatMonto(totalARS + totalUSD * tc + totalEUR * tcEUR)}</p>
           </div>
         )}
       </div>

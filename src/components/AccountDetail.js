@@ -34,7 +34,7 @@ export const formatMontoFull = (monto) =>
 export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
 export const formatFechaCorta = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) : ''
 
-const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : '$'
+const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
 export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
@@ -364,7 +364,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -626,6 +626,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
   const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+  const tcEUR = parseFloat(tipoCambioEUR) || 0
 
   const buildBubbleData = (txList, tc) => {
     const tcNum = parseFloat(tc) || 0
@@ -634,10 +635,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         const cat = t.categories?.nombre || 'A Identificar'
         const monto = Number(t.monto)
         const moneda = t.moneda || 'ARS'
-        if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0 }
+        if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
         if (moneda === 'USD') {
           acc[cat].originalUSD += monto
           if (tcNum > 0) acc[cat].value += monto * tcNum
+        } else if (moneda === 'EUR') {
+          acc[cat].originalEUR += monto
+          if (tcEUR > 0) acc[cat].value += monto * tcEUR
         } else {
           acc[cat].value += monto
           acc[cat].originalARS += monto
@@ -662,9 +666,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     const txs = mesTxs.filter(t => getChildName(t) === name && t.tipo === 'gasto')
     return {
       name,
-      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)), 0),
+      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
       originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
       originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
+      originalEUR: txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + Number(t.monto), 0),
     }
   }).sort((a, b) => b.value - a.value)
 
@@ -673,7 +678,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
       const persona = getChildName(t) || 'Personal'
       if (!acc[persona]) acc[persona] = { name: persona, value: 0, originalARS: 0, originalUSD: 0 }
-      const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)
+      const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
       acc[persona].value += monto
       if (t.moneda === 'ARS') acc[persona].originalARS += Number(t.monto)
       else acc[persona].originalUSD += Number(t.monto)
@@ -683,18 +688,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
+  const totalEUR = mesTxs.filter(t => t.moneda === 'EUR' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalIngresosARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const totalIngresosUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
-  const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0)
+  const totalIngresosEUR = mesTxs.filter(t => t.moneda === 'EUR' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
+  const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0)
 
   const ingresoBubbleData = esVistaIngresos
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * (parseFloat(tcEfectivo) || 0) : Number(t.monto)
-          if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0 }
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+          if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
           acc[cat].value += monto
           if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
+          else if (t.moneda === 'EUR') acc[cat].originalEUR += Number(t.monto)
           else acc[cat].originalUSD += Number(t.monto)
           return acc
         }, {})
@@ -735,7 +743,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         mesTxs.filter(t => t.tipo === 'gasto').forEach(t => {
           const cat = t.categories?.nombre || 'A Identificar'
           const sub = t.subcategories?.nombre || 'General'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : Number(t.monto)
+          const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
           if (!raw[cat]) raw[cat] = {}
           raw[cat][sub] = (raw[cat][sub] || 0) + monto
         })
@@ -1024,15 +1032,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       {/* Cards de resumen */}
       {selectedMeses.length > 0 && mesTxs.length > 0 && (() => {
         const divider = <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
-        const egresosEquivARS = totalARS + totalUSD * tcEfectivo
-        const ingresosEquivARS = totalIngresosARS + totalIngresosUSD * tcEfectivo
-        const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + totalARS / tcEfectivo : 0
-        const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + totalIngresosARS / tcEfectivo : 0
+        const egresosEquivARS = totalARS + totalUSD * tcEfectivo + totalEUR * tcEUR
+        const ingresosEquivARS = totalIngresosARS + totalIngresosUSD * tcEfectivo + totalIngresosEUR * tcEUR
+        const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
+        const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
           <div style={styles.summaryCards}>
 
             {/* === Vista cuenta de ingresos individual === */}
-            {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0) && (
+            {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
               <div style={styles.summaryCard}>
                 {totalIngresosARS > 0 && <>
                   <p style={styles.summaryLabel}>Total Ingresos ARS</p>
@@ -1042,6 +1050,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                 {totalIngresosUSD > 0 && <>
                   <p style={{ ...styles.summaryLabel, marginTop: totalIngresosARS > 0 ? 0 : undefined }}>Total Ingresos USD</p>
                   <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
+                </>}
+                {(totalIngresosARS > 0 || totalIngresosUSD > 0) && totalIngresosEUR > 0 && divider}
+                {totalIngresosEUR > 0 && <>
+                  <p style={styles.summaryLabel}>Total Ingresos EUR</p>
+                  <p style={{ ...styles.summaryValue, fontSize: '18px' }}>€ {formatMontoFull(totalIngresosEUR)}</p>
                 </>}
               </div>
             )}
@@ -1057,6 +1070,12 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Total USD</p>
                 <p style={styles.summaryValue}>U$S {formatMontoFull(totalUSD)}</p>
+              </div>
+            )}
+            {!esVistaIngresos && !allAccounts && totalEUR > 0 && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Total EUR</p>
+                <p style={styles.summaryValue}>€ {formatMontoFull(totalEUR)}</p>
               </div>
             )}
 
@@ -1086,6 +1105,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   {divider}
                   <p style={styles.summaryLabel}>Balance USD</p>
                   {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                </>}
+              </div>
+            )}
+
+            {/* === Resumen general: card EUR combinada === */}
+            {!esVistaIngresos && allAccounts && (totalEUR > 0 || totalIngresosEUR > 0) && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Egresos EUR</p>
+                <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>€ {formatMontoFull(totalEUR)}</p>
+                {hayIngresos && totalIngresosEUR > 0 && <>{divider}
+                  <p style={styles.summaryLabel}>Ingresos EUR</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>€ {formatMontoFull(totalIngresosEUR)}</p>
+                  {divider}
+                  <p style={styles.summaryLabel}>Balance EUR</p>
+                  {(() => { const b = totalIngresosEUR - totalEUR; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}€ {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
