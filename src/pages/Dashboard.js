@@ -163,6 +163,7 @@ export default function Dashboard() {
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
+  const [ingresoTags, setIngresoTags] = useState([])
 
   // Aliases
   const [userAliases, setUserAliases] = useState([])
@@ -204,7 +205,7 @@ export default function Dashboard() {
   }, [exchangeRates, dolarRates, tcTipo])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons(); fetchIngresoTags()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
@@ -420,6 +421,12 @@ export default function Dashboard() {
     if (data && data.length > 0) {
       setSelectedAccount(prev => prev === null ? 'all' : prev)
     }
+  }
+
+  const fetchIngresoTags = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('transactions').select('tag').eq('user_id', user.id).eq('tipo', 'ingreso').not('tag', 'is', null)
+    if (data) setIngresoTags([...new Set(data.map(t => t.tag).filter(Boolean))])
   }
 
   const fetchExchangeRates = async () => {
@@ -2942,6 +2949,7 @@ export default function Dashboard() {
         childrenDB={childrenDB}
         customIcons={customIcons}
         userAliases={userAliases}
+        ingresoTags={ingresoTags}
         fetchCategorias={fetchCategorias}
         fetchChildren={fetchChildren}
         fetchUserAliases={fetchUserAliases}

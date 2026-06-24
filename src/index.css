@@ -1,10 +1,12 @@
 .tabs-scroll,
-.sidebar-scroll {
+.sidebar-scroll,
+.hide-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .tabs-scroll::-webkit-scrollbar,
-.sidebar-scroll::-webkit-scrollbar {
+.sidebar-scroll::-webkit-scrollbar,
+.hide-scroll::-webkit-scrollbar {
   display: none;
 }
 /* En mobile el sidebar es flex column con overflowY auto — los hijos no deben shrinkear para que el scroll funcione */

@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react'
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG } from './AccountDetail'
 
@@ -10,6 +10,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   childrenDB,
   customIcons,
   userAliases,
+  ingresoTags,
   fetchCategorias,
   fetchChildren,
   fetchUserAliases,
@@ -44,6 +45,16 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Aliases form
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+
+  // ESC cierra el modal de íconos
+  useEffect(() => {
+    if (!showIconos) return
+    const handler = (e) => {
+      if (e.key === 'Escape') { setShowIconos(false); setIconEditingCat(null); setIconInput('') }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [showIconos])
 
   // Expose imperative methods
   useImperativeHandle(ref, () => ({
@@ -209,11 +220,18 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       {/* Modal: Íconos */}
       {showIconos && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: '480px', width: '92%', maxHeight: '80vh', overflowY: 'auto' }}>
-            <h3 style={s.modalTitle}>🎨 Íconos de categorías</h3>
-            <p style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '16px', marginTop: '-8px' }}>Tocá una categoría para cambiar su ícono</p>
-            {[...(categoriasDB || []).map(c => c.nombre), ...(childrenDB || []).map(c => c.nombre)].map(nombre => {
-              const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || '👧'
+          <div style={{ ...s.modal, maxWidth: '480px', width: '92%', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}>
+            <div style={{ padding: '20px 20px 12px' }}>
+              <h3 style={{ ...s.modalTitle, marginBottom: '4px' }}>🎨 Íconos de categorías</h3>
+              <p style={{ fontSize: '12px', color: '#8e8e93', margin: 0 }}>Tocá una fila para cambiar su ícono</p>
+            </div>
+            <div className="hide-scroll" style={{ overflowY: 'auto', flex: 1, padding: '0 20px' }}>
+            {[
+              ...(categoriasDB || []).map(c => ({ nombre: c.nombre, tipo: 'cat' })),
+              ...(childrenDB || []).map(c => ({ nombre: c.nombre, tipo: 'hijo' })),
+              ...(ingresoTags || []).map(t => ({ nombre: t, tipo: 'ingreso' })),
+            ].map(({ nombre, tipo }) => {
+              const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || (tipo === 'hijo' ? '👧' : tipo === 'ingreso' ? '💰' : '❓')
               const currentIcon = customIcons[nombre] || defaultIcon
               const isEditing = iconEditingCat === nombre
               const EMOJI_GRID = ['🏠','🍔','🚗','💊','🎬','📱','👕','📚','💼','💰','🏦','👶','✈️','🎵','🐾','💄','🌿','🍕','☕','🎮','📦','🛒','🎁','🍷','🎨','🧴','💅','🐶','🎯','🏊']
@@ -262,7 +280,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 </div>
               )
             })}
-            <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ marginTop: '20px', width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: p, color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
+            </div>
+            <div style={{ padding: '12px 20px 20px' }}>
+              <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: p, color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
+            </div>
           </div>
         </div>
       )}
