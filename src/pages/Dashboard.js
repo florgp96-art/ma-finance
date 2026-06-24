@@ -1542,16 +1542,21 @@ export default function Dashboard() {
           })
           const pendientes = vencList.filter(v => !vencPagados.has(v.id))
 
-          const eurCard = dolarRates.eur ? (
+          const eurCard = (
             <div style={{ width: '120px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Euro</p>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>€1 =</p>
-                <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(dolarRates.eur)}</p>
-                <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>
-              </div>
+              {dolarRates.eur ? (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>€1 =</p>
+                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(dolarRates.eur)}</p>
+                  <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>
+                </div>
+              ) : (
+                <input type="number" style={{ width: '100%', padding: '5px 8px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
+                  placeholder="1800" value={tipoCambioEUR} onChange={e => { setTipoCambioEUR(e.target.value); localStorage.setItem('tc_eur', e.target.value) }} />
+              )}
             </div>
-          ) : null
+          )
 
           const usdCard = (
             <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
@@ -1624,7 +1629,7 @@ export default function Dashboard() {
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
-                  {!isTablet && eurCard}
+                  {eurCard}
                   {!isTablet && vencCard}
                 </div>
               )}
