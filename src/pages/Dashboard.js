@@ -425,8 +425,29 @@ export default function Dashboard() {
 
   const fetchIngresoTags = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('transactions').select('tag').eq('user_id', user.id).eq('tipo', 'ingreso').not('tag', 'is', null)
-    if (data) setIngresoTags([...new Set(data.map(t => t.tag).filter(Boolean))])
+    const [{ data: txTags }, { data: ruleTags }] = await Promise.all([
+      supabase.from('transactions').select('tag').eq('user_id', user.id).eq('tipo', 'ingreso').not('tag', 'is', null),
+      supabase.from('user_rules').select('nombre_asignado').eq('user_id', user.id).like('texto_original', '__tag_ingreso__%')
+    ])
+    const fromTx = (txTags || []).map(t => t.tag).filter(Boolean)
+    const fromRules = (ruleTags || []).map(r => r.nombre_asignado).filter(Boolean)
+    setIngresoTags([...new Set([...fromTx, ...fromRules])].sort())
+  }
+
+  const handleCreateIngresoTag = async (nombre) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('user_rules').upsert({
+      user_id: user.id, texto_original: `__tag_ingreso__${nombre}`,
+      nombre_asignado: nombre, category_id: null, subcategory_id: null,
+      veces_confirmado: 1, updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,texto_original', ignoreDuplicates: true })
+    setIngresoTags(prev => [...new Set([...prev, nombre])].sort())
+  }
+
+  const handleDeleteIngresoTag = async (nombre) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('user_rules').delete().eq('user_id', user.id).eq('texto_original', `__tag_ingreso__${nombre}`)
+    setIngresoTags(prev => prev.filter(t => t !== nombre))
   }
 
   const fetchExchangeRates = async () => {
@@ -2019,7 +2040,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -2991,6 +3012,8 @@ export default function Dashboard() {
         customIcons={customIcons}
         userAliases={userAliases}
         ingresoTags={ingresoTags}
+        onCreateIngresoTag={handleCreateIngresoTag}
+        onDeleteIngresoTag={handleDeleteIngresoTag}
         fetchCategorias={fetchCategorias}
         fetchChildren={fetchChildren}
         fetchUserAliases={fetchUserAliases}

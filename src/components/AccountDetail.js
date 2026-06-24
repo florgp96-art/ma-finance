@@ -364,7 +364,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -877,7 +877,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     const ingresosCat = categories.find(c => c.nombre === 'Ingresos')
     const ingresosSubcats = ingresosCat ? subcategories.filter(s => s.category_id === ingresosCat.id).map(s => s.nombre) : []
     const existingTags = [...new Set(transactions.filter(t => t.tipo === 'ingreso' && t.tag).map(t => t.tag))]
-    const allOpts = [...new Set([...ingresosSubcats, ...existingTags])].sort()
+    const allOpts = [...new Set([...ingresosSubcats, ...existingTags, ...(ingresoTags || [])])].sort()
     const valueIsCustom = editTag && !allOpts.includes(editTag)
     return (
       <>

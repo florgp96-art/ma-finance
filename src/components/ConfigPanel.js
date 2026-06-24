@@ -11,6 +11,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   customIcons,
   userAliases,
   ingresoTags,
+  onCreateIngresoTag,
+  onDeleteIngresoTag,
   fetchCategorias,
   fetchChildren,
   fetchUserAliases,
@@ -29,6 +31,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Categorías form
   const [newCatNombre, setNewCatNombre] = useState('')
+  const [newTagIngreso, setNewTagIngreso] = useState('')
   const [editingCat, setEditingCat] = useState(null)
   const [editingCatNombre, setEditingCatNombre] = useState('')
   const [newSubcatCatId, setNewSubcatCatId] = useState(null)
@@ -355,6 +358,28 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               />
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
             </form>
+            {/* Sección: Tags de ingresos */}
+            <div style={{ marginTop: '24px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '16px' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: txt, fontFamily: '"Montserrat", sans-serif' }}>💰 Tags de ingresos</h4>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                {(ingresoTags || []).map(tag => (
+                  <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
+                    {tag}
+                    <button onClick={() => onDeleteIngresoTag && onDeleteIngresoTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#999', padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
+                  </span>
+                ))}
+              </div>
+              <form onSubmit={e => { e.preventDefault(); if (newTagIngreso.trim()) { onCreateIngresoTag && onCreateIngresoTag(newTagIngreso.trim()); setNewTagIngreso('') } }} style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  style={{ ...s.input, flex: 1 }}
+                  placeholder="Nuevo tag de ingreso"
+                  value={newTagIngreso}
+                  onChange={e => setNewTagIngreso(e.target.value)}
+                />
+                <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
+              </form>
+            </div>
+
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
               <button style={s.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null) }}>Cerrar</button>
             </div>
