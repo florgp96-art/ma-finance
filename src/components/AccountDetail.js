@@ -364,7 +364,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -626,7 +626,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
   // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
   const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
-  const tcEUR = parseFloat(tipoCambioEUR) || 0
+  const getTCEUR = (mes) => {
+    const mesActual = new Date().toISOString().slice(0, 7)
+    if (!mes || mes === mesActual) return parseFloat(tipoCambioEUR) || 0
+    if (tcMapEUR?.[mes]) return Number(tcMapEUR[mes])
+    return parseFloat(tipoCambioEUR) || 0
+  }
+  const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
 
   const buildBubbleData = (txList, tc) => {
     const tcNum = parseFloat(tc) || 0
@@ -756,12 +762,14 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       })()
     : {}
 
-  const catTotals = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((acc, t) => {
+  const catTotals = mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
     const cat = t.categories?.nombre || 'A Identificar'
-    acc[cat] = (acc[cat] || 0) + Number(t.monto)
+    const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+    acc[cat] = (acc[cat] || 0) + monto
     return acc
   }, {})
-  const catTop = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0]
+  const catTopList = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).slice(0, 3)
+  const catTop = catTopList[0]
 
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
@@ -1146,12 +1154,16 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               </div>
             )}
 
-            {/* Categoría top */}
-            {catTop && !esVistaIngresos && (
-              <div style={{ ...styles.summaryCard, textAlign: 'center' }}>
-                <p style={styles.summaryLabel}>Categoría top</p>
-                <p style={{...styles.summaryValue, fontSize: '18px'}}>{resolveIcon(catTop[0])} {catTop[0]}</p>
-                <p style={styles.summarySubval}>$ {formatMonto(catTop[1])}</p>
+            {/* Categorías top */}
+            {catTopList.length > 0 && !esVistaIngresos && (
+              <div style={{ ...styles.summaryCard }}>
+                <p style={styles.summaryLabel}>Categorías top</p>
+                {catTopList.map(([cat, val], i) => (
+                  <div key={cat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: i === 0 ? '4px' : '8px', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveIcon(cat)} {cat}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', flexShrink: 0 }}>$ {formatMonto(val)}</span>
+                  </div>
+                ))}
               </div>
             )}
 

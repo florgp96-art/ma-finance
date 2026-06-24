@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tipoCambioEUR, refreshKey, initialPeriod }) {
+export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -101,6 +101,13 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     .map(([name, val]) => ({ name, ...val }))
     .sort((a, b) => b.value - a.value)
 
+  const getTCEURForMonth = (ym) => {
+    const mesActual = new Date().toISOString().slice(0, 7)
+    if (ym === mesActual) return tcEUR
+    if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
+    return tcEUR
+  }
+
   // Evolución mensual (últimos 6 meses)
   const last6 = getLast6Months()
   const monthlyData = last6.map(ym => {
@@ -108,7 +115,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
     const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
     const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
-    return { mes: mesLabel(ym), total: Math.round(ars + usd * tc + eur * tcEUR) }
+    return { mes: mesLabel(ym), total: Math.round(ars + usd * tc + eur * getTCEURForMonth(ym)) }
   })
 
   const startEdit = (tx) => {

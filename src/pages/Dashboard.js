@@ -483,7 +483,11 @@ export default function Dashboard() {
         if (resEur.ok) {
           const eur = await resEur.json()
           const avg = (eur.compra != null && eur.venta != null) ? Math.round((eur.compra + eur.venta) / 2) : (eur.venta || eur.compra || 0)
-          if (avg > 0) map.eur = avg
+          if (avg > 0) {
+            map.eur = avg
+            const mesActual = new Date().toISOString().slice(0, 7)
+            supabase.from('exchange_rates').upsert({ periodo: mesActual, tipo: 'euro', valor: avg }, { onConflict: 'periodo,tipo' }).then(() => fetchExchangeRates())
+          }
         }
       } catch {}
       setDolarRates(map)
@@ -1507,13 +1511,16 @@ export default function Dashboard() {
   // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC)
   const miniChartDataComputed = (() => {
     const tcMap = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
+    const tcMapEuroMini = Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))
     const mesActual = new Date().toISOString().slice(0, 7)
     return miniChartMeses.map(ym => {
       const tc = ym === mesActual
         ? (parseFloat(tipoCambio) || 1)
         : (tcMap[ym] ? Number(tcMap[ym]) : parseFloat(tipoCambio) || 1)
       const txsMes = miniChartTxs.filter(t => t.fecha?.startsWith(ym))
-      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * (parseFloat(tipoCambioEUR) || 0) : t.monto), 0)
+      const mesActual = new Date().toISOString().slice(0, 7)
+      const tcEuroMes = ym === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEuroMini[ym] ? Number(tcMapEuroMini[ym]) : (parseFloat(tipoCambioEUR) || 0))
+      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * tcEuroMes : t.monto), 0)
       const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
       return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
     })
@@ -1926,7 +1933,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -1936,6 +1943,7 @@ export default function Dashboard() {
                     darkMode={darkMode}
                     tipoCambio={tipoCambio}
                     tipoCambioEUR={tipoCambioEUR}
+                    tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))}
                     refreshKey={refreshKey}
                     initialPeriod={sharedPeriod}
                   />
@@ -2076,7 +2084,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -2147,7 +2155,8 @@ export default function Dashboard() {
                   })
                   .reduce((s, t) => {
                     const monto = Number(t.monto)
-                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && parseFloat(tipoCambioEUR) > 0 ? monto * parseFloat(tipoCambioEUR) : t.moneda === 'ARS' ? monto : 0)
+                    const tcEuroEvol = (() => { const mes = t.fecha?.slice(0,7); const mA = new Date().toISOString().slice(0,7); const tcMapE = Object.fromEntries(exchangeRates.filter(r=>r.tipo==='euro').map(r=>[r.periodo,r.valor])); return mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapE[mes] ? Number(tcMapE[mes]) : (parseFloat(tipoCambioEUR)||0)) })()
+                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
                   }, 0)
                 return { mes: mesLabel(m), total }
               })
