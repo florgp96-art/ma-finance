@@ -705,7 +705,7 @@ export default function Dashboard() {
         const applyAliases = (cat, subcat, descripcion) => {
           const desc = (descripcion || '').toUpperCase()
           const match = (userAliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
-          if (match) return { cat: match.valor, subcat: null }
+          if (match) return { cat: match.valor, subcat: (cat || '').toLowerCase() === (match.valor || '').toLowerCase() ? subcat : null }
           // Personal siempre sin subcategoria — evita inventar "Peluqueria", "Varios", etc.
           if ((cat || '').toLowerCase() === 'personal') return { cat, subcat: null }
           return { cat, subcat }
@@ -950,7 +950,11 @@ export default function Dashboard() {
         const desc = (tx.detalle || tx.nombre || '').toUpperCase()
         // Aliases: prioridad máxima
         const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
-        if (aliasMatch) { cl.categoria = aliasMatch.valor; cl.subcategoria = null }
+        if (aliasMatch) {
+          const prevCat = cl.categoria
+          cl.categoria = aliasMatch.valor
+          if ((prevCat || '').toLowerCase() !== (cl.categoria || '').toLowerCase()) cl.subcategoria = null
+        }
         // Personal nunca tiene subcategoria
         if ((cl.categoria || '').toLowerCase() === 'personal') cl.subcategoria = null
         // Consistencia: misma descripción → misma clasificación
