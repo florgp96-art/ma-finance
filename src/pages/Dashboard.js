@@ -228,6 +228,17 @@ export default function Dashboard() {
         }
         if (settings?.tiene_hijos === false) setTieneHijos(false)
 
+        // Guardar nombre propio del registro como contexto_ (auto-neutro en imports)
+        const fullName = user.user_metadata?.full_name
+        if (fullName) {
+          const ctxKey = `contexto_${fullName.toLowerCase().trim()}`
+          const { data: existing } = await supabase.from('user_rules')
+            .select('id').eq('user_id', user.id).eq('texto_original', ctxKey).maybeSingle()
+          if (!existing) {
+            await supabase.from('user_rules').insert({ user_id: user.id, texto_original: ctxKey, category_id: null, subcategory_id: null })
+          }
+        }
+
         const saved = localStorage.getItem(`servicios_${user.id}`)
         setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
 
@@ -301,7 +312,8 @@ export default function Dashboard() {
   }
 
   const fetchChildren = async () => {
-    const { data } = await supabase.from('children').select('id, nombre').order('nombre')
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('children').select('id, nombre').eq('user_id', user.id).order('nombre')
     setChildrenDB(data || [])
   }
 
@@ -314,13 +326,15 @@ export default function Dashboard() {
   const fetchCustomIcons = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const [{ data: catIcons }, { data: childIcons }] = await Promise.all([
+    const [{ data: catIcons }, { data: childIcons }, { data: ruleIcons }] = await Promise.all([
       supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id),
-      supabase.from('children').select('nombre, icono').eq('user_id', user.id).not('icono', 'is', null)
+      supabase.from('children').select('nombre, icono').eq('user_id', user.id).not('icono', 'is', null),
+      supabase.from('user_rules').select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__icon__%')
     ])
     const icons = {}
     if (catIcons) catIcons.filter(r => r.categories?.nombre).forEach(r => { icons[r.categories.nombre] = r.icono })
     if (childIcons) childIcons.forEach(r => { icons[r.nombre] = r.icono })
+    if (ruleIcons) ruleIcons.forEach(r => { const nombre = r.texto_original.replace('__icon__', ''); if (nombre && r.nombre_asignado) icons[nombre] = r.nombre_asignado })
     setCustomIcons(icons)
   }
 
@@ -342,6 +356,16 @@ export default function Dashboard() {
         await supabase.from('children').update({ icono: icono || null }).eq('id', childObj.id)
         setChildrenDB(prev => prev.map(c => c.id === childObj.id ? { ...c, icono: icono || null } : c))
         setCustomIcons(prev => icono ? { ...prev, [categoria]: icono } : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== categoria)))
+      } else {
+        // Ingreso tags y otros: guardar en user_rules como __icon__{nombre}
+        const iconKey = `__icon__${categoria}`
+        if (icono) {
+          await supabase.from('user_rules').upsert({ user_id: user.id, texto_original: iconKey, nombre_asignado: icono, category_id: null, subcategory_id: null }, { onConflict: 'user_id,texto_original' })
+          setCustomIcons(prev => ({ ...prev, [categoria]: icono }))
+        } else {
+          await supabase.from('user_rules').delete().eq('user_id', user.id).eq('texto_original', iconKey)
+          setCustomIcons(prev => { const n = {...prev}; delete n[categoria]; return n })
+        }
       }
     }
   }
@@ -543,26 +567,40 @@ export default function Dashboard() {
     return null
   }
 
+  const downloadExcelTemplate = () => {
+    const wb = XLSX.utils.book_new()
+    const headers = [['FECHA', 'DESCRIPCION', 'MONTO_ARS', 'MONTO_USD', 'CATEGORIA', 'SUBCATEGORIA', 'HIJO', 'MODO_PAGO']]
+    const examples = [
+      ['01/06/2026', 'Supermercado Día', 15000, '', 'Alimentos', 'Verduras', '', 'Efectivo'],
+      ['10/06/2026', 'Netflix', '', 8.99, 'Entretenimiento', '', '', 'Tarjeta'],
+    ]
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...examples])
+    ws['!cols'] = [{ width: 14 }, { width: 30 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 20 }, { width: 15 }, { width: 18 }]
+    XLSX.utils.book_append_sheet(wb, ws, 'GASTOS')
+    XLSX.writeFile(wb, 'plantilla_gastos.xlsx')
+  }
+
   const parsearExcel = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true })
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true, raw: false })
         const ws = wb.Sheets['GASTOS']
-        if (!ws) { reject(new Error('No se encontró la hoja "GASTOS" en el archivo')); return }
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
-        const parsed = rows.slice(1)
-          .filter(row => row && row.length > 0 && (row[0] || row[1] || row[2]))
+        if (!ws) { reject(new Error('No se encontró la hoja "GASTOS". Usá la plantilla descargable.')); return }
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: null })
+        const toNum = (v) => parseFloat(String(v || '').replace(/[^0-9.,\-]/g, '').replace(',', '.')) || 0
+        const parsed = rows
+          .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
           .map(row => {
-            const fecha = parseExcelDate(row[0])
-            const monto_ars = parseFloat(row[1]) || 0
-            const monto_usd = parseFloat(row[2]) || 0
-            const descripcion = String(row[3] || '').trim()
-            const cat = String(row[4] || '').trim() || null
-            const subcat = String(row[5] || '').trim() || null
-            const hijoRaw = String(row[6] || '').trim()
+            const fecha = parseExcelDate(row['FECHA'])
+            const monto_ars = toNum(row['MONTO_ARS'])
+            const monto_usd = toNum(row['MONTO_USD'])
+            const descripcion = String(row['DESCRIPCION'] || '').trim()
+            const cat = String(row['CATEGORIA'] || '').trim() || null
+            const subcat = String(row['SUBCATEGORIA'] || '').trim() || null
+            const hijoRaw = String(row['HIJO'] || '').trim()
             const hijo = hijoRaw ? hijoRaw.charAt(0).toUpperCase() + hijoRaw.slice(1).toLowerCase() : null
-            const modo_pago = String(row[7] || '').trim()
+            const modo_pago = String(row['MODO_PAGO'] || '').trim()
             const monto = monto_usd > 0 ? monto_usd : monto_ars
             const moneda = monto_usd > 0 ? 'USD' : 'ARS'
             return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas: descripcion, modo_pago, cat, subcat, hijo }
@@ -2022,7 +2060,7 @@ export default function Dashboard() {
                     {[
                       { key: 'resumen', label: '📊 Resumen' },
                       { key: 'vencimientos', label: '📅 Vencimientos' },
-                      ...childrenDB.map(c => ({ key: c.nombre, label: `👧 ${c.nombre}` }))
+                      ...childrenDB.map(c => ({ key: c.nombre, label: `${customIcons[c.nombre] || '👧'} ${c.nombre}` }))
                     ].map(tab => (
                       <button key={tab.key}
                         data-tab={tab.key}
@@ -2554,7 +2592,10 @@ export default function Dashboard() {
                     <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG, JPG · Máx. 10MB</p></>
                   )}
                 </div>
-                <input id="uploadInput" type="file" accept=".pdf,.png,.jpg,.jpeg" style={{display:'none'}}
+                <label htmlFor="uploadInput" style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : '#5C4F5C', color: archivo ? '#5C4F5C' : 'white', border: `2px solid #5C4F5C`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif' }}>
+                  {archivo ? `✅ ${archivo.name}` : '📁 Seleccionar archivo'}
+                </label>
+                <input id="uploadInput" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,image/png,image/jpeg" style={{display:'none'}}
                   onChange={(e) => { if (e.target.files[0]) setArchivo(e.target.files[0]) }} />
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
@@ -3003,9 +3044,14 @@ export default function Dashboard() {
                   )
                 })() : (
                   <>
-                    <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-                      El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
-                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-12px 0 16px 0' }}>
+                      <p style={{ fontSize: '13px', color: '#6e6e73', margin: 0 }}>
+                        El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
+                      </p>
+                      <button onClick={downloadExcelTemplate} style={{ fontSize: '12px', color: '#5C4F5C', background: 'none', border: '1px solid #5C4F5C', borderRadius: '8px', padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '10px' }}>
+                        ⬇ Plantilla
+                      </button>
+                    </div>
                     <div
                       style={{ ...styles.dropzone, ...(excelDragOver ? styles.dropzoneActive : {}), ...(excelFile ? styles.dropzoneDone : {}) }}
                       onDragOver={e => { e.preventDefault(); setExcelDragOver(true) }}
@@ -3040,7 +3086,7 @@ export default function Dashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
                       <tr>
-                        {['Fecha', 'Descripción', 'Cuenta', 'Monto', 'Categoría', 'Hijo'].map(h => (
+                        {['Fecha', 'Descripción', 'Cuenta', 'Monto', 'Categoría', ...(tieneHijos !== false ? ['Hijo'] : [])].map(h => (
                           <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
@@ -3061,7 +3107,7 @@ export default function Dashboard() {
                               <span style={{ backgroundColor: '#fff8e1', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>❓ Sin identificar</span>
                             )}
                           </td>
-                          <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>
+                          {tieneHijos !== false && <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>}
                         </tr>
                       ))}
                     </tbody>

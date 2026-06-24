@@ -7,6 +7,7 @@ export default function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [nombreCompleto, setNombreCompleto] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
@@ -15,12 +16,16 @@ export default function Register() {
   const handleRegister = async (e) => {
     e.preventDefault()
     setError('')
+    if (!nombreCompleto.trim()) { setError('El nombre completo es obligatorio'); return }
     if (password !== confirm) { setError('Las contraseñas no coinciden'); return }
     setLoading(true)
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin }
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: { full_name: nombreCompleto.trim() }
+      }
     })
     if (error) { setError(error.message) } else { setSent(true) }
     setLoading(false)
@@ -62,6 +67,18 @@ export default function Register() {
 
         <form onSubmit={handleRegister}>
           <div style={styles.field}>
+            <label style={styles.label}>Nombre completo</label>
+            <input
+              style={styles.input}
+              type="text"
+              value={nombreCompleto}
+              onChange={e => setNombreCompleto(e.target.value)}
+              placeholder="Tal como figura en tu banco"
+              required
+            />
+            <p style={styles.hint}>Usá el nombre exacto que aparece en tus extractos bancarios (ej: "María García López")</p>
+          </div>
+          <div style={styles.field}>
             <label style={styles.label}>Email</label>
             <input style={styles.input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@email.com" required />
           </div>
@@ -92,6 +109,7 @@ const styles = {
   field: { marginBottom: '20px' },
   label: { display: 'block', fontSize: '13px', fontWeight: 600, color: '#444', marginBottom: '6px', letterSpacing: '0.02em', fontFamily: FONT.family },
   input: { width: '100%', padding: '13px 14px', borderRadius: RADIUS.sm, border: `1.5px solid ${COLORS.border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', fontFamily: FONT.family, color: COLORS.text },
+  hint: { margin: '6px 0 0', fontSize: '12px', color: COLORS.textTertiary, fontFamily: FONT.family, lineHeight: 1.5 },
   button: { width: '100%', padding: '15px', backgroundColor: COLORS.primary, color: 'white', border: 'none', borderRadius: RADIUS.md, fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: FONT.family, letterSpacing: '0.02em', marginTop: '8px' },
   error: { backgroundColor: COLORS.errorBg, color: COLORS.errorText, padding: '12px 14px', borderRadius: RADIUS.sm, marginBottom: '16px', fontSize: '13px', fontFamily: FONT.family },
   link: { textAlign: 'center', marginTop: '20px', fontSize: '14px', color: COLORS.textTertiary, fontFamily: FONT.family }
