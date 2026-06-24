@@ -59,7 +59,10 @@ export default function Dashboard() {
 
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
-  const [miniChartData, setMiniChartData] = useState([])
+  // eslint-disable-next-line no-unused-vars
+  const [_miniChartUnused, _setMiniChart] = useState([])
+  const [miniChartMeses, setMiniChartMeses] = useState([])
+  const [miniChartTxs, setMiniChartTxs] = useState([])
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
   const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
@@ -214,7 +217,7 @@ export default function Dashboard() {
         const saved = localStorage.getItem(`servicios_${user.id}`)
         setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
 
-        // Mini chart: últimos 6 meses
+        // Mini chart: últimos 6 meses — guardamos txs crudas para recalcular con TC live
         const now = new Date()
         const meses = Array.from({ length: 6 }, (_, i) => {
           const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
@@ -224,14 +227,8 @@ export default function Dashboard() {
         const { data: txs } = await supabase.from('transactions')
           .select('fecha, monto, moneda').eq('user_id', user.id).eq('tipo', 'gasto')
           .gte('fecha', desde).gt('monto', 0)
-        const tc = parseFloat(localStorage.getItem('tc_ma')) || 1
-        const totales = meses.map(ym => {
-          const mes = txs?.filter(t => t.fecha?.startsWith(ym)) || []
-          const total = mes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.monto), 0)
-          const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
-          return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
-        })
-        setMiniChartData(totales)
+        setMiniChartMeses(meses)
+        setMiniChartTxs(txs || [])
       }
     })
   }, [navigate])
@@ -1426,6 +1423,21 @@ export default function Dashboard() {
 
   const styles = getStyles(darkMode)
   const isMobile = windowWidth < 640
+
+  // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC)
+  const miniChartDataComputed = (() => {
+    const tcMap = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
+    const mesActual = new Date().toISOString().slice(0, 7)
+    return miniChartMeses.map(ym => {
+      const tc = ym === mesActual
+        ? (parseFloat(tipoCambio) || 1)
+        : (tcMap[ym] ? Number(tcMap[ym]) : parseFloat(tipoCambio) || 1)
+      const txsMes = miniChartTxs.filter(t => t.fecha?.startsWith(ym))
+      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.monto), 0)
+      const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
+      return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
+    })
+  })()
   const isTablet = windowWidth >= 640 && windowWidth < 960
   const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
@@ -1978,14 +1990,14 @@ export default function Dashboard() {
           {/* Widgets — solo desktop ancho (>= 1024px) */}
           {windowWidth >= 1024 && (
           <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
-            {miniChartData.length > 0 && (
+            {miniChartDataComputed.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
                 <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
                 {(() => {
-                  const miniAvg = miniChartData.length > 0 ? Math.round(miniChartData.reduce((s, d) => s + d.total, 0) / miniChartData.length) : 0
+                  const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
                   return (
                     <ResponsiveContainer width="100%" height={130}>
-                      <BarChart data={miniChartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                      <BarChart data={miniChartDataComputed} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
                         <Tooltip
                           formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
@@ -1996,8 +2008,8 @@ export default function Dashboard() {
                         />
                         <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                          {miniChartData.map((_, i) => (
-                            <Cell key={i} fill={i === miniChartData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          {miniChartDataComputed.map((_, i) => (
+                            <Cell key={i} fill={i === miniChartDataComputed.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -2078,7 +2090,7 @@ export default function Dashboard() {
                       <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                         <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
-                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} />
+                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} labelStyle={{ color: txtClr, fontWeight: '600' }} itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                           {evolData.map((_, i) => (
                             <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
