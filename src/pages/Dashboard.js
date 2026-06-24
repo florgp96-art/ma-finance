@@ -942,15 +942,24 @@ export default function Dashboard() {
         showToast('El clasificador no devolvió resultados.', 'error')
         return
       }
+      // Mapa de consistencia: mismo detalle → misma clasificación
+      const clByDesc = {}
       const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
         if (!cl) return null
-        // Apply user aliases deterministically (overrides Claude)
         const desc = (tx.detalle || tx.nombre || '').toUpperCase()
+        // Aliases: prioridad máxima
         const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
         if (aliasMatch) { cl.categoria = aliasMatch.valor; cl.subcategoria = null }
-        // Personal nunca tiene subcategoria — evita inventar "Peluqueria", "Varios", etc.
+        // Personal nunca tiene subcategoria
         if ((cl.categoria || '').toLowerCase() === 'personal') cl.subcategoria = null
+        // Consistencia: misma descripción → misma clasificación
+        if (clByDesc[desc]) {
+          cl.categoria = clByDesc[desc].categoria
+          cl.subcategoria = clByDesc[desc].subcategoria
+        } else {
+          clByDesc[desc] = { categoria: cl.categoria, subcategoria: cl.subcategoria }
+        }
         const catObj = cats?.find(c => c.nombre.toLowerCase() === (cl.categoria || '').toLowerCase())
         const subcatObj = subcats?.find(s => s.nombre.toLowerCase() === (cl.subcategoria || '').toLowerCase() && s.category_id === catObj?.id)
         return supabase.from('transactions').update({
