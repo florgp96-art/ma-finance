@@ -921,22 +921,23 @@ export default function Dashboard() {
       })
       const { classifications } = await res.json()
       const { data: subcats } = await supabase.from('subcategories').select('*')
-      let updated = 0
-      for (let i = 0; i < pendientes.length; i++) {
+      const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
-        if (!cl) continue
+        if (!cl) return null
         const catObj = cats?.find(c => c.nombre === cl.categoria)
         const subcatObj = subcats?.find(s => s.nombre === cl.subcategoria && s.category_id === catObj?.id)
-        await supabase.from('transactions').update({
-          nombre: cl.nombre || pendientes[i].detalle,
+        return supabase.from('transactions').update({
+          nombre: cl.nombre || tx.detalle,
           category_id: catObj?.id || null,
           subcategory_id: subcatObj?.id || null,
           estado: catObj ? 'identificado' : 'a_identificar',
-        }).eq('id', pendientes[i].id)
-        updated++
-      }
+        }).eq('id', tx.id)
+      }).filter(Boolean)
+      await Promise.all(updates)
+      const updated = updates.length
       showToast(`${updated} transacciones reclasificadas.`)
       setRefreshKey(k => k + 1)
+      fetchAccounts()
     } catch (e) {
       showToast('Error al reclasificar: ' + e.message, 'error')
     }
