@@ -1031,6 +1031,48 @@ export default function Dashboard() {
     })
   }
 
+  const tryDirectParsePDF = (text) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    const mpLines = lines.filter(l => /Mercado Pago\s*$/i.test(l))
+    if (mpLines.length < 5) return null
+
+    const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    const rows = []
+    for (const line of lines) {
+      // Pattern: dd/mm/yyyy DESCRIPTION [-]$ amount Mercado Pago
+      const m = line.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.*?)\s+(-?\s*\$?\s*[\d,]+(?:\.\d{1,2})?)\s+Mercado Pago\s*$/i)
+      if (!m) continue
+
+      const [, fechaStr, rawDesc, montoStr] = m
+      const [d, mo, y] = fechaStr.split('/')
+      const fecha = `${y}-${mo}-${d}`
+      const isIngreso = !montoStr.includes('-')
+      const monto = parseFloat(montoStr.replace(/[^0-9.]/g, ''))
+      if (isNaN(monto) || monto === 0) continue
+
+      const esDevolucion = /\[(refunded|cancelled)\]/i.test(rawDesc)
+      const descripcion = rawDesc.replace(/\[.*?\]/g, '').trim()
+      const tipo = esDevolucion ? 'neutro' : isIngreso ? 'ingreso' : 'gasto'
+
+      rows.push({ fecha, descripcion, monto, es_credito: isIngreso, detalle: descripcion,
+        tipo, nombre_limpio: descripcion, nombre_original: descripcion, moneda: 'ARS' })
+    }
+
+    if (rows.length < 5) return null
+
+    const fechas = rows.map(r => r.fecha).sort()
+    const [yDesde, mDesde] = fechas[0].split('-')
+    const [yHasta, mHasta] = fechas[fechas.length - 1].split('-')
+    const periodo = (mDesde === mHasta && yDesde === yHasta)
+      ? `${MESES[parseInt(mDesde)]} ${yHasta}`
+      : yDesde === yHasta
+        ? `${MESES[parseInt(mDesde)]}-${MESES[parseInt(mHasta)]} ${yHasta}`
+        : `${MESES[parseInt(mDesde)]} ${yDesde}-${MESES[parseInt(mHasta)]} ${yHasta}`
+
+    console.log(`✅ Parser directo MercadoPago: ${rows.length} transacciones (${periodo})`)
+    return { tarjeta_detectada: 'Mercado Pago', tipo_documento: 'banco', transacciones: rows, contexto_detectado: [], periodo }
+  }
+
   const handleUploadPDF = async () => {
     if (!archivo) return
     setStep('processing')
@@ -1068,7 +1110,20 @@ export default function Dashboard() {
         result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
         const pdfText = await extractTextFromPDF(archivo)
-        result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples)
+        result = tryDirectParsePDF(pdfText)
+        if (!result) {
+          result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples)
+        } else if (rules && rules.length > 0) {
+          // Apply existing user_rules to pre-classify recognized descriptions
+          result.transacciones = result.transacciones.map(t => {
+            const descNorm = (t.descripcion || '').toLowerCase().trim()
+            const matched = rules.find(r => {
+              const rNorm = (r.texto_original || '').toLowerCase().trim()
+              return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
+            })
+            return matched ? { ...t, categoria_sugerida: matched.categoria, subcategoria_sugerida: matched.subcategoria } : t
+          })
+        }
       }
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })

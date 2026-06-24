@@ -11,13 +11,30 @@ export async function extractTextFromPDF(file) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const textContent = await page.getTextContent()
-    const pageText = textContent.items.map(item => item.str).join(' ')
-    fullText += `\n--- Página ${i} ---\n${pageText}`
+    const items = textContent.items.filter(item => item.str && item.str.trim())
+
+    if (items.length === 0) { fullText += '\n'; continue }
+
+    // Group items by row using Y coordinate (PDF y=0 is at bottom, higher y = higher on page)
+    const byRow = {}
+    for (const item of items) {
+      const y = Math.round(item.transform[5] / 3) * 3  // 3px tolerance
+      if (!byRow[y]) byRow[y] = []
+      byRow[y].push({ x: item.transform[4], str: item.str.trim() })
+    }
+
+    // Sort descending by y (= top to bottom), within row sort by x (left to right)
+    const sortedRows = Object.keys(byRow)
+      .sort((a, b) => Number(b) - Number(a))
+      .map(y => byRow[y].sort((a, b) => a.x - b.x).map(c => c.str).join(' '))
+      .filter(r => r.trim())
+
+    fullText += `\n--- Página ${i} ---\n${sortedRows.join('\n')}`
   }
 
   const cleaned = fullText
     .replace(/[^\x20-\x7E\n\r\táéíóúüñÁÉÍÓÚÜÑ°$%.,;:()\-/]/g, ' ')
-    .replace(/\s{3,}/g, '  ')
+    .replace(/[ \t]{3,}/g, '  ')
     .trim()
 
   const cutMarkers = ['TOTAL A PAGAR', 'Plan V:', 'CFTEA']
