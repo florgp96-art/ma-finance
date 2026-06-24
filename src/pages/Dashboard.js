@@ -1955,9 +1955,8 @@ export default function Dashboard() {
               setNewCuentaAhorro({ cuenta: '', monto: '', moneda: newCuentaAhorro.moneda })
               setShowAddCuentaAhorro(false)
             }
-            const panelW = isTablet ? '200px' : '240px'
             return (
-              <div style={{ ...styles.savingsPanel, width: panelW, boxSizing: 'border-box' }}>
+              <div style={{ ...styles.savingsPanel, width: '100%', boxSizing: 'border-box' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <h3 style={{ ...styles.savingsPanelTitle, margin: 0 }}>Mis ahorros</h3>
                   <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid #5C4F5C`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>

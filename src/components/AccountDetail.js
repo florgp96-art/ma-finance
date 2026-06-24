@@ -19,7 +19,7 @@ export const CATEGORY_CONFIG = {
   'A Identificar':   { icon: '❓', color: '#F9E4B7' },
 }
 
-const BAR_COLOR = '#B0A4CC'
+const BAR_COLOR = '#5C4F5C'
 const INCOME_PALETTE = ['#5C4F5C','#8C7B8C','#C4B8C4','#6A5A6A','#9A8A9A','#7A6A7A','#B4A8B4','#4A3F4A']
 const CHILDREN_PALETTE = ['#A8C4E8', '#E8C4A8', '#C4E8A8', '#E8A8C4', '#C4A8E8']
 
@@ -120,7 +120,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
     const subcats = subcatMap[selectedBubble.name].filter(s => s.value > 0)
     if (subcats.length === 0) return []
     const maxSub = Math.max(...subcats.map(s => s.value))
-    const dist = 165
+    const dist = isMobile ? 110 : 165
     return subcats.map((s, i) => {
       const angle = (2 * Math.PI * i / subcats.length) - Math.PI / 2
       const subR = Math.max(26, Math.min(52, 26 + (s.value / maxSub) * 32))
@@ -1028,11 +1028,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
               </div>
             )}
           </div>
-          {esVistaIngresos && onAddIngreso && (
-            <button onClick={onAddIngreso} style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: '10px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
-              + Agregar ingreso
-            </button>
-          )}
         </div>
       )}
 
@@ -1242,11 +1237,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
           <p style={{ fontSize: '32px', marginBottom: '12px' }}>💰</p>
           <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
           <p style={{ fontSize: '13px', color: '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
-          {onAddIngreso && (
-            <button onClick={onAddIngreso} style={{ padding: '12px 24px', borderRadius: '12px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
-              + Agregar primer ingreso
-            </button>
-          )}
         </div>
       )}
 
@@ -1291,8 +1281,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 
               {/* Donut */}
               {effectiveChartType === 'donut' && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
-                  <ResponsiveContainer width={isMobile ? '100%' : 260} height={240}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
+                  <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
                     <PieChart>
                       <Pie data={fullChartData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
                         {fullChartData.map((entry, idx) => (
@@ -1536,51 +1526,6 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </div>
       )}
 
-      {/* Evolución por categoría — solo mobile; en desktop se muestra en el sidebar derecho */}
-      {isMobile && transactions.length > 0 && (() => {
-        const categoriasConTx = [...new Set(
-          transactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
-            .map(t => t.categories.nombre)
-        )].sort()
-        const evolData = getLast6Months().map(m => {
-          const tc = getTC(m)
-          const total = transactions
-            .filter(t => t.fecha?.startsWith(m) && t.tipo === 'gasto' && t.categories?.nombre === selectedCatEvol)
-            .reduce((s, t) => {
-              const monto = Number(t.monto)
-              return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'ARS' ? monto : 0)
-            }, 0)
-          return { mes: mesLabel(m), total }
-        })
-        const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
-        const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
-        const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-        return (
-          <div style={{ ...styles.chartSection, marginTop: '8px' }}>
-            <h3 style={styles.chartTitle}>📈 Evolución por categoría</h3>
-            <select
-              style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '13px', outline: 'none', backgroundColor: bgClr, color: txtClr, fontFamily: '"Montserrat", sans-serif', marginBottom: '16px', cursor: 'pointer' }}
-              value={selectedCatEvol}
-              onChange={e => setSelectedCatEvol(e.target.value)}
-            >
-              <option value="">— Elegir categoría —</option>
-              {categoriasConTx.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            {selectedCatEvol ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={evolData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${formatMonto(v)}`} width={85} />
-                  <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, selectedCatEvol]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}` }} />
-                  <Bar dataKey="total" fill="#5C4F5C" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p style={{ color: '#aaa', fontSize: '13px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
-            )}
-          </div>
-        )
-      })()}
     </div>
   )
 }
