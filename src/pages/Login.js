@@ -49,7 +49,7 @@ export default function Login() {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoWrap}>
-          <img src={logo} alt="MA Finance" style={styles.logo} />
+          <img src={logo} alt="MAF" style={styles.logo} />
         </div>
 
         <p style={styles.subtitle}>Iniciá sesión en tu cuenta</p>

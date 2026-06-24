@@ -1,4 +1,4 @@
-export const APP_NAME = 'MA Finance'
+export const APP_NAME = 'MAF'
 
 export const COLORS = {
   bg:             '#F0EDEC',

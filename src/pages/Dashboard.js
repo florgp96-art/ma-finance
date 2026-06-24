@@ -1539,7 +1539,7 @@ export default function Dashboard() {
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="Moms Assist Finance" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '100px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '10px' : '20px', pointerEvents: 'none' }} />
+              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '100px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '10px' : '20px', pointerEvents: 'none' }} />
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
@@ -1727,8 +1727,9 @@ export default function Dashboard() {
               {/* Agregar gasto */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
-                let { data: ce } = await supabase.from('accounts')
-                  .select('*').eq('user_id', user.id).eq('nombre', 'Efectivo').maybeSingle()
+                let { data: existentes } = await supabase.from('accounts')
+                  .select('*').eq('user_id', user.id).eq('tipo', 'efectivo').limit(1)
+                let ce = existentes?.[0]
                 if (!ce) {
                   const { data: nueva } = await supabase.from('accounts')
                     .insert({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' }).select().single()
