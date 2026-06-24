@@ -766,8 +766,8 @@ export default function Dashboard() {
 
       const { data: categorias } = await supabase.from('categories').select('id, nombre')
       const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
-      const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
-      const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
+      const getCatId = (cat) => cat ? (categorias?.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null) : null
+      const getSubcatId = (sub, catId) => sub && catId ? (subcategorias?.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null) : null
 
       const uniqueModoPagos = [...new Set(excelPreview.map(r => r.modo_pago || ''))]
       for (const mp of uniqueModoPagos) await resolveAccount(mp)
@@ -854,8 +854,8 @@ export default function Dashboard() {
     try {
       const { newRows, potentialDupes, exactDupes, categorias, subcategorias } = excelDupReview
       const { data: { user } } = await supabase.auth.getUser()
-      const getCatId = (cat) => categorias?.find(c => c.nombre === cat)?.id || null
-      const getSubcatId = (sub, catId) => subcategorias?.find(s => s.nombre === sub && s.category_id === catId)?.id || null
+      const getCatId = (cat) => cat ? (categorias?.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null) : null
+      const getSubcatId = (sub, catId) => sub && catId ? (subcategorias?.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null) : null
 
       const selectedDupes = potentialDupes.filter((_, i) => excelDupSelections.has(i))
       const toImport = [...newRows, ...selectedDupes]
