@@ -693,7 +693,8 @@ export default function Dashboard() {
           headers,
           body: JSON.stringify({
             rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
-            categories: categoriasDB.map(c => ({ nombre: c.nombre })),
+            categories: categoriasDB,
+            subcategories: subcategoriasDB,
             children: childrenDB,
             aliases: userAliases
           })
@@ -701,20 +702,28 @@ export default function Dashboard() {
         if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
         const { classifications } = await response.json()
 
+        const applyAliases = (cat, subcat, descripcion) => {
+          const desc = (descripcion || '').toUpperCase()
+          const match = (userAliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
+          return match ? { cat: match.valor, subcat: null } : { cat, subcat }
+        }
+
         let clIdx = 0
         enriched = rows.map(r => {
           if (!r.cat || r.cat === 'A Identificar') {
             const cl = Array.isArray(classifications) ? classifications[clIdx++] : null
+            const { cat, subcat } = applyAliases(cl?.categoria || null, cl?.subcategoria || null, r.descripcion || r.notas)
             return {
               ...r,
-              cat: cl?.categoria || null,
-              subcat: cl?.subcategoria || null,
+              cat, subcat,
               hijo: r.hijo || cl?.hijo || null,
               nombre: cl?.nombre || r.descripcion,
-              estado: cl?.categoria && cl?.categoria !== 'A Identificar' ? 'identificado' : 'a_identificar'
+              estado: cat && cat !== 'A Identificar' ? 'identificado' : 'a_identificar'
             }
           }
-          return { ...r, nombre: r.descripcion, estado: 'identificado' }
+          // Filas con cat del Excel: aplicar aliases igual
+          const { cat, subcat } = applyAliases(r.cat, r.subcat, r.descripcion || r.notas)
+          return { ...r, cat, subcat, nombre: r.descripcion, estado: 'identificado' }
         })
       }
       setExcelPreview(enriched)
