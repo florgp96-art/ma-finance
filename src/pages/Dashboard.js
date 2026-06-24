@@ -1143,7 +1143,7 @@ export default function Dashboard() {
     if (txIdentificarIdx + 1 < txSinIdentificar.length) {
       const next = txSinIdentificar[txIdentificarIdx + 1]
       setTxIdentificarIdx(i => i + 1)
-      setTxEditTemp({ nombre: next.nombre_original, categoria: 'A Identificar', subcategoria: '' })
+      setTxEditTemp({ nombre: next.detalle || '', categoria: 'A Identificar', subcategoria: '' })
     } else {
       // Terminamos, ir a contexto o cerrar
       finalizarCarga()
@@ -1154,7 +1154,18 @@ export default function Dashboard() {
     if (txIdentificarIdx + 1 < txSinIdentificar.length) {
       const next = txSinIdentificar[txIdentificarIdx + 1]
       setTxIdentificarIdx(i => i + 1)
-      setTxEditTemp({ nombre: next.nombre_original, categoria: 'A Identificar', subcategoria: '' })
+      setTxEditTemp({ nombre: next.detalle || '', categoria: 'A Identificar', subcategoria: '' })
+    } else {
+      finalizarCarga()
+    }
+  }
+
+  const handleMarcarNeutro = async (txId) => {
+    await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', txId)
+    if (txIdentificarIdx + 1 < txSinIdentificar.length) {
+      const next = txSinIdentificar[txIdentificarIdx + 1]
+      setTxIdentificarIdx(i => i + 1)
+      setTxEditTemp({ nombre: next.detalle || '', categoria: 'A Identificar', subcategoria: '' })
     } else {
       finalizarCarga()
     }
@@ -2547,14 +2558,21 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={handleSaltarClasificacion}>
-                    Saltar →
-                  </button>
-                  <button style={styles.saveBtn}
-                    onClick={() => handleGuardarClasificacion(txActual.id, txActual.detalle)}
-                    disabled={!txEditTemp.nombre}>
-                    Guardar y siguiente →
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+                  <div style={styles.modalButtons}>
+                    <button style={styles.cancelBtn} onClick={handleSaltarClasificacion}>
+                      Saltar →
+                    </button>
+                    <button style={styles.saveBtn}
+                      onClick={() => handleGuardarClasificacion(txActual.id, txActual.detalle)}
+                      disabled={!txEditTemp.nombre}>
+                      Guardar y siguiente →
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handleMarcarNeutro(txActual.id)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid #C4B8C4', background: 'none', color: '#8e8e93', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer' }}>
+                    ↩ Es neutro (pago, transferencia, etc.)
                   </button>
                 </div>
               </>
