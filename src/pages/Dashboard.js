@@ -920,7 +920,16 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
         body: JSON.stringify({ rows, categories: cats, children: children || [], aliases: aliases || [] })
       })
-      const { classifications } = await res.json()
+      const resData = await res.json()
+      if (!res.ok) {
+        showToast(`Error del clasificador: ${resData.error || res.status}`, 'error')
+        return
+      }
+      const { classifications } = resData
+      if (!classifications || classifications.length === 0) {
+        showToast('El clasificador no devolvió resultados.', 'error')
+        return
+      }
       const { data: subcats } = await supabase.from('subcategories').select('*')
       const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
