@@ -933,6 +933,10 @@ export default function Dashboard() {
       const updates = pendientes.map((tx, i) => {
         const cl = classifications[i]
         if (!cl) return null
+        // Apply user aliases deterministically (overrides Claude)
+        const desc = (tx.detalle || tx.nombre || '').toUpperCase()
+        const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
+        if (aliasMatch) { cl.categoria = aliasMatch.valor; cl.subcategoria = null }
         const catObj = cats?.find(c => c.nombre.toLowerCase() === (cl.categoria || '').toLowerCase())
         const subcatObj = subcats?.find(s => s.nombre.toLowerCase() === (cl.subcategoria || '').toLowerCase() && s.category_id === catObj?.id)
         return supabase.from('transactions').update({
