@@ -3240,7 +3240,12 @@ export default function Dashboard() {
                               {row.tipo || 'gasto'}
                             </span>
                           </td>
-                          <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '11px' }}>{row.modo_pago || 'Efectivo'}</td>
+                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: '11px' }}>
+                            {row.tipo === 'ingreso'
+                              ? <span style={{ color: '#2e7d32', fontWeight: '500' }}>Ingresos</span>
+                              : <span style={{ color: '#6e6e73' }}>{row.modo_pago || 'Efectivo'}</span>
+                            }
+                          </td>
                           <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#2d2d2d' }}>
                             {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
                           </td>
