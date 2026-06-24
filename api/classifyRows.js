@@ -66,8 +66,8 @@ REGLAS GENERALES:
 - CAMPO "hijo": si DESCRIPCION contiene el nombre de un hijo registrado, asignarlo. Si no aplica, null.
 - Si no podés determinar la categoría → usá "A Identificar"
 - Estas filas son GASTOS — nunca uses "Ingresos" ni "Devoluciones"
-- Si la descripción parece un nombre de persona (ej: "Juan Pablo García", "María Soledad López") → usá "Personal", subcategoria SIEMPRE null
-- CAMPO "subcategoria": solo asignala si estás MUY seguro por el nombre del comercio (ej: "Shell" → Nafta, "Carrefour" → Supermercado). Para "Personal" siempre null. Si hay duda, null
+- Si la descripción parece un nombre de persona (ej: "Juan Pablo García", "María Soledad López") → usá "A Identificar"
+- CAMPO "subcategoria": solo asignala si estás MUY seguro por el nombre del comercio (ej: "Shell" → Nafta, "Carrefour" → Supermercado). Si hay duda, null
 
 FILAS:
 ${rowsText}
