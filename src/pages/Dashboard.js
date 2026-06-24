@@ -901,15 +901,14 @@ export default function Dashboard() {
   }
 
   const handleReclasificar = async () => {
-    showToast('Buscando transacciones sin clasificar...')
+    showToast('Buscando transacciones...')
     const { data: { session } } = await supabase.auth.getSession()
     const { data: { user } } = await supabase.auth.getUser()
     const { data: pendientes } = await supabase.from('transactions')
       .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
-      .or('estado.eq.a_identificar,category_id.is.null')
       .gt('monto', 0).limit(500)
-    if (!pendientes || pendientes.length === 0) { showToast('No hay transacciones sin clasificar.'); return }
-    showToast(`Reclasificando ${pendientes.length} transacciones con IA...`)
+    if (!pendientes || pendientes.length === 0) { showToast('No hay gastos para clasificar.'); return }
+    showToast(`Reclasificando ${pendientes.length} gastos con IA...`)
     const { data: cats } = await supabase.from('categories').select('*')
     const { data: children } = await supabase.from('children').select('*').eq('user_id', user.id)
     const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
