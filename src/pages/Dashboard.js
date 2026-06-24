@@ -1683,8 +1683,8 @@ export default function Dashboard() {
     return subcategoriasDB.filter(s => s.category_id === catObj.id)
   }
 
-  const styles = getStyles(darkMode)
   const isMobile = windowWidth < 640
+  const styles = getStyles(darkMode, isMobile)
 
   // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC)
   const miniChartDataComputed = (() => {
@@ -1706,6 +1706,276 @@ export default function Dashboard() {
   const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
+
+  const sideWidgets = () => (
+    <>
+            {miniChartDataComputed.length > 0 && (
+              <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
+                <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
+                {(() => {
+                  const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
+                  return (
+                    <ResponsiveContainer width="100%" height={130}>
+                      <BarChart data={miniChartDataComputed} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
+                          contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
+                          labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
+                          itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
+                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+                        />
+                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {miniChartDataComputed.map((_, i) => (
+                            <Cell key={i} fill={i === miniChartDataComputed.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )
+                })()}
+              </div>
+            )}
+            {/* Widget: Cuotas pendientes */}
+            {(() => {
+              const conCuotas = accountTransactions.filter(t =>
+                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha
+              )
+              if (conCuotas.length === 0) return null
+
+              const stripCuotaSuffix = n => (n || '').replace(/\s+\d+\/\d+\s*$/, '').trim()
+              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
+              const latestByPurchase = {}
+              conCuotas.forEach(t => {
+                const key = groupKey(t)
+                if (!latestByPurchase[key] || (t.cuota_numero || 0) > (latestByPurchase[key].cuota_numero || 0)) latestByPurchase[key] = t
+              })
+
+              const today = new Date()
+              const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
+              const tc = parseFloat(tipoCambio) || 0
+              const byPeriod = {}
+
+              Object.values(latestByPurchase).forEach(t => {
+                const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
+                if (remaining <= 0) return
+                const baseDate = new Date(t.fecha + 'T12:00:00')
+                for (let i = 1; i <= remaining; i++) {
+                  const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
+                  const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+                  if (period < todayPeriod) continue
+                  if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
+                  const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
+                  byPeriod[period].total_ars += arsEquiv
+                  byPeriod[period].items.push({
+                    nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
+                    monto: t.monto,
+                    moneda: t.moneda || 'ARS',
+                    cuotaNum: (t.cuota_numero || 1) + i,
+                    cuotasTotal: t.cuotas_total,
+                    cuenta: t.accounts?.nombre || ''
+                  })
+                }
+              })
+
+              const periods = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
+              if (periods.length === 0) return null
+
+              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const borderClr = darkMode ? '#3A333A' : '#EDE8EC'
+              const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
+              const mutedClr = darkMode ? '#9A8A9A' : '#6e6e73'
+
+              return (
+                <div style={{ ...styles.savingsPanel }}>
+                  <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
+                  {periods.map(([period, data], pi) => (
+                    <div key={period} style={{ marginBottom: pi < periods.length - 1 ? '10px' : 0, paddingBottom: pi < periods.length - 1 ? '10px' : 0, borderBottom: pi < periods.length - 1 ? `1px solid ${borderClr}` : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
+                      </div>
+                      {data.items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '2px 0', gap: '4px' }}>
+                          <span style={{ color: mutedClr, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
+                          <span style={{ color: mutedClr, flexShrink: 0, fontSize: '10px' }}>{item.cuotaNum}/{item.cuotasTotal}</span>
+                          <span style={{ fontWeight: '600', color: txtClr, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            {item.moneda === 'USD' ? 'U$S' : '$'} {fmt(item.monto)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {(() => {
+              const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
+              const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
+              const categoriasConTx = [...new Set(
+                accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
+                  .map(t => t.categories.nombre)
+              )].sort()
+              const ingresosConTx = [...new Set(
+                accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
+                  .map(t => t.tag)
+              )].sort()
+              const getHijoName = (t) => t.children?.nombre || t.tag || null
+              const hijosConTx = [...new Set(
+                accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
+                  .map(t => getHijoName(t))
+              )].sort()
+              const esHijo = sidebarCatEvol.startsWith('hijo:')
+              const esIngreso = sidebarCatEvol.startsWith('ingreso:')
+              const filtroValor = (esHijo || esIngreso) ? sidebarCatEvol.split(':').slice(1).join(':') : sidebarCatEvol
+              const evolData = getLast6Months().map(m => {
+                const tc = getTCEvol(m)
+                const total = accountTransactions
+                  .filter(t => {
+                    if (!t.fecha?.startsWith(m)) return false
+                    if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
+                    if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
+                    return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
+                  })
+                  .reduce((s, t) => {
+                    const monto = Number(t.monto)
+                    const tcEuroEvol = (() => { const mes = t.fecha?.slice(0,7); const mA = new Date().toISOString().slice(0,7); const tcMapE = Object.fromEntries(exchangeRates.filter(r=>r.tipo==='euro').map(r=>[r.periodo,r.valor])); return mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapE[mes] ? Number(tcMapE[mes]) : (parseFloat(tipoCambioEUR)||0)) })()
+                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
+                  }, 0)
+                return { mes: mesLabel(m), total }
+              })
+              const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
+              const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
+              const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
+              const tooltipLabel = filtroValor || sidebarCatEvol
+              const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
+              const multigrupo = tiposPresentes >= 2
+              return (
+                <div style={styles.savingsPanel}>
+                  <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
+                  {/* Custom dropdown evolución */}
+                  <div ref={sidebarCatEvolRef} style={{ position: 'relative', marginBottom: '14px' }}>
+                    <button onClick={() => setSidebarCatEvolOpen(o => !o)} style={{ width: '100%', padding: '7px 28px 7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: sidebarCatEvol ? txtClr : '#8e8e93', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer', textAlign: 'left', position: 'relative', boxSizing: 'border-box' }}>
+                      {sidebarCatEvol === '' ? '— Elegir —' : filtroValor || sidebarCatEvol}
+                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
+                    </button>
+                    {sidebarCatEvolOpen && (
+                      <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
+                        <button onClick={() => { setSidebarCatEvol(''); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif' }}>— Elegir —</button>
+                        {ingresosConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Ingresos</div>}
+                          {ingresosConTx.map(t => <button key={`ingreso:${t}`} onClick={() => { setSidebarCatEvol(`ingreso:${t}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{t}</button>)}
+                        </>)}
+                        {categoriasConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Egresos</div>}
+                          {categoriasConTx.map(c => <button key={c} onClick={() => { setSidebarCatEvol(c); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === c ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === c ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{c}</button>)}
+                        </>)}
+                        {hijosConTx.length > 0 && (<>
+                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Hijos</div>}
+                          {hijosConTx.map(h => <button key={`hijo:${h}`} onClick={() => { setSidebarCatEvol(`hijo:${h}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{h}</button>)}
+                        </>)}
+                      </div>
+                    )}
+                  </div>
+                  {sidebarCatEvol ? (
+                    <ResponsiveContainer width="100%" height={170}>
+                      <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
+                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} labelStyle={{ color: txtClr, fontWeight: '600' }} itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {evolData.map((_, i) => (
+                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
+                  )}
+                </div>
+              )
+            })()}
+            <div style={styles.savingsPanel}>
+            <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Monto mensual</label>
+              <input style={styles.savingsInput} type="number" min="0" placeholder="500"
+                value={ahorro.monto} onChange={e => setAhorro({...ahorro, monto: e.target.value})} />
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Moneda</label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {['ARS', 'USD', 'EUR'].map(m => (
+                  <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: ahorro.moneda === m ? '#5C4F5C' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Cantidad de años</label>
+              <input style={styles.savingsInput} type="number" min="1" max="50" placeholder="5"
+                value={ahorro.anos} onChange={e => setAhorro({...ahorro, anos: e.target.value})} />
+            </div>
+
+            <div style={styles.savingsField}>
+              <label style={styles.savingsLabel}>Tasa anual % <span style={{fontWeight:400, color:'#aaa'}}>(opcional)</span></label>
+              <input style={styles.savingsInput} type="number" min="0" step="0.1" placeholder="Sin tasa = cálculo simple"
+                value={ahorro.tasa} onChange={e => setAhorro({...ahorro, tasa: e.target.value})} />
+            </div>
+
+            {(() => {
+              const monto = parseFloat(ahorro.monto)
+              const anos = parseFloat(ahorro.anos)
+              if (!monto || !anos || monto <= 0 || anos <= 0) return (
+                <p style={styles.savingsHint}>Completá los campos para ver tu proyección</p>
+              )
+              let total
+              const tasa = parseFloat(ahorro.tasa)
+              if (tasa && tasa > 0) {
+                const r = tasa / 100 / 12
+                const n = anos * 12
+                total = monto * ((Math.pow(1 + r, n) - 1) / r)
+              } else {
+                total = monto * 12 * anos
+              }
+              const anioFin = new Date().getFullYear() + Math.floor(anos)
+              const tc = parseFloat(tipoCambio) || 0
+              const tcE = parseFloat(tipoCambioEUR) || 0
+              if (ahorro.moneda === 'EUR' && tcE === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio EUR para ver la proyección</p>
+              if (ahorro.moneda === 'USD' && tc === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio USD para ver la proyección</p>
+              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const totalEnARS = ahorro.moneda === 'ARS' ? total : ahorro.moneda === 'USD' ? total * tc : total * tcE
+              const totalUSD = tc > 0 ? totalEnARS / tc : null
+              const totalEURres = tcE > 0 ? totalEnARS / tcE : null
+              return (
+                <div style={styles.savingsResult}>
+                  <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
+                  {tasa > 0 && <p style={{ ...styles.savingsResultNote, marginBottom: '10px' }}>interés compuesto mensual</p>}
+                  {ahorro.moneda !== 'ARS' && <><p style={styles.savingsResultLabel}>Final en pesos</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>$ {fmt(totalEnARS)}</p></>}
+                  {ahorro.moneda !== 'USD' && totalUSD != null && <><p style={styles.savingsResultLabel}>Final equiv. en USD</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>U$S {fmt(totalUSD)}</p></>}
+                  {ahorro.moneda !== 'EUR' && totalEURres != null && <><p style={styles.savingsResultLabel}>Final equiv. en EUR</p>
+                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>€ {fmt(totalEURres)}</p></>}
+                  <p style={styles.savingsResultLabel}>
+                    {ahorro.moneda === 'ARS' ? 'Total acumulado' : ahorro.moneda === 'USD' ? 'Total en USD' : 'Total en EUR'}
+                  </p>
+                  <p style={{ ...styles.savingsResultAmount, marginBottom: 0 }}>
+                    {ahorro.moneda === 'ARS' ? `$ ${fmt(total)}` : ahorro.moneda === 'USD' ? `U$S ${fmt(total)}` : `€ ${fmt(total)}`}
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+    </>
+  )
 
   return (
     <>
@@ -2162,6 +2432,7 @@ export default function Dashboard() {
               </div>
             )
           })()}
+          {!isMobile && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
@@ -2366,11 +2637,11 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — todos los tamaños; desktop: col 220px fija; mobile/tablet: full-width debajo */}
-          {(
-          <div style={{ width: windowWidth >= 1024 ? '220px' : '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: windowWidth >= 1024 ? 'sticky' : 'static', top: '24px', alignSelf: 'flex-start' }}>
-            {/* Mis Ahorros — solo en mobile (en desktop está bajo el sidebar) */}
-            {isMobile && (() => {
+          {/* Widgets — mobile: full-width debajo del contenido principal */}
+          {isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px 24px' }}>
+            {/* Mis Ahorros — solo mobile (en desktop/tablet está bajo el sidebar) */}
+            {(() => {
               const tc = parseFloat(tipoCambio) || 0
               const mesActual = new Date().toISOString().slice(0,7)
               const tcELive = parseFloat(tipoCambioEUR) || 0
@@ -2417,273 +2688,7 @@ export default function Dashboard() {
                 </div>
               )
             })()}
-
-            {miniChartDataComputed.length > 0 && (
-              <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
-                <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
-                {(() => {
-                  const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
-                  return (
-                    <ResponsiveContainer width="100%" height={130}>
-                      <BarChart data={miniChartDataComputed} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
-                          contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
-                          labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
-                          itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
-                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-                        />
-                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                          {miniChartDataComputed.map((_, i) => (
-                            <Cell key={i} fill={i === miniChartDataComputed.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )
-                })()}
-              </div>
-            )}
-            {/* Widget: Cuotas pendientes */}
-            {(() => {
-              const conCuotas = accountTransactions.filter(t =>
-                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha
-              )
-              if (conCuotas.length === 0) return null
-
-              // Por cada compra, quedarse con el último registro (cuota más reciente)
-              const stripCuotaSuffix = n => (n || '').replace(/\s+\d+\/\d+\s*$/, '').trim()
-              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
-              const latestByPurchase = {}
-              conCuotas.forEach(t => {
-                const key = groupKey(t)
-                if (!latestByPurchase[key] || (t.cuota_numero || 0) > (latestByPurchase[key].cuota_numero || 0)) latestByPurchase[key] = t
-              })
-
-              const today = new Date()
-              const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
-              const tc = parseFloat(tipoCambio) || 0
-              const byPeriod = {}
-
-              Object.values(latestByPurchase).forEach(t => {
-                const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-                if (remaining <= 0) return
-                const baseDate = new Date(t.fecha + 'T12:00:00')
-                for (let i = 1; i <= remaining; i++) {
-                  const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
-                  const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-                  if (period < todayPeriod) continue
-                  if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
-                  const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
-                  byPeriod[period].total_ars += arsEquiv
-                  byPeriod[period].items.push({
-                    nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
-                    monto: t.monto,
-                    moneda: t.moneda || 'ARS',
-                    cuotaNum: (t.cuota_numero || 1) + i,
-                    cuotasTotal: t.cuotas_total,
-                    cuenta: t.accounts?.nombre || ''
-                  })
-                }
-              })
-
-              const periods = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
-              if (periods.length === 0) return null
-
-              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const borderClr = darkMode ? '#3A333A' : '#EDE8EC'
-              const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
-              const mutedClr = darkMode ? '#9A8A9A' : '#6e6e73'
-
-              return (
-                <div style={{ ...styles.savingsPanel }}>
-                  <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
-                  {periods.map(([period, data], pi) => (
-                    <div key={period} style={{ marginBottom: pi < periods.length - 1 ? '10px' : 0, paddingBottom: pi < periods.length - 1 ? '10px' : 0, borderBottom: pi < periods.length - 1 ? `1px solid ${borderClr}` : 'none' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
-                      </div>
-                      {data.items.map((item, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '2px 0', gap: '4px' }}>
-                          <span style={{ color: mutedClr, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
-                          <span style={{ color: mutedClr, flexShrink: 0, fontSize: '10px' }}>{item.cuotaNum}/{item.cuotasTotal}</span>
-                          <span style={{ fontWeight: '600', color: txtClr, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                            {item.moneda === 'USD' ? 'U$S' : '$'} {fmt(item.monto)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
-
-            {(() => {
-              const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
-              const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
-              const categoriasConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
-                  .map(t => t.categories.nombre)
-              )].sort()
-              const ingresosConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
-                  .map(t => t.tag)
-              )].sort()
-              const getHijoName = (t) => t.children?.nombre || t.tag || null
-              const hijosConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
-                  .map(t => getHijoName(t))
-              )].sort()
-              const esHijo = sidebarCatEvol.startsWith('hijo:')
-              const esIngreso = sidebarCatEvol.startsWith('ingreso:')
-              const filtroValor = (esHijo || esIngreso) ? sidebarCatEvol.split(':').slice(1).join(':') : sidebarCatEvol
-              const evolData = getLast6Months().map(m => {
-                const tc = getTCEvol(m)
-                const total = accountTransactions
-                  .filter(t => {
-                    if (!t.fecha?.startsWith(m)) return false
-                    if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
-                    if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
-                    return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
-                  })
-                  .reduce((s, t) => {
-                    const monto = Number(t.monto)
-                    const tcEuroEvol = (() => { const mes = t.fecha?.slice(0,7); const mA = new Date().toISOString().slice(0,7); const tcMapE = Object.fromEntries(exchangeRates.filter(r=>r.tipo==='euro').map(r=>[r.periodo,r.valor])); return mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapE[mes] ? Number(tcMapE[mes]) : (parseFloat(tipoCambioEUR)||0)) })()
-                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
-                  }, 0)
-                return { mes: mesLabel(m), total }
-              })
-              const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
-              const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
-              const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-              const tooltipLabel = filtroValor || sidebarCatEvol
-              const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
-              const multigrupo = tiposPresentes >= 2
-              return (
-                <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
-                  {/* Custom dropdown evolución */}
-                  <div ref={sidebarCatEvolRef} style={{ position: 'relative', marginBottom: '14px' }}>
-                    <button onClick={() => setSidebarCatEvolOpen(o => !o)} style={{ width: '100%', padding: '7px 28px 7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: sidebarCatEvol ? txtClr : '#8e8e93', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer', textAlign: 'left', position: 'relative', boxSizing: 'border-box' }}>
-                      {sidebarCatEvol === '' ? '— Elegir —' : filtroValor || sidebarCatEvol}
-                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
-                    </button>
-                    {sidebarCatEvolOpen && (
-                      <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
-                        <button onClick={() => { setSidebarCatEvol(''); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif' }}>— Elegir —</button>
-                        {ingresosConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Ingresos</div>}
-                          {ingresosConTx.map(t => <button key={`ingreso:${t}`} onClick={() => { setSidebarCatEvol(`ingreso:${t}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{t}</button>)}
-                        </>)}
-                        {categoriasConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Egresos</div>}
-                          {categoriasConTx.map(c => <button key={c} onClick={() => { setSidebarCatEvol(c); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === c ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === c ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{c}</button>)}
-                        </>)}
-                        {hijosConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Hijos</div>}
-                          {hijosConTx.map(h => <button key={`hijo:${h}`} onClick={() => { setSidebarCatEvol(`hijo:${h}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{h}</button>)}
-                        </>)}
-                      </div>
-                    )}
-                  </div>
-                  {sidebarCatEvol ? (
-                    <ResponsiveContainer width="100%" height={170}>
-                      <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-                        <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
-                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} labelStyle={{ color: txtClr, fontWeight: '600' }} itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }} />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                          {evolData.map((_, i) => (
-                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
-                  )}
-                </div>
-              )
-            })()}
-            <div style={styles.savingsPanel}>
-            <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
-
-            <div style={styles.savingsField}>
-              <label style={styles.savingsLabel}>Monto mensual</label>
-              <input style={styles.savingsInput} type="number" min="0" placeholder="500"
-                value={ahorro.monto} onChange={e => setAhorro({...ahorro, monto: e.target.value})} />
-            </div>
-
-            <div style={styles.savingsField}>
-              <label style={styles.savingsLabel}>Moneda</label>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {['ARS', 'USD', 'EUR'].map(m => (
-                  <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: ahorro.moneda === m ? '#5C4F5C' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={styles.savingsField}>
-              <label style={styles.savingsLabel}>Cantidad de años</label>
-              <input style={styles.savingsInput} type="number" min="1" max="50" placeholder="5"
-                value={ahorro.anos} onChange={e => setAhorro({...ahorro, anos: e.target.value})} />
-            </div>
-
-            <div style={styles.savingsField}>
-              <label style={styles.savingsLabel}>Tasa anual % <span style={{fontWeight:400, color:'#aaa'}}>(opcional)</span></label>
-              <input style={styles.savingsInput} type="number" min="0" step="0.1" placeholder="Sin tasa = cálculo simple"
-                value={ahorro.tasa} onChange={e => setAhorro({...ahorro, tasa: e.target.value})} />
-            </div>
-
-            {(() => {
-              const monto = parseFloat(ahorro.monto)
-              const anos = parseFloat(ahorro.anos)
-              if (!monto || !anos || monto <= 0 || anos <= 0) return (
-                <p style={styles.savingsHint}>Completá los campos para ver tu proyección</p>
-              )
-              let total
-              const tasa = parseFloat(ahorro.tasa)
-              if (tasa && tasa > 0) {
-                const r = tasa / 100 / 12
-                const n = anos * 12
-                total = monto * ((Math.pow(1 + r, n) - 1) / r)
-              } else {
-                total = monto * 12 * anos
-              }
-              const anioFin = new Date().getFullYear() + Math.floor(anos)
-              const tc = parseFloat(tipoCambio) || 0
-              const tcE = parseFloat(tipoCambioEUR) || 0
-              if (ahorro.moneda === 'EUR' && tcE === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio EUR para ver la proyección</p>
-              if (ahorro.moneda === 'USD' && tc === 0) return <p style={styles.savingsHint}>Cargá el tipo de cambio USD para ver la proyección</p>
-              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const totalEnARS = ahorro.moneda === 'ARS' ? total : ahorro.moneda === 'USD' ? total * tc : total * tcE
-              const totalUSD = tc > 0 ? totalEnARS / tc : null
-              const totalEURres = tcE > 0 ? totalEnARS / tcE : null
-              return (
-                <div style={styles.savingsResult}>
-                  <p style={styles.savingsResultPhrase}>Para {anioFin} tendrías</p>
-                  {tasa > 0 && <p style={{ ...styles.savingsResultNote, marginBottom: '10px' }}>interés compuesto mensual</p>}
-                  {ahorro.moneda !== 'ARS' && <><p style={styles.savingsResultLabel}>Final en pesos</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>$ {fmt(totalEnARS)}</p></>}
-                  {ahorro.moneda !== 'USD' && totalUSD != null && <><p style={styles.savingsResultLabel}>Final equiv. en USD</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>U$S {fmt(totalUSD)}</p></>}
-                  {ahorro.moneda !== 'EUR' && totalEURres != null && <><p style={styles.savingsResultLabel}>Final equiv. en EUR</p>
-                  <p style={{ ...styles.savingsResultAmount, fontSize: '18px', marginBottom: '12px' }}>€ {fmt(totalEURres)}</p></>}
-                  <p style={styles.savingsResultLabel}>
-                    {ahorro.moneda === 'ARS' ? 'Total acumulado' : ahorro.moneda === 'USD' ? 'Total en USD' : 'Total en EUR'}
-                  </p>
-                  <p style={{ ...styles.savingsResultAmount, marginBottom: 0 }}>
-                    {ahorro.moneda === 'ARS' ? `$ ${fmt(total)}` : ahorro.moneda === 'USD' ? `U$S ${fmt(total)}` : `€ ${fmt(total)}`}
-                  </p>
-                </div>
-              )
-            })()}
-          </div>
+            {sideWidgets()}
           </div>
           )}
 
@@ -3494,7 +3499,7 @@ export default function Dashboard() {
   )
 }
 
-const getStyles = (dark) => {
+const getStyles = (dark, mobile = false) => {
   const p = dark ? '#8C7B8C' : '#5C4F5C'
   const bg = dark ? '#1C1A1C' : '#F0EDEC'
   const panel = dark ? '#2A272A' : 'white'
@@ -3546,9 +3551,9 @@ const getStyles = (dark) => {
     emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', color: muted },
     emptyStateIcon: { fontSize: '48px', margin: '0 0 12px 0' },
     emptyStateText: { fontSize: '15px', color: muted, fontWeight: '500' },
-    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-    modal: { backgroundColor: panel, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto' },
-    modalTitle: { fontSize: '20px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },
+    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: mobile ? '12px' : '20px', boxSizing: 'border-box' },
+    modal: { backgroundColor: panel, borderRadius: mobile ? '14px' : '16px', padding: mobile ? '20px 16px' : '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: mobile ? '95vh' : '90vh', overflowY: 'auto' },
+    modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
     input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: 'light' },
