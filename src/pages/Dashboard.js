@@ -1723,10 +1723,11 @@ export default function Dashboard() {
 
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
-          {/* Sidebar izquierdo */}
+          {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && sidebarOpen && (
             <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
           )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { flexShrink: 0, alignSelf: 'flex-start' }) }}>
           <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
             {/* Zona top fija: solo mobile — botón cerrar + dólar blue */}
             {isMobile && (
@@ -1856,65 +1857,6 @@ export default function Dashboard() {
             })()}
             </div>{/* fin zona media scrollable */}
 
-            {/* ── Mis Ahorros — sidebar ── */}
-            {(() => {
-              const tc = parseFloat(tipoCambio) || 0
-              const tcE = parseFloat(tipoCambioEUR) || 0
-              const fmtS = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const symS = m => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
-              const totalAhorro = cuentasAhorro.reduce((s, c) => {
-                const m = parseFloat(c.monto) || 0
-                return s + (c.moneda === 'ARS' ? m : c.moneda === 'USD' ? m * tc : c.moneda === 'EUR' ? m * tcE : 0)
-              }, 0)
-              const addAhorro = () => {
-                const m = parseFloat(newCuentaAhorro.monto)
-                if (!newCuentaAhorro.cuenta.trim() || !m || m <= 0) return
-                setCuentasAhorro(prev => [...prev, { id: Date.now(), ...newCuentaAhorro, monto: m }])
-                setNewCuentaAhorro({ cuenta: '', monto: '', moneda: newCuentaAhorro.moneda })
-                setShowAddCuentaAhorro(false)
-              }
-              return (
-                <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '2px', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Mis ahorros</span>
-                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid ${darkMode ? '#5C4F5C' : '#5C4F5C'}`, borderRadius: '5px', color: '#5C4F5C', cursor: 'pointer', fontSize: '14px', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1, flexShrink: 0 }}>
-                      {showAddCuentaAhorro ? '✕' : '+'}
-                    </button>
-                  </div>
-                  {cuentasAhorro.length === 0 && !showAddCuentaAhorro && (
-                    <p style={{ fontSize: '11px', color: darkMode ? '#6e6e73' : '#aaa', margin: '0 0 6px', textAlign: 'center' }}>Sin cuentas aún</p>
-                  )}
-                  {cuentasAhorro.map(c => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDF0'}` }}>
-                      <span style={{ fontSize: '12px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.cuenta}</span>
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginLeft: '6px', flexShrink: 0 }}>{symS(c.moneda)} {fmtS(c.monto)}</span>
-                      <button onClick={() => setCuentasAhorro(prev => prev.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '13px', padding: '0 0 0 4px', outline: 'none', flexShrink: 0 }}>×</button>
-                    </div>
-                  ))}
-                  {showAddCuentaAhorro && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
-                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '5px 8px' }} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e => setNewCuentaAhorro(p => ({ ...p, cuenta: e.target.value }))} />
-                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '5px 8px' }} type="number" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
-                      <div style={{ display: 'flex', gap: '3px' }}>
-                        {['ARS','USD','EUR'].map(m => (
-                          <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '4px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: newCuentaAhorro.moneda === m ? '#5C4F5C' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                      <button onClick={addAhorro} style={{ ...styles.savingsInput, backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '11px', textAlign: 'center', padding: '6px' }}>Agregar</button>
-                    </div>
-                  )}
-                  {cuentasAhorro.length > 0 && (
-                    <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: `1.5px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total equiv.</span>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmtS(totalAhorro)}</span>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
             {/* Zona bottom fija: botones de acción — siempre visible */}
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
               {/* Agregar ingreso */}
@@ -1984,6 +1926,80 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          {/* ── Widget Mis Ahorros — abajo del sidebar, solo no-mobile ── */}
+          {!isMobile && (() => {
+            const mesActual = new Date().toISOString().slice(0, 7)
+            const tc = parseFloat(tipoCambio) || 0
+            const tcELive = parseFloat(tipoCambioEUR) || 0
+            const tcEDB = Number(exchangeRates.find(r => r.tipo === 'euro' && r.periodo === mesActual)?.valor || 0)
+            const tcE = tcELive || tcEDB
+            const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+            const sym = m => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
+            const totalAhorro = cuentasAhorro.reduce((s, c) => {
+              const m = parseFloat(c.monto) || 0
+              return s + (c.moneda === 'ARS' ? m : c.moneda === 'USD' ? m * tc : c.moneda === 'EUR' ? m * tcE : 0)
+            }, 0)
+            const addAhorro = () => {
+              const m = parseFloat(newCuentaAhorro.monto)
+              if (!newCuentaAhorro.cuenta.trim() || !m || m <= 0) return
+              setCuentasAhorro(prev => [...prev, { id: Date.now(), ...newCuentaAhorro, monto: m }])
+              setNewCuentaAhorro({ cuenta: '', monto: '', moneda: newCuentaAhorro.moneda })
+              setShowAddCuentaAhorro(false)
+            }
+            const panelW = isTablet ? '200px' : '240px'
+            return (
+              <div style={{ ...styles.savingsPanel, width: panelW, boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ ...styles.savingsPanelTitle, margin: 0 }}>Mis ahorros</h3>
+                  <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid #5C4F5C`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
+                    {showAddCuentaAhorro ? '✕' : '+'}
+                  </button>
+                </div>
+                {cuentasAhorro.length === 0 && !showAddCuentaAhorro && (
+                  <p style={{ fontSize: '12px', color: darkMode ? '#6e6e73' : '#aaa', textAlign: 'center', margin: '4px 0 8px' }}>Sin cuentas cargadas</p>
+                )}
+                {cuentasAhorro.map(c => (
+                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDF0'}` }}>
+                    <span style={{ fontSize: '12px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.cuenta}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginLeft: '8px', flexShrink: 0 }}>{sym(c.moneda)} {fmt(c.monto)}</span>
+                    <button onClick={() => setCuentasAhorro(prev => prev.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: '0 0 0 6px', outline: 'none', flexShrink: 0 }}>×</button>
+                  </div>
+                ))}
+                {showAddCuentaAhorro && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                    <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e => setNewCuentaAhorro(p => ({ ...p, cuenta: e.target.value }))} />
+                    <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} type="number" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {['ARS','USD','EUR'].map(m => (
+                        <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: newCuentaAhorro.moneda === m ? '#5C4F5C' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={addAhorro} style={{ ...styles.savingsInput, backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '12px', textAlign: 'center', padding: '7px' }}>Agregar</button>
+                  </div>
+                )}
+                {cuentasAhorro.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total equiv.</span>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmt(totalAhorro)}</span>
+                    </div>
+                    {['ARS','USD','EUR'].map(mon => {
+                      const sub = cuentasAhorro.filter(c => c.moneda === mon).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+                      if (!sub) return null
+                      return <div key={mon} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>{mon}</span>
+                        <span style={{ fontSize: '12px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>{sym(mon)} {fmt(sub)}</span>
+                      </div>
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+          </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
           <div style={{...styles.mainContent, overflowX: 'hidden'}}>
