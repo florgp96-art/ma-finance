@@ -379,8 +379,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
   const [selectedMeses, setSelectedMeses] = useState([])
-  const [selectedCatEvol, setSelectedCatEvol] = useState('')
-  const [equivEnUSD, setEquivEnUSD] = useState(false)
+const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
 
   // Notificar al padre cuando cambia el período seleccionado
