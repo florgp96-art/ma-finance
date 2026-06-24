@@ -20,7 +20,7 @@ export const CATEGORY_CONFIG = {
 }
 
 const BAR_COLOR = '#B0A4CC'
-const INCOME_PALETTE = ['#C8B4E8','#B8A0D8','#D4C8F0','#A890C8','#BCA8D8','#CCC0E8','#D8D0F0','#B4A4D0']
+const INCOME_PALETTE = ['#5C4F5C','#8C7B8C','#C4B8C4','#6A5A6A','#9A8A9A','#7A6A7A','#B4A8B4','#4A3F4A']
 const CHILDREN_PALETTE = ['#A8C4E8', '#E8C4A8', '#C4E8A8', '#E8A8C4', '#C4A8E8']
 
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -935,7 +935,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         <div style={styles.stmtHistory}>
           <div
             onClick={() => setStmtCollapsed(c => !c)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
             <h3 style={{ ...styles.stmtHistoryTitle, margin: 0 }}>
               Extractos cargados ({stmtsConTx.length})
             </h3>
