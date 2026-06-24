@@ -115,6 +115,11 @@ export default function Dashboard() {
       return saved ? JSON.parse(saved) : { monto: '', moneda: 'USD', anos: '', tasa: '' }
     } catch { return { monto: '', moneda: 'USD', anos: '', tasa: '' } }
   })
+  const [cuentasAhorro, setCuentasAhorro] = useState(() => {
+    try { const s = localStorage.getItem('ma_cuentas_ahorro'); return s ? JSON.parse(s) : [] } catch { return [] }
+  })
+  const [showAddCuentaAhorro, setShowAddCuentaAhorro] = useState(false)
+  const [newCuentaAhorro, setNewCuentaAhorro] = useState({ cuenta: '', monto: '', moneda: 'ARS' })
 
   // Categorías
 
@@ -196,6 +201,7 @@ export default function Dashboard() {
 
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
   useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {} }, [ahorro])
+  useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {} }, [cuentasAhorro])
 
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
@@ -2212,6 +2218,84 @@ export default function Dashboard() {
                 </div>
               )
             })()}
+            {/* ── Widget: Mis ahorros ── */}
+            {(() => {
+              const tc = parseFloat(tipoCambio) || 0
+              const tcE = parseFloat(tipoCambioEUR) || 0
+              const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
+              const totalARS = cuentasAhorro.reduce((s, c) => {
+                const m = parseFloat(c.monto) || 0
+                return s + (c.moneda === 'ARS' ? m : c.moneda === 'USD' ? m * tc : c.moneda === 'EUR' ? m * tcE : 0)
+              }, 0)
+              const monedaSymbolo = m => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
+              const addCuenta = () => {
+                const m = parseFloat(newCuentaAhorro.monto)
+                if (!newCuentaAhorro.cuenta.trim() || !m || m <= 0) return
+                setCuentasAhorro(prev => [...prev, { id: Date.now(), ...newCuentaAhorro, monto: m }])
+                setNewCuentaAhorro({ cuenta: '', monto: '', moneda: newCuentaAhorro.moneda })
+                setShowAddCuentaAhorro(false)
+              }
+              return (
+                <div style={{ ...styles.savingsPanel, marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ ...styles.savingsPanelTitle, margin: 0 }}>Mis ahorros</h3>
+                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid ${darkMode ? '#5C4F5C' : '#5C4F5C'}`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
+                      {showAddCuentaAhorro ? '✕' : '+'}
+                    </button>
+                  </div>
+
+                  {/* Lista de cuentas */}
+                  {cuentasAhorro.length === 0 && !showAddCuentaAhorro && (
+                    <p style={{ fontSize: '12px', color: darkMode ? '#6e6e73' : '#aaa', textAlign: 'center', margin: '8px 0 4px' }}>Sin cuentas cargadas</p>
+                  )}
+                  {cuentasAhorro.map(c => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDF0'}` }}>
+                      <span style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.cuenta}</span>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginLeft: '8px', flexShrink: 0 }}>{monedaSymbolo(c.moneda)} {fmt(c.monto)}</span>
+                      <button onClick={() => setCuentasAhorro(prev => prev.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: '0 0 0 6px', outline: 'none', lineHeight: 1, flexShrink: 0 }}>×</button>
+                    </div>
+                  ))}
+
+                  {/* Formulario inline */}
+                  {showAddCuentaAhorro && (
+                    <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e => setNewCuentaAhorro(p => ({ ...p, cuenta: e.target.value }))} />
+                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} type="number" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {['ARS', 'USD', 'EUR'].map(m => (
+                          <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: newCuentaAhorro.moneda === m ? '#5C4F5C' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={addCuenta} style={{ ...styles.savingsInput, backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '12px', textAlign: 'center', padding: '7px' }}>Agregar</button>
+                    </div>
+                  )}
+
+                  {/* Total */}
+                  {cuentasAhorro.length > 0 && (
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                      {tc > 0 || tcE > 0 ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total equiv.</span>
+                          <span style={{ fontSize: '16px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmt(totalARS)}</span>
+                        </div>
+                      ) : null}
+                      {/* Subtotales por moneda */}
+                      {['ARS','USD','EUR'].map(mon => {
+                        const sub = cuentasAhorro.filter(c => c.moneda === mon).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+                        if (!sub) return null
+                        return <div key={mon} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                          <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>{mon}</span>
+                          <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>{monedaSymbolo(mon)} {fmt(sub)}</span>
+                        </div>
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             <div style={styles.savingsPanel}>
             <h3 style={styles.savingsPanelTitle}>Proyección de ahorro</h3>
 
