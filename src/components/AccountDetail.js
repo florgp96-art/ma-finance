@@ -1228,7 +1228,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       ))}
                     </div>
                   )}
-                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? undefined : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
+                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={bubbleGroupBy === 'persona' ? { Personal: { icon: '👤', color: '#9A8A9A' }, ...mergedExtraConfig } : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
                 </>
               )}
 
