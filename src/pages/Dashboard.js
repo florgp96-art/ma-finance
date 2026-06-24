@@ -604,9 +604,9 @@ export default function Dashboard() {
             const modo_pago = String(row['MODO_PAGO'] || '').trim()
             const tipoRaw = String(row['TIPO'] || '').trim().toLowerCase()
             const tipo = ['ingreso', 'neutro', 'gasto'].includes(tipoRaw) ? tipoRaw : 'gasto'
-            const monto = monto_usd > 0 ? monto_usd : monto_ars
-            const moneda = monto_usd > 0 ? 'USD' : 'ARS'
-            return { fecha, monto, moneda, monto_ars, monto_usd, descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo }
+            const monto = monto_usd !== 0 ? Math.abs(monto_usd) : Math.abs(monto_ars)
+            const moneda = monto_usd !== 0 ? 'USD' : 'ARS'
+            return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo }
           })
           .filter(r => r.fecha && r.monto > 0)
         resolve(parsed)
