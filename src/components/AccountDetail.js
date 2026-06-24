@@ -52,7 +52,7 @@ export const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig, subcatMap }) {
+export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig, subcatMap, defaultIcon = '❓' }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -159,7 +159,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
 
           {/* Burbujas principales — primero las no seleccionadas, la seleccionada al final (z-order SVG) */}
           {[...bubbles.filter(b => selectedBubble?.name !== b.name), ...bubbles.filter(b => selectedBubble?.name === b.name)].map((b) => {
-            const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: '❓', color: '#E0E0E0' }
+            const cfg = (extraConfig?.[b.name]) || CATEGORY_CONFIG[b.name] || { icon: defaultIcon, color: '#E0E0E0' }
             const isSelected = selectedBubble?.name === b.name
             const globalIdx = bubbles.findIndex(x => x.name === b.name)
             const isHovered = hoveredIdx === globalIdx && !selectedBubble
@@ -270,7 +270,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
 
           {/* Tooltip (oculto en modo drill-down) */}
           {!selectedBubble && tooltip.visible && tooltip.data && (() => {
-            const cfg = (extraConfig?.[tooltip.data.name]) || CATEGORY_CONFIG[tooltip.data.name] || { icon: '❓', color: '#E0E0E0' }
+            const cfg = (extraConfig?.[tooltip.data.name]) || CATEGORY_CONFIG[tooltip.data.name] || { icon: defaultIcon, color: '#E0E0E0' }
             const tx = Math.max(85, Math.min(WIDTH - 85, tooltip.x))
             const ty = Math.max(30, tooltip.y)
             const hasARS = (tooltip.data.originalARS || 0) > 0
@@ -1240,7 +1240,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                       ))}
                     </div>
                   )}
-                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={esVistaIngresos ? ingresoExtraConfig : bubbleGroupBy === 'persona' ? { Personal: { icon: '👤', color: '#9A8A9A' }, ...mergedExtraConfig } : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} />
+                  <BubbleChart data={bubbleGroupBy === 'persona' && !esVistaIngresos ? personaBubbleData : fullChartData} legendData={null} childRows={undefined} extraConfig={esVistaIngresos ? ingresoExtraConfig : bubbleGroupBy === 'persona' ? { Personal: { icon: '👤', color: '#9A8A9A' }, ...mergedExtraConfig } : (Object.keys(mergedExtraConfig).length > 0 ? mergedExtraConfig : undefined)} darkMode={darkMode} tipoCambio={tcEfectivo} isMobile={isMobile} subcatMap={subcatDataMap} defaultIcon={esVistaIngresos ? '💰' : '❓'} />
                 </>
               )}
 
