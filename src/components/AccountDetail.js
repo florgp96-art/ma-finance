@@ -265,6 +265,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [selectedMeses, setSelectedMeses] = useState([])
   const [selectedCatEvol, setSelectedCatEvol] = useState('')
   const [equivEnUSD, setEquivEnUSD] = useState(false)
+  const [showNeutros, setShowNeutros] = useState(false)
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -629,7 +630,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
     : transactions
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
-  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro')
+  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
 
   const matchSearch = (t) => {
     if (!searchQuery) return true
@@ -639,8 +640,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
       (t.detalle || '').toLowerCase().includes(q) ||
       (t.categories?.nombre || '').toLowerCase().includes(q) ||
       (t.subcategories?.nombre || '').toLowerCase().includes(q) ||
+      (t.children?.nombre || '').toLowerCase().includes(q) ||
       (t.tag || '').toLowerCase().includes(q) ||
-      (t.tipo || '').toLowerCase().includes(q)
+      (t.tipo || '').toLowerCase().includes(q) ||
+      (t.moneda || '').toLowerCase().includes(q) ||
+      (t.fecha || '').includes(q) ||
+      formatFecha(t.fecha).includes(q) ||
+      String(t.monto || '').includes(q)
     )
   }
 
@@ -683,6 +689,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     if (!window.confirm(account?.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?')) return
     await supabase.from('transactions').delete().eq('id', tx.id)
     setTransactions(prev => prev.filter(t => t.id !== tx.id))
+  }
+
+  const handleMarcarNeutro = async (tx) => {
+    await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', tx.id)
+    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, tipo: 'neutro', estado: 'identificado' } : t))
   }
 
   const renderEditCells = () => (
@@ -1149,49 +1160,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
             border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
             boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
           }}
-          placeholder="🔍 Buscar por nombre, categoría..."
+          placeholder="🔍 Buscar por nombre, categoría, fecha, monto..."
           value={searchQuery || ''}
           onChange={e => onSearchChange && onSearchChange(e.target.value)}
         />
       </div>
-
-      {txNeutras.length > 0 && (
-        <div style={styles.tableSection}>
-          <h3 style={styles.chartTitle}>🔄 Movimientos neutros ({txNeutras.length})</h3>
-          <p style={styles.tableHint}>Inversiones, pagos de tarjeta y transferencias propias — no se incluyen en los gráficos</p>
-          <div style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Fecha</th>
-                <th style={styles.th}>Nombre</th>
-                <th style={styles.th}>Categoría</th>
-                <th style={styles.th}>Monto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {txNeutras.map(tx => (
-                <tr key={tx.id} style={{...styles.tr, opacity: 0.7}}>
-                  <td style={styles.td}>{formatFecha(tx.fecha)}</td>
-                  <td style={styles.td}>{tx.nombre || tx.detalle}</td>
-                  <td style={styles.td}>
-                    <span style={{
-                      backgroundColor: '#f0f0f8', color: '#6e6e73',
-                      padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500'
-                    }}>
-                      {tx.categories?.nombre || '—'}
-                    </span>
-                  </td>
-                  <td style={{...styles.td, textAlign: 'right', fontWeight: '500', color: '#8e8e93'}}>
-                    {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </div>
-      )}
 
       {!esVistaIngresos && sinIdentificar.length > 0 && (
         <div style={styles.tableSection}>
@@ -1227,7 +1200,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
                   </td>
                   {editingTx === tx.id ? renderEditActions(tx) : (
                     <td style={styles.td}>
-                      <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+                      <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
+                        <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                        <button style={{...styles.editBtn, color:'#6e6e73'}} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
+                        <button style={{...styles.editBtn, color:'#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -1329,6 +1306,42 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
         </table>
         </div>
       </div>
+
+      {/* Movimientos neutros — colapsados al final */}
+      {txNeutras.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <button
+            onClick={() => setShowNeutros(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: darkMode ? '#6A5A6A' : '#9e9e9e', fontFamily: '"Montserrat", sans-serif', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            {showNeutros ? '▾' : '▸'} Movimientos neutros ({txNeutras.length}) — pagos, transferencias, inversiones
+          </button>
+          {showNeutros && (
+            <div style={{ marginTop: '10px', overflowX: 'auto' }}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Fecha</th>
+                    <th style={styles.th}>Nombre</th>
+                    <th style={styles.th}>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txNeutras.map(tx => (
+                    <tr key={tx.id} style={{...styles.tr, opacity: 0.6}}>
+                      <td style={{...styles.td, whiteSpace:'nowrap'}}>{formatFechaCorta(tx.fecha)}</td>
+                      <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}}>
+                        {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Evolución por categoría — solo mobile; en desktop se muestra en el sidebar derecho */}
       {isMobile && transactions.length > 0 && (() => {
