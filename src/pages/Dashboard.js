@@ -820,11 +820,14 @@ export default function Dashboard() {
         if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
         return { cuota_numero: 1, cuotas_total: 1 }
       }
+      const hayIngresos = newRows.some(({ row }) => row.tipo === 'ingreso')
+      const ingresosAccExcel = hayIngresos ? await getOrCreateIngresosAccount(user) : null
       const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
         const cuota = parseCuota(row.descripcion || row.notas)
+        const finalAcc = (row.tipo === 'ingreso' && ingresosAccExcel) ? ingresosAccExcel : acc
         return {
-          user_id: user.id, account_id: acc.id, fecha: row.fecha,
+          user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
@@ -869,11 +872,14 @@ export default function Dashboard() {
         if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
         return { cuota_numero: 1, cuotas_total: 1 }
       }
+      const hayIngresosFinal = toImport.some(({ row }) => row.tipo === 'ingreso')
+      const ingresosAccFinal = hayIngresosFinal ? await getOrCreateIngresosAccount(user) : null
       const toInsert = toImport.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
         const cuota = parseCuotaFinal(row.descripcion || row.notas)
+        const finalAcc = (row.tipo === 'ingreso' && ingresosAccFinal) ? ingresosAccFinal : acc
         return {
-          user_id: user.id, account_id: acc.id, fecha: row.fecha,
+          user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
           nombre: row.nombre || row.notas || row.descripcion || null,
           detalle: row.notas || row.descripcion,
           monto: row.monto, moneda: row.moneda, tipo: row.tipo || 'gasto',
@@ -2981,6 +2987,7 @@ export default function Dashboard() {
                     <label style={styles.label}>Categoría</label>
                     <select style={styles.input} value={txEditTemp.categoria}
                       onChange={e => setTxEditTemp({...txEditTemp, categoria: e.target.value, subcategoria: ''})}>
+                      <option value="A Identificar" disabled>— Elegí una categoría —</option>
                       {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                     </select>
                   </div>
@@ -3002,7 +3009,7 @@ export default function Dashboard() {
                     </button>
                     <button style={styles.saveBtn}
                       onClick={() => handleGuardarClasificacion(txActual.id, txActual.detalle)}
-                      disabled={!txEditTemp.nombre}>
+                      disabled={!txEditTemp.nombre || txEditTemp.categoria === 'A Identificar'}>
                       Guardar y siguiente →
                     </button>
                   </div>

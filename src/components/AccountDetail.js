@@ -499,10 +499,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const handleSaveEdit = async (tx) => {
     const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
     if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
-      const upd = { nombre: editNombre, tag: editTag || null }
+      const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado' }
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       await supabase.from('transactions').update(upd).eq('id', tx.id)
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -1370,7 +1370,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
-                  {editingTx === tx.id ? renderEditCells() : (
+                  {editingTx === tx.id ? (tx.tipo === 'ingreso' ? renderEditCellsIngreso() : renderEditCells()) : (
                     <>
                       <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
                       <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
