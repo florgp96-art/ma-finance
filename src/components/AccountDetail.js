@@ -762,20 +762,21 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const diffIngPct = puedeComparar && mesAnterior && totalIngAnterior > 0 ? Math.round(((totalIngSeleccionado - totalIngAnterior) / totalIngAnterior) * 100) : null
   const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
+  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   const matchSearch = (t) => {
     if (!searchQuery) return true
-    const q = searchQuery.toLowerCase()
+    const q = norm(searchQuery)
     return (
-      (t.nombre || '').toLowerCase().includes(q) ||
-      (t.detalle || '').toLowerCase().includes(q) ||
-      (t.categories?.nombre || '').toLowerCase().includes(q) ||
-      (t.subcategories?.nombre || '').toLowerCase().includes(q) ||
-      (t.children?.nombre || '').toLowerCase().includes(q) ||
-      (t.tag || '').toLowerCase().includes(q) ||
-      (t.tipo || '').toLowerCase().includes(q) ||
-      (t.moneda || '').toLowerCase().includes(q) ||
+      norm(t.nombre).includes(q) ||
+      norm(t.detalle).includes(q) ||
+      norm(t.categories?.nombre).includes(q) ||
+      norm(t.subcategories?.nombre).includes(q) ||
+      norm(t.children?.nombre).includes(q) ||
+      norm(t.tag).includes(q) ||
+      norm(t.tipo).includes(q) ||
+      norm(t.moneda).includes(q) ||
       (t.fecha || '').includes(q) ||
-      formatFecha(t.fecha).includes(q) ||
+      norm(formatFecha(t.fecha)).includes(q) ||
       String(t.monto || '').includes(q)
     )
   }

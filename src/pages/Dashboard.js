@@ -1318,7 +1318,9 @@ export default function Dashboard() {
         if (!pdfTxSelections.has(i)) return
         const categoryId = getCategoryId(t.categoria_sugerida)
         const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
-        const tipoTx = t.tipo || (t.es_credito ? 'ingreso' : 'gasto')
+        const detalleTxLower = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        const esDevolucion = detalleTxLower.includes('devoluci') || detalleTxLower.includes('dev.imp') || detalleTxLower.includes('reintegro') || detalleTxLower.includes('acreditacion') || detalleTxLower.includes('acreditación')
+        const tipoTx = esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
         if (tipoTx === 'ingreso' && cuentaIngresos) {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
           const histMatch = matchIngresoHistorial(t.nombre_original)
