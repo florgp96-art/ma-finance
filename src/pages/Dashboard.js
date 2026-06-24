@@ -1807,8 +1807,16 @@ export default function Dashboard() {
             </div>
           )
 
+          const tcChip = (label, val, unit) => val ? (
+            <div style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
+              <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>{label}</p>
+              <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>{unit} =</p>
+              <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(val))}</p>
+            </div>
+          ) : null
+
           return (
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '16px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '110px' : '160px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
@@ -1820,15 +1828,20 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+              ) : isTablet ? (
+                <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start' }}>
+                  {tcChip('Dólar', rateActivo, 'U$S 1')}
+                  {tcChip('Euro', eurValor, '€1')}
+                </div>
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
                   {usdCard}
                   {eurCard}
-                  {!isTablet && vencCard}
+                  {vencCard}
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '100px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '10px' : '20px', pointerEvents: 'none' }} />
+              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none' }} />
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
