@@ -1369,7 +1369,8 @@ export default function Dashboard() {
         const subcategoryId = getSubcategoryId(t.subcategoria_sugerida, categoryId)
         const detalleTxLower = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
         const esDevolucion = detalleTxLower.includes('devoluci') || detalleTxLower.includes('dev.imp') || detalleTxLower.includes('reintegro') || detalleTxLower.includes('acreditacion') || detalleTxLower.includes('acreditación')
-        const tipoTx = esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
+        const esNeutroAuto = detalleTxLower.includes('conversion a eur') || detalleTxLower.includes('conversion a usd') || detalleTxLower.includes('fondeo') || detalleTxLower.includes('repatriaci') || detalleTxLower.includes('transferencia entre cuenta')
+        const tipoTx = esNeutroAuto ? 'neutro' : esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
         if (tipoTx === 'ingreso' && cuentaIngresos) {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
           const histMatch = matchIngresoHistorial(t.nombre_original)
@@ -1392,7 +1393,7 @@ export default function Dashboard() {
             monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
             cuotas_total: null, cuota_numero: null,
             category_id: categoryId, subcategory_id: subcategoryId,
-            estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+            estado: (tipoTx === 'neutro' || (t.nombre_limpio && t.nombre_limpio !== t.nombre_original)) ? 'identificado' : 'a_identificar',
             es_manual: false,
             account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
           })
