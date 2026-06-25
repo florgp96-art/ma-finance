@@ -517,7 +517,7 @@ export default function Dashboard() {
           if (avg > 0) {
             map.eur = avg
             const mesActual = new Date().toISOString().slice(0, 7)
-            supabase.from('exchange_rates').upsert({ periodo: mesActual, tipo: 'euro', valor: avg }, { onConflict: 'periodo,tipo' }).then(() => fetchExchangeRates())
+            supabase.from('exchange_rates').upsert({ periodo: mesActual, tipo: 'euro', valor: avg }, { onConflict: 'periodo,tipo' }).then(({ error }) => { if (!error) fetchExchangeRates() })
           }
         }
       } catch {}
@@ -2107,12 +2107,12 @@ export default function Dashboard() {
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none' }} />
+              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: windowWidth < 360 ? '44px' : isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: windowWidth < 360 ? '16px' : isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none' }} />
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
-                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next) }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
+                <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next); const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', next ? '#3A333A' : '#E4E7F3') }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
                   {darkMode ? '☀️' : '🌙'}
-                </button>
+                 </button>
                 {!isMobile && (
                   <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
                     <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -2157,31 +2157,16 @@ export default function Dashboard() {
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { flexShrink: 0, alignSelf: 'flex-start' }) }}>
           <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
-            {/* Zona top fija: solo mobile — botón cerrar + dólar blue */}
+             {/* Zona top fija: solo mobile — botón cerrar */}
             {isMobile && (
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
                 <button onClick={() => setSidebarOpen(false)} style={{ alignSelf: 'flex-end', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px', padding: '4px 8px' }}>
                   ✕
                 </button>
-                {(() => {
-                  const blueRate = dolarRates['blue']
-                  const mesActual = new Date().toISOString().slice(0, 7)
-                  const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === 'blue')
-                  const rateActivo = blueRate || (rateDB ? rateDB.valor : null)
-                  const cardBg = darkMode ? '#252025' : '#F0ECF5'
-                  const cardBorder = darkMode ? '#3A333A' : '#D8D0DC'
-                  return (
-                    <div style={{ borderRadius: '12px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <p style={{ fontSize: '11px', color: '#8e8e93', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar Blue</p>
-                      {rateActivo
-                        ? <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                        : <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93' }}>Cargando...</p>
-                      }
-                    </div>
-                  )
-                })()}
               </div>
             )}
+        </div>
+            
             {/* Zona media scrollable: lista de cuentas */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', ...(isMobile ? { flex: 1, overflowY: 'auto', minHeight: 0, paddingTop: '8px' } : {}) }}>
             {(() => {
