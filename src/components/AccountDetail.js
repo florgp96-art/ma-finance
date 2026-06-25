@@ -64,6 +64,13 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   const MAX_R = 90
 
   useEffect(() => {
+    if (!selectedBubble) return
+    const onKey = (e) => { if (e.key === 'Escape') setSelectedBubble(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedBubble])
+
+  useEffect(() => {
     if (!data || data.length === 0) return
     const total = data.reduce((s, d) => s + d.value, 0)
     const maxVal = Math.max(...data.map(d => d.value))
@@ -200,21 +207,21 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                 <circle
                   cx={b.x} cy={b.y} r={effectiveR}
                   fill={cfg.color}
-                  opacity={isDimmed ? 0.09 : 1}
-                  style={{ transition: 'r 0.25s, opacity 0.2s' }}
+                  opacity={isDimmed ? 0 : 1}
+                  style={{ transition: 'r 0.25s, opacity 0.3s' }}
                 />
                 <text x={b.x} y={iconY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={iconSize}
-                  opacity={isDimmed ? 0.12 : 1}
-                  style={{ transition: 'opacity 0.2s' }}>
+                  opacity={isDimmed ? 0 : 1}
+                  style={{ transition: 'opacity 0.3s' }}>
                   {cfg.icon}
                 </text>
                 <text x={b.x} y={pctY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700"
-                  opacity={isDimmed ? 0.12 : 1}
-                  style={{ transition: 'opacity 0.2s' }}>
+                  opacity={isDimmed ? 0 : 1}
+                  style={{ transition: 'opacity 0.3s' }}>
                   {b.pct}%
                 </text>
                 {hasSubcats && !isSelected && !isDimmed && (
@@ -1152,9 +1159,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={{ ...styles.summaryCard }}>
                 <p style={styles.summaryLabel}>Categorías top</p>
                 {catTopList.map(([cat, val], i) => (
-                  <div key={cat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: i === 0 ? '4px' : '8px', gap: '6px' }}>
-                    <span style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveIcon(cat)} {cat}</span>
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', flexShrink: 0 }}>$ {formatMonto(val)}</span>
+                  <div key={cat} style={{ marginTop: i === 0 ? '6px' : '10px' }}>
+                    <div style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{resolveIcon(cat)} {cat}</div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginTop: '2px' }}>$ {formatMonto(val)}</div>
                   </div>
                 ))}
               </div>
