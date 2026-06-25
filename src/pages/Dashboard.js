@@ -2032,8 +2032,7 @@ export default function Dashboard() {
                   {rateVivo && <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                 </div>
               ) : (
-                <input type="number" style={{ width: '100%', padding: '5px 8px', borderRadius: '7px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'center' }}
-                  placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
+                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>Cargando...</p>
               )}
             </div>
           )
@@ -2191,7 +2190,7 @@ export default function Dashboard() {
                       <p style={{ fontSize: '11px', color: '#8e8e93', textTransform: 'uppercase', margin: 0, fontWeight: 700, letterSpacing: '0.06em' }}>Dólar Blue</p>
                       {rateActivo
                         ? <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                        : <input type="number" style={{ width: '90px', padding: '4px 8px', borderRadius: '8px', border: `1px solid ${cardBorder}`, fontSize: '15px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', textAlign: 'right' }} placeholder="1600" value={tipoCambio} onChange={e => { setTipoCambio(e.target.value); localStorage.setItem('tc_ma', e.target.value) }} />
+                        : <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93' }}>Cargando...</p>
                       }
                     </div>
                   )
