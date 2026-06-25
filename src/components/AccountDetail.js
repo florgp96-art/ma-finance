@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 export const CATEGORY_CONFIG = {
-  'Comida':          { icon: '🍔', color: '#FADADD' },
+  'Comida':          { icon: '🍴', color: '#FADADD' },
   'Personal':        { icon: '👤', color: '#C8C0CC' },
   'Transporte':      { icon: '🚗', color: '#BDB5C4' },
   'Salud':           { icon: '💊', color: '#FFCBA4' },
@@ -15,7 +15,7 @@ export const CATEGORY_CONFIG = {
   'Trabajo':         { icon: '💼', color: '#E8D8C8' },
   'Ingresos':        { icon: '💰', color: '#D0C0E8' },
   'Débitos':         { icon: '🏦', color: '#D0CCCE' },
-  'Hijos':           { icon: '👶', color: '#FDEBD0' },
+  'Hijos':           { icon: '👩‍👧‍👧', color: '#FDEBD0' },
   'A Identificar':   { icon: '❓', color: '#F9E4B7' },
 }
 
