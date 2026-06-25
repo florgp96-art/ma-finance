@@ -2091,10 +2091,20 @@ export default function Dashboard() {
               {isMobile ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
                   <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
-                  {eurValor && (
-                    <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '6px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.06em' }}>Euro</p>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}</p>
+                  {(rateActivo || eurValor) && (
+                    <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                      {rateActivo && (
+                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>USD</span>
+                          $ {new Intl.NumberFormat('es-AR').format(Math.round(rateActivo))}
+                        </p>
+                      )}
+                      {eurValor && (
+                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>EUR</span>
+                          $ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
