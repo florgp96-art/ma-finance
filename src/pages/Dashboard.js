@@ -2441,7 +2441,7 @@ export default function Dashboard() {
               </div>
             )
           })()}
-          {!isMobile && sideWidgets()}
+          {isTablet && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
@@ -2645,6 +2645,13 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Widgets — desktop: tercera columna fija a la derecha */}
+          {!isMobile && !isTablet && (
+          <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
+            {sideWidgets()}
+          </div>
+          )}
 
           {/* Widgets — mobile: full-width debajo del contenido principal */}
           {isMobile && (
