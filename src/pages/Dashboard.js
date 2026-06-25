@@ -1791,20 +1791,9 @@ export default function Dashboard() {
                 <div style={{ ...styles.savingsPanel }}>
                   <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
                   {periods.map(([period, data], pi) => (
-                    <div key={period} style={{ marginBottom: pi < periods.length - 1 ? '10px' : 0, paddingBottom: pi < periods.length - 1 ? '10px' : 0, borderBottom: pi < periods.length - 1 ? `1px solid ${borderClr}` : 'none' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
-                      </div>
-                      {data.items.map((item, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', padding: '2px 0', gap: '4px' }}>
-                          <span style={{ color: mutedClr, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</span>
-                          <span style={{ color: mutedClr, flexShrink: 0, fontSize: '10px' }}>{item.cuotaNum}/{item.cuotasTotal}</span>
-                          <span style={{ fontWeight: '600', color: txtClr, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                            {item.moneda === 'USD' ? 'U$S' : '$'} {fmt(item.monto)}
-                          </span>
-                        </div>
-                      ))}
+                    <div key={period} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: pi > 0 ? '6px 0 0' : '2px 0 0' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
                     </div>
                   ))}
                 </div>
