@@ -406,9 +406,9 @@ export default function Dashboard() {
     let acc = accounts.find(a => a.tipo === 'ingreso')
     if (acc) return acc
     // El estado puede estar desactualizado — consultar la DB directamente
-    const { data: dbAcc } = await supabase.from('accounts')
-      .select('*').eq('user_id', user.id).eq('tipo', 'ingreso').maybeSingle()
-    if (dbAcc) return dbAcc
+    const { data: dbAccs } = await supabase.from('accounts')
+      .select('*').eq('user_id', user.id).eq('tipo', 'ingreso').order('created_at', { ascending: true }).limit(1)
+    if (dbAccs && dbAccs.length > 0) return dbAccs[0]
     // No existe: crear
     const { data } = await supabase.from('accounts')
       .insert({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' }).select().single()
@@ -1503,6 +1503,12 @@ export default function Dashboard() {
 
       // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
       const cuentaIngresos = await getOrCreateIngresosAccount(user)
+      const hayIngresosParaGuardar = statementData.transacciones.some((t, i) => pdfTxSelections.has(i) && (t.tipo === 'ingreso' || t.es_credito))
+      if (hayIngresosParaGuardar && !cuentaIngresos) {
+        showToast('No se pudo crear la cuenta de Ingresos. Revisá los permisos.', 'error')
+        setLoading(false)
+        return
+      }
 
       const { data: stmtEgresos } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
