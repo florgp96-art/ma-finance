@@ -510,7 +510,7 @@ export default function Dashboard() {
         }
       } catch {}
       try {
-        const resEur = await fetch('https://dolarapi.com/v1/cotizaciones/euro')
+        const resEur = await fetch('https://dolarapi.com/v1/cotizaciones/eur')
         if (resEur.ok) {
           const eur = await resEur.json()
           const avg = (eur.compra != null && eur.venta != null) ? Math.round((eur.compra + eur.venta) / 2) : (eur.venta || eur.compra || 0)
