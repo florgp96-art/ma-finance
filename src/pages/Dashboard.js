@@ -1441,6 +1441,7 @@ export default function Dashboard() {
 
   const handleConfirmTransactions = async () => {
     setLoading(true)
+    try {
     const { data: { user } } = await supabase.auth.getUser()
     const esBanco = statementData.tipo_documento === 'banco'
 
@@ -1661,7 +1662,11 @@ export default function Dashboard() {
     }
 
     fetchAccounts()
-    setLoading(false)
+    } catch (err) {
+      showToast('Error al guardar: ' + err.message, 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleDropUpload = (e) => {
@@ -2107,7 +2112,7 @@ export default function Dashboard() {
                 </div>
               )}
               {/* Centro: logo */}
-              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: windowWidth < 360 ? '44px' : isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: windowWidth < 360 ? '16px' : isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none' }} />
+              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none' }} />
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next); const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', next ? '#3A333A' : '#E4E7F3') }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
@@ -2165,7 +2170,6 @@ export default function Dashboard() {
                 </button>
               </div>
             )}
-        </div>
             
             {/* Zona media scrollable: lista de cuentas */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', ...(isMobile ? { flex: 1, overflowY: 'auto', minHeight: 0, paddingTop: '8px' } : {}) }}>
