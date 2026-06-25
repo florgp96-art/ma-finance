@@ -2127,17 +2127,15 @@ export default function Dashboard() {
                   {darkMode ? '☀️' : '🌙'}
                 </button>
                 {!isMobile && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
-                      </button>
-                      <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
-                        Cerrar sesión
-                      </button>
-                    </div>
+                  <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
+                    <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
+                    </button>
+                    <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
+                      Cerrar sesión
+                    </button>
                     {configOpen && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '200px' }}>
+                      <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
                         <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
