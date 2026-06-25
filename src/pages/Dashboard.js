@@ -1783,9 +1783,7 @@ export default function Dashboard() {
               if (periods.length === 0) return null
 
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
-              const borderClr = darkMode ? '#3A333A' : '#EDE8EC'
               const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
-              const mutedClr = darkMode ? '#9A8A9A' : '#6e6e73'
 
               return (
                 <div style={{ ...styles.savingsPanel }}>
