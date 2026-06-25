@@ -819,7 +819,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
   const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
 
-  const sinIdentificar = txNoNeutras.filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
+  const sinIdentificar = txNoNeutras
+    .filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
+    .sort((a, b) => (a.nombre || a.detalle || '').toLowerCase().localeCompare((b.nombre || b.detalle || '').toLowerCase(), 'es'))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
   const handleExportCSV = () => {
