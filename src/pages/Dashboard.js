@@ -1217,9 +1217,11 @@ export default function Dashboard() {
           Math.abs(Math.abs(Number(e.monto)) - monto) < monto * 0.03
         )
         if (!prevMatch || !prevMatch.nombre) return t
+        const nombreBase = prevMatch.nombre.replace(/\s*\d+\/\d+\s*$/, '').trim()
+        const nombreConCuota = nombreBase ? `${nombreBase} ${num}/${total}` : `${num}/${total}`
         return {
           ...t,
-          nombre_limpio: prevMatch.nombre,
+          nombre_limpio: nombreConCuota,
           categoria_sugerida: prevMatch.categories?.nombre || t.categoria_sugerida,
           subcategoria_sugerida: prevMatch.subcategories?.nombre || t.subcategoria_sugerida,
         }
@@ -1244,15 +1246,22 @@ export default function Dashboard() {
         }
       }
 
+      const fechaCercana = (f1, f2, dias = 2) => {
+        if (!f1 || !f2) return false
+        const d1 = new Date(f1.slice(0, 10) + 'T12:00:00')
+        const d2 = new Date(f2.slice(0, 10) + 'T12:00:00')
+        return Math.abs(d1 - d2) <= dias * 86400000
+      }
+
       const dupes = new Set()
       const selec = new Set()
       transacciones.forEach((t, i) => {
         const esCuota = t.cuotas_total > 1
         const isDupe = txExistentes?.some(e => {
-          const montoMatch = Math.abs(Number(e.monto) - Math.abs(Number(t.monto))) < 0.01
+          const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
-          return e.fecha === t.fecha
+          return fechaCercana(e.fecha, t.fecha, 2)
         })
         if (isDupe) dupes.add(i)
         else selec.add(i)
