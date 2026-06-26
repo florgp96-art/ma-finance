@@ -1626,8 +1626,8 @@ export default function Dashboard() {
 
       const { data: statement } = await supabase.from('statements').insert({
         user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
-        periodo: statementData.periodo, fecha_desde: null,
-        fecha_hasta: statementData.fecha_facturacion,
+      periodo: statementData.periodo, fecha_desde: null,
+        fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
         fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
         total_resumen: statementData.total_pesos, estado: 'completo'
       }).select().single()
