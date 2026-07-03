@@ -1411,8 +1411,9 @@ export default function Dashboard() {
   const handleGuardarHijoDesdeContexto = async () => {
     const nombre = contextoHijoNombre.trim()
     if (nombre) {
-      await supabase.from('children').insert({ nombre })
-      setChildrenDB(prev => [...prev, { nombre }].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data } = await supabase.from('children').insert({ user_id: user.id, nombre }).select().single()
+      if (data) setChildrenDB(prev => [...prev, data].sort((a, b) => a.nombre.localeCompare(b.nombre)))
     }
     setContextoAskingHijoNombre(false)
     setContextoHijoNombre('')

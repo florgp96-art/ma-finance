@@ -36,14 +36,18 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   }, [hijoId, hijoNombre, refreshKey])
 
   const fetchTransactions = async () => {
-    // Usa child_id si está disponible (modelo nuevo), sino cae a tag (compatibilidad)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Trae tanto lo asignado por child_id (modelo nuevo) como por tag (modelo viejo/actual),
+    // ya que hoy las importaciones y ediciones solo escriben "tag".
     let txQuery = supabase.from('transactions')
       .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+      .eq('user_id', user.id)
       .gt('monto', 0)
       .order('fecha', { ascending: false })
 
     if (hijoId) {
-      txQuery = txQuery.eq('child_id', hijoId)
+      txQuery = txQuery.or(`child_id.eq.${hijoId},tag.ilike.${hijoNombre}`)
     } else {
       txQuery = txQuery.ilike('tag', hijoNombre)
     }

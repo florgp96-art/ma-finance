@@ -79,9 +79,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     fetchChildren()
   }
 
-  const handleDeleteHijo = async (nombre) => {
+  const handleDeleteHijo = async (id, nombre) => {
     if (!window.confirm(`¿Eliminar a "${nombre}"?`)) return
-    await supabase.from('children').delete().eq('nombre', nombre)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('children').delete().eq('id', id).eq('user_id', user.id)
     fetchChildren()
   }
 
@@ -197,7 +198,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               {(childrenDB || []).map(h => (
                 <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
                   <span style={{ fontSize: '14px', color: txt }}>{h.icono || '👧'} {h.nombre}</span>
-                  <button style={s.actionBtn} onClick={() => handleDeleteHijo(h.nombre)}>🗑️</button>
+                  <button style={s.actionBtn} onClick={() => handleDeleteHijo(h.id, h.nombre)}>🗑️</button>
                 </div>
               ))}
               {(childrenDB || []).length === 0 && (

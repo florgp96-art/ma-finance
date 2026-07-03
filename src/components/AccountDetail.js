@@ -412,7 +412,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }, [account, accounts, allAccounts, refreshKey])
 
   useEffect(() => {
-    supabase.from('children').select('id, nombre, icono').order('nombre').then(({ data }) => setChildren(data || []))
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from('children').select('id, nombre, icono').eq('user_id', user.id).order('nombre').then(({ data }) => setChildren(data || []))
+    })
   }, [])
 
   const fetchAllPages = async (buildQuery) => {
