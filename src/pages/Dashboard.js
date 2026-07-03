@@ -3457,9 +3457,15 @@ export default function Dashboard() {
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Categoría <span style={{ fontSize: '11px', color: '#8e8e93' }}>(opcional)</span></label>
-                <input style={styles.input} type="text" value={ingreso.tipo}
+                <input style={styles.input} type="text" list="ingreso-tipo-options" value={ingreso.tipo}
                   onChange={e => setIngreso({ ...ingreso, tipo: e.target.value })}
                   placeholder="Ej: Sueldo, Freelance, Cuota alimentaria..." />
+                <datalist id="ingreso-tipo-options">
+                  {[...new Set([
+                    ...subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === 'Ingresos')?.id).map(s => s.nombre),
+                    ...ingresoTags
+                  ])].sort().map(opt => <option key={opt} value={opt} />)}
+                </datalist>
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Descripción <span style={{ color: '#c0392b' }}>*</span></label>
@@ -3578,7 +3584,7 @@ const getStyles = (dark, mobile = false) => {
     modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
-    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: 'light' },
+    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: mobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: 'light' },
     dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px' },
     dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
     dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },

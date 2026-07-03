@@ -183,7 +183,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
     modal: { backgroundColor: panel, borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto' },
     modalTitle: { fontSize: '18px', fontWeight: '600', color: txt, margin: '0 0 20px' },
-    input: { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: txt, fontFamily: '"Montserrat", sans-serif' },
+    input: { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: isMobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: txt, fontFamily: '"Montserrat", sans-serif' },
     saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
