@@ -305,8 +305,13 @@ export default function Dashboard() {
   }, [step])
 
   const fetchCategorias = async () => {
-    const { data: cats } = await supabase.from('categories').select('*').order('orden')
-    const { data: subcats } = await supabase.from('subcategories').select('*').order('nombre')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden')
+    const catIds = (cats || []).map(c => c.id)
+    const { data: subcats } = catIds.length > 0
+      ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
+      : { data: [] }
     setCategoriasDB(cats || [])
     setSubcategoriasDB(subcats || [])
   }
@@ -776,8 +781,11 @@ export default function Dashboard() {
         accountCache[key] = acc; return acc
       }
 
-      const { data: categorias } = await supabase.from('categories').select('id, nombre')
-      const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
+      const { data: categorias } = await supabase.from('categories').select('id, nombre').or(`user_id.eq.${user.id},es_sistema.eq.true`)
+      const catIdsForSub = (categorias || []).map(c => c.id)
+      const { data: subcategorias } = catIdsForSub.length > 0
+        ? await supabase.from('subcategories').select('id, nombre, category_id').in('category_id', catIdsForSub)
+        : { data: [] }
       const getCatId = (cat) => cat ? (categorias?.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null) : null
       const getSubcatId = (sub, catId) => sub && catId ? (subcategorias?.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null) : null
 
@@ -921,12 +929,15 @@ export default function Dashboard() {
       .gt('monto', 0).limit(500)
     if (!pendientes || pendientes.length === 0) { showToast('No hay gastos para clasificar.'); return }
     showToast(`Reclasificando ${pendientes.length} gastos con IA...`)
-    const { data: cats } = await supabase.from('categories').select('*')
+    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`)
     const { data: children } = await supabase.from('children').select('*').eq('user_id', user.id)
     const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
     const rows = pendientes.map(t => ({ id: t.id, notas: t.notas || '', descripcion: t.detalle || t.nombre || '', monto: t.monto, moneda: t.moneda || 'ARS' }))
     try {
-      const { data: subcats } = await supabase.from('subcategories').select('*')
+      const catIdsForSub = (cats || []).map(c => c.id)
+      const { data: subcats } = catIdsForSub.length > 0
+        ? await supabase.from('subcategories').select('*').in('category_id', catIdsForSub)
+        : { data: [] }
       const res = await fetch('/api/classifyRows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
@@ -1003,7 +1014,8 @@ export default function Dashboard() {
   const handleEditAccount = async (e) => {
     e.preventDefault()
     setLoading(true)
-    await supabase.from('accounts').update({ nombre: editAccount.nombre, tipo: editAccount.tipo }).eq('id', editAccount.id)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('accounts').update({ nombre: editAccount.nombre, tipo: editAccount.tipo }).eq('id', editAccount.id).eq('user_id', user.id)
     setEditAccount(null)
     fetchAccounts()
     setLoading(false)
@@ -1011,9 +1023,10 @@ export default function Dashboard() {
 
   const handleDeleteAccount = async (accountId) => {
     setLoading(true)
-    await supabase.from('transactions').delete().eq('account_id', accountId)
-    await supabase.from('statements').delete().eq('account_id', accountId)
-    await supabase.from('accounts').delete().eq('id', accountId)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('transactions').delete().eq('account_id', accountId).eq('user_id', user.id)
+    await supabase.from('statements').delete().eq('account_id', accountId).eq('user_id', user.id)
+    await supabase.from('accounts').delete().eq('id', accountId).eq('user_id', user.id)
     setConfirmDelete(null)
     if (selectedAccount?.id === accountId) setSelectedAccount(null)
     fetchAccounts()
@@ -1028,8 +1041,8 @@ export default function Dashboard() {
     const keeper = duplicates[0]
     const toRemove = duplicates.slice(1)
     for (const acc of toRemove) {
-      await supabase.from('transactions').update({ account_id: keeper.id }).eq('account_id', acc.id)
-      await supabase.from('statements').delete().eq('account_id', acc.id)
+      await supabase.from('transactions').update({ account_id: keeper.id }).eq('account_id', acc.id).eq('user_id', user.id)
+      await supabase.from('statements').delete().eq('account_id', acc.id).eq('user_id', user.id)
       await supabase.from('accounts').delete().eq('id', acc.id).eq('user_id', user.id)
     }
     fetchAccounts()
@@ -1455,12 +1468,15 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser()
     const esBanco = statementData.tipo_documento === 'banco'
 
-    const { data: categorias } = await supabase.from('categories').select('id, nombre')
+    const { data: categorias } = await supabase.from('categories').select('id, nombre').or(`user_id.eq.${user.id},es_sistema.eq.true`)
     const getCategoryId = (cat) => {
       if (!categorias || !cat) return null
       return categorias.find(c => c.nombre.toLowerCase() === cat.toLowerCase())?.id || null
     }
-    const { data: subcategorias } = await supabase.from('subcategories').select('id, nombre, category_id')
+    const catIdsForSub2 = (categorias || []).map(c => c.id)
+    const { data: subcategorias } = catIdsForSub2.length > 0
+      ? await supabase.from('subcategories').select('id, nombre, category_id').in('category_id', catIdsForSub2)
+      : { data: [] }
     const getSubcategoryId = (sub, catId) => {
       if (!subcategorias || !sub || !catId) return null
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null

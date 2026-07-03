@@ -89,14 +89,16 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleAddCategoria = async (e) => {
     e.preventDefault()
     if (!newCatNombre.trim()) return
-    await supabase.from('categories').insert({ nombre: newCatNombre.trim(), orden: (categoriasDB?.length || 0) + 1 })
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('categories').insert({ user_id: user.id, nombre: newCatNombre.trim(), orden: (categoriasDB?.length || 0) + 1 })
     setNewCatNombre('')
     fetchCategorias()
   }
 
   const handleSaveEditCat = async (cat) => {
     if (!editingCatNombre.trim()) return
-    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id).eq('user_id', user.id)
     setEditingCat(null)
     fetchCategorias()
   }
@@ -113,24 +115,26 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleDeleteCategoria = async (cat) => {
     if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id).eq('user_id', user.id)
     if (count > 0) {
       showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
-    await supabase.from('subcategories').delete().eq('category_id', cat.id)
-    await supabase.from('categories').delete().eq('id', cat.id)
+    await supabase.from('subcategories').delete().eq('category_id', cat.id).eq('user_id', user.id)
+    await supabase.from('categories').delete().eq('id', cat.id).eq('user_id', user.id)
     fetchCategorias()
   }
 
   const handleDeleteSubcat = async (subcat) => {
     if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id).eq('user_id', user.id)
     if (count > 0) {
       showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
-    await supabase.from('subcategories').delete().eq('id', subcat.id)
+    await supabase.from('subcategories').delete().eq('id', subcat.id).eq('user_id', user.id)
     fetchCategorias()
   }
 
@@ -163,7 +167,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleDeleteAlias = async (id) => {
     if (!window.confirm('¿Eliminar este alias?')) return
-    await supabase.from('user_aliases').delete().eq('id', id)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('user_aliases').delete().eq('id', id).eq('user_id', user.id)
     fetchUserAliases()
   }
 

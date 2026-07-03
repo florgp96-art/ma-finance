@@ -434,22 +434,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
-    const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
+    const { data: { user } } = await supabase.auth.getUser()
+    const [txs, catRes, stmtRes] = await Promise.all([
       fetchAllPages(() =>
         supabase.from('transactions')
           .select('*, categories(nombre, color), subcategories(nombre), children(id, nombre)')
           .eq('account_id', account.id)
           .order('fecha', { ascending: false })
       ),
-      supabase.from('categories').select('*').order('orden'),
-      supabase.from('subcategories').select('*').order('nombre'),
+      supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
       supabase.from('statements')
         .select('*')
         .eq('account_id', account.id)
         .order('fecha_hasta', { ascending: true }),
     ])
+    const cats = catRes.data || []
+    const catIds = cats.map(c => c.id)
+    const subcatRes = catIds.length > 0
+      ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
+      : { data: [] }
     setTransactions(txs)
-    setCategories(catRes.data || [])
+    setCategories(cats)
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
     if (txs.length > 0) {
@@ -464,22 +469,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const fetchAllData = async () => {
     setLoading(true)
     const accountIds = accounts.map(a => a.id)
-    const [txs, catRes, subcatRes, stmtRes] = await Promise.all([
+    const { data: { user } } = await supabase.auth.getUser()
+    const [txs, catRes, stmtRes] = await Promise.all([
       fetchAllPages(() =>
         supabase.from('transactions')
           .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
           .in('account_id', accountIds)
           .order('fecha', { ascending: false })
       ),
-      supabase.from('categories').select('*').order('orden'),
-      supabase.from('subcategories').select('*').order('nombre'),
+      supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
       supabase.from('statements')
         .select('*')
         .in('account_id', accountIds)
         .order('fecha_hasta', { ascending: true }),
     ])
+    const cats = catRes.data || []
+    const catIds = cats.map(c => c.id)
+    const subcatRes = catIds.length > 0
+      ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
+      : { data: [] }
     setTransactions(txs)
-    setCategories(catRes.data || [])
+    setCategories(cats)
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
     if (txs.length > 0) {

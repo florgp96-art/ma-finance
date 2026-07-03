@@ -52,12 +52,16 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       txQuery = txQuery.ilike('tag', hijoNombre)
     }
 
-    const [txRes, catRes, subcatRes] = await Promise.all([
+    const [txRes, catRes] = await Promise.all([
       txQuery,
-      supabase.from('categories').select('*').order('nombre'),
-      supabase.from('subcategories').select('*').order('nombre'),
+      supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('nombre'),
     ])
-    setCategories(catRes.data || [])
+    const cats = catRes.data || []
+    const catIds = cats.map(c => c.id)
+    const subcatRes = catIds.length > 0
+      ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
+      : { data: [] }
+    setCategories(cats)
     setSubcategories(subcatRes.data || [])
     const txs = txRes.data || []
     setTransactions(txs)
