@@ -49,6 +49,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Aliases form
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
+  const [pendingRulesCount, setPendingRulesCount] = useState(0)
+  const [checkingPending, setCheckingPending] = useState(false)
 
   // ESC cierra el modal de íconos
   useEffect(() => {
@@ -59,6 +61,26 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [showIconos])
+
+  // Al abrir el modal (o cuando cambian las reglas) recalcula cuántos movimientos
+  // existentes todavía no tienen aplicada alguna regla de categoría/hijo.
+  useEffect(() => {
+    if (!showAliases) return
+    let cancelado = false
+    const revisar = async () => {
+      setCheckingPending(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
+      let total = 0
+      for (const a of aplicables) {
+        total += await countPendingForAlias(a, user)
+      }
+      if (!cancelado) { setPendingRulesCount(total); setCheckingPending(false) }
+    }
+    revisar()
+    return () => { cancelado = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAliases, userAliases])
 
   // Expose imperative methods
   useImperativeHandle(ref, () => ({
@@ -151,6 +173,33 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setConfirmarClave('')
   }
 
+  // Cuenta cuántos gastos coinciden con la palabra clave de una regla pero todavía
+  // no tienen esa categoría/hijo aplicado (para saber si hay algo pendiente).
+  const countPendingForAlias = async (alias, user) => {
+    const aliasKeyword = alias.alias
+    if (alias.tipo === 'categoria') {
+      const [catName, subcatName] = alias.valor.split(' > ').map(v => v.trim())
+      const catObj = categoriasDB.find(c => c.nombre === catName)
+      if (!catObj) return 0
+      const subcatObj = subcatName ? subcategoriasDB.find(s => s.nombre === subcatName && s.category_id === catObj.id) : null
+      const { data: matches } = await supabase.from('transactions')
+        .select('id, category_id, subcategory_id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (!matches) return 0
+      return matches.filter(m => m.category_id !== catObj.id || (subcatObj ? m.subcategory_id !== subcatObj.id : false)).length
+    }
+    if (alias.tipo === 'hijo') {
+      const { data: matches } = await supabase.from('transactions')
+        .select('id, tag')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (!matches) return 0
+      return matches.filter(m => m.tag !== alias.valor).length
+    }
+    return 0
+  }
+
   // Busca gastos existentes que contengan la palabra clave de un alias y les aplica
   // la categoría/subcategoría (o el hijo). Devuelve cuántos movimientos actualizó.
   const applyAliasToExisting = async (alias, user) => {
@@ -218,6 +267,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       total += await applyAliasToExisting(a, user)
     }
     showToast(total > 0 ? `Reglas aplicadas a ${total} movimiento(s).` : 'No se encontraron movimientos que coincidan con tus reglas.')
+    setPendingRulesCount(0)
     if (total > 0) onRefresh?.()
   }
 
@@ -457,11 +507,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 12px 0' }}>
               Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
             </p>
-            {(userAliases || []).some(a => a.tipo === 'categoria' || a.tipo === 'hijo') && (
+            {checkingPending ? (
+              <p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 14px 0' }}>Revisando movimientos pendientes...</p>
+            ) : pendingRulesCount > 0 && (
               <button
                 onClick={handleApplyAllAliases}
-                style={{ ...s.actionBtn, background: 'none', border: `1.5px solid ${p}`, color: p, borderRadius: '8px', padding: '7px 12px', fontSize: '12px', fontWeight: '500', marginBottom: '14px', cursor: 'pointer' }}
-              >🔄 Aplicar todas las reglas a movimientos existentes</button>
+                style={{ ...s.actionBtn, background: 'none', border: '1.5px solid #c07a2b', color: '#c07a2b', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', fontWeight: '500', marginBottom: '14px', cursor: 'pointer' }}
+              >🔄 Aplicar {pendingRulesCount} movimiento(s) pendiente(s)</button>
             )}
             <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
               {(userAliases || []).length === 0 ? (
