@@ -1175,7 +1175,8 @@ export default function Dashboard() {
       }
       const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
       const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
-      if (!catAlias && !hijoAlias) return t
+      const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
+      if (!catAlias && !hijoAlias && !neutroAlias) return t
       const updated = { ...t }
       if (catAlias) {
         const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
@@ -1183,6 +1184,7 @@ export default function Dashboard() {
         updated.subcategoria_sugerida = subcat || null
       }
       if (hijoAlias) updated.hijo = hijoAlias.valor
+      if (neutroAlias) updated.tipo = 'neutro'
       return updated
     })
   }
@@ -1764,7 +1766,7 @@ export default function Dashboard() {
             detalle: t.nombre_original,
             monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
             moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
-            tipo: 'gasto', category_id: categoryId,
+            tipo: t.tipo === 'neutro' ? 'neutro' : 'gasto', category_id: categoryId,
             subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
             tag: getHijoTag(t.hijo),
             estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',

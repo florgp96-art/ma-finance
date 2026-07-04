@@ -78,6 +78,23 @@ ${aliasText}
 `
   }
 
+  // Construir bloque de alias "neutro" (movimientos que el usuario marcó como ni gasto ni ingreso,
+  // ej. el pago de una tarjeta que en el resumen del banco aparece como un DEBIN genérico)
+  const neutroAliases = (aliases || []).filter(a => a.tipo === 'neutro')
+  let neutroAliasesBlock = ''
+  if (neutroAliases.length > 0) {
+    const neutroText = neutroAliases
+      .map(a => `- "${a.alias.toUpperCase()}"${a.descripcion ? ` (${a.descripcion})` : ''}`)
+      .join('\n')
+    neutroAliasesBlock = `
+═══════════════════════════════
+MOVIMIENTOS MARCADOS COMO NEUTRO POR EL USUARIO:
+═══════════════════════════════
+Si la descripción de una transacción contiene alguno de estos textos, asigná "tipo": "neutro" (no es gasto ni ingreso real), sin importar qué otra regla o categoría sugieran los datos:
+${neutroText}
+`
+  }
+
   // Construir bloque de ejemplos de ingresos conocidos
   let incomeExamplesBlock = ''
   if (incomeExamples && incomeExamples.length > 0) {
@@ -167,6 +184,7 @@ Ejemplos: ["hijo","auto_propio"] o [] o ["mascota"]
 
 ${userRulesBlock}
 ${aliasesBlock}
+${neutroAliasesBlock}
 ${incomeExamplesBlock}
 ${childrenText ? `═══════════════════════════════
 CAMPO hijo (por transacción):

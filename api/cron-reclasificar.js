@@ -34,8 +34,9 @@ export default async function handler(req, res) {
   )
 
   const { data: rules } = await supabase.from('user_rules').select('*')
+  const { data: neutroAliases } = await supabase.from('user_aliases').select('*').eq('tipo', 'neutro')
 
-  if (!rules || rules.length === 0) {
+  if ((!rules || rules.length === 0) && (!neutroAliases || neutroAliases.length === 0)) {
     return res.status(200).json({ message: 'No rules found' })
   }
 
@@ -51,7 +52,18 @@ export default async function handler(req, res) {
   let updated = 0
 
   for (const tx of transactions) {
-    const rule = rules.find(r =>
+    const neutro = (neutroAliases || []).find(a =>
+      a.user_id === tx.user_id &&
+      tx.detalle &&
+      tx.detalle.toUpperCase().includes(a.alias.toUpperCase())
+    )
+    if (neutro) {
+      await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', tx.id)
+      updated++
+      continue
+    }
+
+    const rule = (rules || []).find(r =>
       r.user_id === tx.user_id &&
       tx.detalle &&
       tx.detalle.toUpperCase().includes(r.texto_original.toUpperCase())

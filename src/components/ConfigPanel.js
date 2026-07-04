@@ -70,7 +70,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     const revisar = async () => {
       setCheckingPending(true)
       const { data: { user } } = await supabase.auth.getUser()
-      const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
+      const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo' || a.tipo === 'neutro')
       let total = 0
       for (const a of aplicables) {
         total += await countPendingForAlias(a, user)
@@ -197,6 +197,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       if (!matches) return 0
       return matches.filter(m => m.tag !== alias.valor).length
     }
+    if (alias.tipo === 'neutro') {
+      const { data: matches } = await supabase.from('transactions')
+        .select('id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      return matches?.length || 0
+    }
     return 0
   }
 
@@ -230,17 +237,28 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       await supabase.from('transactions').update({ tag: alias.valor }).in('id', matches.map(m => m.id))
       return matches.length
     }
+    if (alias.tipo === 'neutro') {
+      const { data: matches } = await supabase.from('transactions')
+        .select('id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (!matches || matches.length === 0) return 0
+      await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).in('id', matches.map(m => m.id))
+      return matches.length
+    }
     return 0
   }
 
   const handleAddAlias = async (e) => {
     e.preventDefault()
-    if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
+    if (!newAlias.alias.trim() || (newAlias.tipo !== 'neutro' && !newAlias.valor.trim())) return
     const { data: { user } } = await supabase.auth.getUser()
     const aliasKeyword = newAlias.alias.trim().toUpperCase()
-    const valorFinal = newAlias.tipo === 'categoria' && newAlias.subcategoria
-      ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
-      : newAlias.valor.trim()
+    const valorFinal = newAlias.tipo === 'neutro'
+      ? 'Neutro'
+      : newAlias.tipo === 'categoria' && newAlias.subcategoria
+        ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
+        : newAlias.valor.trim()
     await supabase.from('user_aliases').insert({
       user_id: user.id,
       alias: aliasKeyword,
@@ -532,7 +550,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                       <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                         <td style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
                         <td style={{ padding: '8px' }}>
-                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
+                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
                         </td>
                         <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>{a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}</td>
                         <td style={{ padding: '8px' }}>
@@ -555,9 +573,15 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   <option value="categoria">Cat.</option>
                   <option value="hijo">Hijo/a</option>
                   <option value="cuenta">Cuenta</option>
+                  <option value="neutro">Neutro</option>
                 </select>
               </div>
-              {newAlias.tipo === 'categoria' ? (
+              {newAlias.tipo === 'neutro' ? (
+                <div>
+                  <label style={s.label}>Descripción (opcional)</label>
+                  <input style={s.input} placeholder="ej. Pago tarjeta Mercado Pago" value={newAlias.descripcion} onChange={e => setNewAlias({...newAlias, descripcion: e.target.value})} />
+                </div>
+              ) : newAlias.tipo === 'categoria' ? (
                 <>
                   <div>
                     <label style={s.label}>Categoría</label>
