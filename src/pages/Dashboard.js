@@ -1187,6 +1187,19 @@ export default function Dashboard() {
     })
   }
 
+  const logImportAttempt = async (datos) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) return
+      fetch('/api/logImport', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(datos)
+      }).catch(() => {})
+    } catch { /* el log/mail nunca debe romper el flujo de carga */ }
+  }
+
   const handleUploadPDF = async () => {
     if (!archivo) return
     setStep('processing')
@@ -1234,6 +1247,14 @@ export default function Dashboard() {
       if (result?.transacciones) {
         result.transacciones = aplicarReglasYAlias(result.transacciones, rules, userAliases)
       }
+      logImportAttempt({
+        tipo: isImage ? 'imagen' : 'pdf',
+        nombreArchivo: archivo.name,
+        estado: 'exito',
+        tarjetaDetectada: result.tarjeta_detectada || null,
+        tipoDocumento: result.tipo_documento || null,
+        transaccionesDetectadas: result.transacciones?.length ?? null,
+      })
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
 
@@ -1256,6 +1277,12 @@ export default function Dashboard() {
       }
     } catch (err) {
       showToast('Error procesando el PDF: ' + err.message, 'error')
+      logImportAttempt({
+        tipo: archivo?.type?.startsWith('image/') ? 'imagen' : 'pdf',
+        nombreArchivo: archivo?.name,
+        estado: 'error',
+        errorMensaje: err.message,
+      })
       setStep('upload')
     }
     setLoading(false)
