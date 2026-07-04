@@ -3568,6 +3568,7 @@ export default function Dashboard() {
         fetchUserAliases={fetchUserAliases}
         saveCustomIcon={saveCustomIcon}
         showToast={showToast}
+        onRefresh={() => setRefreshKey(k => k + 1)}
       />
     </>
   )

@@ -18,6 +18,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   fetchUserAliases,
   saveCustomIcon,
   showToast,
+  onRefresh,
 }, ref) {
   // Modal visibility
   const [showHijos, setShowHijos] = useState(false)
@@ -154,16 +155,55 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     e.preventDefault()
     if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
+    const aliasKeyword = newAlias.alias.trim().toUpperCase()
     const valorFinal = newAlias.tipo === 'categoria' && newAlias.subcategoria
       ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
       : newAlias.valor.trim()
     await supabase.from('user_aliases').insert({
       user_id: user.id,
-      alias: newAlias.alias.trim().toUpperCase(),
+      alias: aliasKeyword,
       tipo: newAlias.tipo,
       valor: valorFinal,
       descripcion: newAlias.descripcion.trim() || null
     })
+
+    // Aplicar la nueva regla a los movimientos existentes que ya contengan esa palabra clave
+    if (newAlias.tipo === 'categoria') {
+      const catObj = categoriasDB.find(c => c.nombre === newAlias.valor)
+      const subcatObj = newAlias.subcategoria ? subcategoriasDB.find(s => s.nombre === newAlias.subcategoria && s.category_id === catObj?.id) : null
+      if (catObj) {
+        const { data: matches } = await supabase.from('transactions')
+          .select('id')
+          .eq('user_id', user.id).eq('tipo', 'gasto')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        if (matches && matches.length > 0) {
+          await supabase.from('transactions').update({
+            category_id: catObj.id,
+            subcategory_id: subcatObj?.id || null,
+            estado: 'identificado',
+          }).in('id', matches.map(m => m.id))
+          showToast(`Regla creada y aplicada a ${matches.length} movimiento(s) existente(s).`)
+          onRefresh?.()
+        } else {
+          showToast('Regla creada.')
+        }
+      }
+    } else if (newAlias.tipo === 'hijo') {
+      const { data: matches } = await supabase.from('transactions')
+        .select('id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (matches && matches.length > 0) {
+        await supabase.from('transactions').update({ tag: newAlias.valor }).in('id', matches.map(m => m.id))
+        showToast(`Regla creada y aplicada a ${matches.length} movimiento(s) existente(s).`)
+        onRefresh?.()
+      } else {
+        showToast('Regla creada.')
+      }
+    } else {
+      showToast('Regla creada.')
+    }
+
     setNewAlias({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
     fetchUserAliases()
   }
