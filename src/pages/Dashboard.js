@@ -104,7 +104,7 @@ export default function Dashboard() {
   // Modal gasto en efectivo
   const [showEfectivo, setShowEfectivo] = useState(false)
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '' })
 
   // Modal ingresos
   const [showIngreso, setShowIngreso] = useState(false)
@@ -387,7 +387,7 @@ export default function Dashboard() {
 
     await supabase.from('transactions').insert({
       user_id: user.id,
-      account_id: cuentaEfectivoId,
+      account_id: efectivo.cuenta || cuentaEfectivoId,
       fecha: efectivo.fecha,
       nombre: efectivo.nombre,
       detalle: efectivo.nota || efectivo.nombre,
@@ -396,13 +396,14 @@ export default function Dashboard() {
       tipo: 'gasto',
       category_id: catObj?.id || null,
       subcategory_id: subcatObj?.id || null,
+      tag: efectivo.hijo || null,
       estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
     })
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '' })
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowEfectivo(false)
     setRefreshKey(k => k + 1)
     setLoading(false)
@@ -2430,6 +2431,7 @@ export default function Dashboard() {
                   fetchAccounts()
                 }
                 setCuentaEfectivoId(ce.id)
+                setEfectivo(prev => ({ ...prev, cuenta: ce.id, hijo: '' }))
                 setShowEfectivo(true)
               }}>
                 + Agregar gasto
@@ -3541,6 +3543,15 @@ export default function Dashboard() {
                   onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
                   placeholder="0.00" required />
               </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Cuenta <span style={{color:'#c0392b'}}>*</span></label>
+                <select style={styles.input} value={efectivo.cuenta || cuentaEfectivoId || ''}
+                  onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
+                  {accounts.filter(a => a.tipo !== 'ingreso').map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                </select>
+              </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
@@ -3562,6 +3573,16 @@ export default function Dashboard() {
                   </select>
                 </div>
               </div>
+              {childrenDB.length > 0 && (
+                <div style={styles.field}>
+                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <select style={styles.input} value={efectivo.hijo}
+                    onChange={e => setEfectivo({...efectivo, hijo: e.target.value})}>
+                    <option value="">— Ninguno —</option>
+                    {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+              )}
               <div style={styles.field}>
                 <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                 <input style={styles.input} type="text" value={efectivo.nota}
