@@ -47,6 +47,12 @@ export async function extractTextFromPDF(file) {
     }
   }
 
+  // Tope de seguridad: si ningún marcador matcheó (banco/formato no contemplado),
+  // no mandar el documento entero (letra chica legal incluida) a la IA — eso
+  // dispara respuestas más lentas y arriesga el timeout del servidor.
+  const MAX_CHARS = 12000
+  if (finalText.length > MAX_CHARS) finalText = finalText.slice(0, MAX_CHARS)
+
   console.log(`Texto extraído: ${finalText.length} chars`)
   return finalText
 }
@@ -62,7 +68,10 @@ export async function analyzeStatementWithClaude(pdfText, cardName, userRules, t
 
   if (!response.ok) {
     console.error('Error HTTP:', response.status, await response.text())
-    throw new Error(`Error del servidor: ${response.status}`)
+    if ([502, 503, 504, 524].includes(response.status)) {
+      throw new Error('El extracto tardó demasiado en procesarse (puede ser muy largo o el servidor está ocupado). Probá de nuevo, o si el PDF es muy largo intentá dividirlo en partes más chicas.')
+    }
+    throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
   }
 
   const data = await response.json()

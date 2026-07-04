@@ -66,9 +66,11 @@ export default function Dashboard() {
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
   const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
+  const toastTimeoutRef = useRef(null)
   const showToast = (msg, type = 'success') => {
+    clearTimeout(toastTimeoutRef.current)
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 3500)
+    toastTimeoutRef.current = setTimeout(() => setToast(null), type === 'error' ? 12000 : 3500)
   }
   const [showUpload, setShowUpload] = useState(false)
   const [uploadDragOver, setUploadDragOver] = useState(false)
@@ -1078,7 +1080,12 @@ export default function Dashboard() {
             headers,
             body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
           })
-          if (!response.ok) throw new Error(`Error servidor: ${response.status}`)
+          if (!response.ok) {
+            if ([502, 503, 504, 524].includes(response.status)) {
+              throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')
+            }
+            throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
+          }
           const data = await response.json()
           const textBlock = data?.content?.find(b => b.type === 'text')
           if (!textBlock?.text) throw new Error('Sin respuesta de Claude')
@@ -3501,15 +3508,20 @@ export default function Dashboard() {
       {toast && (
         <div style={{
           position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
-          zIndex: 9999, padding: '12px 24px', borderRadius: '12px',
+          zIndex: 9999, padding: '12px 16px 12px 24px', borderRadius: '12px',
           backgroundColor: toast.type === 'error' ? '#c0392b' : toast.type === 'warning' ? '#c07a2b' : '#2e8b6a',
           color: 'white', fontSize: '14px', fontWeight: '500',
           fontFamily: '"Montserrat", sans-serif',
           boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           maxWidth: '90vw', textAlign: 'center',
+          display: 'flex', alignItems: 'center', gap: '10px',
           animation: 'fadeInUp 0.2s ease'
         }}>
-          {toast.type === 'error' ? '⚠️ ' : toast.type === 'warning' ? '⚠️ ' : '✅ '}{toast.msg}
+          <span>{toast.type === 'error' ? '⚠️ ' : toast.type === 'warning' ? '⚠️ ' : '✅ '}{toast.msg}</span>
+          <button
+            onClick={() => { clearTimeout(toastTimeoutRef.current); setToast(null) }}
+            style={{ background: 'none', border: 'none', color: 'white', opacity: 0.8, cursor: 'pointer', fontSize: '15px', padding: '2px 4px', flexShrink: 0, outline: 'none' }}
+          >✕</button>
         </div>
       )}
 
