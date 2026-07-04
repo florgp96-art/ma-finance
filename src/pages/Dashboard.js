@@ -934,6 +934,14 @@ export default function Dashboard() {
     const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`)
     const { data: children } = await supabase.from('children').select('*').eq('user_id', user.id)
     const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
+    const { data: rulesRaw } = await supabase.from('user_rules')
+      .select('texto_original, categories(nombre), subcategories(nombre)')
+      .eq('user_id', user.id)
+      .not('texto_original', 'like', 'contexto_%')
+      .not('texto_original', 'like', '\\_\\_%')
+    const rules = (rulesRaw || [])
+      .map(r => ({ texto_original: r.texto_original, categoria: r.categories?.nombre || null, subcategoria: r.subcategories?.nombre || null }))
+      .filter(r => r.categoria)
     const rows = pendientes.map(t => ({ id: t.id, notas: t.notas || '', descripcion: t.detalle || t.nombre || '', monto: t.monto, moneda: t.moneda || 'ARS' }))
     try {
       const catIdsForSub = (cats || []).map(c => c.id)
@@ -961,12 +969,23 @@ export default function Dashboard() {
         const cl = classifications[i]
         if (!cl) return null
         const desc = (tx.detalle || tx.nombre || '').toUpperCase()
-        // Aliases: prioridad máxima
-        const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
-        if (aliasMatch) {
-          const prevCat = cl.categoria
-          cl.categoria = aliasMatch.valor
-          if ((prevCat || '').toLowerCase() !== (cl.categoria || '').toLowerCase()) cl.subcategoria = null
+        const descNorm = desc.toLowerCase().trim()
+        // Reglas aprendidas (identificaste esta transacción a mano antes): prioridad máxima
+        const ruleMatch = rules.find(r => {
+          const rNorm = (r.texto_original || '').toLowerCase().trim()
+          return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
+        })
+        if (ruleMatch) {
+          cl.categoria = ruleMatch.categoria
+          cl.subcategoria = ruleMatch.subcategoria
+        } else {
+          // Aliases: segunda prioridad
+          const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
+          if (aliasMatch) {
+            const prevCat = cl.categoria
+            cl.categoria = aliasMatch.valor
+            if ((prevCat || '').toLowerCase() !== (cl.categoria || '').toLowerCase()) cl.subcategoria = null
+          }
         }
         // Personal nunca tiene subcategoria
         if ((cl.categoria || '').toLowerCase() === 'personal') cl.subcategoria = null
