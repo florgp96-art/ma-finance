@@ -927,8 +927,8 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession()
     const { data: { user } } = await supabase.auth.getUser()
     const { data: pendientes } = await supabase.from('transactions')
-      .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
-      .gt('monto', 0).limit(500)
+      .select('*').eq('user_id', user.id).eq('tipo', 'gasto').eq('estado', 'a_identificar')
+      .gt('monto', 0).order('fecha', { ascending: false }).limit(500)
     if (!pendientes || pendientes.length === 0) { showToast('No hay gastos para clasificar.'); return }
     showToast(`Reclasificando ${pendientes.length} gastos con IA...`)
     const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`)
