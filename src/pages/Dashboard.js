@@ -1179,7 +1179,7 @@ export default function Dashboard() {
         const pdfText = await extractTextFromPDF(archivo)
         result = tryDirectParsePDF(pdfText)
         if (!result) {
-          result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples)
+          result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
         } else if (rules && rules.length > 0) {
           // Apply existing user_rules to pre-classify recognized descriptions
           result.transacciones = result.transacciones.map(t => {
@@ -1488,6 +1488,11 @@ export default function Dashboard() {
       if (!subcategorias || !sub || !catId) return null
       return subcategorias.find(s => s.nombre.toLowerCase() === sub.toLowerCase() && s.category_id === catId)?.id || null
     }
+    // Valida que el "hijo" sugerido por la IA corresponda a un hijo real registrado
+    const getHijoTag = (hijo) => {
+      if (!hijo) return null
+      return childrenDB.find(c => c.nombre.toLowerCase() === hijo.toLowerCase())?.nombre || null
+    }
     // Contextos propios del usuario (wallets, cuentas, nombre propio) → auto-neutro en créditos
     const { data: contextoRules } = await supabase.from('user_rules')
       .select('texto_original').eq('user_id', user.id).like('texto_original', 'contexto_%')
@@ -1600,6 +1605,7 @@ export default function Dashboard() {
             monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
             cuotas_total: null, cuota_numero: null,
             category_id: categoryId, subcategory_id: subcategoryId,
+            tag: getHijoTag(t.hijo),
             estado: (tipoTx === 'neutro' || (t.nombre_limpio && t.nombre_limpio !== t.nombre_original)) ? 'identificado' : 'a_identificar',
             es_manual: false,
             account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
@@ -1679,6 +1685,7 @@ export default function Dashboard() {
             moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
             tipo: 'gasto', category_id: categoryId,
             subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
+            tag: getHijoTag(t.hijo),
             estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
             es_manual: false
           }

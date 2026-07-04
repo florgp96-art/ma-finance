@@ -39,7 +39,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { pdfText, cardName, userRules, incomeExamples } = req.body
+  const { pdfText, cardName, userRules, incomeExamples, categories, subcategories, children, aliases } = req.body
   if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })
   if (pdfText.length > 200_000) return res.status(400).json({ error: 'PDF text too large' })
 
@@ -56,6 +56,21 @@ REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
 ═══════════════════════════════
 Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada:
 ${rulesText}
+`
+  }
+
+  // Construir bloque de alias del usuario (mapeos manuales de comercio → categoría/hijo)
+  let aliasesBlock = ''
+  const categoriaAliases = (aliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
+  if (categoriaAliases.length > 0) {
+    const aliasText = categoriaAliases
+      .map(a => `- "${a.alias.toUpperCase()}" → ${a.tipo === 'hijo' ? `hijo: "${a.valor}"` : `categoría: "${a.valor}"`}${a.descripcion ? ` (${a.descripcion})` : ''}`)
+      .join('\n')
+    aliasesBlock = `
+═══════════════════════════════
+ALIAS DEFINIDOS POR EL USUARIO (aplicar si la descripción contiene el alias, después de las reglas aprendidas):
+═══════════════════════════════
+${aliasText}
 `
   }
 
@@ -83,6 +98,37 @@ ${exText}
     }
   }
 
+  // Categorías/subcategorías reales del usuario (propias + de sistema). Si por algún motivo
+  // no llegan desde el cliente, se usa una lista genérica de respaldo para no romper el análisis.
+  const buildCategoriesText = (cats, subcats, excluir) => {
+    const list = (cats || []).filter(c => !excluir.includes((c.nombre || '').toLowerCase()))
+    if (list.length === 0) return null
+    return list.map(c => {
+      const subs = (subcats || []).filter(s => s.category_id === c.id).map(s => s.nombre)
+      return subs.length > 0 ? `- ${c.nombre}: ${subs.join(', ')}` : `- ${c.nombre}`
+    }).join('\n')
+  }
+  const categoriasTarjetaText = buildCategoriesText(categories, subcategories, ['ingresos', 'devoluciones', 'inversiones', 'transferencias propias', 'pago tarjeta'])
+    || `- Casa → Alquiler, Luz, Gas, Internet, Teléfono, Expensas, Veterinaria, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
+- Comida → Supermercado, Delivery
+- Transporte → Nafta, Auto, Transporte público, Uber/Cabify, Telepase, Service Auto, Estacionamiento
+- Salud → Obra social, Médicos, Farmacia
+- Educación → Colegio, Universidad, Cursos
+- Ropa → sin subcategoría
+- Entretenimiento → Salidas
+- Personal → Regalos, Cumpleaños, Fiestas, Tramites, Peluqueria, Varios
+- Suscripciones → sin subcategoría
+- Trabajo → Freelance, Negocio propio, Insumos, Monotributo, Empleada
+- Débitos → Impuestos, Percepciones, Intereses
+- A Identificar → sin subcategoría`
+  const categoriasBancoText = buildCategoriesText(categories, subcategories, [])
+    || `- Inversiones → FIMA, Plazo fijo, Fondos, Acciones, Cripto (tipo: "neutro")
+- Transferencias propias → sin subcategoría (tipo: "neutro")
+- Pago tarjeta → sin subcategoría (tipo: "neutro")
+- Ingresos → Sueldo, Alquiler cobrado, Freelance, Reintegros, Otros (tipo: "ingreso")`
+
+  const childrenText = (children && children.length > 0) ? children.map(c => `- ${c.nombre}`).join('\n') : null
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -97,7 +143,7 @@ ${exText}
         role: 'user',
         content: `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
 
-{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":"GALLO PROT FLORENCIA"}]}
+{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"hijo":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"titular":"GALLO PROT FLORENCIA"}]}
 
 ═══════════════════════════════
 CAMPO contexto_detectado:
@@ -116,7 +162,16 @@ Si no detectás ninguno, devolvé array vacío [].
 Ejemplos: ["hijo","auto_propio"] o [] o ["mascota"]
 
 ${userRulesBlock}
+${aliasesBlock}
 ${incomeExamplesBlock}
+${childrenText ? `═══════════════════════════════
+CAMPO hijo (por transacción):
+═══════════════════════════════
+HIJOS REGISTRADOS POR EL USUARIO:
+${childrenText}
+
+Si la descripción de la transacción contiene exactamente el nombre de uno de estos hijos, o es un gasto claramente asociado a uno de ellos (colegio, pediatra, cuota, etc. si el nombre aparece en la descripción), asigná ese nombre exacto en el campo "hijo". Si no hay ninguna mención clara a un hijo registrado, dejá "hijo": null. No inventes ni infieras un hijo sin que su nombre aparezca en la descripción.
+` : ''}
 ═══════════════════════════════
 CAMPO tipo_documento:
 ═══════════════════════════════
@@ -140,37 +195,26 @@ REGLAS GENERALES:
 - NO incluir "SU PAGO", "Gracias por su pago", pagos al resumen de tarjeta (en extractos de tarjeta)
 - nombre_limpio: nombre legible. Si es críptico, dejarlo igual al original.
 - es_credito: true solo para devoluciones o reintegros reales en tarjeta
-- Para cuotas: completar cuotas_total, cuota_numero y monto_total_cuotas
+- Para cuotas: completar cuotas_total y cuota_numero
 - titular: nombre del titular
+- categoria_sugerida y subcategoria_sugerida: elegí SOLO de las listas de abajo, con el nombre exacto tal como está escrito. Nunca inventes una categoría o subcategoría que no esté en la lista. Si no estás seguro o no encaja en ninguna → "A Identificar"
 
 ═══════════════════════════════
-CATEGORÍAS PARA TARJETAS DE CRÉDITO:
+CATEGORÍAS PARA TARJETAS DE CRÉDITO (usar nombres exactos):
 ═══════════════════════════════
-- Casa → Alquiler, Luz, Gas, Internet, Teléfono, Expensas, Veterinaria, Mantenimiento, Decoracion, Empleada Domestica, Jardinero, Piletero
-- Comida → Supermercado, Delivery
-- Transporte → Nafta, Auto, Transporte público, Uber/Cabify, Telepase, Service Auto, Estacionamiento
-- Salud → Obra social, Médicos, Farmacia
-- Educación → Colegio, Universidad, Cursos
-- Ropa → sin subcategoría
-- Entretenimiento → Salidas
-- Personal → Regalos, Cumpleaños, Fiestas, Tramites, Peluqueria, Varios
-- Suscripciones → sin subcategoría
-- Trabajo → Freelance, Negocio propio, Insumos, Monotributo, Empleada
-- Ingresos → Sueldo, Freelance, Alquileres, Inversiones, Otros
-- Débitos → Impuestos, Percepciones, Intereses
-- A Identificar → sin subcategoría
+${categoriasTarjetaText}
 
 ═══════════════════════════════
-CATEGORÍAS ADICIONALES PARA CUENTAS BANCARIAS:
+CATEGORÍAS PARA CUENTAS BANCARIAS (usar nombres exactos):
 ═══════════════════════════════
-- Inversiones → FIMA, Plazo fijo, Fondos, Acciones, Cripto (tipo: "neutro")
-- Transferencias propias → sin subcategoría (tipo: "neutro")
-- Pago tarjeta → sin subcategoría (tipo: "neutro")
-- Ingresos → Sueldo, Alquiler cobrado, Freelance, Reintegros, Otros (tipo: "ingreso")
+${categoriasBancoText}
+
+Orden de prioridad para clasificar cada transacción: 1) reglas aprendidas del usuario, 2) alias definidos por el usuario, 3) las reglas de asignación de abajo (solo como pistas por nombre de comercio), 4) si nada aplica → "A Identificar". Estas reglas de abajo son orientativas: si el comercio no está en ninguna, no inventes una categoría, usá "A Identificar".
 
 ═══════════════════════════════
 REGLAS DE ASIGNACIÓN PARA TARJETAS:
 ═══════════════════════════════
+- COMISION/mantenimiento de cuenta o tarjeta → Débitos (sin subcategoría específica si no hay una de "Comisiones")
 - AXION/YPF/SHELL/COMBUSTIBLE → Transporte / Nafta
 - Peajes/AUTOPISTA/CORREDORES VIALES/TELEPEAJE → Transporte / Auto
 - UBER/CABIFY/PAYU*AR*UBER → Transporte / Uber/Cabify
