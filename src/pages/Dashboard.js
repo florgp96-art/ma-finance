@@ -2189,11 +2189,19 @@ export default function Dashboard() {
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
-          {isMobile && sidebarOpen && (
-            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150 }} onClick={() => setSidebarOpen(false)} />
+          {isMobile && (
+            <div
+              style={{
+                position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 150,
+                opacity: sidebarOpen ? 1 : 0,
+                pointerEvents: sidebarOpen ? 'auto' : 'none',
+                transition: 'opacity 0.28s ease',
+              }}
+              onClick={() => setSidebarOpen(false)}
+            />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { flexShrink: 0, alignSelf: 'flex-start' }) }}>
-          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: sidebarOpen ? 'flex' : 'none', width: '85vw', maxWidth: '360px' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: 'flex', width: '85vw', maxWidth: '360px', transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: sidebarOpen ? 'auto' : 'none' } : {}) }}>
              {/* Zona top fija: solo mobile — botón cerrar */}
             {isMobile && (
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
