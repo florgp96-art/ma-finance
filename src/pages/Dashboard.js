@@ -1348,12 +1348,11 @@ export default function Dashboard() {
     }
   }
 
-  const handleCreateNewForUpload = async (e) => {
-    e.preventDefault()
+  const crearYSeleccionarCuenta = async (nombre, tipo) => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { data: account } = await supabase.from('accounts').insert({
-      user_id: user.id, nombre: newAccountForUpload.nombre, tipo: newAccountForUpload.tipo,
+      user_id: user.id, nombre, tipo,
     }).select().single()
     setTargetAccount(account)
     fetchAccounts()
@@ -1365,6 +1364,11 @@ export default function Dashboard() {
       calcularDuplicadosPDF(enriquecidas, account.id, statementData.fecha_facturacion)
       setStep('preview')
     }
+  }
+
+  const handleCreateNewForUpload = async (e) => {
+    e.preventDefault()
+    await crearYSeleccionarCuenta(newAccountForUpload.nombre, newAccountForUpload.tipo)
   }
 
   const handleConfirmAdicionales = async (separar) => {
@@ -2916,19 +2920,40 @@ export default function Dashboard() {
                 <p style={{fontSize: '13px', color: '#aaa', marginBottom: '16px'}}>
                   Los egresos e inversiones se guardarán aquí. Los ingresos van automáticamente a tu cuenta de Ingresos.
                 </p>
-                <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
-                  {accounts.filter(a => a.tipo !== 'ingreso').map(acc => (
-                    <button key={acc.id} style={styles.selectAccountBtn}
-                      onClick={() => handleSelectAccount(acc)}>
-                      🏦 {acc.nombre}
-                      <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
-                    </button>
-                  ))}
-                  <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
-                    onClick={() => { setNewAccountForUpload({ nombre: '', tipo: 'debito' }); setStep('new_account') }}>
-                    + Crear nueva cuenta bancaria
-                  </button>
-                </div>
+                {(() => {
+                  const detectado = (statementData.tarjeta_detectada || '').trim().toLowerCase()
+                  const disponibles = accounts.filter(a => a.tipo !== 'ingreso')
+                  const match = detectado ? disponibles.find(a => a.nombre.trim().toLowerCase() === detectado) : null
+                  const resto = disponibles.filter(a => a.id !== match?.id)
+                  return (
+                    <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
+                      {match && (
+                        <button style={{...styles.selectAccountBtn, border: '2px solid #27AE60'}}
+                          onClick={() => handleSelectAccount(match)}>
+                          🏦 {match.nombre}
+                          <span style={{fontSize:'12px', color:'#27AE60', fontWeight:'600', marginLeft:'8px'}}>✓ Coincide con lo detectado</span>
+                        </button>
+                      )}
+                      {!match && statementData.tarjeta_detectada && (
+                        <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                          onClick={() => crearYSeleccionarCuenta(statementData.tarjeta_detectada, 'debito')}>
+                          + Crear "{statementData.tarjeta_detectada}"
+                        </button>
+                      )}
+                      {resto.map(acc => (
+                        <button key={acc.id} style={styles.selectAccountBtn}
+                          onClick={() => handleSelectAccount(acc)}>
+                          🏦 {acc.nombre}
+                          <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
+                        </button>
+                      ))}
+                      <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                        onClick={() => { setNewAccountForUpload({ nombre: '', tipo: 'debito' }); setStep('new_account') }}>
+                        + Crear nueva cuenta bancaria
+                      </button>
+                    </div>
+                  )
+                })()}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
                 </div>
@@ -2944,19 +2969,39 @@ export default function Dashboard() {
                 <p style={{fontSize: '13px', color: '#aaa', marginBottom: '20px'}}>
                   Seleccioná la tarjeta o creá una nueva:
                 </p>
-                <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
-                  {accounts.map(acc => (
-                    <button key={acc.id} style={styles.selectAccountBtn}
-                      onClick={() => handleSelectAccount(acc)}>
-                      💳 {acc.nombre}
-                      <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
-                    </button>
-                  ))}
-                  <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
-                    onClick={() => setStep('new_account')}>
-                    + Crear nueva tarjeta
-                  </button>
-                </div>
+                {(() => {
+                  const detectado = (statementData.tarjeta_detectada || '').trim().toLowerCase()
+                  const match = detectado ? accounts.find(a => a.nombre.trim().toLowerCase() === detectado) : null
+                  const resto = accounts.filter(a => a.id !== match?.id)
+                  return (
+                    <div style={{display:'flex', flexDirection:'column', gap:'10px', marginBottom:'8px'}}>
+                      {match && (
+                        <button style={{...styles.selectAccountBtn, border: '2px solid #27AE60'}}
+                          onClick={() => handleSelectAccount(match)}>
+                          💳 {match.nombre}
+                          <span style={{fontSize:'12px', color:'#27AE60', fontWeight:'600', marginLeft:'8px'}}>✓ Coincide con lo detectado</span>
+                        </button>
+                      )}
+                      {!match && statementData.tarjeta_detectada && (
+                        <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                          onClick={() => crearYSeleccionarCuenta(statementData.tarjeta_detectada, 'credito')}>
+                          + Crear "{statementData.tarjeta_detectada}"
+                        </button>
+                      )}
+                      {resto.map(acc => (
+                        <button key={acc.id} style={styles.selectAccountBtn}
+                          onClick={() => handleSelectAccount(acc)}>
+                          💳 {acc.nombre}
+                          <span style={{fontSize:'12px', color:'#aaa', fontWeight:'400', marginLeft:'8px'}}>{tipoLabel(acc.tipo)}</span>
+                        </button>
+                      ))}
+                      <button style={{...styles.selectAccountBtn, ...styles.selectAccountBtnNew}}
+                        onClick={() => setStep('new_account')}>
+                        + Crear nueva tarjeta
+                      </button>
+                    </div>
+                  )
+                })()}
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => { setShowUpload(false); resetUpload() }}>Cancelar</button>
                 </div>
