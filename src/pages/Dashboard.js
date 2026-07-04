@@ -982,9 +982,9 @@ export default function Dashboard() {
           // Aliases: segunda prioridad
           const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
           if (aliasMatch) {
-            const prevCat = cl.categoria
-            cl.categoria = aliasMatch.valor
-            if ((prevCat || '').toLowerCase() !== (cl.categoria || '').toLowerCase()) cl.subcategoria = null
+            const [aliasCat, aliasSubcat] = aliasMatch.valor.split(' > ').map(v => v.trim())
+            cl.categoria = aliasCat
+            cl.subcategoria = aliasSubcat || null
           }
         }
         // Personal nunca tiene subcategoria

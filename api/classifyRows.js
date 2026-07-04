@@ -34,9 +34,13 @@ async function classifyBatch(batch, categories, subcategories, children, aliases
     ? children.map(c => `- ${c.nombre}`).join('\n')
     : 'Ninguno'
   const aliasesText = (aliases || []).length > 0
-    ? aliases.map(a =>
-        `- "${a.alias.toUpperCase()}" → tipo: ${a.tipo}, valor: "${a.valor}"${a.descripcion ? `, descripcion: "${a.descripcion}"` : ''}`
-      ).join('\n')
+    ? aliases.map(a => {
+        if (a.tipo === 'categoria') {
+          const [cat, subcat] = a.valor.split(' > ').map(v => v.trim())
+          return `- "${a.alias.toUpperCase()}" → categoría: "${cat}"${subcat ? `, subcategoría: "${subcat}"` : ''}${a.descripcion ? ` (${a.descripcion})` : ''}`
+        }
+        return `- "${a.alias.toUpperCase()}" → tipo: ${a.tipo}, valor: "${a.valor}"${a.descripcion ? `, descripcion: "${a.descripcion}"` : ''}`
+      }).join('\n')
     : 'Ninguno'
 
   const rowsText = batch.map((r, i) =>

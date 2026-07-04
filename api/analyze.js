@@ -64,7 +64,11 @@ ${rulesText}
   const categoriaAliases = (aliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
   if (categoriaAliases.length > 0) {
     const aliasText = categoriaAliases
-      .map(a => `- "${a.alias.toUpperCase()}" → ${a.tipo === 'hijo' ? `hijo: "${a.valor}"` : `categoría: "${a.valor}"`}${a.descripcion ? ` (${a.descripcion})` : ''}`)
+      .map(a => {
+        if (a.tipo === 'hijo') return `- "${a.alias.toUpperCase()}" → hijo: "${a.valor}"${a.descripcion ? ` (${a.descripcion})` : ''}`
+        const [cat, subcat] = a.valor.split(' > ').map(v => v.trim())
+        return `- "${a.alias.toUpperCase()}" → categoría: "${cat}"${subcat ? `, subcategoría: "${subcat}"` : ''}${a.descripcion ? ` (${a.descripcion})` : ''}`
+      })
       .join('\n')
     aliasesBlock = `
 ═══════════════════════════════

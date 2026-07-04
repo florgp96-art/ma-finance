@@ -47,7 +47,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [iconInput, setIconInput] = useState('')
 
   // Aliases form
-  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
 
   // ESC cierra el modal de íconos
   useEffect(() => {
@@ -154,14 +154,17 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     e.preventDefault()
     if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
+    const valorFinal = newAlias.tipo === 'categoria' && newAlias.subcategoria
+      ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
+      : newAlias.valor.trim()
     await supabase.from('user_aliases').insert({
       user_id: user.id,
       alias: newAlias.alias.trim().toUpperCase(),
       tipo: newAlias.tipo,
-      valor: newAlias.valor.trim(),
+      valor: valorFinal,
       descripcion: newAlias.descripcion.trim() || null
     })
-    setNewAlias({ alias: '', tipo: 'categoria', valor: '', descripcion: '' })
+    setNewAlias({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
     fetchUserAliases()
   }
 
@@ -430,23 +433,52 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 </table>
               )}
             </div>
-            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 100px 1fr auto', gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
+            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (newAlias.tipo === 'categoria' ? '1fr 90px 1fr 1fr auto' : '1fr 100px 1fr auto'), gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
               <div>
                 <label style={s.label}>Palabra clave</label>
                 <input style={s.input} placeholder="ej. OSDE, DISCO, UBER" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
               </div>
               <div>
                 <label style={s.label}>Tipo</label>
-                <select style={s.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value})}>
+                <select style={s.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value, valor: '', subcategoria: ''})}>
                   <option value="categoria">Cat.</option>
                   <option value="hijo">Hijo/a</option>
                   <option value="cuenta">Cuenta</option>
                 </select>
               </div>
-              <div>
-                <label style={s.label}>{newAlias.tipo === 'hijo' ? 'Nombre del hijo/a' : newAlias.tipo === 'cuenta' ? 'Nombre de la cuenta' : 'Categoría asignada'}</label>
-                <input style={s.input} placeholder={newAlias.tipo === 'hijo' ? 'ej. Amelia' : newAlias.tipo === 'cuenta' ? 'ej. Tarjeta Visa' : 'ej. Salud'} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
-              </div>
+              {newAlias.tipo === 'categoria' ? (
+                <>
+                  <div>
+                    <label style={s.label}>Categoría</label>
+                    <select style={s.input} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value, subcategoria: ''})}>
+                      <option value="">— Elegir —</option>
+                      {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={s.label}>Subcategoría</label>
+                    <select style={s.input} value={newAlias.subcategoria} disabled={!newAlias.valor} onChange={e => setNewAlias({...newAlias, subcategoria: e.target.value})}>
+                      <option value="">— Ninguna —</option>
+                      {subcategoriasDB
+                        .filter(sc => sc.category_id === categoriasDB.find(c => c.nombre === newAlias.valor)?.id)
+                        .map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : newAlias.tipo === 'hijo' ? (
+                <div>
+                  <label style={s.label}>Hijo/a</label>
+                  <select style={s.input} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})}>
+                    <option value="">— Elegir —</option>
+                    {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label style={s.label}>Nombre de la cuenta</label>
+                  <input style={s.input} placeholder="ej. Tarjeta Visa" value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})} />
+                </div>
+              )}
               <button type="submit" style={{ ...s.saveBtn, padding: '11px 18px', marginTop: isMobile ? '0' : '20px' }}>+</button>
             </form>
             <div style={{ textAlign: 'right' }}>
