@@ -1321,10 +1321,15 @@ export default function Dashboard() {
   const calcularDuplicadosPDF = async (transacciones, accountId, fechaFacturacion) => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      // Los ingresos de un extracto de banco se guardan en la cuenta "Ingresos" separada
+      // (ver guardarImportacion), no en la cuenta que se está importando. Si no se consulta
+      // también esa cuenta, nunca se detectan como duplicados los ingresos ya cargados a mano.
+      const ingresosAcc = accounts.find(a => a.tipo === 'ingreso')
+      const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
       const { data: txExistentes } = await supabase.from('transactions')
-        .select('fecha, monto')
+        .select('fecha, monto, account_id')
         .eq('user_id', user.id)
-        .eq('account_id', accountId)
+        .in('account_id', accountIds)
 
       let billingMes = null
       if (fechaFacturacion) {
@@ -1346,7 +1351,10 @@ export default function Dashboard() {
       const selec = new Set()
       transacciones.forEach((t, i) => {
         const esCuota = t.cuotas_total > 1
+        const esIngreso = t.tipo === 'ingreso' || t.es_credito
+        const cuentaEsperada = (esIngreso && ingresosAcc) ? ingresosAcc.id : accountId
         const isDupe = txExistentes?.some(e => {
+          if (e.account_id !== cuentaEsperada) return false
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
