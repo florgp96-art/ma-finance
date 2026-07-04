@@ -151,6 +151,39 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setConfirmarClave('')
   }
 
+  // Busca gastos existentes que contengan la palabra clave de un alias y les aplica
+  // la categoría/subcategoría (o el hijo). Devuelve cuántos movimientos actualizó.
+  const applyAliasToExisting = async (alias, user) => {
+    const aliasKeyword = alias.alias
+    if (alias.tipo === 'categoria') {
+      const [catName, subcatName] = alias.valor.split(' > ').map(v => v.trim())
+      const catObj = categoriasDB.find(c => c.nombre === catName)
+      if (!catObj) return 0
+      const subcatObj = subcatName ? subcategoriasDB.find(s => s.nombre === subcatName && s.category_id === catObj.id) : null
+      const { data: matches } = await supabase.from('transactions')
+        .select('id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (!matches || matches.length === 0) return 0
+      await supabase.from('transactions').update({
+        category_id: catObj.id,
+        subcategory_id: subcatObj?.id || null,
+        estado: 'identificado',
+      }).in('id', matches.map(m => m.id))
+      return matches.length
+    }
+    if (alias.tipo === 'hijo') {
+      const { data: matches } = await supabase.from('transactions')
+        .select('id')
+        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+      if (!matches || matches.length === 0) return 0
+      await supabase.from('transactions').update({ tag: alias.valor }).in('id', matches.map(m => m.id))
+      return matches.length
+    }
+    return 0
+  }
+
   const handleAddAlias = async (e) => {
     e.preventDefault()
     if (!newAlias.alias.trim() || !newAlias.valor.trim()) return
@@ -167,45 +200,25 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       descripcion: newAlias.descripcion.trim() || null
     })
 
-    // Aplicar la nueva regla a los movimientos existentes que ya contengan esa palabra clave
-    if (newAlias.tipo === 'categoria') {
-      const catObj = categoriasDB.find(c => c.nombre === newAlias.valor)
-      const subcatObj = newAlias.subcategoria ? subcategoriasDB.find(s => s.nombre === newAlias.subcategoria && s.category_id === catObj?.id) : null
-      if (catObj) {
-        const { data: matches } = await supabase.from('transactions')
-          .select('id')
-          .eq('user_id', user.id).eq('tipo', 'gasto')
-          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-        if (matches && matches.length > 0) {
-          await supabase.from('transactions').update({
-            category_id: catObj.id,
-            subcategory_id: subcatObj?.id || null,
-            estado: 'identificado',
-          }).in('id', matches.map(m => m.id))
-          showToast(`Regla creada y aplicada a ${matches.length} movimiento(s) existente(s).`)
-          onRefresh?.()
-        } else {
-          showToast('Regla creada.')
-        }
-      }
-    } else if (newAlias.tipo === 'hijo') {
-      const { data: matches } = await supabase.from('transactions')
-        .select('id')
-        .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-      if (matches && matches.length > 0) {
-        await supabase.from('transactions').update({ tag: newAlias.valor }).in('id', matches.map(m => m.id))
-        showToast(`Regla creada y aplicada a ${matches.length} movimiento(s) existente(s).`)
-        onRefresh?.()
-      } else {
-        showToast('Regla creada.')
-      }
-    } else {
-      showToast('Regla creada.')
-    }
+    const actualizados = await applyAliasToExisting({ alias: aliasKeyword, tipo: newAlias.tipo, valor: valorFinal }, user)
+    showToast(actualizados > 0 ? `Regla creada y aplicada a ${actualizados} movimiento(s) existente(s).` : 'Regla creada.')
+    if (actualizados > 0) onRefresh?.()
 
     setNewAlias({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
     fetchUserAliases()
+  }
+
+  const handleApplyAllAliases = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
+    if (aplicables.length === 0) { showToast('No hay reglas de categoría o hijo para aplicar.', 'error'); return }
+    showToast('Aplicando reglas a movimientos existentes...')
+    let total = 0
+    for (const a of aplicables) {
+      total += await applyAliasToExisting(a, user)
+    }
+    showToast(total > 0 ? `Reglas aplicadas a ${total} movimiento(s).` : 'No se encontraron movimientos que coincidan con tus reglas.')
+    if (total > 0) onRefresh?.()
   }
 
   const handleDeleteAlias = async (id) => {
@@ -441,9 +454,15 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         <div style={s.overlay}>
           <div style={{ ...s.modal, maxWidth: '580px' }}>
             <h3 style={s.modalTitle}>📋 Reglas de clasificación</h3>
-            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
+            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 12px 0' }}>
               Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
             </p>
+            {(userAliases || []).some(a => a.tipo === 'categoria' || a.tipo === 'hijo') && (
+              <button
+                onClick={handleApplyAllAliases}
+                style={{ ...s.actionBtn, background: 'none', border: `1.5px solid ${p}`, color: p, borderRadius: '8px', padding: '7px 12px', fontSize: '12px', fontWeight: '500', marginBottom: '14px', cursor: 'pointer' }}
+              >🔄 Aplicar todas las reglas a movimientos existentes</button>
+            )}
             <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
               {(userAliases || []).length === 0 ? (
                 <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas. Agregá la primera abajo.</p>
