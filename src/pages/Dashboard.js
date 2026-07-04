@@ -1159,6 +1159,34 @@ export default function Dashboard() {
     return { tarjeta_detectada: 'Mercado Pago', tipo_documento: 'banco', transacciones: rows, contexto_detectado: [], periodo }
   }
 
+  // Re-aplica reglas aprendidas (user_rules) y alias del usuario a las transacciones que
+  // devolvió la IA (o el parser directo), sin depender de que la IA haya obedecido el prompt.
+  // Prioridad: reglas aprendidas > alias de categoría/hijo.
+  const aplicarReglasYAlias = (transacciones, rules, aliasesList) => {
+    return (transacciones || []).map(t => {
+      const descNorm = ((t.descripcion || t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().trim()
+      const descUpper = descNorm.toUpperCase()
+      const ruleMatch = (rules || []).find(r => {
+        const rNorm = (r.texto_original || '').toLowerCase().trim()
+        return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
+      })
+      if (ruleMatch) {
+        return { ...t, categoria_sugerida: ruleMatch.categoria, subcategoria_sugerida: ruleMatch.subcategoria }
+      }
+      const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
+      const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
+      if (!catAlias && !hijoAlias) return t
+      const updated = { ...t }
+      if (catAlias) {
+        const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
+        updated.categoria_sugerida = cat
+        updated.subcategoria_sugerida = subcat || null
+      }
+      if (hijoAlias) updated.hijo = hijoAlias.valor
+      return updated
+    })
+  }
+
   const handleUploadPDF = async () => {
     if (!archivo) return
     setStep('processing')
@@ -1199,17 +1227,12 @@ export default function Dashboard() {
         result = tryDirectParsePDF(pdfText)
         if (!result) {
           result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
-        } else if (rules && rules.length > 0) {
-          // Apply existing user_rules to pre-classify recognized descriptions
-          result.transacciones = result.transacciones.map(t => {
-            const descNorm = (t.descripcion || '').toLowerCase().trim()
-            const matched = rules.find(r => {
-              const rNorm = (r.texto_original || '').toLowerCase().trim()
-              return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
-            })
-            return matched ? { ...t, categoria_sugerida: matched.categoria, subcategoria_sugerida: matched.subcategoria } : t
-          })
         }
+      }
+      // Re-aplica reglas/alias por código (no depende de que la IA haya obedecido el prompt),
+      // así las reglas que el cliente ya creó se usan solas en cada resumen nuevo.
+      if (result?.transacciones) {
+        result.transacciones = aplicarReglasYAlias(result.transacciones, rules, userAliases)
       }
       setStatementData(result)
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
