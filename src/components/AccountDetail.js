@@ -1440,8 +1440,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <thead>
             <tr>
               {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : undefined)}
-              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
               {allAccounts && thSortable('Cuenta', 'cuenta', isMobile)}
+              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
               {thSortable('Categoría', 'categoria', isMobile)}
               {thSortable('Subcategoría', 'subcategoria', isMobile)}
               {thSortable('Cuotas', 'cuotas', isMobile)}
