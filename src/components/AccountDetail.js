@@ -608,6 +608,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       }
       else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
       else if (sortKey === 'moneda') { valA = a.moneda || ''; valB = b.moneda || '' }
+      else if (sortKey === 'cuenta') { valA = (a.accounts?.nombre || '').toLowerCase(); valB = (b.accounts?.nombre || '').toLowerCase() }
       if (valA < valB) return sortDir === 'asc' ? -1 : 1
       if (valA > valB) return sortDir === 'asc' ? 1 : -1
       return 0
@@ -1380,6 +1381,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <tr>
                 <th style={styles.th}>Fecha</th>
                 <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Detalle original</th>
+                {allAccounts && <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>}
                 <th style={styles.th}>Nombre</th>
                 <th style={styles.th}>Categoría</th>
                 <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
@@ -1392,6 +1394,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
+                  {allAccounts && (
+                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                      <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+                    </td>
+                  )}
                   {editingTx === tx.id ? (tx.tipo === 'ingreso' ? renderEditCellsIngreso() : renderEditCells()) : (
                     <>
                       <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
@@ -1434,6 +1441,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <tr>
               {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : undefined)}
               {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
+              {allAccounts && thSortable('Cuenta', 'cuenta', isMobile)}
               {thSortable('Categoría', 'categoria', isMobile)}
               {thSortable('Subcategoría', 'subcategoria', isMobile)}
               {thSortable('Cuotas', 'cuotas', isMobile)}
@@ -1448,6 +1456,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <td style={{...styles.td, whiteSpace: 'nowrap'}}>
                   {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
                 </td>
+                {allAccounts && (
+                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                    <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+                  </td>
+                )}
                 {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
                   <>
                     <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
@@ -1527,6 +1540,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <tr>
                     <th style={styles.th}>Fecha</th>
                     <th style={styles.th}>Nombre</th>
+                    {allAccounts && <th style={styles.th}>Cuenta</th>}
                     <th style={styles.th}>Monto</th>
                   </tr>
                 </thead>
@@ -1535,6 +1549,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <tr key={tx.id} style={{...styles.tr, opacity: 0.6}}>
                       <td style={{...styles.td, whiteSpace:'nowrap'}}>{formatFechaCorta(tx.fecha)}</td>
                       <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                      {allAccounts && <td style={styles.td}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>}
                       <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}}>
                         {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
                       </td>
