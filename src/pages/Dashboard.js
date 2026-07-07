@@ -2327,7 +2327,7 @@ export default function Dashboard() {
               const excedido = g.key === 'gastos' && metaNum > 0 && g.valor > metaNum
               const barColor = g.key === 'gastos'
                 ? (excedido ? '#c0392b' : pct > 80 ? '#c07a2b' : '#3a7d44')
-                : (pct >= 100 ? '#3a7d44' : '#5C4F5C')
+                : '#3a7d44'
               return (
                 <div key={g.key} style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
