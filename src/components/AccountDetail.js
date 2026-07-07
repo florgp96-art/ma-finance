@@ -1404,10 +1404,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         )}
       </div>
 
-      {!esVistaIngresos && sinIdentificar.length > 0 && (
+      {sinIdentificar.length > 0 && (
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
-          <p style={styles.tableHint}>Editá el nombre, categoría y subcategoría de estos gastos</p>
+          <p style={styles.tableHint}>{esVistaIngresos ? 'Asignale una categoría a estos ingresos' : 'Editá el nombre, categoría y subcategoría de estos gastos'}</p>
           <div style={{ overflowX: 'auto', width: '100%' }}>
           <table style={styles.table}>
             <thead>
