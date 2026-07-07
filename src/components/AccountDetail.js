@@ -389,6 +389,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [selectedMeses, setSelectedMeses] = useState([])
 const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
+  const [filtroCuenta, setFiltroCuenta] = useState('')
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -405,6 +406,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  useEffect(() => { setFiltroCuenta('') }, [account, allAccounts])
 
   useEffect(() => {
     if (allAccounts && accounts && accounts.length > 0) fetchAllData()
@@ -834,9 +837,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     )
   }
 
-  const txFiltradas = selectedMeses.length > 0
+  const txFiltradas = (selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
     : transactions
+  ).filter(t => !filtroCuenta || t.account_id === filtroCuenta)
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
   const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
 
@@ -1365,10 +1369,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
 
       {/* Buscador */}
-      <div style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: '24px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <input
           style={{
-            width: '100%', padding: '10px 14px', borderRadius: '12px',
+            flex: '1 1 260px', padding: '10px 14px', borderRadius: '12px',
             border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
             boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
           }}
@@ -1376,6 +1380,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           value={searchQuery || ''}
           onChange={e => onSearchChange && onSearchChange(e.target.value)}
         />
+        {allAccounts && (
+          <select
+            style={{
+              flex: '0 1 200px', padding: '10px 14px', borderRadius: '12px',
+              border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
+              boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
+            }}
+            value={filtroCuenta}
+            onChange={e => setFiltroCuenta(e.target.value)}
+          >
+            <option value="">Todas las cuentas</option>
+            {(accounts || []).map(a => (
+              <option key={a.id} value={a.id}>{a.nombre}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {!esVistaIngresos && sinIdentificar.length > 0 && (
