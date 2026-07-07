@@ -106,7 +106,6 @@ export default function Dashboard() {
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '' })
-  const [ingreso, setIngreso] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: '' })
 
   // Widget ahorro — persiste en localStorage
   const [ahorro, setAhorro] = useState(() => {
@@ -376,37 +375,6 @@ export default function Dashboard() {
   }
 
 
-  const handleGuardarEfectivo = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria)
-    const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
-
-    await supabase.from('transactions').insert({
-      user_id: user.id,
-      account_id: efectivo.cuenta || cuentaEfectivoId,
-      fecha: efectivo.fecha,
-      nombre: efectivo.nombre,
-      detalle: efectivo.nota || efectivo.nombre,
-      monto: parseFloat(efectivo.monto),
-      moneda: efectivo.moneda,
-      tipo: tipoMovimiento,
-      category_id: catObj?.id || null,
-      subcategory_id: subcatObj?.id || null,
-      tag: efectivo.hijo || null,
-      estado: catObj ? 'identificado' : 'a_identificar',
-      es_manual: true,
-      cuotas_total: 1,
-      cuota_numero: 1,
-    })
-
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
-    setShowMovimiento(false)
-    setRefreshKey(k => k + 1)
-    setLoading(false)
-  }
-
   const getOrCreateIngresosAccount = async (user) => {
     // Primero buscar en el estado local
     let acc = accounts.find(a => a.tipo === 'ingreso')
@@ -429,32 +397,47 @@ export default function Dashboard() {
     return data || []
   }
 
-  const handleGuardarIngreso = async (e) => {
+  const handleGuardarMovimiento = async (e) => {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const acc = await getOrCreateIngresosAccount(user)
-    if (!acc) { setLoading(false); return }
+    const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)
+    const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
+
+    let accountId = efectivo.cuenta || cuentaEfectivoId
+    if (tipoMovimiento === 'ingreso') {
+      const acc = await getOrCreateIngresosAccount(user)
+      if (!acc) { setLoading(false); return }
+      accountId = acc.id
+    }
+
     await supabase.from('transactions').insert({
       user_id: user.id,
-      account_id: acc.id,
-      fecha: ingreso.fecha,
-      nombre: ingreso.nombre,
-      detalle: ingreso.nombre,
-      monto: parseFloat(ingreso.monto),
-      moneda: ingreso.moneda,
-      tipo: 'ingreso',
-      tag: ingreso.tipo || null,
-      estado: 'identificado',
+      account_id: accountId,
+      fecha: efectivo.fecha,
+      nombre: efectivo.nombre,
+      detalle: efectivo.nota || efectivo.nombre,
+      monto: parseFloat(efectivo.monto),
+      moneda: efectivo.moneda,
+      tipo: tipoMovimiento,
+      category_id: catObj?.id || null,
+      subcategory_id: subcatObj?.id || null,
+      // Para ingreso conservamos el tag = subcategoría/categoría elegida: varias
+      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag.
+      tag: tipoMovimiento === 'ingreso' ? (subcatObj?.nombre || catObj?.nombre || null) : (efectivo.hijo || null),
+      estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
     })
-    setIngreso({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: ingreso.tipo })
+
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
-    fetchAccounts()
-    showToast('Ingreso registrado.')
+    if (tipoMovimiento === 'ingreso') {
+      fetchAccounts()
+      showToast('Ingreso registrado.')
+    }
     setLoading(false)
   }
 
@@ -3514,7 +3497,7 @@ export default function Dashboard() {
                 { v: 'ingreso', label: '💰 Ingreso' },
                 { v: 'neutro', label: '🔄 Neutro' },
               ].map(opt => (
-                <button key={opt.v} type="button" onClick={() => setTipoMovimiento(opt.v)}
+                <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '' })) }}
                   style={{
                     flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
                     fontFamily: '"Montserrat", sans-serif',
@@ -3528,86 +3511,37 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {tipoMovimiento === 'ingreso' ? (
-              <form onSubmit={handleGuardarIngreso}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Fecha <span style={{ color: '#c0392b' }}>*</span></label>
-                    <input style={styles.input} type="date" value={ingreso.fecha}
-                      onChange={e => setIngreso({ ...ingreso, fecha: e.target.value })} required />
-                  </div>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Moneda <span style={{ color: '#c0392b' }}>*</span></label>
-                    <select style={styles.input} value={ingreso.moneda}
-                      onChange={e => setIngreso({ ...ingreso, moneda: e.target.value })}>
-                      <option value="ARS">$ ARS</option>
-                      <option value="USD">U$S USD</option>
-                      <option value="EUR">€ EUR</option>
-                    </select>
-                  </div>
+            <form onSubmit={handleGuardarMovimiento}>
+              <p style={{fontSize:'12px', color:'#8e8e93', margin:'0 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
+                  <input style={styles.input} type="date" value={efectivo.fecha}
+                    onChange={e => setEfectivo({...efectivo, fecha: e.target.value})} required />
                 </div>
                 <div style={styles.field}>
-                  <label style={styles.label}>Categoría <span style={{ fontSize: '11px', color: '#8e8e93' }}>(opcional)</span></label>
-                  <input style={styles.input} type="text" list="ingreso-tipo-options" value={ingreso.tipo}
-                    onChange={e => setIngreso({ ...ingreso, tipo: e.target.value })}
-                    placeholder="Ej: Sueldo, Freelance, Cuota alimentaria..." />
-                  <datalist id="ingreso-tipo-options">
-                    {[...new Set([
-                      ...subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === 'Ingresos')?.id).map(s => s.nombre),
-                      ...ingresoTags
-                    ])].sort().map(opt => <option key={opt} value={opt} />)}
-                  </datalist>
+                  <label style={styles.label}>Moneda <span style={{color:'#c0392b'}}>*</span></label>
+                  <select style={styles.input} value={efectivo.moneda}
+                    onChange={e => setEfectivo({...efectivo, moneda: e.target.value})}>
+                    <option value="ARS">$ ARS</option>
+                    <option value="USD">U$S USD</option>
+                    <option value="EUR">€ EUR</option>
+                  </select>
                 </div>
-                <div style={styles.field}>
-                  <label style={styles.label}>Descripción <span style={{ color: '#c0392b' }}>*</span></label>
-                  <input style={styles.input} type="text" value={ingreso.nombre}
-                    onChange={e => setIngreso({ ...ingreso, nombre: e.target.value })}
-                    placeholder="Ej: Sueldo mayo, pago cliente X..." required />
-                </div>
-                <div style={styles.field}>
-                  <label style={styles.label}>Monto <span style={{ color: '#c0392b' }}>*</span></label>
-                  <input style={styles.input} type="number" step="0.01" min="0" value={ingreso.monto}
-                    onChange={e => setIngreso({ ...ingreso, monto: e.target.value })}
-                    placeholder="0.00" required />
-                </div>
-                <div style={styles.modalButtons}>
-                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMovimiento(false)}>Cancelar</button>
-                  <button type="submit" style={styles.saveBtn} disabled={loading}>
-                    {loading ? 'Guardando...' : 'Guardar ingreso'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleGuardarEfectivo}>
-                <p style={{fontSize:'12px', color:'#8e8e93', margin:'0 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
-                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
-                    <input style={styles.input} type="date" value={efectivo.fecha}
-                      onChange={e => setEfectivo({...efectivo, fecha: e.target.value})} required />
-                  </div>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Moneda <span style={{color:'#c0392b'}}>*</span></label>
-                    <select style={styles.input} value={efectivo.moneda}
-                      onChange={e => setEfectivo({...efectivo, moneda: e.target.value})}>
-                      <option value="ARS">$ ARS</option>
-                      <option value="USD">U$S USD</option>
-                      <option value="EUR">€ EUR</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={styles.field}>
-                  <label style={styles.label}>Descripción <span style={{color:'#c0392b'}}>*</span></label>
-                  <input style={styles.input} type="text" value={efectivo.nombre}
-                    onChange={e => setEfectivo({...efectivo, nombre: e.target.value})}
-                    placeholder={tipoMovimiento === 'neutro' ? 'Ej: Pago tarjeta desde cuenta corriente...' : 'Ej: Almuerzo, taxi, mercado...'} required />
-                </div>
-                <div style={styles.field}>
-                  <label style={styles.label}>Monto <span style={{color:'#c0392b'}}>*</span></label>
-                  <input style={styles.input} type="number" step="0.01" value={efectivo.monto}
-                    onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
-                    placeholder="0.00" required />
-                </div>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Descripción <span style={{color:'#c0392b'}}>*</span></label>
+                <input style={styles.input} type="text" value={efectivo.nombre}
+                  onChange={e => setEfectivo({...efectivo, nombre: e.target.value})}
+                  placeholder={tipoMovimiento === 'neutro' ? 'Ej: Pago tarjeta desde cuenta corriente...' : tipoMovimiento === 'ingreso' ? 'Ej: Sueldo mayo, pago cliente X...' : 'Ej: Almuerzo, taxi, mercado...'} required />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Monto <span style={{color:'#c0392b'}}>*</span></label>
+                <input style={styles.input} type="number" step="0.01" value={efectivo.monto}
+                  onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
+                  placeholder="0.00" required />
+              </div>
+              {tipoMovimiento !== 'ingreso' && (
                 <div style={styles.field}>
                   <label style={styles.label}>Cuenta <span style={{color:'#c0392b'}}>*</span></label>
                   <select style={styles.input} value={efectivo.cuenta || cuentaEfectivoId || ''}
@@ -3617,51 +3551,53 @@ export default function Dashboard() {
                     ))}
                   </select>
                 </div>
-                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
-                    <select style={styles.input} value={efectivo.categoria}
-                      onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
-                      <option value="">— Elegir —</option>
-                      {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    </select>
-                  </div>
-                  <div style={styles.field}>
-                    <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
-                    <select style={styles.input} value={efectivo.subcategoria}
-                      onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
-                      disabled={!efectivo.categoria}>
-                      <option value="">— Elegir —</option>
-                      {subcategoriasDB
-                        .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria)?.id)
-                        .map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
-                    </select>
-                  </div>
+              )}
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                <div style={styles.field}>
+                  <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <select style={styles.input} value={efectivo.categoria}
+                    onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
+                    <option value="">— Elegir —</option>
+                    {categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
                 </div>
-                {childrenDB.length > 0 && (
-                  <div style={styles.field}>
-                    <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
-                    <select style={styles.input} value={efectivo.hijo}
-                      onChange={e => setEfectivo({...efectivo, hijo: e.target.value})}>
-                      <option value="">— Ninguno —</option>
-                      {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    </select>
-                  </div>
-                )}
+                <div style={styles.field}>
+                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <select style={styles.input} value={efectivo.subcategoria}
+                    onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
+                    disabled={!efectivo.categoria}>
+                    <option value="">— Elegir —</option>
+                    {subcategoriasDB
+                      .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id)
+                      .map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                  </select>
+                </div>
+              </div>
+              {tipoMovimiento !== 'ingreso' && childrenDB.length > 0 && (
+                <div style={styles.field}>
+                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <select style={styles.input} value={efectivo.hijo}
+                    onChange={e => setEfectivo({...efectivo, hijo: e.target.value})}>
+                    <option value="">— Ninguno —</option>
+                    {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              {tipoMovimiento !== 'ingreso' && (
                 <div style={styles.field}>
                   <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <input style={styles.input} type="text" value={efectivo.nota}
                     onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
                     placeholder="Detalles adicionales..." />
                 </div>
-                <div style={styles.modalButtons}>
-                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMovimiento(false)}>Cancelar</button>
-                  <button type="submit" style={styles.saveBtn} disabled={loading}>
-                    {loading ? 'Guardando...' : tipoMovimiento === 'neutro' ? 'Guardar movimiento' : 'Guardar gasto'}
-                  </button>
-                </div>
-              </form>
-            )}
+              )}
+              <div style={styles.modalButtons}>
+                <button type="button" style={styles.cancelBtn} onClick={() => setShowMovimiento(false)}>Cancelar</button>
+                <button type="submit" style={styles.saveBtn} disabled={loading}>
+                  {loading ? 'Guardando...' : tipoMovimiento === 'ingreso' ? 'Guardar ingreso' : tipoMovimiento === 'neutro' ? 'Guardar movimiento' : 'Guardar gasto'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

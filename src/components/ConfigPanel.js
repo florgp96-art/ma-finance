@@ -32,6 +32,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Categorías form
   const [newCatNombre, setNewCatNombre] = useState('')
+  const [newCatTipo, setNewCatTipo] = useState('gasto')
   const [newTagIngreso, setNewTagIngreso] = useState('')
   const [editingCat, setEditingCat] = useState(null)
   const [editingCatNombre, setEditingCatNombre] = useState('')
@@ -113,8 +114,9 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     e.preventDefault()
     if (!newCatNombre.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('categories').insert({ user_id: user.id, nombre: newCatNombre.trim(), orden: (categoriasDB?.length || 0) + 1 })
+    await supabase.from('categories').insert({ user_id: user.id, nombre: newCatNombre.trim(), tipo: newCatTipo, orden: (categoriasDB?.length || 0) + 1 })
     setNewCatNombre('')
+    setNewCatTipo('gasto')
     fetchCategorias()
   }
 
@@ -445,6 +447,12 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                     ) : (
                       <>
                         <span style={{ fontWeight: '500', fontSize: '14px', flex: 1, color: txt }}>{cat.nombre}</span>
+                        <span style={{
+                          fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.03em',
+                          padding: '2px 7px', borderRadius: '8px',
+                          backgroundColor: (cat.tipo || 'gasto') === 'ingreso' ? '#e8f5e9' : (cat.tipo || 'gasto') === 'neutro' ? '#f0f0f0' : (darkMode ? '#3A333A' : '#EDE8EC'),
+                          color: (cat.tipo || 'gasto') === 'ingreso' ? '#2e7d32' : (cat.tipo || 'gasto') === 'neutro' ? '#8e8e93' : '#5C4F5C',
+                        }}>{(cat.tipo || 'gasto') === 'ingreso' ? 'Ingreso' : (cat.tipo || 'gasto') === 'neutro' ? 'Neutro' : 'Gasto'}</span>
                         <button style={s.actionBtn} onClick={() => { setEditingCat(cat.id); setEditingCatNombre(cat.nombre) }}>✏️</button>
                         <button style={s.actionBtn} onClick={() => handleDeleteCategoria(cat)}>🗑️</button>
                       </>
@@ -486,6 +494,11 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 value={newCatNombre}
                 onChange={e => setNewCatNombre(e.target.value)}
               />
+              <select style={{ ...s.input, flex: 'none', width: '110px' }} value={newCatTipo} onChange={e => setNewCatTipo(e.target.value)}>
+                <option value="gasto">Gasto</option>
+                <option value="ingreso">Ingreso</option>
+                <option value="neutro">Neutro</option>
+              </select>
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
             </form>
             {/* Sección: Tags de ingresos */}
