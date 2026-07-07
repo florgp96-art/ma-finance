@@ -2231,7 +2231,7 @@ export default function Dashboard() {
               {isMobile ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
                   <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
-                  {(rateActivo || eurValor) && (
+                  {(rateActivo || eurValor || vencList.length > 0) && (
                     <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
                       {rateActivo && (
                         <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
@@ -2245,6 +2245,12 @@ export default function Dashboard() {
                           $ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}
                         </p>
                       )}
+                      {vencList.length > 0 && (
+                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>VENC</span>
+                          {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2252,6 +2258,12 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start' }}>
                   {tcChip('Dólar', rateActivo, 'U$S 1')}
                   {tcChip('Euro', eurValor, '€1')}
+                  <div style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
+                    <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vencimientos</p>
+                    <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
+                      {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
@@ -2811,7 +2823,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>

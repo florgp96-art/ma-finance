@@ -382,6 +382,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
+  const [editCuenta, setEditCuenta] = useState('')
   const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
@@ -438,7 +439,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const [txs, catRes, stmtRes] = await Promise.all([
       fetchAllPages(() =>
         supabase.from('transactions')
-          .select('*, categories(nombre, color), subcategories(nombre), children(id, nombre)')
+          .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
           .eq('account_id', account.id)
           .order('fecha', { ascending: false })
       ),
@@ -518,11 +519,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
     const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
+    const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
+    const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
     if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
-      const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado' }
+      const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange }
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       await supabase.from('transactions').update(upd).eq('id', tx.id)
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -536,6 +539,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado',
       tag: editTag || null,
+      ...accountChange,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
 
@@ -567,6 +571,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       estado: 'identificado',
       categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
       subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+      ...accountChange,
+      ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     } : t))
     setEditingTx(null)
@@ -577,6 +583,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditNombre(tx.nombre || tx.detalle)
     setEditCategoria(tx.categories?.nombre || 'A Identificar')
     setEditSubcategoria(tx.subcategories?.nombre || '')
+    setEditCuenta(tx.account_id || '')
     const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
     setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
   }
@@ -1381,7 +1388,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <tr>
                 <th style={styles.th}>Fecha</th>
                 <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Detalle original</th>
-                {allAccounts && <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>}
+                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>
                 <th style={styles.th}>Nombre</th>
                 <th style={styles.th}>Categoría</th>
                 <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
@@ -1394,11 +1401,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <tr key={tx.id} style={styles.trUnknown}>
                   <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
-                  {allAccounts && (
-                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                    {editingTx === tx.id ? (
+                      <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
+                        {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                          <option key={a.id} value={a.id}>{a.nombre}</option>
+                        ))}
+                      </select>
+                    ) : (
                       <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                    </td>
-                  )}
+                    )}
+                  </td>
                   {editingTx === tx.id ? (tx.tipo === 'ingreso' ? renderEditCellsIngreso() : renderEditCells()) : (
                     <>
                       <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
@@ -1440,7 +1453,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <thead>
             <tr>
               {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : undefined)}
-              {allAccounts && thSortable('Cuenta', 'cuenta', isMobile)}
+              {thSortable('Cuenta', 'cuenta', isMobile)}
               {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
               {thSortable('Categoría', 'categoria', isMobile)}
               {thSortable('Subcategoría', 'subcategoria', isMobile)}
@@ -1456,11 +1469,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <td style={{...styles.td, whiteSpace: 'nowrap'}}>
                   {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
                 </td>
-                {allAccounts && (
-                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                  {editingTx === tx.id ? (
+                    <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
+                      {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                        <option key={a.id} value={a.id}>{a.nombre}</option>
+                      ))}
+                    </select>
+                  ) : (
                     <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                  </td>
-                )}
+                  )}
+                </td>
                 {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
                   <>
                     <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
@@ -1540,19 +1559,50 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <tr>
                     <th style={styles.th}>Fecha</th>
                     <th style={styles.th}>Nombre</th>
-                    {allAccounts && <th style={styles.th}>Cuenta</th>}
+                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Categoría</th>
+                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
+                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>
                     <th style={styles.th}>Monto</th>
+                    <th style={styles.th}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {txNeutras.map(tx => (
-                    <tr key={tx.id} style={{...styles.tr, opacity: 0.6}}>
+                    <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
                       <td style={{...styles.td, whiteSpace:'nowrap'}}>{formatFechaCorta(tx.fecha)}</td>
-                      <td style={styles.td}>{tx.nombre || tx.detalle}</td>
-                      {allAccounts && <td style={styles.td}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>}
+                      {editingTx === tx.id ? renderEditCells() : (
+                        <>
+                          <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                            <span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span>
+                          </td>
+                          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                            <span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span>
+                          </td>
+                        </>
+                      )}
+                      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+                        {editingTx === tx.id ? (
+                          <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
+                            {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                              <option key={a.id} value={a.id}>{a.nombre}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+                        )}
+                      </td>
                       <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}}>
                         {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
                       </td>
+                      {editingTx === tx.id ? renderEditActions(tx) : (
+                        <td style={styles.td}>
+                          <div style={{display:'flex', gap:'4px'}}>
+                            <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                            <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
