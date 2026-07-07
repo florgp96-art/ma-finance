@@ -101,14 +101,11 @@ export default function Dashboard() {
   // Búsqueda
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Modal gasto en efectivo
-  const [showEfectivo, setShowEfectivo] = useState(false)
+  // Modal cargar movimiento (gasto / ingreso / neutro)
+  const [showMovimiento, setShowMovimiento] = useState(false)
+  const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '' })
-
-  // Modal ingresos
-  const [showIngreso, setShowIngreso] = useState(false)
-  const [ingreso, setIngreso] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: '' })
 
   // Widget ahorro — persiste en localStorage
   const [ahorro, setAhorro] = useState(() => {
@@ -122,6 +119,11 @@ export default function Dashboard() {
   })
   const [showAddCuentaAhorro, setShowAddCuentaAhorro] = useState(false)
   const [newCuentaAhorro, setNewCuentaAhorro] = useState({ cuenta: '', monto: '', moneda: 'ARS' })
+
+  // Metas del mes: ingresos objetivo y límite de egresos — persiste en localStorage
+  const [metaIngresos, setMetaIngresos] = useState(() => localStorage.getItem('ma_meta_ingresos') || '')
+  const [limiteEgresos, setLimiteEgresos] = useState(() => localStorage.getItem('ma_limite_egresos') || '')
+  const [metasMesActual, setMetasMesActual] = useState({ ingresos: 0, gastos: 0 })
 
   // Categorías
 
@@ -204,6 +206,39 @@ export default function Dashboard() {
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
   useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {} }, [ahorro])
   useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {} }, [cuentasAhorro])
+  useEffect(() => { try { localStorage.setItem('ma_meta_ingresos', metaIngresos) } catch {} }, [metaIngresos])
+  useEffect(() => { try { localStorage.setItem('ma_limite_egresos', limiteEgresos) } catch {} }, [limiteEgresos])
+
+  // Metas del mes: trae ingresos y gastos del mes en curso (todas las cuentas) para las barras de progreso
+  useEffect(() => {
+    let cancelado = false
+    const fetchMetasMes = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const now = new Date()
+      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const nextMes = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10)
+      const { data } = await supabase.from('transactions')
+        .select('monto, moneda, tipo')
+        .eq('user_id', user.id)
+        .in('tipo', ['ingreso', 'gasto'])
+        .gte('fecha', `${mesActual}-01`)
+        .lt('fecha', nextMes)
+      if (cancelado) return
+      const tc = parseFloat(tipoCambio) || 0
+      const tcE = parseFloat(tipoCambioEUR) || 0
+      let ingresos = 0, gastos = 0
+      ;(data || []).forEach(t => {
+        const raw = Math.abs(Number(t.monto) || 0)
+        const valArs = t.moneda === 'USD' ? raw * tc : t.moneda === 'EUR' ? raw * tcE : raw
+        if (t.tipo === 'ingreso') ingresos += valArs
+        else gastos += valArs
+      })
+      setMetasMesActual({ ingresos, gastos })
+    }
+    fetchMetasMes()
+    return () => { cancelado = true }
+  }, [refreshKey, tipoCambio, tipoCambioEUR])
 
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
@@ -378,37 +413,6 @@ export default function Dashboard() {
   }
 
 
-  const handleGuardarEfectivo = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria)
-    const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
-
-    await supabase.from('transactions').insert({
-      user_id: user.id,
-      account_id: efectivo.cuenta || cuentaEfectivoId,
-      fecha: efectivo.fecha,
-      nombre: efectivo.nombre,
-      detalle: efectivo.nota || efectivo.nombre,
-      monto: parseFloat(efectivo.monto),
-      moneda: efectivo.moneda,
-      tipo: 'gasto',
-      category_id: catObj?.id || null,
-      subcategory_id: subcatObj?.id || null,
-      tag: efectivo.hijo || null,
-      estado: catObj ? 'identificado' : 'a_identificar',
-      es_manual: true,
-      cuotas_total: 1,
-      cuota_numero: 1,
-    })
-
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
-    setShowEfectivo(false)
-    setRefreshKey(k => k + 1)
-    setLoading(false)
-  }
-
   const getOrCreateIngresosAccount = async (user) => {
     // Primero buscar en el estado local
     let acc = accounts.find(a => a.tipo === 'ingreso')
@@ -431,32 +435,47 @@ export default function Dashboard() {
     return data || []
   }
 
-  const handleGuardarIngreso = async (e) => {
+  const handleGuardarMovimiento = async (e) => {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const acc = await getOrCreateIngresosAccount(user)
-    if (!acc) { setLoading(false); return }
+    const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)
+    const subcatObj = subcategoriasDB.find(s => s.nombre === efectivo.subcategoria && s.category_id === catObj?.id)
+
+    let accountId = efectivo.cuenta || cuentaEfectivoId
+    if (tipoMovimiento === 'ingreso') {
+      const acc = await getOrCreateIngresosAccount(user)
+      if (!acc) { setLoading(false); return }
+      accountId = acc.id
+    }
+
     await supabase.from('transactions').insert({
       user_id: user.id,
-      account_id: acc.id,
-      fecha: ingreso.fecha,
-      nombre: ingreso.nombre,
-      detalle: ingreso.nombre,
-      monto: parseFloat(ingreso.monto),
-      moneda: ingreso.moneda,
-      tipo: 'ingreso',
-      tag: ingreso.tipo || null,
-      estado: 'identificado',
+      account_id: accountId,
+      fecha: efectivo.fecha,
+      nombre: efectivo.nombre,
+      detalle: efectivo.nota || efectivo.nombre,
+      monto: parseFloat(efectivo.monto),
+      moneda: efectivo.moneda,
+      tipo: tipoMovimiento,
+      category_id: catObj?.id || null,
+      subcategory_id: subcatObj?.id || null,
+      // Para ingreso conservamos el tag = subcategoría/categoría elegida: varias
+      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag.
+      tag: tipoMovimiento === 'ingreso' ? (subcatObj?.nombre || catObj?.nombre || null) : (efectivo.hijo || null),
+      estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
     })
-    setIngreso({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', tipo: ingreso.tipo })
-    setShowIngreso(false)
+
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
+    setShowMovimiento(false)
     setRefreshKey(k => k + 1)
-    fetchAccounts()
-    showToast('Ingreso registrado.')
+    if (tipoMovimiento === 'ingreso') {
+      fetchAccounts()
+      showToast('Ingreso registrado.')
+    }
     setLoading(false)
   }
 
@@ -2284,6 +2303,52 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Metas del mes: ingresos objetivo y límite de egresos */}
+        <div style={{ padding: isMobile ? '0 12px' : isTablet ? '0 16px' : '0 32px', marginBottom: isMobile ? '12px' : '16px' }}>
+          <div style={{ ...styles.section, padding: isMobile ? '14px 16px' : '18px 24px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '18px' : '32px' }}>
+            {[
+              { key: 'ingresos', label: '💰 Meta de ingresos', valor: metasMesActual.ingresos, meta: metaIngresos, setMeta: setMetaIngresos },
+              { key: 'gastos', label: '📉 Límite de egresos', valor: metasMesActual.gastos, meta: limiteEgresos, setMeta: setLimiteEgresos },
+            ].map(g => {
+              const metaNum = parseFloat(g.meta) || 0
+              const pct = metaNum > 0 ? Math.min(100, Math.round((g.valor / metaNum) * 100)) : 0
+              const excedido = g.key === 'gastos' && metaNum > 0 && g.valor > metaNum
+              const barColor = g.key === 'gastos'
+                ? (excedido ? '#c0392b' : pct > 80 ? '#c07a2b' : '#3a7d44')
+                : (pct >= 100 ? '#3a7d44' : '#5C4F5C')
+              return (
+                <div key={g.key} style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.03em', color: darkMode ? '#C0B0C0' : '#6e6e73' }}>
+                      {g.label}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Meta $</span>
+                      <input
+                        type="number" value={g.meta} onChange={e => g.setMeta(e.target.value)}
+                        placeholder="0"
+                        style={{
+                          width: isMobile ? '90px' : '100px', padding: '4px 8px', borderRadius: '6px',
+                          border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                          background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                          fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ height: '10px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, transition: 'width 0.3s ease', borderRadius: '6px' }} />
+                  </div>
+                  <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '6px 0 0' }}>
+                    $ {formatMonto(Math.round(g.valor))}{metaNum > 0 ? ` de $ ${formatMonto(Math.round(metaNum))} (${pct}%)` : ' este mes — definí una meta arriba'}
+                    {excedido && <span style={{ color: '#c0392b', fontWeight: '600' }}> · ¡Superaste el límite!</span>}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
@@ -2414,11 +2479,7 @@ export default function Dashboard() {
 
             {/* Zona bottom fija: botones de acción — siempre visible */}
             <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-              {/* Agregar ingreso */}
-              <button style={styles.sidebarBtnPrimary} onClick={() => setShowIngreso(true)}>
-                + Agregar ingreso
-              </button>
-              {/* Agregar gasto */}
+              {/* Cargar movimiento (gasto / ingreso / neutro) */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
                 let { data: existentes } = await supabase.from('accounts')
@@ -2432,9 +2493,10 @@ export default function Dashboard() {
                 }
                 setCuentaEfectivoId(ce.id)
                 setEfectivo(prev => ({ ...prev, cuenta: ce.id, hijo: '' }))
-                setShowEfectivo(true)
+                setTipoMovimiento('gasto')
+                setShowMovimiento(true)
               }}>
-                + Agregar gasto
+                + Cargar movimiento
               </button>
 
               {/* Importar */}
@@ -2749,7 +2811,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => setShowIngreso(true) : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
+                <AccountDetail account={selectedAccount} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -3509,12 +3571,32 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showEfectivo && (
+      {showMovimiento && (
         <div style={styles.overlay}>
-          <div style={{...styles.modal, maxWidth: '440px'}}>
-            <h3 style={styles.modalTitle}>+ Gasto en efectivo 💵</h3>
-            <p style={{fontSize:'12px', color:'#8e8e93', margin:'-8px 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
-            <form onSubmit={handleGuardarEfectivo}>
+          <div style={{ ...styles.modal, maxWidth: '440px', width: '90%' }}>
+            <h3 style={styles.modalTitle}>+ Cargar movimiento</h3>
+            <div style={{ display: 'flex', gap: '8px', margin: '-4px 0 16px 0' }}>
+              {[
+                { v: 'gasto', label: '💸 Gasto' },
+                { v: 'ingreso', label: '💰 Ingreso' },
+                { v: 'neutro', label: '🔄 Neutro' },
+              ].map(opt => (
+                <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '' })) }}
+                  style={{
+                    flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
+                    fontFamily: '"Montserrat", sans-serif',
+                    fontWeight: tipoMovimiento === opt.v ? '600' : '400',
+                    border: tipoMovimiento === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                    background: tipoMovimiento === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                    color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleGuardarMovimiento}>
+              <p style={{fontSize:'12px', color:'#8e8e93', margin:'0 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
@@ -3535,7 +3617,7 @@ export default function Dashboard() {
                 <label style={styles.label}>Descripción <span style={{color:'#c0392b'}}>*</span></label>
                 <input style={styles.input} type="text" value={efectivo.nombre}
                   onChange={e => setEfectivo({...efectivo, nombre: e.target.value})}
-                  placeholder="Ej: Almuerzo, taxi, mercado..." required />
+                  placeholder={tipoMovimiento === 'neutro' ? 'Ej: Pago tarjeta desde cuenta corriente...' : tipoMovimiento === 'ingreso' ? 'Ej: Sueldo mayo, pago cliente X...' : 'Ej: Almuerzo, taxi, mercado...'} required />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Monto <span style={{color:'#c0392b'}}>*</span></label>
@@ -3543,22 +3625,24 @@ export default function Dashboard() {
                   onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
                   placeholder="0.00" required />
               </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Cuenta <span style={{color:'#c0392b'}}>*</span></label>
-                <select style={styles.input} value={efectivo.cuenta || cuentaEfectivoId || ''}
-                  onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
-                  {accounts.filter(a => a.tipo !== 'ingreso').map(a => (
-                    <option key={a.id} value={a.id}>{a.nombre}</option>
-                  ))}
-                </select>
-              </div>
+              {tipoMovimiento !== 'ingreso' && (
+                <div style={styles.field}>
+                  <label style={styles.label}>Cuenta <span style={{color:'#c0392b'}}>*</span></label>
+                  <select style={styles.input} value={efectivo.cuenta || cuentaEfectivoId || ''}
+                    onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
+                    {accounts.filter(a => a.tipo !== 'ingreso').map(a => (
+                      <option key={a.id} value={a.id}>{a.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.categoria}
                     onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
                     <option value="">— Elegir —</option>
-                    {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    {categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                 </div>
                 <div style={styles.field}>
@@ -3568,12 +3652,12 @@ export default function Dashboard() {
                     disabled={!efectivo.categoria}>
                     <option value="">— Elegir —</option>
                     {subcategoriasDB
-                      .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria)?.id)
+                      .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id)
                       .map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                   </select>
                 </div>
               </div>
-              {childrenDB.length > 0 && (
+              {tipoMovimiento !== 'ingreso' && childrenDB.length > 0 && (
                 <div style={styles.field}>
                   <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
@@ -3583,73 +3667,18 @@ export default function Dashboard() {
                   </select>
                 </div>
               )}
-              <div style={styles.field}>
-                <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
-                <input style={styles.input} type="text" value={efectivo.nota}
-                  onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
-                  placeholder="Detalles adicionales..." />
-              </div>
-              <div style={styles.modalButtons}>
-                <button type="button" style={styles.cancelBtn} onClick={() => setShowEfectivo(false)}>Cancelar</button>
-                <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Guardando...' : 'Guardar gasto'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: registrar ingreso */}
-      {showIngreso && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '440px', width: '90%' }}>
-            <h3 style={styles.modalTitle}>+ Registrar ingreso 💰</h3>
-            <form onSubmit={handleGuardarIngreso}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {tipoMovimiento !== 'ingreso' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>Fecha <span style={{ color: '#c0392b' }}>*</span></label>
-                  <input style={styles.input} type="date" value={ingreso.fecha}
-                    onChange={e => setIngreso({ ...ingreso, fecha: e.target.value })} required />
+                  <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <input style={styles.input} type="text" value={efectivo.nota}
+                    onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
+                    placeholder="Detalles adicionales..." />
                 </div>
-                <div style={styles.field}>
-                  <label style={styles.label}>Moneda <span style={{ color: '#c0392b' }}>*</span></label>
-                  <select style={styles.input} value={ingreso.moneda}
-                    onChange={e => setIngreso({ ...ingreso, moneda: e.target.value })}>
-                    <option value="ARS">$ ARS</option>
-                    <option value="USD">U$S USD</option>
-                    <option value="EUR">€ EUR</option>
-                  </select>
-                </div>
-              </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Categoría <span style={{ fontSize: '11px', color: '#8e8e93' }}>(opcional)</span></label>
-                <input style={styles.input} type="text" list="ingreso-tipo-options" value={ingreso.tipo}
-                  onChange={e => setIngreso({ ...ingreso, tipo: e.target.value })}
-                  placeholder="Ej: Sueldo, Freelance, Cuota alimentaria..." />
-                <datalist id="ingreso-tipo-options">
-                  {[...new Set([
-                    ...subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === 'Ingresos')?.id).map(s => s.nombre),
-                    ...ingresoTags
-                  ])].sort().map(opt => <option key={opt} value={opt} />)}
-                </datalist>
-              </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Descripción <span style={{ color: '#c0392b' }}>*</span></label>
-                <input style={styles.input} type="text" value={ingreso.nombre}
-                  onChange={e => setIngreso({ ...ingreso, nombre: e.target.value })}
-                  placeholder="Ej: Sueldo mayo, pago cliente X..." required />
-              </div>
-              <div style={styles.field}>
-                <label style={styles.label}>Monto <span style={{ color: '#c0392b' }}>*</span></label>
-                <input style={styles.input} type="number" step="0.01" min="0" value={ingreso.monto}
-                  onChange={e => setIngreso({ ...ingreso, monto: e.target.value })}
-                  placeholder="0.00" required />
-              </div>
+              )}
               <div style={styles.modalButtons}>
-                <button type="button" style={styles.cancelBtn} onClick={() => setShowIngreso(false)}>Cancelar</button>
+                <button type="button" style={styles.cancelBtn} onClick={() => setShowMovimiento(false)}>Cancelar</button>
                 <button type="submit" style={styles.saveBtn} disabled={loading}>
-                  {loading ? 'Guardando...' : 'Guardar ingreso'}
+                  {loading ? 'Guardando...' : tipoMovimiento === 'ingreso' ? 'Guardar ingreso' : tipoMovimiento === 'neutro' ? 'Guardar movimiento' : 'Guardar gasto'}
                 </button>
               </div>
             </form>

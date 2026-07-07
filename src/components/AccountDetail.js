@@ -814,7 +814,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const q = norm(searchQuery)
     return (
       norm(t.nombre).includes(q) ||
-      norm(t.detalle).includes(q) ||
+      (!t.nombre && norm(t.detalle).includes(q)) ||
       norm(t.categories?.nombre).includes(q) ||
       norm(t.subcategories?.nombre).includes(q) ||
       norm(t.children?.nombre).includes(q) ||

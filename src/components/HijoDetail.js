@@ -303,7 +303,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr>
-                  {['Fecha', 'Descripción', 'Categoría', 'Subcategoría', 'Monto', ''].map(h => (
+                  {['Fecha', 'Descripción', 'Categoría', 'Subcategoría', 'Forma de pago', 'Monto', ''].map(h => (
                     <th key={h} style={{
                       textAlign: 'left', padding: '8px 10px',
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
@@ -343,6 +343,9 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                             </select>
                           : t.subcategories?.nombre || '—'
                         }
+                      </td>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
+                        {t.accounts?.nombre || '—'}
                       </td>
                       <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                         {t.moneda === 'USD'
