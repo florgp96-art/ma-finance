@@ -327,7 +327,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       </td>
                       <td style={{ padding: '9px 10px' }}>
                         {isEditing
-                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: 'light' }}>
+                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: darkMode ? 'dark' : 'light' }}>
                               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
                           : t.categories?.nombre
@@ -337,7 +337,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       </td>
                       <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
                         {isEditing
-                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: 'light' }}>
+                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: darkMode ? 'dark' : 'light' }}>
                               <option value="">—</option>
                               {subcatsParaEditar.map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
                             </select>

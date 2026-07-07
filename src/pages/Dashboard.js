@@ -3786,7 +3786,7 @@ const getStyles = (dark, mobile = false) => {
     modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
-    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: mobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: 'light' },
+    input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: mobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: dark ? 'dark' : 'light' },
     dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px' },
     dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
     dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },
