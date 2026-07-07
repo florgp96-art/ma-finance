@@ -23,7 +23,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   // Modal visibility
   const [showHijos, setShowHijos] = useState(false)
   const [showCategorias, setShowCategorias] = useState(false)
-  const [showIconos, setShowIconos] = useState(false)
+  const [catTab, setCatTab] = useState('categorias') // 'categorias' | 'iconos'
   const [showAliases, setShowAliases] = useState(false)
   const [showCambiarClave, setShowCambiarClave] = useState(false)
 
@@ -53,15 +53,15 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [pendingRulesCount, setPendingRulesCount] = useState(0)
   const [checkingPending, setCheckingPending] = useState(false)
 
-  // ESC cierra el modal de íconos
+  // ESC cierra el modal de categorías
   useEffect(() => {
-    if (!showIconos) return
+    if (!showCategorias) return
     const handler = (e) => {
-      if (e.key === 'Escape') { setShowIconos(false); setIconEditingCat(null); setIconInput('') }
+      if (e.key === 'Escape') { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null); setIconEditingCat(null); setIconInput('') }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [showIconos])
+  }, [showCategorias])
 
   // Al abrir el modal (o cuando cambian las reglas) recalcula cuántos movimientos
   // existentes todavía no tienen aplicada alguna regla de categoría/hijo.
@@ -86,10 +86,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   // Expose imperative methods
   useImperativeHandle(ref, () => ({
     openHijos: () => { fetchChildren(); setShowHijos(true) },
-    openCategorias: () => setShowCategorias(true),
+    openCategorias: () => { setCatTab('categorias'); setShowCategorias(true) },
     openAliases: () => { fetchUserAliases(); setShowAliases(true) },
     openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
-    openIconos: () => setShowIconos(true),
+    openIconos: () => { setCatTab('iconos'); setShowCategorias(true) },
   }))
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -358,15 +358,22 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         </div>
       )}
 
-      {/* Modal: Íconos */}
-      {showIconos && (
+      {/* Modal: Editar categorías (pestañas Categorías / Íconos) */}
+      {showCategorias && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: '480px', width: '92%', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 0 }}>
-            <div style={{ padding: '20px 20px 12px' }}>
-              <h3 style={{ ...s.modalTitle, marginBottom: '4px' }}>🎨 Íconos de categorías</h3>
-              <p style={{ fontSize: '12px', color: '#8e8e93', margin: 0 }}>Tocá una fila para cambiar su ícono</p>
+          <div style={{ ...s.modal, maxWidth: '520px' }}>
+            <h3 style={s.modalTitle}>✏️ Editar categorías</h3>
+            <div style={{ display: 'flex', gap: '8px', margin: '-4px 0 16px 0' }}>
+              {[{ k: 'categorias', label: '📂 Categorías' }, { k: 'iconos', label: '🎨 Íconos' }].map(t => (
+                <button key={t.k} type="button" onClick={() => { setCatTab(t.k); setIconEditingCat(null); setIconInput('') }}
+                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: catTab === t.k ? '600' : '400', border: catTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: catTab === t.k ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: txt }}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-            <div className="hide-scroll" style={{ overflowY: 'auto', flex: 1, padding: '0 20px' }}>
+            {catTab === 'iconos' && (<>
+            <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 8px 0' }}>Tocá una fila para cambiar su ícono</p>
+            <div className="hide-scroll" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '8px' }}>
             {[
               ...(categoriasDB || []).map(c => ({ nombre: c.nombre, tipo: 'cat' })),
               ...(childrenDB || []).map(c => ({ nombre: c.nombre, tipo: 'hijo' })),
@@ -422,18 +429,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               )
             })}
             </div>
-            <div style={{ padding: '12px 20px 20px' }}>
-              <button onClick={() => { setShowIconos(false); setIconEditingCat(null); setIconInput('') }} style={{ width: '100%', padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: p, color: 'white', cursor: 'pointer', fontSize: '14px', fontFamily: '"Montserrat", sans-serif', fontWeight: '600' }}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Categorías */}
-      {showCategorias && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: '520px' }}>
-            <h3 style={s.modalTitle}>Categorías y subcategorías</h3>
+            </>)}
+            {catTab === 'categorias' && (<>
             <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
               {(categoriasDB || []).map(cat => (
                 <div key={cat.id} style={{ marginBottom: '16px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingBottom: '12px' }}>
@@ -535,9 +532,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
               </form>
             </div>
+            </>)}
 
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
-              <button style={s.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null) }}>Cerrar</button>
+              <button style={s.cancelBtn} onClick={() => { setShowCategorias(false); setEditingCat(null); setNewSubcatCatId(null); setIconEditingCat(null); setIconInput('') }}>Cerrar</button>
             </div>
           </div>
         </div>

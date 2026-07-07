@@ -2376,12 +2376,11 @@ export default function Dashboard() {
                     {configOpen && (
                       <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
                         <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openIconos()}>🎨 ÍCONOS DE CATEGORÍAS</button>
                       </div>
                     )}
                   </div>
@@ -2627,12 +2626,11 @@ export default function Dashboard() {
                   {configOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
                       <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>+ CUENTA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>+ CATEGORÍAS</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openIconos()}>🎨 ÍCONOS DE CATEGORÍAS</button>
                     </div>
                   )}
                 </>
