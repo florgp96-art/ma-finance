@@ -444,9 +444,14 @@ export default function Dashboard() {
 
     let accountId = efectivo.cuenta || cuentaEfectivoId
     if (tipoMovimiento === 'ingreso') {
-      const acc = await getOrCreateIngresosAccount(user)
-      if (!acc) { setLoading(false); return }
-      accountId = acc.id
+      // El ingreso se guarda en la cuenta real elegida; si no eligió ninguna,
+      // cae en la cuenta "Ingresos" (comportamiento histórico).
+      accountId = efectivo.cuenta || accounts.find(a => a.tipo === 'ingreso')?.id
+      if (!accountId) {
+        const acc = await getOrCreateIngresosAccount(user)
+        if (!acc) { setLoading(false); return }
+        accountId = acc.id
+      }
     }
 
     await supabase.from('transactions').insert({
@@ -2823,7 +2828,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setEfectivo(prev => ({ ...prev, cuenta: '' })); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -3593,7 +3598,7 @@ export default function Dashboard() {
                 { v: 'ingreso', label: '💰 Ingreso' },
                 { v: 'neutro', label: '🔄 Neutro' },
               ].map(opt => (
-                <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '' })) }}
+                <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '', cuenta: opt.v === 'ingreso' ? '' : (cuentaEfectivoId || '') })) }}
                   style={{
                     flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
                     fontFamily: '"Montserrat", sans-serif',
@@ -3637,17 +3642,22 @@ export default function Dashboard() {
                   onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
                   placeholder="0.00" required />
               </div>
-              {tipoMovimiento !== 'ingreso' && (
-                <div style={styles.field}>
-                  <label style={styles.label}>Cuenta <span style={{color:'#c0392b'}}>*</span></label>
-                  <select style={styles.input} value={efectivo.cuenta || cuentaEfectivoId || ''}
-                    onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
-                    {accounts.filter(a => a.tipo !== 'ingreso').map(a => (
-                      <option key={a.id} value={a.id}>{a.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div style={styles.field}>
+                <label style={styles.label}>
+                  Cuenta <span style={{color:'#c0392b'}}>*</span>
+                  {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color:'#8e8e93', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
+                </label>
+                <select style={styles.input}
+                  value={efectivo.cuenta || (tipoMovimiento === 'ingreso' ? (accounts.find(a => a.tipo === 'ingreso')?.id || '') : (cuentaEfectivoId || ''))}
+                  onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
+                  {(tipoMovimiento === 'ingreso'
+                    ? [...accounts.filter(a => a.tipo !== 'ingreso'), ...accounts.filter(a => a.tipo === 'ingreso')]
+                    : accounts.filter(a => a.tipo !== 'ingreso')
+                  ).map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                </select>
+              </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>

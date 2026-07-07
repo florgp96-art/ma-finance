@@ -439,13 +439,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const fetchData = async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
+    // La vista Ingresos muestra todo lo marcado como ingreso sin importar en qué
+    // cuenta real está; las demás cuentas siguen mostrando solo lo suyo.
+    const esCuentaIngresos = account.tipo === 'ingreso'
     const [txs, catRes, stmtRes] = await Promise.all([
-      fetchAllPages(() =>
-        supabase.from('transactions')
+      fetchAllPages(() => {
+        let q = supabase.from('transactions')
           .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
-          .eq('account_id', account.id)
-          .order('fecha', { ascending: false })
-      ),
+        q = esCuentaIngresos
+          ? q.eq('user_id', user.id).eq('tipo', 'ingreso')
+          : q.eq('account_id', account.id)
+        return q.order('fecha', { ascending: false })
+      }),
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
       supabase.from('statements')
         .select('*')
@@ -1380,7 +1385,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           value={searchQuery || ''}
           onChange={e => onSearchChange && onSearchChange(e.target.value)}
         />
-        {allAccounts && (
+        {(allAccounts || esVistaIngresos) && (
           <select
             style={{
               flex: '0 1 200px', padding: '10px 14px', borderRadius: '12px',
