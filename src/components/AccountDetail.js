@@ -1424,7 +1424,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                     {editingTx === tx.id ? (
                       <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                        {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                        {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
                           <option key={a.id} value={a.id}>{a.nombre}</option>
                         ))}
                       </select>
@@ -1492,7 +1492,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                   {editingTx === tx.id ? (
                     <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                      {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                      {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
                         <option key={a.id} value={a.id}>{a.nombre}</option>
                       ))}
                     </select>
@@ -1604,7 +1604,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                         {editingTx === tx.id ? (
                           <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                            {(accounts || []).filter(a => a.tipo !== 'ingreso').map(a => (
+                            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
                               <option key={a.id} value={a.id}>{a.nombre}</option>
                             ))}
                           </select>
