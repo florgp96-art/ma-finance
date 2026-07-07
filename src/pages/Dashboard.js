@@ -189,19 +189,46 @@ export default function Dashboard() {
   const configPanelRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
-  const toggleVencPagado = (id) => {
+  // Servicios y marcas de pagado viven en la DB (user_rules) para verse igual
+  // en todos los dispositivos; localStorage queda solo como caché local.
+  const persistServicios = async (userId, list) => {
+    try { localStorage.setItem(`servicios_${userId}`, JSON.stringify(list)) } catch {}
+    await supabase.from('user_rules').upsert({
+      user_id: userId, texto_original: '__servicios__',
+      nombre_asignado: JSON.stringify(list), category_id: null, subcategory_id: null
+    }, { onConflict: 'user_id,texto_original' })
+  }
+
+  const toggleVencPagado = async (id) => {
     const next = new Set(vencPagados)
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setVencPagados(next)
     const mes = new Date().toISOString().slice(0, 7)
-    localStorage.setItem(`venc_pagados_${mes}`, JSON.stringify([...next]))
+    try { localStorage.setItem(`venc_pagados_${mes}`, JSON.stringify([...next])) } catch {}
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('user_rules').upsert({
+      user_id: user.id, texto_original: '__venc_pagados__',
+      nombre_asignado: JSON.stringify({ mes, ids: [...next] }), category_id: null, subcategory_id: null
+    }, { onConflict: 'user_id,texto_original' })
   }
 
   useEffect(() => {
     const mes = new Date().toISOString().slice(0, 7)
     const stored = localStorage.getItem(`venc_pagados_${mes}`)
     setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: row } = await supabase.from('user_rules').select('nombre_asignado')
+        .eq('user_id', user.id).eq('texto_original', '__venc_pagados__').maybeSingle()
+      if (row?.nombre_asignado) {
+        try {
+          const parsed = JSON.parse(row.nombre_asignado)
+          if (parsed?.mes === mes && Array.isArray(parsed.ids)) setVencPagados(new Set(parsed.ids))
+        } catch {}
+      }
+    })
   }, [])
 
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
@@ -277,8 +304,25 @@ export default function Dashboard() {
           }
         }
 
-        const saved = localStorage.getItem(`servicios_${user.id}`)
-        setServicios(saved ? JSON.parse(saved).map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}` })) : SERVICIOS_DEFAULT)
+        // Servicios: primero la DB; si no hay nada ahí, migrar lo guardado en
+        // este navegador (modelo viejo con localStorage) para que se vea igual
+        // en todos los dispositivos.
+        let serviciosList = null
+        const { data: svcRow } = await supabase.from('user_rules')
+          .select('nombre_asignado').eq('user_id', user.id).eq('texto_original', '__servicios__').maybeSingle()
+        if (svcRow?.nombre_asignado) {
+          try { serviciosList = JSON.parse(svcRow.nombre_asignado) } catch {}
+        }
+        if (!serviciosList) {
+          const saved = localStorage.getItem(`servicios_${user.id}`)
+          if (saved) {
+            try { serviciosList = JSON.parse(saved) } catch {}
+            if (serviciosList) persistServicios(user.id, serviciosList)
+          }
+        }
+        setServicios(serviciosList
+          ? serviciosList.map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}`, dia: s.dia ?? (s.vencimiento ? parseInt(s.vencimiento, 10) : null) }))
+          : SERVICIOS_DEFAULT)
 
         // Mini chart: últimos 6 meses — guardamos txs crudas para recalcular con TC live
         const now = new Date()
@@ -2807,7 +2851,7 @@ export default function Dashboard() {
                             const updated = [...servicios, { id: `svc_${Date.now()}`, nombre: newServicio.nombre.trim(), link: newServicio.link.trim(), dia: newServicio.vencimiento ? parseInt(newServicio.vencimiento) : null }]
                             setServicios(updated)
                             const { data: { user } } = await supabase.auth.getUser()
-                            localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
+                            await persistServicios(user.id, updated)
                             setNewServicio({ nombre: '', link: '', vencimiento: '' })
                             setShowAddServicio(false)
                           }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', alignSelf: 'flex-end' }}>
@@ -2825,7 +2869,7 @@ export default function Dashboard() {
                           }}>
                             <div>
                               <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
-                              {s.vencimiento && <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#6e6e73' }}>📅 Vence el día {s.vencimiento}</p>}
+                              {(s.dia || s.vencimiento) && <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#6e6e73' }}>📅 Vence el día {s.dia || s.vencimiento}</p>}
                             </div>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               {s.link && (
@@ -2840,7 +2884,7 @@ export default function Dashboard() {
                                 const updated = servicios.filter((_, j) => j !== i)
                                 setServicios(updated)
                                 const { data: { user } } = await supabase.auth.getUser()
-                                localStorage.setItem(`servicios_${user.id}`, JSON.stringify(updated))
+                                await persistServicios(user.id, updated)
                               }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.5, padding: '4px' }}>
                                 🗑️
                               </button>
