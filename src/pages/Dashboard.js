@@ -3600,7 +3600,7 @@ export default function Dashboard() {
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
-                  <input style={styles.input} type="date" value={efectivo.fecha}
+                  <input style={{ ...styles.input, WebkitAppearance: 'none', appearance: 'none' }} type="date" value={efectivo.fecha}
                     onChange={e => setEfectivo({...efectivo, fecha: e.target.value})} required />
                 </div>
                 <div style={styles.field}>
