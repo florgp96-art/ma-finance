@@ -532,7 +532,12 @@ export default function Dashboard() {
     }, { onConflict: 'user_id,texto_original', ignoreDuplicates: true })
     setIngresoTagsOcultos(prev => [...new Set([...prev, nombre])])
     await supabase.from('user_rules').delete().eq('user_id', user.id).eq('texto_original', `__tag_ingreso__${nombre}`)
+    // Los ingresos que usaban esta categoría quedan "a identificar", sin categoría
+    await supabase.from('transactions')
+      .update({ tag: null, estado: 'a_identificar' })
+      .eq('user_id', user.id).eq('tipo', 'ingreso').eq('tag', nombre)
     setIngresoTags(prev => prev.filter(t => t !== nombre))
+    setRefreshKey(k => k + 1)
   }
 
   const fetchExchangeRates = async () => {
