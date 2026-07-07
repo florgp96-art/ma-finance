@@ -2308,33 +2308,43 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
                   <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
                   {(rateActivo || eurValor || vencList.length > 0) && (
-                    <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
-                      {rateActivo && (
-                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>USD</span>
-                          $ {new Intl.NumberFormat('es-AR').format(Math.round(rateActivo))}
-                        </p>
-                      )}
-                      {eurValor && (
-                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>EUR</span>
-                          $ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}
-                        </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                      {(rateActivo || eurValor) && (
+                        <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                          {rateActivo && (
+                            <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>USD</span>
+                              $ {new Intl.NumberFormat('es-AR').format(Math.round(rateActivo))}
+                            </p>
+                          )}
+                          {eurValor && (
+                            <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>EUR</span>
+                              $ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}
+                            </p>
+                          )}
+                        </div>
                       )}
                       {vencList.length > 0 && (
-                        <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>VENC</span>
-                          {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                        </p>
+                        <div onClick={() => { setSelectedAccount('all'); setDashboardTab('vencimientos') }}
+                          style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '4px 10px', cursor: 'pointer' }}>
+                          <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
+                            {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}
                 </div>
               ) : isTablet ? (
-                <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start' }}>
+                // maxWidth + wrap: que los chips pasen a segunda fila antes de
+                // pisar el logo, que está centrado con posición absoluta detrás
+                <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
                   {tcChip('Dólar', rateActivo, 'U$S 1')}
                   {tcChip('Euro', eurValor, '€1')}
-                  <div style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
+                  <div onClick={() => { setSelectedAccount('all'); setDashboardTab('vencimientos') }}
+                    style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
                     <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vencimientos</p>
                     <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
                       {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
