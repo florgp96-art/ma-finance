@@ -2015,7 +2015,6 @@ export default function Dashboard() {
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-              const tooltipLabel = filtroValor || sidebarCatEvol
               const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
               const multigrupo = tiposPresentes >= 2
               return (
@@ -2050,7 +2049,15 @@ export default function Dashboard() {
                       <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                         <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
-                        <Tooltip formatter={(v) => [`$ ${formatMontoFull(v)}`, tooltipLabel]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }} labelStyle={{ color: txtClr, fontWeight: '600' }} itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }} />
+                        <Tooltip content={({ active, payload, label }) => {
+                          if (!active || !payload || payload.length === 0) return null
+                          return (
+                            <div style={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', padding: '6px 10px', boxShadow: '0 2px 10px rgba(0,0,0,0.12)' }}>
+                              <p style={{ margin: 0, color: txtClr, fontWeight: '600' }}>{label}</p>
+                              <p style={{ margin: '2px 0 0', color: darkMode ? '#C8B8C8' : '#555', fontWeight: '600' }}>$ {formatMontoFull(payload[0].value)}</p>
+                            </div>
+                          )
+                        }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                           {evolData.map((_, i) => (
                             <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
