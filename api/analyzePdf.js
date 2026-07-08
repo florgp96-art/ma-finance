@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { buildAnalysisPrompt, salvageClaudeJson } from './_lib/analyzePrompt.js'
 
+// Fallback de importación: recibe el PDF completo en base64 y se lo pasa a
+// Claude como documento. Se usa cuando pdf.js no puede abrir el archivo
+// ("Invalid PDF structure", PDFs escaneados) o cuando el texto extraído no
+// contiene la tabla de movimientos (algunos resúmenes de banco).
+
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -40,9 +45,10 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { pdfText, cardName, userRules, incomeExamples, categories, subcategories, children, aliases } = req.body
-  if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })
-  if (pdfText.length > 200_000) return res.status(400).json({ error: 'PDF text too large' })
+  const { pdfBase64, cardName, userRules, incomeExamples, categories, subcategories, children, aliases } = req.body
+  if (!pdfBase64 || typeof pdfBase64 !== 'string') return res.status(400).json({ error: 'Missing pdfBase64' })
+  // ~7 MB de PDF en base64; los resúmenes rondan los cientos de KB
+  if (pdfBase64.length > 9_500_000) return res.status(400).json({ error: 'PDF too large' })
 
   const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases })
 
@@ -58,10 +64,12 @@ export default async function handler(req, res) {
       max_tokens: 32000,
       messages: [{
         role: 'user',
-        content: `${prompt}
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+          { type: 'text', text: `${prompt}
 
-EXTRACTO:
-${pdfText}`
+EXTRACTO: es el documento PDF adjunto. Leé TODAS sus páginas y extraé todas las transacciones.` }
+        ]
       }]
     })
   })

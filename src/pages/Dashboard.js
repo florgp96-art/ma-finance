@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
+import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -1328,9 +1328,15 @@ export default function Dashboard() {
         result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
         const pdfText = await extractTextFromPDF(archivo)
-        result = tryDirectParsePDF(pdfText)
-        if (!result) {
-          result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
+        if (pdfText) {
+          result = tryDirectParsePDF(pdfText)
+          if (!result) {
+            result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
+          }
+        } else {
+          // El PDF no se pudo leer como texto (dañado, escaneado, o la tabla
+          // de movimientos no está en la capa de texto): la IA lo lee entero.
+          result = await analyzePdfDocumentWithClaude(archivo, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
         }
       }
       // Re-aplica reglas/alias por código (no depende de que la IA haya obedecido el prompt),
