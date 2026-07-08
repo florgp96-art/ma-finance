@@ -37,11 +37,15 @@ export async function extractTextFromPDF(file) {
     .replace(/[ \t]{3,}/g, '  ')
     .trim()
 
+  // Cortar la letra chica legal del final. Ojo: en algunos resúmenes (ej.
+  // Galicia) "Total a pagar" también aparece en el encabezado, ANTES de la
+  // tabla de movimientos — por eso solo cortamos si el marcador está en la
+  // mitad final del documento (usando la última aparición, no la primera).
   const cutMarkers = ['TOTAL A PAGAR', 'Plan V:', 'CFTEA']
   let finalText = cleaned
   for (const marker of cutMarkers) {
-    const idx = cleaned.toUpperCase().indexOf(marker.toUpperCase())
-    if (idx !== -1) {
+    const idx = cleaned.toUpperCase().lastIndexOf(marker.toUpperCase())
+    if (idx !== -1 && idx > cleaned.length * 0.5) {
       finalText = cleaned.substring(0, idx + 200)
       break
     }
@@ -50,10 +54,13 @@ export async function extractTextFromPDF(file) {
   // Tope de seguridad: si ningún marcador matcheó (banco/formato no contemplado),
   // no mandar el documento entero (letra chica legal incluida) a la IA — eso
   // dispara respuestas más lentas y arriesga el timeout del servidor.
-  const MAX_CHARS = 12000
+  const MAX_CHARS = 16000
   if (finalText.length > MAX_CHARS) finalText = finalText.slice(0, MAX_CHARS)
 
   console.log(`Texto extraído: ${finalText.length} chars`)
+  if (finalText.replace(/[^A-Za-z0-9]/g, '').length < 100) {
+    throw new Error('El PDF no tiene texto legible (puede ser un documento escaneado o una foto). Probá descargar el resumen original desde el home banking en vez de una versión escaneada.')
+  }
   return finalText
 }
 

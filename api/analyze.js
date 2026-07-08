@@ -159,7 +159,7 @@ ${exText}
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 12000,
+      max_tokens: 32000,
       messages: [{
         role: 'user',
         content: `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
@@ -294,10 +294,27 @@ ${pdfText}`
     if (textBlock?.text) {
       const text = textBlock.text
       const jsonStart = text.indexOf('{')
-      const jsonEnd = text.lastIndexOf('}')
-      if (jsonStart === -1 || jsonEnd === -1) throw new Error('No JSON object found in response')
-      const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1))
-      data.content[0].text = JSON.stringify(parsed)
+      if (jsonStart === -1) throw new Error('No JSON object found in response')
+      const raw = text.slice(jsonStart)
+      let parsed = null
+      try {
+        const jsonEnd = raw.lastIndexOf('}')
+        parsed = JSON.parse(raw.slice(0, jsonEnd + 1))
+      } catch {
+        // Respuesta truncada (ej. se cortó por max_tokens en extractos largos):
+        // rescatar hasta la última transacción completa en vez de fallar todo.
+        // "transacciones" es la última clave del JSON pedido, así que cerrando
+        // el array y el objeto después de una transacción completa queda válido.
+        const arrKey = raw.indexOf('"transacciones"')
+        let cut = arrKey !== -1 ? raw.lastIndexOf('}') : -1
+        while (cut > arrKey && arrKey !== -1) {
+          try { parsed = JSON.parse(raw.slice(0, cut + 1) + ']}'); break } catch {}
+          cut = raw.lastIndexOf('}', cut - 1)
+        }
+        if (parsed) console.error(`Respuesta truncada (stop_reason=${data?.stop_reason}): rescatadas ${parsed.transacciones?.length ?? 0} transacciones`)
+      }
+      if (!parsed) throw new Error('JSON inválido y sin rescate posible')
+      textBlock.text = JSON.stringify(parsed)
     }
   } catch (e) {
     console.error('Error minificando en servidor:', e.message)
