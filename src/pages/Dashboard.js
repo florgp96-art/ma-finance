@@ -1248,6 +1248,47 @@ export default function Dashboard() {
     return { tarjeta_detectada: 'Mercado Pago', tipo_documento: 'banco', transacciones: rows, contexto_detectado: [], periodo }
   }
 
+  // Normaliza fechas y montos que vienen de la IA antes de tocar la base: una
+  // sola fila inválida (fecha ilegible, monto no numérico) haría fallar el
+  // insert del lote completo y con eso la importación entera.
+  const sanitizarTxImport = (transacciones) => {
+    const normFecha = (f) => {
+      if (!f) return null
+      const s = String(f).trim()
+      let d, mo, y
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+      if (m) { y = +m[1]; mo = +m[2]; d = +m[3] }
+      else {
+        m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+        if (!m) return null
+        d = +m[1]; mo = +m[2]; y = m[3].length === 2 ? 2000 + +m[3] : +m[3]
+      }
+      if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) return null
+      const dt = new Date(Date.UTC(y, mo - 1, d))
+      if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    }
+    const normMonto = (mo) => {
+      if (typeof mo === 'number' && isFinite(mo)) return mo
+      if (typeof mo === 'string') {
+        let s = mo.replace(/[^\d.,-]/g, '')
+        s = /,\d{1,2}$/.test(s) ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+        const n = parseFloat(s)
+        if (isFinite(n)) return n
+      }
+      return null
+    }
+    const validas = []
+    let omitidas = 0
+    for (const t of (transacciones || [])) {
+      const fecha = normFecha(t.fecha)
+      const monto = normMonto(t.monto)
+      if (!fecha || monto === null || monto === 0) { omitidas++; continue }
+      validas.push({ ...t, fecha, monto, moneda: ['ARS', 'USD', 'EUR'].includes(t.moneda) ? t.moneda : 'ARS' })
+    }
+    return { validas, omitidas }
+  }
+
   // Re-aplica reglas aprendidas (user_rules) y alias del usuario a las transacciones que
   // devolvió la IA (o el parser directo), sin depender de que la IA haya obedecido el prompt.
   // Prioridad: reglas aprendidas > alias de categoría/hijo.
@@ -1343,6 +1384,9 @@ export default function Dashboard() {
       // así las reglas que el cliente ya creó se usan solas en cada resumen nuevo.
       if (result?.transacciones) {
         result.transacciones = aplicarReglasYAlias(result.transacciones, rules, userAliases)
+        const { validas, omitidas } = sanitizarTxImport(result.transacciones)
+        result.transacciones = validas
+        if (omitidas > 0) showToast(`Se omitieron ${omitidas} movimiento(s) con fecha o monto ilegible.`, 'warning')
       }
       logImportAttempt({
         tipo: isImage ? 'imagen' : 'pdf',
@@ -1703,9 +1747,16 @@ export default function Dashboard() {
       const { data: existing } = await supabase.from('statements')
         .select('id').eq('account_id', cuentaEgresos.id).eq('periodo', statementData.periodo).maybeSingle()
       if (existing) {
-        showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
-        setLoading(false)
-        return
+        // Si el extracto existente no tiene transacciones, es el resto de un
+        // intento que falló a mitad de camino: se limpia y se reintenta.
+        const { count: txCount } = await supabase.from('transactions')
+          .select('id', { count: 'exact', head: true }).eq('statement_id', existing.id)
+        if ((txCount || 0) > 0) {
+          showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
+          setLoading(false)
+          return
+        }
+        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
       // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
@@ -1717,11 +1768,17 @@ export default function Dashboard() {
         return
       }
 
-      const { data: stmtEgresos } = await supabase.from('statements').insert({
+      const { data: stmtEgresos, error: errStmtEg } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
         periodo: statementData.periodo, fecha_desde: null,
-        fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+        fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion), total_resumen: null, estado: 'completo'
       }).select().single()
+      if (errStmtEg || !stmtEgresos) {
+        showToast(`Error creando el extracto: ${errStmtEg?.message || 'desconocido'}`, 'error')
+        logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (statement): ${errStmtEg?.message || 'desconocido'}` })
+        setLoading(false)
+        return
+      }
 
       // Statement de ingresos solo si hay transacciones de ingreso
       const hayIngresosEnExtracto = statementData.transacciones.some(t => (t.tipo || (t.es_credito ? 'ingreso' : 'gasto')) === 'ingreso')
@@ -1736,7 +1793,7 @@ export default function Dashboard() {
           const { data: si } = await supabase.from('statements').insert({
             user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
             periodo: statementData.periodo, fecha_desde: null,
-            fecha_hasta: statementData.fecha_facturacion, total_resumen: null, estado: 'completo'
+            fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion), total_resumen: null, estado: 'completo'
           }).select().single()
           stmtIngresos = si
         }
@@ -1794,12 +1851,22 @@ export default function Dashboard() {
       const insertedIds = []
       if (txEgresos.length > 0) {
         const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado')
-        if (errEg) { showToast(`Error egresos: ${errEg.message}`, 'error'); setLoading(false); return }
+        if (errEg) {
+          showToast(`Error egresos: ${errEg.message}`, 'error')
+          logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (egresos): ${errEg.message}` })
+          // Dejar el estado limpio para que el reintento no quede bloqueado
+          await supabase.from('statements').delete().eq('id', stmtEgresos.id)
+          setLoading(false); return
+        }
         if (ins) insertedIds.push(...ins)
       }
       if (txIngresos.length > 0) {
         const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresos).select('id, detalle, estado')
-        if (errIn) { showToast(`Error ingresos: ${errIn.message}`, 'error'); setLoading(false); return }
+        if (errIn) {
+          showToast(`Error ingresos: ${errIn.message}`, 'error')
+          logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (ingresos): ${errIn.message}` })
+          setLoading(false); return
+        }
         if (ins) insertedIds.push(...ins)
       }
       if (txEgresos.length === 0 && txIngresos.length === 0) {
@@ -1827,18 +1894,31 @@ export default function Dashboard() {
       const { data: existing } = await supabase.from('statements')
         .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
       if (existing) {
-        showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
-        setLoading(false)
-        return
+        // Si el extracto existente no tiene transacciones, es el resto de un
+        // intento que falló a mitad de camino: se limpia y se reintenta.
+        const { count: txCount } = await supabase.from('transactions')
+          .select('id', { count: 'exact', head: true }).eq('statement_id', existing.id)
+        if ((txCount || 0) > 0) {
+          showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
+          setLoading(false)
+          return
+        }
+        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
-      const { data: statement } = await supabase.from('statements').insert({
+      const { data: statement, error: errStmt } = await supabase.from('statements').insert({
         user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
       periodo: statementData.periodo, fecha_desde: null,
         fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
         fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
         total_resumen: statementData.total_pesos, estado: 'completo'
       }).select().single()
+      if (errStmt || !statement) {
+        showToast(`Error creando el extracto: ${errStmt?.message || 'desconocido'}`, 'error')
+        logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta (statement): ${errStmt?.message || 'desconocido'}` })
+        setLoading(false)
+        return
+      }
 
       const fechaResumen = statementData.fecha_facturacion || null
       // Solo importar las transacciones que el usuario seleccionó en el preview
@@ -1869,7 +1949,15 @@ export default function Dashboard() {
           }
         })
 
-      const { data: inserted } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+      if (errTxTarjeta) {
+        showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
+        logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
+        // Dejar el estado limpio para que el reintento no quede bloqueado
+        await supabase.from('statements').delete().eq('id', statement.id)
+        setLoading(false)
+        return
+      }
 
       // Preparar paso identificar — deduplicar por detalle
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
@@ -1888,6 +1976,7 @@ export default function Dashboard() {
     fetchAccounts()
     } catch (err) {
       showToast('Error al guardar: ' + err.message, 'error')
+      logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado: ${err.message}` })
     } finally {
       setLoading(false)
     }
