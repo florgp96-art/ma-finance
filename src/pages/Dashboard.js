@@ -1388,6 +1388,18 @@ export default function Dashboard() {
         result.transacciones = validas
         if (omitidas > 0) showToast(`Se omitieron ${omitidas} movimiento(s) con fecha o monto ilegible.`, 'warning')
       }
+      // En tarjetas el período es el mes de CIERRE del resumen, no el de las
+      // compras (el resumen que cierra en junio trae compras de mayo). La IA
+      // tiende a nombrar por las compras, así que lo derivamos de la fecha de
+      // facturación para que dos resúmenes seguidos no queden con igual período.
+      if (result?.tipo_documento === 'tarjeta' && result.fecha_facturacion) {
+        const isoFact = parseFechaArgentina(result.fecha_facturacion)
+        const mFact = /^(\d{4})-(\d{2})/.exec(isoFact || '')
+        if (mFact) {
+          const MESES_LARGOS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+          result.periodo = `${MESES_LARGOS[+mFact[2] - 1]} ${mFact[1]}`
+        }
+      }
       logImportAttempt({
         tipo: isImage ? 'imagen' : 'pdf',
         nombreArchivo: archivo.name,

@@ -162,6 +162,7 @@ CAMPO tipo POR TRANSACCIÓN:
 ═══════════════════════════════
 REGLAS GENERALES:
 ═══════════════════════════════
+- periodo: en resúmenes de tarjeta es el mes del CIERRE del resumen (el mes de fecha_facturacion), NO el mes de las compras — el resumen que cierra en junio trae compras de mayo y su periodo es "Junio". En extractos bancarios es el mes de los movimientos.
 - NO incluir "SU PAGO", "Gracias por su pago", pagos al resumen de tarjeta (en extractos de tarjeta)
 - nombre_limpio: nombre legible. Si es críptico, dejarlo igual al original.
 - es_credito: true solo para devoluciones o reintegros reales en tarjeta
