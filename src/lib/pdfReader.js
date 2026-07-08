@@ -2,9 +2,20 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 
+// Devuelve el texto del PDF, o null si el archivo no se puede leer como texto
+// (PDF dañado/no estándar, escaneado, o sin la tabla de movimientos). En ese
+// caso el caller debe usar analyzePdfDocumentWithClaude como fallback.
 export async function extractTextFromPDF(file) {
-  const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, disableWorker: true, isEvalSupported: false }).promise
+  let pdf
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    pdf = await pdfjsLib.getDocument({ data: arrayBuffer, disableWorker: true, isEvalSupported: false }).promise
+  } catch (e) {
+    // Ej. "Invalid PDF structure": algunos bancos generan PDFs que pdf.js
+    // rechaza aunque abran bien en cualquier visor.
+    console.warn('pdf.js no pudo abrir el PDF, se usará análisis de documento:', e.message)
+    return null
+  }
 
   let fullText = ''
 
@@ -58,28 +69,29 @@ export async function extractTextFromPDF(file) {
   if (finalText.length > MAX_CHARS) finalText = finalText.slice(0, MAX_CHARS)
 
   console.log(`Texto extraído: ${finalText.length} chars`)
-  if (finalText.replace(/[^A-Za-z0-9]/g, '').length < 100) {
-    throw new Error('El PDF no tiene texto legible (puede ser un documento escaneado o una foto). Probá descargar el resumen original desde el home banking en vez de una versión escaneada.')
+
+  // ¿El texto tiene pinta de contener la tabla de movimientos? Contamos líneas
+  // con fecha + importe. Si hay muy pocas (resúmenes donde la tabla no sale
+  // como texto, ej. algunos Galicia), mejor mandar el PDF entero a la IA.
+  const txLikeLines = finalText.split('\n').filter(l =>
+    /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/.test(l) && /\d(?:[\d.,]*\d)?[.,]\d{2}\b/.test(l)
+  ).length
+  if (txLikeLines < 5) {
+    console.warn(`Solo ${txLikeLines} líneas con pinta de movimiento: se usará análisis de documento`)
+    return null
   }
+
   return finalText
 }
 
-export async function analyzeStatementWithClaude(pdfText, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
-  const headers = { 'Content-Type': 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const response = await fetch('/api/analyze', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      pdfText, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
-      categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
-    })
-  })
-
+const parseAnalyzeResponse = async (response) => {
   if (!response.ok) {
     console.error('Error HTTP:', response.status, await response.text())
     if ([502, 503, 504, 524].includes(response.status)) {
       throw new Error('El extracto tardó demasiado en procesarse (puede ser muy largo o el servidor está ocupado). Probá de nuevo, o si el PDF es muy largo intentá dividirlo en partes más chicas.')
+    }
+    if (response.status === 413) {
+      throw new Error('El PDF es demasiado pesado. Probá descargar el resumen original desde el home banking (suele pesar menos que una versión escaneada).')
     }
     throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
   }
@@ -117,4 +129,42 @@ export async function analyzeStatementWithClaude(pdfText, cardName, userRules, t
     console.error('usage:', data?.usage)
     throw new Error(`No se pudo procesar el extracto: ${e.message}`)
   }
+}
+
+export async function analyzeStatementWithClaude(pdfText, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const response = await fetch('/api/analyze', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      pdfText, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
+      categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
+    })
+  })
+  return parseAnalyzeResponse(response)
+}
+
+// Fallback: manda el PDF completo (base64) para que la IA lo lea como
+// documento. Cubre PDFs que pdf.js no puede abrir, escaneados, o cuya tabla
+// de movimientos no sale en la capa de texto.
+export async function analyzePdfDocumentWithClaude(file, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => resolve(e.target.result.split(',')[1])
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'))
+    reader.readAsDataURL(file)
+  })
+
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const response = await fetch('/api/analyzePdf', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      pdfBase64: base64, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
+      categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
+    })
+  })
+  return parseAnalyzeResponse(response)
 }

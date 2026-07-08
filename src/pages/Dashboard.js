@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { extractTextFromPDF, analyzeStatementWithClaude } from '../lib/pdfReader'
+import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -372,7 +372,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (step === 'processing') {
       setMsgIndex(0)
-      setTimer(120)
+      setTimer(180)
       msgInterval.current = setInterval(() => {
         setMsgIndex(i => (i + 1) % PROCESSING_MSGS.length)
       }, 3000)
@@ -1328,9 +1328,15 @@ export default function Dashboard() {
         result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
         const pdfText = await extractTextFromPDF(archivo)
-        result = tryDirectParsePDF(pdfText)
-        if (!result) {
-          result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
+        if (pdfText) {
+          result = tryDirectParsePDF(pdfText)
+          if (!result) {
+            result = await analyzeStatementWithClaude(pdfText, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
+          }
+        } else {
+          // El PDF no se pudo leer como texto (dañado, escaneado, o la tabla
+          // de movimientos no está en la capa de texto): la IA lo lee entero.
+          result = await analyzePdfDocumentWithClaude(archivo, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
         }
       }
       // Re-aplica reglas/alias por código (no depende de que la IA haya obedecido el prompt),
@@ -3102,9 +3108,11 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <div style={styles.timerBar}>
-                  <div style={{...styles.timerFill, width: `${(timer / 120) * 100}%`, backgroundColor: timer < 20 ? '#e07b39' : '#5C4F5C'}} />
+                  <div style={{...styles.timerFill, width: timer > 0 ? `${(timer / 180) * 100}%` : '100%', backgroundColor: timer === 0 ? '#b8a8c8' : timer < 30 ? '#e07b39' : '#5C4F5C', ...(timer === 0 ? { opacity: 0.7 } : {})}} />
                 </div>
-                <p style={styles.timerText}>{timer}s restantes</p>
+                <p style={styles.timerText}>
+                  {timer > 0 ? `${timer}s restantes` : 'El extracto es largo y está tardando un poco más... seguimos procesando, no cierres la página'}
+                </p>
               </div>
             )}
 
