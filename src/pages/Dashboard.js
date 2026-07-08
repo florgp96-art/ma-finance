@@ -1752,11 +1752,13 @@ export default function Dashboard() {
         const { count: txCount } = await supabase.from('transactions')
           .select('id', { count: 'exact', head: true }).eq('statement_id', existing.id)
         if ((txCount || 0) > 0) {
-          showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
-          setLoading(false)
-          return
+          // Puede ser un extracto distinto con el mismo período detectado
+          // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
+          const seguir = window.confirm(`Ya cargaste un extracto de ${statementData.periodo} para esta cuenta.\n\nSi este es OTRO extracto (por ejemplo, el que cierra el mes siguiente), podés cargarlo igual: los movimientos repetidos aparecen tachados como "ya cargados".\n\n¿Querés cargarlo?`)
+          if (!seguir) { setLoading(false); return }
+        } else {
+          await supabase.from('statements').delete().eq('id', existing.id)
         }
-        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
       // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
@@ -1899,11 +1901,13 @@ export default function Dashboard() {
         const { count: txCount } = await supabase.from('transactions')
           .select('id', { count: 'exact', head: true }).eq('statement_id', existing.id)
         if ((txCount || 0) > 0) {
-          showToast(`Ya cargaste el extracto de ${statementData.periodo} para esta cuenta.`, 'error')
-          setLoading(false)
-          return
+          // Puede ser un resumen distinto con el mismo período detectado
+          // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
+          const seguir = window.confirm(`Ya cargaste un resumen de ${statementData.periodo} para esta cuenta.\n\nSi este es OTRO resumen (por ejemplo, el que cierra el mes siguiente), podés cargarlo igual: los movimientos repetidos aparecen tachados como "ya cargados".\n\n¿Querés cargarlo?`)
+          if (!seguir) { setLoading(false); return }
+        } else {
+          await supabase.from('statements').delete().eq('id', existing.id)
         }
-        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
       const { data: statement, error: errStmt } = await supabase.from('statements').insert({
