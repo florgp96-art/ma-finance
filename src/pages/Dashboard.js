@@ -372,7 +372,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (step === 'processing') {
       setMsgIndex(0)
-      setTimer(120)
+      setTimer(180)
       msgInterval.current = setInterval(() => {
         setMsgIndex(i => (i + 1) % PROCESSING_MSGS.length)
       }, 3000)
@@ -3108,9 +3108,11 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <div style={styles.timerBar}>
-                  <div style={{...styles.timerFill, width: `${(timer / 120) * 100}%`, backgroundColor: timer < 20 ? '#e07b39' : '#5C4F5C'}} />
+                  <div style={{...styles.timerFill, width: timer > 0 ? `${(timer / 180) * 100}%` : '100%', backgroundColor: timer === 0 ? '#b8a8c8' : timer < 30 ? '#e07b39' : '#5C4F5C', ...(timer === 0 ? { opacity: 0.7 } : {})}} />
                 </div>
-                <p style={styles.timerText}>{timer}s restantes</p>
+                <p style={styles.timerText}>
+                  {timer > 0 ? `${timer}s restantes` : 'El extracto es largo y está tardando un poco más... seguimos procesando, no cierres la página'}
+                </p>
               </div>
             )}
 
