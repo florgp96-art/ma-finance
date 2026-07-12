@@ -897,6 +897,72 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, tipo: 'neutro', estado: 'identificado' } : t))
   }
 
+  const getIngresoTagOpts = () => {
+    const ingresosCat = categories.find(c => c.nombre === 'Ingresos')
+    const ingresosSubcats = ingresosCat ? subcategories.filter(s => s.category_id === ingresosCat.id).map(s => s.nombre) : []
+    const existingTags = [...new Set(transactions.filter(t => t.tipo === 'ingreso' && t.tag).map(t => t.tag))]
+    const ocultos = ingresoTagsOcultos || []
+    const allOpts = [...new Set([...ingresosSubcats, ...existingTags, ...(ingresoTags || [])])].filter(t => !ocultos.includes(t)).sort()
+    return { allOpts, valueIsCustom: editTag && !allOpts.includes(editTag) }
+  }
+
+  // Edición apilada para pantallas angostas: la fila en modo edición no entra
+  // en la tabla (quedaban selects ocultos —subcategoría— y el botón de
+  // confirmar recortado fuera de la pantalla), así que se reemplaza la fila
+  // entera por una sola celda a lo ancho con el formulario completo.
+  const renderEditStackMobile = (tx) => {
+    const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
+    const selStyle = { ...styles.editSelect, width: '100%', boxSizing: 'border-box' }
+    return (
+      <td colSpan={9} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 2px' }}>
+          <span style={{ fontSize: '12px', color: '#8e8e93' }}>
+            {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+          </span>
+          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} value={editNombre}
+            onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
+          <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
+            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
+              <option key={a.id} value={a.id}>💳 {a.nombre}</option>
+            ))}
+          </select>
+          {esIngresoTx ? (() => {
+            const { allOpts, valueIsCustom } = getIngresoTagOpts()
+            return (
+              <select style={selStyle} value={valueIsCustom ? '__custom__' : (editTag || '')}
+                onChange={e => { if (e.target.value !== '__custom__') setEditTag(e.target.value) }}>
+                <option value="">— Sin categoría —</option>
+                {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {valueIsCustom && <option value="__custom__">{editTag}</option>}
+              </select>
+            )
+          })() : (
+            <>
+              <select style={selStyle} value={editCategoria}
+                onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }}>
+                {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+              <select style={selStyle} value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)}>
+                <option value="">— Sin subcategoría</option>
+                {filteredSubcats().map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+              </select>
+              {children.length > 0 && (
+                <select style={selStyle} value={editTag} onChange={e => setEditTag(e.target.value)}>
+                  <option value="">👧 Sin hijo/a</option>
+                  {children.map(c => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+                </select>
+              )}
+            </>
+          )}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button style={{ ...styles.saveEditBtn, flex: 1, padding: '10px' }} onClick={() => handleSaveEdit(tx)}>✓ Guardar</button>
+            <button style={{ ...styles.cancelEditBtn, flex: 1, padding: '10px' }} onClick={() => setEditingTx(null)}>✕ Cancelar</button>
+          </div>
+        </div>
+      </td>
+    )
+  }
+
   const renderEditCells = () => (
     <>
       <td style={styles.td}>
@@ -933,12 +999,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   )
 
   const renderEditCellsIngreso = () => {
-    const ingresosCat = categories.find(c => c.nombre === 'Ingresos')
-    const ingresosSubcats = ingresosCat ? subcategories.filter(s => s.category_id === ingresosCat.id).map(s => s.nombre) : []
-    const existingTags = [...new Set(transactions.filter(t => t.tipo === 'ingreso' && t.tag).map(t => t.tag))]
-    const ocultos = ingresoTagsOcultos || []
-    const allOpts = [...new Set([...ingresosSubcats, ...existingTags, ...(ingresoTags || [])])].filter(t => !ocultos.includes(t)).sort()
-    const valueIsCustom = editTag && !allOpts.includes(editTag)
+    const { allOpts, valueIsCustom } = getIngresoTagOpts()
     return (
       <>
         <td style={styles.td}>
@@ -1425,6 +1486,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <tbody>
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
+                  {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
                   <td style={styles.td}>{formatFecha(tx.fecha)}</td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
                   <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
@@ -1457,6 +1519,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </div>
                     </td>
                   )}
+                  </>)}
                 </tr>
               ))}
             </tbody>
@@ -1492,6 +1555,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tbody>
             {identificadas.map(tx => (
               <tr key={tx.id} style={styles.tr}>
+                {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
                 <td style={{...styles.td, whiteSpace: 'nowrap'}}>
                   {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
                 </td>
@@ -1562,6 +1626,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </div>
                   </td>
                 )}
+                </>)}
               </tr>
             ))}
           </tbody>
@@ -1595,6 +1660,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <tbody>
                   {txNeutras.map(tx => (
                     <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
+                      {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
                       <td style={{...styles.td, whiteSpace:'nowrap'}}>{formatFechaCorta(tx.fecha)}</td>
                       {editingTx === tx.id ? renderEditCells() : (
                         <>
@@ -1629,6 +1695,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           </div>
                         </td>
                       )}
+                      </>)}
                     </tr>
                   ))}
                 </tbody>
