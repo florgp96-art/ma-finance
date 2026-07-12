@@ -299,12 +299,12 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                 )}
                 {!hasARS && hasUSD && (
                   <text x={tx} y={ty + 8} textAnchor="middle" fontSize={11} fill={darkMode ? '#9A8A9A' : '#6e6e73'}>
-                    $ {formatMontoFull(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))}
+                    U$S {formatMonto(tooltip.data.originalUSD)} ($ {formatMonto(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))})
                   </text>
                 )}
                 {hasBoth && (
                   <text x={tx} y={ty + 26} textAnchor="middle" fontSize={10} fill="#5588aa">
-                    + $ {formatMontoFull(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))}
+                    +U$S {formatMonto(tooltip.data.originalUSD)} ($ {formatMonto(Math.round(tooltip.data.originalUSD * (parseFloat(tipoCambio) || 0)))})
                   </text>
                 )}
               </g>
@@ -338,7 +338,12 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                 </div>
                 {hasUSD && (
                   <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
-                    +$ {formatMonto(Math.round(usdAmt * (parseFloat(tipoCambio) || 0)))}
+                    +U$S {formatMonto(usdAmt)}{(parseFloat(tipoCambio) || 0) > 0 ? ` ($ ${formatMonto(Math.round(usdAmt * parseFloat(tipoCambio)))})` : ''}
+                  </div>
+                )}
+                {(b.originalEUR || 0) > 0 && (
+                  <div style={{ fontSize: '10px', color: '#7a88aa', whiteSpace: 'nowrap' }}>
+                    +€ {formatMonto(b.originalEUR)}
                   </div>
                 )}
               </div>
@@ -358,7 +363,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                   </div>
                   {(c.originalUSD || 0) > 0 && (
                     <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
-                      +U$S {formatMonto(c.originalUSD)}
+                      +U$S {formatMonto(c.originalUSD)}{(parseFloat(tipoCambio) || 0) > 0 ? ` ($ ${formatMonto(Math.round(c.originalUSD * parseFloat(tipoCambio)))})` : ''}
                     </div>
                   )}
                 </div>
