@@ -136,12 +136,13 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const handleSaveEdit = async (tx) => {
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
-    await supabase.from('transactions').update({
+    const { error } = await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj?.id || null,
       subcategory_id: subcatObj?.id || null,
       estado: 'identificado',
     }).eq('id', tx.id)
+    if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
     setTransactions(prev => prev.map(t => t.id === tx.id ? {
       ...t,
       nombre: editNombre,
