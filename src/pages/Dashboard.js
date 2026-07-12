@@ -189,6 +189,24 @@ export default function Dashboard() {
   const configPanelRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
 
+  // Preferencias sincronizadas entre dispositivos (metas del mes, ahorro,
+  // cuentas de ahorro): se guardan en user_rules como __pref__{clave} con un
+  // pequeño debounce (los inputs cambian por tecla). prefsLoaded evita pisar
+  // la DB con el valor local de este navegador antes de haberla leído.
+  const prefsLoaded = useRef(false)
+  const prefTimers = useRef({})
+  const persistPref = (key, value) => {
+    clearTimeout(prefTimers.current[key])
+    prefTimers.current[key] = setTimeout(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from('user_rules').upsert({
+        user_id: user.id, texto_original: `__pref__${key}`,
+        nombre_asignado: JSON.stringify(value), category_id: null, subcategory_id: null
+      }, { onConflict: 'user_id,texto_original' })
+    }, 800)
+  }
+
   // Servicios y marcas de pagado viven en la DB (user_rules) para verse igual
   // en todos los dispositivos; localStorage queda solo como caché local.
   const persistServicios = async (userId, list) => {
@@ -232,10 +250,10 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
-  useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {} }, [ahorro])
-  useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {} }, [cuentasAhorro])
-  useEffect(() => { try { localStorage.setItem('ma_meta_ingresos', metaIngresos) } catch {} }, [metaIngresos])
-  useEffect(() => { try { localStorage.setItem('ma_limite_egresos', limiteEgresos) } catch {} }, [limiteEgresos])
+  useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro])
+  useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro])
+  useEffect(() => { try { localStorage.setItem('ma_meta_ingresos', metaIngresos) } catch {}; if (prefsLoaded.current) persistPref('meta_ingresos', metaIngresos) }, [metaIngresos])
+  useEffect(() => { try { localStorage.setItem('ma_limite_egresos', limiteEgresos) } catch {}; if (prefsLoaded.current) persistPref('limite_egresos', limiteEgresos) }, [limiteEgresos])
 
   // Metas del mes: trae ingresos y gastos del mes en curso (todas las cuentas) para las barras de progreso
   useEffect(() => {
@@ -323,6 +341,27 @@ export default function Dashboard() {
         setServicios(serviciosList
           ? serviciosList.map((s, i) => ({ ...s, id: s.id || `${s.nombre}_${i}`, dia: s.dia ?? (s.vencimiento ? parseInt(s.vencimiento, 10) : null) }))
           : SERVICIOS_DEFAULT)
+
+        // Preferencias sincronizadas (metas del mes, proyección de ahorro,
+        // cuentas de ahorro): DB primero; si la DB no tiene nada y este
+        // navegador guarda datos viejos en localStorage, se migran solos.
+        const { data: prefRows } = await supabase.from('user_rules')
+          .select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__pref__%')
+        const prefs = Object.fromEntries((prefRows || []).map(r => [r.texto_original.replace('__pref__', ''), r.nombre_asignado]))
+        const readPref = (key) => { try { return prefs[key] !== undefined ? JSON.parse(prefs[key]) : undefined } catch { return undefined } }
+        const metaIngDB = readPref('meta_ingresos')
+        if (metaIngDB !== undefined) setMetaIngresos(metaIngDB || '')
+        else if (metaIngresos) persistPref('meta_ingresos', metaIngresos)
+        const limEgDB = readPref('limite_egresos')
+        if (limEgDB !== undefined) setLimiteEgresos(limEgDB || '')
+        else if (limiteEgresos) persistPref('limite_egresos', limiteEgresos)
+        const ahorroDB = readPref('ahorro')
+        if (ahorroDB) setAhorro(ahorroDB)
+        else if (ahorro && (ahorro.monto || ahorro.anos)) persistPref('ahorro', ahorro)
+        const cuentasAhorroDB = readPref('cuentas_ahorro')
+        if (Array.isArray(cuentasAhorroDB)) setCuentasAhorro(cuentasAhorroDB)
+        else if (cuentasAhorro.length > 0) persistPref('cuentas_ahorro', cuentasAhorro)
+        prefsLoaded.current = true
 
         // Mini chart: últimos 6 meses — guardamos txs crudas para recalcular con TC live
         const now = new Date()
