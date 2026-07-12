@@ -555,7 +555,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
       const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange }
       if (montoCorregido !== undefined) upd.monto = montoCorregido
-      await supabase.from('transactions').update(upd).eq('id', tx.id)
+      const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
+      if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
       setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
@@ -564,7 +565,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
 
     // Actualizar la transacción — monto siempre positivo (el tipo determina el signo en pantalla)
-    await supabase.from('transactions').update({
+    const { error: errUpd } = await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj ? catObj.id : tx.category_id,
       subcategory_id: subcatObj ? subcatObj.id : null,
@@ -573,6 +574,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       ...accountChange,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
+    if (errUpd) { window.alert('No se pudo guardar el cambio: ' + errUpd.message + '\nProbá de nuevo.'); return }
 
     // Guardar regla aprendida en user_rules si hay un detalle original
     const texto_original = (tx.detalle || '').trim()
