@@ -49,7 +49,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [iconInput, setIconInput] = useState('')
 
   // Aliases form
-  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
+  const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '', porcentaje: '50' })
   const [pendingRulesCount, setPendingRulesCount] = useState(0)
   const [checkingPending, setCheckingPending] = useState(false)
 
@@ -264,9 +264,11 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     const aliasKeyword = newAlias.alias.trim().toUpperCase()
     const valorFinal = newAlias.tipo === 'neutro'
       ? 'Neutro'
-      : newAlias.tipo === 'categoria' && newAlias.subcategoria
-        ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
-        : newAlias.valor.trim()
+      : newAlias.tipo === 'split'
+        ? `${newAlias.valor.trim()}:${Math.min(95, Math.max(5, parseFloat(newAlias.porcentaje) || 50))}`
+        : newAlias.tipo === 'categoria' && newAlias.subcategoria
+          ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
+          : newAlias.valor.trim()
     await supabase.from('user_aliases').insert({
       user_id: user.id,
       alias: aliasKeyword,
@@ -279,7 +281,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     showToast(actualizados > 0 ? `Regla creada y aplicada a ${actualizados} movimiento(s) existente(s).` : 'Regla creada.')
     if (actualizados > 0) onRefresh?.()
 
-    setNewAlias({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '' })
+    setNewAlias({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '', porcentaje: '50' })
     fetchUserAliases()
   }
 
@@ -574,9 +576,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                       <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                         <td style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
                         <td style={{ padding: '8px' }}>
-                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo}</span>
+                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'split' ? (darkMode ? '#1B3A2E' : '#E0F2EA') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo === 'split' ? 'dividir' : a.tipo}</span>
                         </td>
-                        <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>{a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}</td>
+                        <td style={{ padding: '8px', color: '#6e6e73', fontSize: '13px' }}>
+                          {a.tipo === 'split'
+                            ? (() => { const [h, pct] = String(a.valor || '').split(':'); return `${pct || 50}% ${h} / ${100 - (parseFloat(pct) || 50)}% resto` })()
+                            : a.valor}{a.descripcion ? ` · ${a.descripcion}` : ''}
+                        </td>
                         <td style={{ padding: '8px' }}>
                           <button style={s.actionBtn} onClick={() => handleDeleteAlias(a.id)}>🗑️</button>
                         </td>
@@ -586,7 +592,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 </table>
               )}
             </div>
-            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (newAlias.tipo === 'categoria' ? '1fr 90px 1fr 1fr auto' : '1fr 100px 1fr auto'), gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
+            <form onSubmit={handleAddAlias} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : ((newAlias.tipo === 'categoria' || newAlias.tipo === 'split') ? '1fr 90px 1fr 1fr auto' : '1fr 100px 1fr auto'), gap: '8px', alignItems: 'end', marginBottom: '20px' }}>
               <div>
                 <label style={s.label}>Palabra clave</label>
                 <input style={s.input} placeholder="ej. OSDE, DISCO, UBER" value={newAlias.alias} onChange={e => setNewAlias({...newAlias, alias: e.target.value})} />
@@ -596,6 +602,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 <select style={s.input} value={newAlias.tipo} onChange={e => setNewAlias({...newAlias, tipo: e.target.value, valor: '', subcategoria: ''})}>
                   <option value="categoria">Cat.</option>
                   <option value="hijo">Hijo/a</option>
+                  <option value="split">Dividir hijo/a</option>
                   <option value="cuenta">Cuenta</option>
                   <option value="neutro">Neutro</option>
                 </select>
@@ -632,6 +639,21 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                 </div>
+              ) : newAlias.tipo === 'split' ? (
+                <>
+                  <div>
+                    <label style={s.label}>Hijo/a</label>
+                    <select style={s.input} value={newAlias.valor} onChange={e => setNewAlias({...newAlias, valor: e.target.value})}>
+                      <option value="">— Elegir —</option>
+                      {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={s.label}>% del hijo/a</label>
+                    <input style={s.input} type="number" min="5" max="95" step="5" value={newAlias.porcentaje}
+                      onChange={e => setNewAlias({...newAlias, porcentaje: e.target.value})} />
+                  </div>
+                </>
               ) : (
                 <div>
                   <label style={s.label}>Nombre de la cuenta</label>
