@@ -1340,21 +1340,25 @@ export default function Dashboard() {
         const rNorm = (r.texto_original || '').toLowerCase().trim()
         return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
       })
+      // La regla aprendida (categoría) tiene prioridad sobre el alias de
+      // categoría, pero los alias de hijo/neutro aplican SIEMPRE: la regla
+      // aprendida no guarda hijo, y antes lo pisaba (un gasto con regla de
+      // categoría nunca recibía su hijo/a por alias).
       if (ruleMatch) {
         updated.categoria_sugerida = ruleMatch.categoria
         updated.subcategoria_sugerida = ruleMatch.subcategoria
       } else {
         const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
-        const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
-        const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
         if (catAlias) {
           const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
           updated.categoria_sugerida = cat
           updated.subcategoria_sugerida = subcat || null
         }
-        if (hijoAlias) updated.hijo = hijoAlias.valor
-        if (neutroAlias) updated.tipo = 'neutro'
       }
+      const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
+      const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
+      if (hijoAlias) updated.hijo = hijoAlias.valor
+      if (neutroAlias) updated.tipo = 'neutro'
       // Regla "dividir con hijo/a" (ej. OSDE → 50% Amelia): el gasto se parte
       // en dos movimientos reales, así gráficos, totales y detalle por hijo
       // cierran solos sin lógica especial en ningún otro lado.
