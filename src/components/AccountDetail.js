@@ -853,7 +853,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return (
       norm(t.nombre).includes(q) ||
       (!t.nombre && norm(t.detalle).includes(q)) ||
-      norm(t.categories?.nombre).includes(q) ||
+      // Sin categoría asignada cuenta como "A Identificar": el gráfico las
+      // agrupa bajo esa etiqueta y el buscador tiene que encontrarlas igual
+      norm(t.categories?.nombre || (t.tipo !== 'ingreso' ? 'A Identificar' : '')).includes(q) ||
       norm(t.subcategories?.nombre).includes(q) ||
       norm(t.children?.nombre).includes(q) ||
       norm(t.tag).includes(q) ||
