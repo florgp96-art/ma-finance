@@ -333,13 +333,31 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
               <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, marginTop: '2px', outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
               <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', lineHeight: '1.3' }}>{cfg.icon} {b.name}</span>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                  $ {formatMonto(arsAmt > 0 ? arsAmt : b.value)}
-                </div>
-                {hasUSD && (
-                  <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
-                    +U$S {formatMonto(usdAmt)}{(parseFloat(tipoCambio) || 0) > 0 ? ` ($ ${formatMonto(Math.round(usdAmt * parseFloat(tipoCambio)))})` : ''}
-                  </div>
+                {/* Solo-dólares: U$S como monto principal y la equivalencia en
+                    pesos abajo — antes aparecía el mismo número dos veces
+                    (convertido arriba y "+$" abajo). */}
+                {arsAmt === 0 && hasUSD ? (
+                  <>
+                    <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                      U$S {formatMonto(usdAmt)}
+                    </div>
+                    {(parseFloat(tipoCambio) || 0) > 0 && (
+                      <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
+                        ($ {formatMonto(Math.round(usdAmt * parseFloat(tipoCambio)))})
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
+                      $ {formatMonto(arsAmt > 0 ? arsAmt : b.value)}
+                    </div>
+                    {hasUSD && (
+                      <div style={{ fontSize: '10px', color: '#5588aa', whiteSpace: 'nowrap' }}>
+                        +U$S {formatMonto(usdAmt)}{(parseFloat(tipoCambio) || 0) > 0 ? ` ($ ${formatMonto(Math.round(usdAmt * parseFloat(tipoCambio)))})` : ''}
+                      </div>
+                    )}
+                  </>
                 )}
                 {(b.originalEUR || 0) > 0 && (
                   <div style={{ fontSize: '10px', color: '#7a88aa', whiteSpace: 'nowrap' }}>
