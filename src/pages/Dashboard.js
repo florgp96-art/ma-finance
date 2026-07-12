@@ -2011,14 +2011,17 @@ export default function Dashboard() {
               fechaFinal = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
             }
           }
+          const detalleTxLowerC = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+          const esDevolucionC = detalleTxLowerC.includes('devoluci') || detalleTxLowerC.includes('dev.imp') || detalleTxLowerC.includes('reintegro')
+          const esCreditoC = t.es_credito || esDevolucionC || t.tipo === 'ingreso'
           return {
             user_id: user.id, account_id: account.id, statement_id: statement.id,
             fecha: fechaFinal,
             nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
             detalle: t.nombre_original,
-            monto: t.es_credito ? -Math.abs(t.monto) : t.monto,
+            monto: Math.abs(t.monto),
             moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
-            tipo: t.tipo === 'neutro' ? 'neutro' : 'gasto', category_id: categoryId,
+            tipo: t.tipo === 'neutro' ? 'neutro' : (esCreditoC ? 'ingreso' : 'gasto'), category_id: categoryId,
             subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
             tag: getHijoTag(t.hijo),
             estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
