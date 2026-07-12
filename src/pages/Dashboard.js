@@ -1293,29 +1293,47 @@ export default function Dashboard() {
   // devolvió la IA (o el parser directo), sin depender de que la IA haya obedecido el prompt.
   // Prioridad: reglas aprendidas > alias de categoría/hijo.
   const aplicarReglasYAlias = (transacciones, rules, aliasesList) => {
-    return (transacciones || []).map(t => {
+    return (transacciones || []).flatMap(t => {
       const descNorm = ((t.descripcion || t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().trim()
       const descUpper = descNorm.toUpperCase()
+      let updated = { ...t }
       const ruleMatch = (rules || []).find(r => {
         const rNorm = (r.texto_original || '').toLowerCase().trim()
         return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
       })
       if (ruleMatch) {
-        return { ...t, categoria_sugerida: ruleMatch.categoria, subcategoria_sugerida: ruleMatch.subcategoria }
+        updated.categoria_sugerida = ruleMatch.categoria
+        updated.subcategoria_sugerida = ruleMatch.subcategoria
+      } else {
+        const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
+        const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
+        const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
+        if (catAlias) {
+          const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
+          updated.categoria_sugerida = cat
+          updated.subcategoria_sugerida = subcat || null
+        }
+        if (hijoAlias) updated.hijo = hijoAlias.valor
+        if (neutroAlias) updated.tipo = 'neutro'
       }
-      const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
-      const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
-      const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
-      if (!catAlias && !hijoAlias && !neutroAlias) return t
-      const updated = { ...t }
-      if (catAlias) {
-        const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
-        updated.categoria_sugerida = cat
-        updated.subcategoria_sugerida = subcat || null
+      // Regla "dividir con hijo/a" (ej. OSDE → 50% Amelia): el gasto se parte
+      // en dos movimientos reales, así gráficos, totales y detalle por hijo
+      // cierran solos sin lógica especial en ningún otro lado.
+      const splitAlias = (aliasesList || []).find(a => a.tipo === 'split' && descUpper.includes(a.alias))
+      const montoNum = Number(updated.monto) || 0
+      if (splitAlias && updated.tipo !== 'ingreso' && montoNum > 0) {
+        const [hijoNombre, pctStr] = String(splitAlias.valor || '').split(':')
+        const pct = Math.min(95, Math.max(5, parseFloat(pctStr) || 50))
+        const parteHijo = Math.round(montoNum * pct) / 100
+        const parteResto = Math.round((montoNum - parteHijo) * 100) / 100
+        if (hijoNombre && parteHijo > 0 && parteResto > 0) {
+          return [
+            { ...updated, monto: parteHijo, hijo: hijoNombre },
+            { ...updated, monto: parteResto, hijo: updated.hijo && updated.hijo !== hijoNombre ? updated.hijo : null },
+          ]
+        }
       }
-      if (hijoAlias) updated.hijo = hijoAlias.valor
-      if (neutroAlias) updated.tipo = 'neutro'
-      return updated
+      return [updated]
     })
   }
 
