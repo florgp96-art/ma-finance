@@ -586,6 +586,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
+    // Elegir la categoría "Ingresos" tiene que convertir la transacción en un ingreso
+    // de verdad (tipo), no solo cambiarle el color de la etiqueta — si no, el monto
+    // sigue mostrándose en negativo pese a decir "Ingresos".
+    const pasaAIngreso = catObj?.nombre === 'Ingresos'
 
     // Actualizar la transacción — monto siempre positivo (el tipo determina el signo en pantalla)
     const { error: errUpd } = await supabase.from('transactions').update({
@@ -594,6 +598,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado',
       tag: editTag || null,
+      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
       ...accountChange,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
@@ -627,6 +632,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       estado: 'identificado',
       categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
       subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
       ...accountChange,
       ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
