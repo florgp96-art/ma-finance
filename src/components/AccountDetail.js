@@ -422,6 +422,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     next.has(statementId) ? next.delete(statementId) : next.add(statementId)
     return next
   })
+  const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
+  const guardarCicloDesde = async (accountId, fecha) => {
+    setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
+    await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
+  }
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -1103,16 +1108,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // de esa cuenta — si no, cualquier carga vieja por Excel (que nunca tiene statement_id)
   // se sumaría como si fuera de este mes.
   const statementsSinResumen = cuentasCreditoAPagar.map(a => {
-    const ultimoCierre = statements
+    const ultimoCierreAuto = statements
       .filter(st => st.account_id === a.id)
       .reduce((max, st) => {
         const f = st.fecha_hasta || st.fecha_vencimiento
         return f && (!max || f > max) ? f : max
       }, null)
+    const cicloDesdeManual = cicloDesdeOverride[a.id] !== undefined ? cicloDesdeOverride[a.id] : (a.ciclo_actual_desde || null)
+    // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
+    // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
+    const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
     const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre))
-    if (sueltas.length === 0) return null
+    if (sueltas.length === 0 && !cicloDesdeManual) return null
     const total = sueltas.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -Number(t.monto) : Number(t.monto)), 0)
-    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true }
+    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true, cicloDesde: cicloDesdeManual }
   }).filter(Boolean)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
@@ -1189,7 +1198,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px' }}>
                       <div>
                         <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
-                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>{s._virtual ? 'Todavía sin resumen cargado' : `Vence: ${s.fecha_vencimiento}`}</p>
+                        {s._virtual ? (
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            Contando desde
+                            <input type="date" value={s.cicloDesde || ''} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
+                              style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
+                            {!s.cicloDesde && '(auto)'}
+                          </p>
+                        ) : (
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>{`Vence: ${s.fecha_vencimiento}`}</p>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         {s.total_resumen > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>}
