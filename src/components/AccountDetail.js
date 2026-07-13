@@ -416,6 +416,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [vistaCuenta, setVistaCuenta] = useState('movimientos')
   const [apagarSortKey, setApagarSortKey] = useState('monto')
   const [apagarSortDir, setApagarSortDir] = useState('desc')
+  const [detalleAbierto, setDetalleAbierto] = useState(() => new Set())
+  const toggleDetalleAPagar = (statementId) => setDetalleAbierto(prev => {
+    const next = new Set(prev)
+    next.has(statementId) ? next.delete(statementId) : next.add(statementId)
+    return next
+  })
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -1178,6 +1184,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </div>
                     )}
                     {items.length > 0 && (
+                      <div
+                        onClick={() => toggleDetalleAPagar(s.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: detalleAbierto.has(s.id) ? '10px' : 0 }}>
+                        <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                          {detalleAbierto.has(s.id) ? '▾' : '▸'} Detalle ({items.length})
+                        </span>
+                      </div>
+                    )}
+                    {items.length > 0 && detalleAbierto.has(s.id) && (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={styles.table}>
                           <thead>
