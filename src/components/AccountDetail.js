@@ -414,6 +414,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
   const [filtroCuenta, setFiltroCuenta] = useState('')
   const [vistaCuenta, setVistaCuenta] = useState('movimientos')
+  const [apagarSortKey, setApagarSortKey] = useState('monto')
+  const [apagarSortDir, setApagarSortDir] = useState('desc')
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -1091,10 +1093,32 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
         .sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))
     : []
-  const itemsPorStatement = (statementId) =>
-    transactions
-      .filter(t => t.statement_id === statementId && t.tipo !== 'neutro')
-      .sort((a, b) => Number(b.monto) - Number(a.monto))
+  const itemsPorStatement = (statementId) => {
+    const items = transactions.filter(t => t.statement_id === statementId && t.tipo !== 'neutro')
+    return [...items].sort((a, b) => {
+      let valA, valB
+      if (apagarSortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
+      else if (apagarSortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
+      else if (apagarSortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
+      else { valA = Number(a.monto); valB = Number(b.monto) }
+      if (valA < valB) return apagarSortDir === 'asc' ? -1 : 1
+      if (valA > valB) return apagarSortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+  const categoriasResumen = (items) => {
+    const map = {}
+    items.forEach(t => {
+      const cat = t.categories?.nombre || 'A Identificar'
+      map[cat] = (map[cat] || 0) + Number(t.monto)
+    })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }
+  const handleApagarSort = (key) => {
+    if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
+  }
+  const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
   const mostrarMovimientos = vistaCuenta === 'movimientos' || !esTarjetaCredito
 
   return (
@@ -1138,13 +1162,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </div>
                     </div>
                     {items.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+                        {categoriasResumen(items).map(([cat, total]) => (
+                          <span key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                            {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {items.length > 0 && (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={styles.table}>
                           <thead>
                             <tr>
-                              <th style={styles.th}>Nombre</th>
-                              <th style={styles.th}>Categoría</th>
-                              <th style={{ ...styles.th, textAlign: 'right' }}>Monto</th>
+                              <th style={styles.thSortable} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
+                              <th style={styles.thSortable} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
+                              <th style={styles.thSortable} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
+                              <th style={{ ...styles.thSortable, textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1155,6 +1189,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                                   <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                                     {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                                   </span>
+                                </td>
+                                <td style={styles.td}>
+                                  <span style={{ fontSize: '12px', color: '#888' }}>{tx.subcategories?.nombre || '—'}</span>
                                 </td>
                                 <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
                                   {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
