@@ -1086,13 +1086,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return { ...s, txCount: count }
     })
 
-  const esTarjetaCredito = !allAccounts && account?.tipo === 'credito'
+  const mostrarTabAPagar = allAccounts || account?.tipo === 'credito'
   const hoyISO = new Date().toISOString().slice(0, 10)
-  const statementsAPagar = esTarjetaCredito
+  const statementsAPagar = mostrarTabAPagar
     ? [...statements]
         .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
         .sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))
     : []
+  const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
   const itemsPorStatement = (statementId) => {
     const items = transactions.filter(t => t.statement_id === statementId && t.tipo !== 'neutro')
     return [...items].sort((a, b) => {
@@ -1119,11 +1120,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
   }
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
-  const mostrarMovimientos = vistaCuenta === 'movimientos' || !esTarjetaCredito
+  const mostrarMovimientos = vistaCuenta === 'movimientos' || !mostrarTabAPagar
 
   return (
     <div>
-      {esTarjetaCredito && (
+      {mostrarTabAPagar && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
           {[{ key: 'movimientos', label: '🫧 Movimientos' }, { key: 'apagar', label: '📌 A pagar' }].map(t => (
             <button key={t.key} onClick={() => setVistaCuenta(t.key)}
@@ -1134,22 +1135,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         </div>
       )}
 
-      {esTarjetaCredito && vistaCuenta === 'apagar' && (
+      {mostrarTabAPagar && vistaCuenta === 'apagar' && (
         <div style={{ marginBottom: '32px' }}>
-          <h3 style={styles.chartTitle}>📌 A pagar</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+            <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar{allAccounts ? ' — todas las tarjetas' : ''}</h3>
+            {totalAPagarGeneral > 0 && (
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>Total: $ {formatMonto(totalAPagarGeneral)}</p>
+            )}
+          </div>
           {statementsAPagar.length === 0 ? (
-            <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo para esta cuenta.</p>
+            <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {statementsAPagar.map(s => {
                 const items = itemsPorStatement(s.id)
                 const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
                 const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
+                const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
                 return (
                   <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px' }}>
                       <div>
-                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}</p>
+                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}</p>
                         <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>Vence: {s.fecha_vencimiento}</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
