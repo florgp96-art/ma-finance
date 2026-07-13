@@ -3134,8 +3134,9 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — desktop: tercera columna fija a la derecha */}
-          {!isMobile && !isTablet && (
+          {/* Widgets — desktop: tercera columna fija a la derecha (se oculta en Resumen/A pagar
+              de Todas las cuentas para darle más ancho a la tabla) */}
+          {!isMobile && !isTablet && !(selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar')) && (
           <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
             {sideWidgets()}
           </div>
