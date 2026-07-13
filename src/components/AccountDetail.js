@@ -422,6 +422,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     next.has(statementId) ? next.delete(statementId) : next.add(statementId)
     return next
   })
+  const [tarjetaAbierta, setTarjetaAbierta] = useState(() => new Set())
+  const toggleTarjetaAPagar = (statementId) => setTarjetaAbierta(prev => {
+    const next = new Set(prev)
+    next.has(statementId) ? next.delete(statementId) : next.add(statementId)
+    return next
+  })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const guardarCicloDesde = async (accountId, fecha) => {
@@ -1308,15 +1314,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
                 const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
                 const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
+                const tarjetaExpandida = tarjetaAbierta.has(s.id)
                 return (
                   <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px' }}>
+                    <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
                       <div>
-                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
+                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
                         {s._virtual ? (
                           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             Contando desde
-                            <input type="date" value={s.cicloDesde || ''} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
+                            <input type="date" value={s.cicloDesde || ''} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
                               style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
                             {!s.cicloDesde && '(auto)'}
                           </p>
@@ -1334,7 +1341,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         )}
                       </div>
                     </div>
-                    {items.length > 0 && (
+                    {tarjetaExpandida && items.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
                         {categoriasResumen(items).map(([cat, total]) => (
                           <span key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
@@ -1343,7 +1350,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         ))}
                       </div>
                     )}
-                    {items.length > 0 && (
+                    {tarjetaExpandida && items.length > 0 && (
                       <div
                         onClick={() => toggleDetalleAPagar(s.id)}
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: detalleAbierto.has(s.id) ? '10px' : 0 }}>
@@ -1352,7 +1359,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         </span>
                       </div>
                     )}
-                    {items.length > 0 && detalleAbierto.has(s.id) && (
+                    {tarjetaExpandida && items.length > 0 && detalleAbierto.has(s.id) && (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={styles.table}>
                           <thead>
