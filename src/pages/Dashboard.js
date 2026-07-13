@@ -2924,7 +2924,7 @@ export default function Dashboard() {
               </div>
             )
           })()}
-          {isTablet && sideWidgets()}
+          {(isTablet || (!isMobile && selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar'))) && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
