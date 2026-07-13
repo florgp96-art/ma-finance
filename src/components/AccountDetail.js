@@ -394,7 +394,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged, soloAPagar }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -1098,7 +1098,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return { ...s, txCount: count }
     })
 
-  const mostrarTabAPagar = allAccounts || account?.tipo === 'credito'
+  // En "Resumen General" (todas las cuentas sin soloAPagar) ya no se muestra acá: vive en
+  // su propia pestaña de primer nivel. Sigue disponible dentro de cada cuenta individual.
+  const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
   const hoyISO = new Date().toISOString().slice(0, 10)
   const mesActual = hoyISO.slice(0, 7)
   const cuentasCreditoAPagar = mostrarTabAPagar
@@ -1140,8 +1142,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const totalUsd = sueltas.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
     return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte }
   }).filter(Boolean)
+  // Los resúmenes reales solo guardan el total en pesos del PDF — el total en USD se
+  // calcula acá sumando las transacciones en dólares que quedaron dentro de ese resumen.
+  const statementsRealesConUsd = statements
+    .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
+    .map(s => {
+      const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
+      const totalUsd = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+      return { ...s, total_usd: totalUsd }
+    })
   const statementsAPagar = mostrarTabAPagar
-    ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
+    ? [...statementsSinResumen, ...statementsRealesConUsd]
         .sort((a, b) => {
           if (!a.fecha_vencimiento && !b.fecha_vencimiento) return 0
           if (!a.fecha_vencimiento) return -1
@@ -1179,11 +1190,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
   }
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
-  const mostrarMovimientos = vistaCuenta === 'movimientos' || !mostrarTabAPagar
+  const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
+  const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
+  const categoriasResumenGeneral = soloAPagar
+    ? (() => {
+        const map = {}
+        statementsAPagar.forEach(s => {
+          itemsPorStatement(s).forEach(t => {
+            const cat = t.categories?.nombre || 'A Identificar'
+            map[cat] = (map[cat] || 0) + Number(t.monto)
+          })
+        })
+        return Object.entries(map).sort((a, b) => b[1] - a[1])
+      })()
+    : []
 
   return (
     <div>
-      {mostrarTabAPagar && (
+      {mostrarTabAPagar && !soloAPagar && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
           {[{ key: 'movimientos', label: '🫧 Movimientos' }, { key: 'apagar', label: '📌 A pagar' }].map(t => (
             <button key={t.key} onClick={() => setVistaCuenta(t.key)}
@@ -1194,7 +1218,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         </div>
       )}
 
-      {mostrarTabAPagar && vistaCuenta === 'apagar' && (
+      {mostrarTabAPagar && vistaApagarActiva && (
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
             <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar{allAccounts ? ' — todas las tarjetas' : ''}</h3>
@@ -1207,6 +1231,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </div>
           </div>
+          {categoriasResumenGeneral.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              {categoriasResumenGeneral.map(([cat, total]) => (
+                <span key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                  {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                </span>
+              ))}
+            </div>
+          )}
           {statementsAPagar.length === 0 ? (
             <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
           ) : (
