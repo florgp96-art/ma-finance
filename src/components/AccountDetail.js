@@ -1184,9 +1184,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return 0
     })
   }
+  // Los reintegros/devoluciones (tipo "ingreso") ya restan del total a pagar, pero no
+  // pintan como si fueran un gasto de esa categoría — se excluyen del desglose.
   const categoriasResumen = (items) => {
     const map = {}
-    items.forEach(t => {
+    items.filter(t => t.tipo !== 'ingreso').forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
       map[cat] = (map[cat] || 0) + Number(t.monto)
     })
@@ -1203,7 +1205,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? (() => {
         const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
-          itemsPorStatement(s).forEach(t => {
+          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             const destino = t.moneda === 'USD' ? mapUsd : map
             destino[cat] = (destino[cat] || 0) + Number(t.monto)
@@ -1219,7 +1221,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? (() => {
         const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
-          itemsPorStatement(s).forEach(t => {
+          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
