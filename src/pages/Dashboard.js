@@ -724,12 +724,25 @@ export default function Dashboard() {
         const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'gastos') || wb.SheetNames[0]
         const ws = sheetName ? wb.Sheets[sheetName] : null
         if (!ws) { reject(new Error('El archivo no tiene ninguna hoja. Usá la plantilla descargable.')); return }
+        const normKey = (k) => k.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\s_]+/g, '')
+        const HEADER_ALIASES = {
+          FECHA: 'FECHA', DESCRIPCION: 'DESCRIPCION', TIPO: 'TIPO',
+          MONTOARS: 'MONTO_ARS', MONTOUSD: 'MONTO_USD',
+          CATEGORIA: 'CATEGORIA', SUBCATEGORIA: 'SUBCATEGORIA',
+          HIJO: 'HIJO', MODOPAGO: 'MODO_PAGO',
+        }
         const rows = XLSX.utils.sheet_to_json(ws, { defval: null }).map(row => {
           const norm = {}
-          Object.keys(row).forEach(k => { norm[k.trim().toUpperCase()] = row[k] })
+          Object.keys(row).forEach(k => { norm[HEADER_ALIASES[normKey(k)] || k.trim().toUpperCase()] = row[k] })
           return norm
         })
-        const toNum = (v) => parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0
+        const toNum = (v) => {
+          let s = String(v ?? '').trim().replace(/[()]/g, '').replace(/[^0-9.,-]/g, '')
+          if (!s) return 0
+          if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+          else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+          return parseFloat(s) || 0
+        }
         const parsed = rows
           .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
           .map(row => {
