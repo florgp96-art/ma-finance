@@ -1108,13 +1108,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     : []
   // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
   // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
-  // real de la tarjeta — por eso para cuotas se compara por mes contra el mes del corte y
-  // hasta el mes actual, en vez de por fecha exacta. El resto de los movimientos sí tiene
-  // fecha real, así que se compara exacto.
+  // real de la tarjeta — por eso para cuotas se compara por mes exacto contra el mes del
+  // corte (ni el mes anterior ni el siguiente), en vez de por fecha exacta. El resto de los
+  // movimientos sí tiene fecha real, así que se compara exacto.
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
     if ((t.cuotas_total || 1) > 1) {
       const mesTx = t.fecha?.slice(0, 7)
-      return (!mesCorte || mesTx >= mesCorte) && mesTx <= mesActual
+      return mesTx === (mesCorte || mesActual)
     }
     return (!ultimoCierre || t.fecha >= ultimoCierre) && t.fecha <= hoyISO
   }
