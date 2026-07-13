@@ -413,6 +413,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
 const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
   const [filtroCuenta, setFiltroCuenta] = useState('')
+  const [vistaCuenta, setVistaCuenta] = useState('movimientos')
 
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
@@ -431,6 +432,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }, [])
 
   useEffect(() => { setFiltroCuenta('') }, [account, allAccounts])
+  useEffect(() => { setVistaCuenta('movimientos') }, [account, allAccounts])
 
   useEffect(() => {
     if (allAccounts && accounts && accounts.length > 0) fetchAllData()
@@ -1082,8 +1084,96 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return { ...s, txCount: count }
     })
 
+  const esTarjetaCredito = !allAccounts && account?.tipo === 'credito'
+  const hoyISO = new Date().toISOString().slice(0, 10)
+  const statementsAPagar = esTarjetaCredito
+    ? [...statements]
+        .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
+        .sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))
+    : []
+  const itemsPorStatement = (statementId) =>
+    transactions
+      .filter(t => t.statement_id === statementId && t.tipo !== 'neutro')
+      .sort((a, b) => Number(b.monto) - Number(a.monto))
+  const mostrarMovimientos = vistaCuenta === 'movimientos' || !esTarjetaCredito
+
   return (
     <div>
+      {esTarjetaCredito && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          {[{ key: 'movimientos', label: '🫧 Movimientos' }, { key: 'apagar', label: '📌 A pagar' }].map(t => (
+            <button key={t.key} onClick={() => setVistaCuenta(t.key)}
+              style={{ padding: '7px 16px', borderRadius: '20px', border: `1.5px solid ${vistaCuenta === t.key ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: vistaCuenta === t.key ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: vistaCuenta === t.key ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {esTarjetaCredito && vistaCuenta === 'apagar' && (
+        <div style={{ marginBottom: '32px' }}>
+          <h3 style={styles.chartTitle}>📌 A pagar</h3>
+          {statementsAPagar.length === 0 ? (
+            <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo para esta cuenta.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {statementsAPagar.map(s => {
+                const items = itemsPorStatement(s.id)
+                const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
+                const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
+                return (
+                  <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}</p>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>Vence: {s.fecha_vencimiento}</p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {s.total_resumen > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>}
+                        {diasRestantes !== null && (
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
+                            {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {items.length > 0 && (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={styles.table}>
+                          <thead>
+                            <tr>
+                              <th style={styles.th}>Nombre</th>
+                              <th style={styles.th}>Categoría</th>
+                              <th style={{ ...styles.th, textAlign: 'right' }}>Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map(tx => (
+                              <tr key={tx.id} style={styles.tr}>
+                                <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                                <td style={styles.td}>
+                                  <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                                    {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
+                                  </span>
+                                </td>
+                                <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
+                                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {mostrarMovimientos && (<>
       {/* Historial de extractos */}
       {!allAccounts && stmtsConTx.length > 0 && (
         <div style={styles.stmtHistory}>
@@ -1732,6 +1822,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         </div>
       )}
 
+      </>)}
     </div>
   )
 }
