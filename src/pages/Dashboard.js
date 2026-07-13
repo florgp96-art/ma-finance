@@ -894,6 +894,16 @@ export default function Dashboard() {
     setExcelBackgroundMode(false)
   }
 
+  const parseCuotaDesc = (texto) => {
+    const t = texto || ''
+    let m = t.match(/(\d+)\s*\/\s*(\d+)\s*\)?\s*$/)
+    if (!m) m = t.match(/cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i)
+    if (!m) return { cuota_numero: 1, cuotas_total: 1 }
+    const num = parseInt(m[1]), total = parseInt(m[2])
+    if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
+    return { cuota_numero: 1, cuotas_total: 1 }
+  }
+
   const handleImportarExcel = async () => {
     if (!excelPreview || excelPreview.length === 0) return
     setLoadingExcel(true)
@@ -920,6 +930,15 @@ export default function Dashboard() {
         // Nombre real del Excel — buscar cuenta existente o crearla
         const nombreCuenta = modoPago?.trim() || 'Efectivo'
         let acc = currentAccounts.find(a => a.nombre.toLowerCase() === nombreCuenta.toLowerCase())
+        if (!acc) {
+          // Si no hay match exacto, buscar una cuenta ya creada que lo contenga sin ambigüedad
+          // (ej. MODO_PAGO "Visa" -> cuenta real "Visa Galicia"), para no duplicar cuentas.
+          const candidatas = currentAccounts.filter(a => a.tipo !== 'ingreso' && (
+            a.nombre.toLowerCase().includes(nombreCuenta.toLowerCase()) ||
+            nombreCuenta.toLowerCase().includes(a.nombre.toLowerCase())
+          ))
+          if (candidatas.length === 1) acc = candidatas[0]
+        }
         if (!acc) {
           const tipoCredito = ['VISA', 'MASTER', 'AMEX', 'AMERICAN EXPRESS', 'NARANJA', 'CABAL', 'DINERS']
           const tipo = key === 'EFECTIVO' ? 'efectivo'
@@ -983,18 +1002,11 @@ export default function Dashboard() {
         setLoadingExcel(false); return
       }
 
-      const parseCuota = (texto) => {
-        const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
-        if (!m) return { cuota_numero: 1, cuotas_total: 1 }
-        const num = parseInt(m[1]), total = parseInt(m[2])
-        if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
-        return { cuota_numero: 1, cuotas_total: 1 }
-      }
       const hayIngresos = newRows.some(({ row }) => row.tipo === 'ingreso')
       const ingresosAccExcel = hayIngresos ? await getOrCreateIngresosAccount(user) : null
       const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
-        const cuota = parseCuota(row.descripcion || row.notas)
+        const cuota = parseCuotaDesc(row.descripcion || row.notas)
         const finalAcc = (row.tipo === 'ingreso' && ingresosAccExcel) ? ingresosAccExcel : acc
         return {
           user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
@@ -1035,18 +1047,11 @@ export default function Dashboard() {
         setLoadingExcel(false); return
       }
 
-      const parseCuotaFinal = (texto) => {
-        const m = (texto || '').match(/(\d+)\/(\d+)\s*$/)
-        if (!m) return { cuota_numero: 1, cuotas_total: 1 }
-        const num = parseInt(m[1]), total = parseInt(m[2])
-        if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
-        return { cuota_numero: 1, cuotas_total: 1 }
-      }
       const hayIngresosFinal = toImport.some(({ row }) => row.tipo === 'ingreso')
       const ingresosAccFinal = hayIngresosFinal ? await getOrCreateIngresosAccount(user) : null
       const toInsert = toImport.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
-        const cuota = parseCuotaFinal(row.descripcion || row.notas)
+        const cuota = parseCuotaDesc(row.descripcion || row.notas)
         const finalAcc = (row.tipo === 'ingreso' && ingresosAccFinal) ? ingresosAccFinal : acc
         return {
           user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
