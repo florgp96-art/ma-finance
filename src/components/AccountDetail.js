@@ -423,6 +423,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return next
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
+  const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const guardarCicloDesde = async (accountId, fecha) => {
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
     await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
@@ -1192,18 +1193,40 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
   const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
   const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
-  const categoriasResumenGeneral = soloAPagar
+  const [categoriasResumenGeneral, categoriasResumenGeneralUsd] = soloAPagar
     ? (() => {
-        const map = {}
+        const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
           itemsPorStatement(s).forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
-            map[cat] = (map[cat] || 0) + Number(t.monto)
+            const destino = t.moneda === 'USD' ? mapUsd : map
+            destino[cat] = (destino[cat] || 0) + Number(t.monto)
           })
         })
-        return Object.entries(map).sort((a, b) => b[1] - a[1])
+        return [
+          Object.entries(map).sort((a, b) => b[1] - a[1]),
+          Object.entries(mapUsd).sort((a, b) => b[1] - a[1]),
+        ]
       })()
-    : []
+    : [[], []]
+  const [subcatsCatGeneral, subcatsCatGeneralUsd] = (soloAPagar && catGeneralSeleccionada)
+    ? (() => {
+        const map = {}, mapUsd = {}
+        statementsAPagar.forEach(s => {
+          itemsPorStatement(s).forEach(t => {
+            const cat = t.categories?.nombre || 'A Identificar'
+            if (cat !== catGeneralSeleccionada) return
+            const subcat = t.subcategories?.nombre || 'Sin subcategoría'
+            const destino = t.moneda === 'USD' ? mapUsd : map
+            destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
+          })
+        })
+        return [
+          Object.entries(map).sort((a, b) => b[1] - a[1]),
+          Object.entries(mapUsd).sort((a, b) => b[1] - a[1]),
+        ]
+      })()
+    : [[], []]
 
   return (
     <div>
@@ -1231,13 +1254,49 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </div>
           </div>
-          {categoriasResumenGeneral.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              {categoriasResumenGeneral.map(([cat, total]) => (
-                <span key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                  {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                </span>
-              ))}
+          {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              {categoriasResumenGeneral.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: '8px' }}>
+                  {categoriasResumenGeneral.map(([cat, total]) => (
+                    <span key={cat}
+                      onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                      {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {categoriasResumenGeneralUsd.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
+                  {categoriasResumenGeneralUsd.map(([cat, total]) => (
+                    <span key={`usd-${cat}`}
+                      onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                      {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {catGeneralSeleccionada && (subcatsCatGeneral.length > 0 || subcatsCatGeneralUsd.length > 0) && (
+                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {resolveIcon(catGeneralSeleccionada)} {catGeneralSeleccionada} por subcategoría
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {subcatsCatGeneral.map(([subcat, total]) => (
+                      <span key={subcat} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                        {subcat}: $ {formatMonto(total)}
+                      </span>
+                    ))}
+                    {subcatsCatGeneralUsd.map(([subcat, total]) => (
+                      <span key={`usd-${subcat}`} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                        {subcat}: U$S {formatMontoFull(total)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {statementsAPagar.length === 0 ? (
