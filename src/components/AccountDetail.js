@@ -1300,7 +1300,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                             <tr>
                               <th style={styles.thSortable} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
                               <th style={styles.thSortable} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
-                              <th style={styles.thSortable} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
+                              <th style={{ ...styles.thSortable, display: isMobile ? 'none' : undefined }} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
                               <th style={{ ...styles.thSortable, textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
                             </tr>
                           </thead>
@@ -1313,7 +1313,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                                     {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                                   </span>
                                 </td>
-                                <td style={styles.td}>
+                                <td style={{ ...styles.td, display: isMobile ? 'none' : undefined }}>
                                   <span style={{ fontSize: '12px', color: '#888' }}>{tx.subcategories?.nombre || '—'}</span>
                                 </td>
                                 <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
