@@ -2941,6 +2941,7 @@ export default function Dashboard() {
                     {[
                       { key: 'resumen', label: '📊 Resumen' },
                       { key: 'vencimientos', label: '📅 Vencimientos' },
+                      { key: 'apagar', label: '📌 A pagar' },
                       ...childrenDB.map(c => ({ key: c.nombre, label: `${customIcons[c.nombre] || '👧'} ${c.nombre}` }))
                     ].map(tab => (
                       <button key={tab.key}
@@ -2969,6 +2970,10 @@ export default function Dashboard() {
 
                 {dashboardTab === 'resumen' && (
                   <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} ingresoTagsOcultos={ingresoTagsOcultos} onAccountsChanged={fetchAccounts} />
+                )}
+
+                {dashboardTab === 'apagar' && (
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
