@@ -1099,9 +1099,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     : []
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
-  // llegue el PDF del banco.
+  // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
+  // de esa cuenta — si no, cualquier carga vieja por Excel (que nunca tiene statement_id)
+  // se sumaría como si fuera de este mes.
   const statementsSinResumen = cuentasCreditoAPagar.map(a => {
-    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro')
+    const ultimoCierre = statements
+      .filter(st => st.account_id === a.id)
+      .reduce((max, st) => {
+        const f = st.fecha_hasta || st.fecha_vencimiento
+        return f && (!max || f > max) ? f : max
+      }, null)
+    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre))
     if (sueltas.length === 0) return null
     const total = sueltas.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -Number(t.monto) : Number(t.monto)), 0)
     return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true }
