@@ -1121,8 +1121,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
     const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre))
     if (sueltas.length === 0 && !cicloDesdeManual) return null
-    const total = sueltas.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -Number(t.monto) : Number(t.monto)), 0)
-    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre }
+    const signo = (t) => t.tipo === 'ingreso' ? -1 : 1
+    const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
+    const totalUsd = sueltas.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
+    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre }
   }).filter(Boolean)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
@@ -1134,6 +1136,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         })
     : []
   const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
+  const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
       ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && (!s.cicloDesdeEfectivo || t.fecha > s.cicloDesdeEfectivo))
@@ -1181,9 +1184,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
             <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar{allAccounts ? ' — todas las tarjetas' : ''}</h3>
-            {totalAPagarGeneral > 0 && (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>Total: $ {formatMonto(totalAPagarGeneral)}</p>
-            )}
+            <div style={{ textAlign: 'right' }}>
+              {totalAPagarGeneral > 0 && (
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>Total: $ {formatMonto(totalAPagarGeneral)}</p>
+              )}
+              {totalAPagarGeneralUsd > 0 && (
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '14px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>U$S {formatMontoFull(totalAPagarGeneralUsd)}</p>
+              )}
+            </div>
           </div>
           {statementsAPagar.length === 0 ? (
             <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
@@ -1212,6 +1220,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         {s.total_resumen > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>}
+                        {s.total_usd > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>U$S {formatMontoFull(s.total_usd)}</p>}
                         {diasRestantes !== null && (
                           <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
                             {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
