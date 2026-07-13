@@ -721,9 +721,14 @@ export default function Dashboard() {
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true, raw: false })
-        const ws = wb.Sheets['GASTOS']
-        if (!ws) { reject(new Error('No se encontró la hoja "GASTOS". Usá la plantilla descargable.')); return }
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: null })
+        const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'gastos') || wb.SheetNames[0]
+        const ws = sheetName ? wb.Sheets[sheetName] : null
+        if (!ws) { reject(new Error('El archivo no tiene ninguna hoja. Usá la plantilla descargable.')); return }
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: null }).map(row => {
+          const norm = {}
+          Object.keys(row).forEach(k => { norm[k.trim().toUpperCase()] = row[k] })
+          return norm
+        })
         const toNum = (v) => parseFloat(String(v || '').replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0
         const parsed = rows
           .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
@@ -3750,7 +3755,7 @@ export default function Dashboard() {
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-12px 0 16px 0' }}>
                       <p style={{ fontSize: '13px', color: '#6e6e73', margin: 0 }}>
-                        El archivo debe tener una hoja llamada <strong>GASTOS</strong>.
+                        Si el archivo tiene varias hojas, usamos la que se llame <strong>GASTOS</strong> (sin importar mayúsculas); si no, la primera.
                       </p>
                       <button onClick={downloadExcelTemplate} style={{ fontSize: '12px', color: '#5C4F5C', background: 'none', border: '1px solid #5C4F5C', borderRadius: '8px', padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '10px' }}>
                         ⬇ Plantilla
