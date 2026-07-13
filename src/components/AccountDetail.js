@@ -394,7 +394,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -426,6 +426,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const guardarCicloDesde = async (accountId, fecha) => {
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
     await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
+    onAccountsChanged?.()
   }
 
   // Notificar al padre cuando cambia el período seleccionado
@@ -1121,7 +1122,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre))
     if (sueltas.length === 0 && !cicloDesdeManual) return null
     const total = sueltas.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -Number(t.monto) : Number(t.monto)), 0)
-    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true, cicloDesde: cicloDesdeManual }
+    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre }
   }).filter(Boolean)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
@@ -1135,7 +1136,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro')
+      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && (!s.cicloDesdeEfectivo || t.fecha > s.cicloDesdeEfectivo))
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
