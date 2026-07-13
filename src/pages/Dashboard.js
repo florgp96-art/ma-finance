@@ -2928,7 +2928,7 @@ export default function Dashboard() {
           </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
-          <div style={{...styles.mainContent, overflowX: 'hidden'}}>
+          <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 {/* Tabs — General + hijos dinámicos */}
