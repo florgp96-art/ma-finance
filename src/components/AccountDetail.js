@@ -1119,7 +1119,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
-    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre))
+    // Tope en "hoy": una cuota fechada a futuro (ago, sep...) todavía no se factura
+    // este ciclo, aunque ya esté cargada con esa fecha calculada.
+    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre) && t.fecha <= hoyISO)
     if (sueltas.length === 0 && !cicloDesdeManual) return null
     const signo = (t) => t.tipo === 'ingreso' ? -1 : 1
     const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
@@ -1139,7 +1141,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && (!s.cicloDesdeEfectivo || t.fecha > s.cicloDesdeEfectivo))
+      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && (!s.cicloDesdeEfectivo || t.fecha > s.cicloDesdeEfectivo) && t.fecha <= hoyISO)
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
