@@ -1094,14 +1094,32 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const mostrarTabAPagar = allAccounts || account?.tipo === 'credito'
   const hoyISO = new Date().toISOString().slice(0, 10)
+  const cuentasCreditoAPagar = mostrarTabAPagar
+    ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
+    : []
+  // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
+  // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
+  // llegue el PDF del banco.
+  const statementsSinResumen = cuentasCreditoAPagar.map(a => {
+    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro')
+    if (sueltas.length === 0) return null
+    const total = sueltas.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -Number(t.monto) : Number(t.monto)), 0)
+    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, _virtual: true }
+  }).filter(Boolean)
   const statementsAPagar = mostrarTabAPagar
-    ? [...statements]
-        .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
-        .sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))
+    ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
+        .sort((a, b) => {
+          if (!a.fecha_vencimiento && !b.fecha_vencimiento) return 0
+          if (!a.fecha_vencimiento) return -1
+          if (!b.fecha_vencimiento) return 1
+          return a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
+        })
     : []
   const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
-  const itemsPorStatement = (statementId) => {
-    const items = transactions.filter(t => t.statement_id === statementId && t.tipo !== 'neutro')
+  const itemsPorStatement = (s) => {
+    const items = transactions.filter(t => s._virtual
+      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro')
+      : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
       if (apagarSortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
@@ -1154,7 +1172,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {statementsAPagar.map(s => {
-                const items = itemsPorStatement(s.id)
+                const items = itemsPorStatement(s)
                 const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
                 const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
                 const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
@@ -1162,8 +1180,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px' }}>
                       <div>
-                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}</p>
-                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>Vence: {s.fecha_vencimiento}</p>
+                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>{s._virtual ? 'Todavía sin resumen cargado' : `Vence: ${s.fecha_vencimiento}`}</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         {s.total_resumen > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>}
