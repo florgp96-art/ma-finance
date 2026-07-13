@@ -149,6 +149,8 @@ export default function Dashboard() {
   const [egresosOpen, setEgresosOpen] = useState(true)
   const [excelFile, setExcelFile] = useState(null)
   const [excelPreview, setExcelPreview] = useState(null)
+  const updateExcelPreviewRow = (index, changes) =>
+    setExcelPreview(prev => prev.map((r, i) => i === index ? { ...r, ...changes } : r))
   const [excelDupReview, setExcelDupReview] = useState(null)
   const [excelDupSelections, setExcelDupSelections] = useState(new Set())
   const [excelDragOver, setExcelDragOver] = useState(false)
@@ -3727,7 +3729,7 @@ export default function Dashboard() {
 
       {showExcel && !excelDupReview && (
         <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: '600px' }}>
+          <div style={{ ...styles.modal, maxWidth: excelPreview ? 'min(96vw, 980px)' : '600px' }}>
             {excelPreview === null ? (
               <>
                 <h3 style={styles.modalTitle}>Importar Excel 📊</h3>
@@ -3808,7 +3810,7 @@ export default function Dashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
                       <tr>
-                        {['Fecha', 'Descripción', 'Tipo', 'Cuenta', 'Monto', 'Categoría', ...(childrenDB.length > 0 ? ['Hijo'] : [])].map(h => (
+                        {['Fecha', 'Descripción', 'Tipo', 'Cuenta', 'Monto', 'Categoría', 'Subcategoría', ...(childrenDB.length > 0 ? ['Hijo'] : [])].map(h => (
                           <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', textTransform: 'uppercase', fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
@@ -3833,11 +3835,22 @@ export default function Dashboard() {
                             {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
                           </td>
                           <td style={{ padding: '7px 10px' }}>
-                            {row.cat && row.cat !== 'A Identificar' ? (
-                              <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>{row.cat}</span>
-                            ) : (
-                              <span style={{ backgroundColor: '#fff8e1', color: '#856404', padding: '2px 8px', borderRadius: '10px', fontWeight: '500' }}>❓ Sin identificar</span>
-                            )}
+                            <select
+                              value={row.cat || ''}
+                              onChange={e => updateExcelPreviewRow(i, { cat: e.target.value || null, subcat: null })}
+                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: row.cat && row.cat !== 'A Identificar' ? 'transparent' : '#fff8e1', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              <option value="">❓ Sin identificar</option>
+                              {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            </select>
+                          </td>
+                          <td style={{ padding: '7px 10px' }}>
+                            <select
+                              value={row.subcat || ''}
+                              onChange={e => updateExcelPreviewRow(i, { subcat: e.target.value || null })}
+                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              <option value="">— Sin subcategoría</option>
+                              {subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === row.cat)?.id).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                            </select>
                           </td>
                           {childrenDB.length > 0 && <td style={{ padding: '7px 10px', color: '#6e6e73', whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>}
                         </tr>
