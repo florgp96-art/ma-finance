@@ -44,6 +44,26 @@ const parseFechaArgentina = (fecha) => {
   return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
 }
 
+const parseCuotaDesc = (texto) => {
+  const t = texto || ''
+  let m = t.match(/(\d+)\s*\/\s*(\d+)\s*\)?\s*$/)
+  if (!m) m = t.match(/cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i)
+  if (!m) return { cuota_numero: 1, cuotas_total: 1 }
+  const num = parseInt(m[1]), total = parseInt(m[2])
+  if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
+  return { cuota_numero: 1, cuotas_total: 1 }
+}
+
+// Excel: cada fila de una compra en cuotas suele traer la fecha de la compra
+// original repetida, no la del mes que factura esa cuota puntual — se corrige
+// sumando (cuota_numero - 1) meses a esa fecha.
+const addMonths = (fechaISO, n) => {
+  if (!fechaISO || !n) return fechaISO
+  const d = new Date(fechaISO + 'T00:00:00')
+  d.setMonth(d.getMonth() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
@@ -748,7 +768,7 @@ export default function Dashboard() {
         const parsed = rows
           .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
           .map(row => {
-            const fecha = parseExcelDate(row['FECHA'])
+            const fechaOriginal = parseExcelDate(row['FECHA'])
             const monto_ars = toNum(row['MONTO_ARS'])
             const monto_usd = toNum(row['MONTO_USD'])
             const descripcion = String(row['DESCRIPCION'] || '').trim()
@@ -761,7 +781,9 @@ export default function Dashboard() {
             const tipo = ['ingreso', 'neutro', 'gasto'].includes(tipoRaw) ? tipoRaw : 'gasto'
             const monto = monto_usd !== 0 ? Math.abs(monto_usd) : Math.abs(monto_ars)
             const moneda = monto_usd !== 0 ? 'USD' : 'ARS'
-            return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo }
+            const { cuota_numero, cuotas_total } = parseCuotaDesc(descripcion)
+            const fecha = cuotas_total > 1 ? addMonths(fechaOriginal, cuota_numero - 1) : fechaOriginal
+            return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo, cuota_numero, cuotas_total }
           })
           .filter(r => r.fecha && r.monto > 0)
         resolve(parsed)
@@ -894,16 +916,6 @@ export default function Dashboard() {
     setExcelBackgroundMode(false)
   }
 
-  const parseCuotaDesc = (texto) => {
-    const t = texto || ''
-    let m = t.match(/(\d+)\s*\/\s*(\d+)\s*\)?\s*$/)
-    if (!m) m = t.match(/cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i)
-    if (!m) return { cuota_numero: 1, cuotas_total: 1 }
-    const num = parseInt(m[1]), total = parseInt(m[2])
-    if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
-    return { cuota_numero: 1, cuotas_total: 1 }
-  }
-
   const handleImportarExcel = async () => {
     if (!excelPreview || excelPreview.length === 0) return
     setLoadingExcel(true)
@@ -1006,7 +1018,7 @@ export default function Dashboard() {
       const ingresosAccExcel = hayIngresos ? await getOrCreateIngresosAccount(user) : null
       const toInsert = newRows.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
-        const cuota = parseCuotaDesc(row.descripcion || row.notas)
+        const cuota = { cuota_numero: row.cuota_numero || 1, cuotas_total: row.cuotas_total || 1 }
         const finalAcc = (row.tipo === 'ingreso' && ingresosAccExcel) ? ingresosAccExcel : acc
         return {
           user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
@@ -1051,7 +1063,7 @@ export default function Dashboard() {
       const ingresosAccFinal = hayIngresosFinal ? await getOrCreateIngresosAccount(user) : null
       const toInsert = toImport.map(({ row, acc }) => {
         const catId = getCatId(row.cat)
-        const cuota = parseCuotaDesc(row.descripcion || row.notas)
+        const cuota = { cuota_numero: row.cuota_numero || 1, cuotas_total: row.cuotas_total || 1 }
         const finalAcc = (row.tipo === 'ingreso' && ingresosAccFinal) ? ingresosAccFinal : acc
         return {
           user_id: user.id, account_id: finalAcc.id, fecha: row.fecha,
