@@ -1100,9 +1100,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const mostrarTabAPagar = allAccounts || account?.tipo === 'credito'
   const hoyISO = new Date().toISOString().slice(0, 10)
+  const mesActual = hoyISO.slice(0, 7)
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
     : []
+  // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
+  // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
+  // real de la tarjeta — por eso para cuotas se compara por mes contra el mes del corte y
+  // hasta el mes actual, en vez de por fecha exacta. El resto de los movimientos sí tiene
+  // fecha real, así que se compara exacto.
+  const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
+    if ((t.cuotas_total || 1) > 1) {
+      const mesTx = t.fecha?.slice(0, 7)
+      return (!mesCorte || mesTx >= mesCorte) && mesTx <= mesActual
+    }
+    return (!ultimoCierre || t.fecha >= ultimoCierre) && t.fecha <= hoyISO
+  }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
@@ -1119,14 +1132,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
-    // Tope en "hoy": una cuota fechada a futuro (ago, sep...) todavía no se factura
-    // este ciclo, aunque ya esté cargada con esa fecha calculada.
-    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && (!ultimoCierre || t.fecha > ultimoCierre) && t.fecha <= hoyISO)
+    const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
+    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && perteneceCicloActual(t, ultimoCierre, mesCorte))
     if (sueltas.length === 0 && !cicloDesdeManual) return null
     const signo = (t) => t.tipo === 'ingreso' ? -1 : 1
     const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
     const totalUsd = sueltas.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
-    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre }
+    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte }
   }).filter(Boolean)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)]
@@ -1141,7 +1153,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && (!s.cicloDesdeEfectivo || t.fecha > s.cicloDesdeEfectivo) && t.fecha <= hoyISO)
+      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
