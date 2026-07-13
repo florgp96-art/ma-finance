@@ -1814,7 +1814,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </button>
           )}
         </div>
-        <div style={{ overflowX: 'hidden', width: '100%' }}>
+        <div style={{ overflowX: 'auto', width: '100%' }}>
         <table style={styles.table}>
           <thead>
             <tr>
