@@ -1263,11 +1263,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
             <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar{allAccounts ? ' — todas las tarjetas' : ''}</h3>
             <div style={{ textAlign: 'right' }}>
-              {totalAPagarGeneral > 0 && (
+              {totalAPagarGeneral < 0 ? (
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>Total a favor: $ {formatMonto(Math.abs(totalAPagarGeneral))}</p>
+              ) : (
                 <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>Total: $ {formatMonto(totalAPagarGeneral)}</p>
               )}
-              {totalAPagarGeneralUsd > 0 && (
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '14px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>U$S {formatMontoFull(totalAPagarGeneralUsd)}</p>
+              {totalAPagarGeneralUsd !== 0 && (
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '14px', color: totalAPagarGeneralUsd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
+                  {totalAPagarGeneralUsd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(totalAPagarGeneralUsd))}` : `U$S ${formatMontoFull(totalAPagarGeneralUsd)}`}
+                </p>
               )}
             </div>
           </div>
@@ -1343,8 +1347,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         )}
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        {s.total_resumen > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>}
-                        {s.total_usd > 0 && <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>U$S {formatMontoFull(s.total_usd)}</p>}
+                        {s.total_resumen < 0 ? (
+                          <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
+                        ) : (
+                          <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
+                        )}
+                        {s.total_usd !== 0 && (
+                          <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
+                            {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
+                          </p>
+                        )}
                         {diasRestantes !== null && (
                           <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
                             {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}

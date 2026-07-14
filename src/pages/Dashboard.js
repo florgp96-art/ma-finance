@@ -2036,7 +2036,7 @@ export default function Dashboard() {
 
       const fechaResumen = statementData.fecha_facturacion || null
       // Solo importar las transacciones que el usuario seleccionó en el preview
-      const transacciones = statementData.transacciones
+      const transaccionesCandidatas = statementData.transacciones
         .filter((_, i) => pdfTxSelections.has(i))
         .map(t => {
           const categoryId = getCategoryId(t.categoria_sugerida)
@@ -2066,6 +2066,27 @@ export default function Dashboard() {
           }
         })
 
+      // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
+      // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
+      const { data: existentesTarjeta } = await supabase.from('transactions')
+        .select('fecha, monto, detalle').eq('account_id', account.id)
+      const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
+      const transacciones = transaccionesCandidatas.filter(cand =>
+        !(existentesTarjeta || []).some(e =>
+          e.fecha === cand.fecha &&
+          Math.abs(Number(e.monto) - cand.monto) < 0.01 &&
+          normDetTarjeta(e.detalle) === normDetTarjeta(cand.detalle)
+        )
+      )
+      const omitidasTarjeta = transaccionesCandidatas.length - transacciones.length
+
+      if (transacciones.length === 0) {
+        showToast(`Todas las transacciones de este resumen ya estaban cargadas (${omitidasTarjeta} duplicadas omitidas).`, 'error')
+        await supabase.from('statements').delete().eq('id', statement.id)
+        setLoading(false)
+        return
+      }
+
       const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
       if (errTxTarjeta) {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
@@ -2074,6 +2095,9 @@ export default function Dashboard() {
         await supabase.from('statements').delete().eq('id', statement.id)
         setLoading(false)
         return
+      }
+      if (omitidasTarjeta > 0) {
+        showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
       }
 
       // Preparar paso identificar — deduplicar por detalle
