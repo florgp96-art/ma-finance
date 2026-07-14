@@ -430,6 +430,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
+  const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   const guardarCicloDesde = async (accountId, fecha) => {
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
     await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
@@ -1272,6 +1273,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
+            // Igual que la pastilla: si se eligió un hijo, solo sus gastos;
+            // si se eligió la categoría general, solo el "resto" (sin hijo).
+            const hijo = getChildName(t)
+            if (hijoGeneralSeleccionado ? hijo !== hijoGeneralSeleccionado : !!hijo) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
             const destino = t.moneda === 'USD' ? mapUsd : map
             destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
@@ -1322,21 +1327,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     const hijosCat = hijosPorCategoriaGeneral[cat]
                       ? Object.entries(hijosPorCategoriaGeneral[cat]).sort((a, b) => b[1] - a[1])
                       : []
+                    const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
+                    const hayAlgoSeleccionado = !!catGeneralSeleccionada
                     return (
                       <React.Fragment key={cat}>
                         {total > 0 && (
                           <span
-                            onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                            onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
                             {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
                           </span>
                         )}
-                        {hijosCat.map(([hijo, monto]) => (
-                          <span key={`${cat}-${hijo}`}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
-                            {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
-                          </span>
-                        ))}
+                        {hijosCat.map(([hijo, monto]) => {
+                          const hijoPillSeleccionada = catGeneralSeleccionada === cat && hijoGeneralSeleccionado === hijo
+                          return (
+                            <span key={`${cat}-${hijo}`}
+                              onClick={() => { const des = hijoPillSeleccionada; setCatGeneralSeleccionada(des ? null : cat); setHijoGeneralSeleccionado(des ? null : hijo) }}
+                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !hijoPillSeleccionada) ? 0.3 : 1, outline: hijoPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                              {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
+                            </span>
+                          )
+                        })}
                       </React.Fragment>
                     )
                   })}
@@ -1348,21 +1359,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     const hijosCat = hijosPorCategoriaGeneralUsd[cat]
                       ? Object.entries(hijosPorCategoriaGeneralUsd[cat]).sort((a, b) => b[1] - a[1])
                       : []
+                    const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
+                    const hayAlgoSeleccionado = !!catGeneralSeleccionada
                     return (
                       <React.Fragment key={`usd-${cat}`}>
                         {total > 0 && (
                           <span
-                            onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                            onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
                             {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
                           </span>
                         )}
-                        {hijosCat.map(([hijo, monto]) => (
-                          <span key={`usd-${cat}-${hijo}`}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
-                            {customIcons?.[hijo] || '👧'} {hijo} · {cat}: U$S {formatMontoFull(monto)}
-                          </span>
-                        ))}
+                        {hijosCat.map(([hijo, monto]) => {
+                          const hijoPillSeleccionada = catGeneralSeleccionada === cat && hijoGeneralSeleccionado === hijo
+                          return (
+                            <span key={`usd-${cat}-${hijo}`}
+                              onClick={() => { const des = hijoPillSeleccionada; setCatGeneralSeleccionada(des ? null : cat); setHijoGeneralSeleccionado(des ? null : hijo) }}
+                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !hijoPillSeleccionada) ? 0.3 : 1, outline: hijoPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                              {customIcons?.[hijo] || '👧'} {hijo} · {cat}: U$S {formatMontoFull(monto)}
+                            </span>
+                          )
+                        })}
                       </React.Fragment>
                     )
                   })}
@@ -1371,7 +1388,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {catGeneralSeleccionada && (subcatsCatGeneral.length > 0 || subcatsCatGeneralUsd.length > 0) && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                   <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    {resolveIcon(catGeneralSeleccionada)} {catGeneralSeleccionada} por subcategoría
+                    {hijoGeneralSeleccionado
+                      ? <>{customIcons?.[hijoGeneralSeleccionado] || '👧'} {hijoGeneralSeleccionado} · {catGeneralSeleccionada} por subcategoría</>
+                      : <>{resolveIcon(catGeneralSeleccionada)} {catGeneralSeleccionada} por subcategoría</>}
                   </p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     {subcatsCatGeneral.map(([subcat, total]) => (
