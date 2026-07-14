@@ -1125,16 +1125,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // corte (ni el mes anterior ni el siguiente), en vez de por fecha exacta. El resto de los
   // movimientos sí tiene fecha real, así que se compara exacto. Un pago (tipo "neutro") es
   // un caso aparte: si cae poquitos días después del corte, en la práctica está saldando el
-  // resumen anterior (recién cerrado), no aportando al ciclo nuevo — por eso, igual que las
-  // cuotas, se compara por mes exacto en vez de por rango de fechas, pero contra el mes de
-  // hoy en vez del mes del corte.
+  // resumen anterior (recién cerrado), no aportando al ciclo nuevo — por eso, además de tener
+  // que ser posterior al corte, tiene que caer en el mes de hoy (si no, es un pago viejo que
+  // ya saldó el resumen anterior).
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
     if ((t.cuotas_total || 1) > 1) {
       const mesTx = t.fecha?.slice(0, 7)
       return mesTx === (mesCorte || mesActual)
     }
-    if (t.tipo === 'neutro') return t.fecha?.slice(0, 7) === mesActual
-    return (!ultimoCierre || t.fecha >= ultimoCierre) && t.fecha <= hoyISO
+    const enRango = (!ultimoCierre || t.fecha >= ultimoCierre) && t.fecha <= hoyISO
+    if (t.tipo === 'neutro') return enRango && t.fecha?.slice(0, 7) === mesActual
+    return enRango
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
