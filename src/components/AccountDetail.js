@@ -1284,22 +1284,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               {categoriasResumenGeneral.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: '8px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {categoriasResumenGeneral.map(([cat, total]) => (
                     <span key={cat}
                       onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
                       {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
                     </span>
                   ))}
                 </div>
               )}
               {categoriasResumenGeneralUsd.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
                   {categoriasResumenGeneralUsd.map(([cat, total]) => (
                     <span key={`usd-${cat}`}
                       onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
                       {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
                     </span>
                   ))}
