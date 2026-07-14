@@ -1202,12 +1202,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // del total a pagar, pero no pintan como si fueran un gasto de esa categoría — se
   // excluyen del desglose.
   const categoriasResumen = (items) => {
-    const map = {}
+    const map = {}, hijoMap = {}
     items.filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
       map[cat] = (map[cat] || 0) + Number(t.monto)
+      const hijo = getChildName(t)
+      if (hijo) {
+        if (!hijoMap[cat]) hijoMap[cat] = {}
+        hijoMap[cat][hijo] = (hijoMap[cat][hijo] || 0) + Number(t.monto)
+      }
     })
-    return Object.entries(map).sort((a, b) => b[1] - a[1])
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([cat, total]) => [
+      cat, total, hijoMap[cat] ? Object.entries(hijoMap[cat]).sort((a, b) => b[1] - a[1]) : []
+    ])
   }
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -1216,22 +1223,31 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
   const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
   const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
-  const [categoriasResumenGeneral, categoriasResumenGeneralUsd] = soloAPagar
+  const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
-        const map = {}, mapUsd = {}
+        const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
         statementsAPagar.forEach(s => {
           itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
-            const destino = t.moneda === 'USD' ? mapUsd : map
+            const esUsd = t.moneda === 'USD'
+            const destino = esUsd ? mapUsd : map
             destino[cat] = (destino[cat] || 0) + Number(t.monto)
+            const hijo = getChildName(t)
+            if (hijo) {
+              const destinoHijo = esUsd ? hijoMapUsd : hijoMap
+              if (!destinoHijo[cat]) destinoHijo[cat] = {}
+              destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+            }
           })
         })
         return [
           Object.entries(map).sort((a, b) => b[1] - a[1]),
           Object.entries(mapUsd).sort((a, b) => b[1] - a[1]),
+          hijoMap,
+          hijoMapUsd,
         ]
       })()
-    : [[], []]
+    : [[], [], {}, {}]
   const [subcatsCatGeneral, subcatsCatGeneralUsd] = (soloAPagar && catGeneralSeleccionada)
     ? (() => {
         const map = {}, mapUsd = {}
@@ -1285,24 +1301,44 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               {categoriasResumenGeneral.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {categoriasResumenGeneral.map(([cat, total]) => (
-                    <span key={cat}
-                      onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                      {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                    </span>
-                  ))}
+                  {categoriasResumenGeneral.map(([cat, total]) => {
+                    const hijosCat = hijosPorCategoriaGeneral[cat]
+                      ? Object.entries(hijosPorCategoriaGeneral[cat]).sort((a, b) => b[1] - a[1])
+                      : []
+                    return (
+                      <div key={cat}
+                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                        style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                        <div>{resolveIcon(cat)} {cat}: $ {formatMonto(total)}</div>
+                        {hijosCat.map(([hijo, monto]) => (
+                          <div key={hijo} style={{ fontSize: '11px', fontWeight: '600', opacity: 0.72, marginTop: '2px' }}>
+                            {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(monto)}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               {categoriasResumenGeneralUsd.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
-                  {categoriasResumenGeneralUsd.map(([cat, total]) => (
-                    <span key={`usd-${cat}`}
-                      onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                      style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                      {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
-                    </span>
-                  ))}
+                  {categoriasResumenGeneralUsd.map(([cat, total]) => {
+                    const hijosCat = hijosPorCategoriaGeneralUsd[cat]
+                      ? Object.entries(hijosPorCategoriaGeneralUsd[cat]).sort((a, b) => b[1] - a[1])
+                      : []
+                    return (
+                      <div key={`usd-${cat}`}
+                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                        style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                        <div>{resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}</div>
+                        {hijosCat.map(([hijo, monto]) => (
+                          <div key={hijo} style={{ fontSize: '11px', fontWeight: '600', opacity: 0.72, marginTop: '2px' }}>
+                            {customIcons?.[hijo] || '👧'} {hijo}: U$S {formatMontoFull(monto)}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               {catGeneralSeleccionada && (subcatsCatGeneral.length > 0 || subcatsCatGeneralUsd.length > 0) && (
@@ -1372,10 +1408,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </div>
                     {tarjetaExpandida && items.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
-                        {categoriasResumen(items).map(([cat, total]) => (
-                          <span key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
-                            {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                          </span>
+                        {categoriasResumen(items).map(([cat, total, hijosCat]) => (
+                          <div key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                            <div>{resolveIcon(cat)} {cat}: $ {formatMonto(total)}</div>
+                            {hijosCat.map(([hijo, monto]) => (
+                              <div key={hijo} style={{ fontSize: '10px', fontWeight: '600', opacity: 0.72, marginTop: '1px' }}>
+                                {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(monto)}
+                              </div>
+                            ))}
+                          </div>
                         ))}
                       </div>
                     )}
