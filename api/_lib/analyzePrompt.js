@@ -163,7 +163,7 @@ CAMPO tipo POR TRANSACCIÓN:
 REGLAS GENERALES:
 ═══════════════════════════════
 - periodo: en resúmenes de tarjeta es el mes del CIERRE del resumen (el mes de fecha_facturacion), NO el mes de las compras — el resumen que cierra en junio trae compras de mayo y su periodo es "Junio". En extractos bancarios es el mes de los movimientos.
-- NO incluir "SU PAGO", "Gracias por su pago", pagos al resumen de tarjeta (en extractos de tarjeta)
+- SÍ incluir "SU PAGO", "Gracias por su pago" y pagos al resumen de tarjeta (en extractos de tarjeta): son pagos hechos hacia la tarjeta, no un gasto ni un ingreso — van con tipo: "neutro" (categoria_sugerida: "A Identificar" si no hay una mejor)
 - nombre_limpio: nombre legible. Si es críptico, dejarlo igual al original.
 - es_credito: true para devoluciones o reintegros reales en tarjeta (ej. "Devolución Percepción...", "Dev. Imp...", "Reintegro..."). Cuando es_credito es true, el campo "tipo" de esa transacción tiene que ser "ingreso", nunca "gasto"
 - Para cuotas: completar cuotas_total y cuota_numero
