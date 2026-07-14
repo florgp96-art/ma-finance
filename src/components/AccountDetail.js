@@ -1306,16 +1306,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       ? Object.entries(hijosPorCategoriaGeneral[cat]).sort((a, b) => b[1] - a[1])
                       : []
                     return (
-                      <div key={cat}
-                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                        style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                        <div>{resolveIcon(cat)} {cat}: $ {formatMonto(total)}</div>
+                      <React.Fragment key={cat}>
+                        <span
+                          onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                          style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                          {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                        </span>
                         {hijosCat.map(([hijo, monto]) => (
-                          <div key={hijo} style={{ fontSize: '11px', fontWeight: '600', opacity: 0.72, marginTop: '2px' }}>
-                            {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(monto)}
-                          </div>
+                          <span key={`${cat}-${hijo}`}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
+                            {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
+                          </span>
                         ))}
-                      </div>
+                      </React.Fragment>
                     )
                   })}
                 </div>
@@ -1327,16 +1330,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       ? Object.entries(hijosPorCategoriaGeneralUsd[cat]).sort((a, b) => b[1] - a[1])
                       : []
                     return (
-                      <div key={`usd-${cat}`}
-                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                        style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                        <div>{resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}</div>
+                      <React.Fragment key={`usd-${cat}`}>
+                        <span
+                          onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                          style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                          {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
+                        </span>
                         {hijosCat.map(([hijo, monto]) => (
-                          <div key={hijo} style={{ fontSize: '11px', fontWeight: '600', opacity: 0.72, marginTop: '2px' }}>
-                            {customIcons?.[hijo] || '👧'} {hijo}: U$S {formatMontoFull(monto)}
-                          </div>
+                          <span key={`usd-${cat}-${hijo}`}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
+                            {customIcons?.[hijo] || '👧'} {hijo} · {cat}: U$S {formatMontoFull(monto)}
+                          </span>
                         ))}
-                      </div>
+                      </React.Fragment>
                     )
                   })}
                 </div>
@@ -1409,14 +1415,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     {tarjetaExpandida && items.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
                         {categoriasResumen(items).map(([cat, total, hijosCat]) => (
-                          <div key={cat} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
-                            <div>{resolveIcon(cat)} {cat}: $ {formatMonto(total)}</div>
+                          <React.Fragment key={cat}>
+                            <span style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                              {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                            </span>
                             {hijosCat.map(([hijo, monto]) => (
-                              <div key={hijo} style={{ fontSize: '10px', fontWeight: '600', opacity: 0.72, marginTop: '1px' }}>
-                                {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(monto)}
-                              </div>
+                              <span key={`${cat}-${hijo}`} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
+                                {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
+                              </span>
                             ))}
-                          </div>
+                          </React.Fragment>
                         ))}
                       </div>
                     )}
