@@ -1201,20 +1201,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Los reintegros/devoluciones (tipo "ingreso") y los pagos (tipo "neutro") ya restan
   // del total a pagar, pero no pintan como si fueran un gasto de esa categoría — se
   // excluyen del desglose.
+  // El monto de cada categoría no incluye lo que ya se muestra en la
+  // pastilla del hijo (si no, quedaría duplicado): "resto" = sin hijo.
   const categoriasResumen = (items) => {
     const map = {}, hijoMap = {}
     items.filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
-      map[cat] = (map[cat] || 0) + Number(t.monto)
       const hijo = getChildName(t)
       if (hijo) {
         if (!hijoMap[cat]) hijoMap[cat] = {}
         hijoMap[cat][hijo] = (hijoMap[cat][hijo] || 0) + Number(t.monto)
+      } else {
+        map[cat] = (map[cat] || 0) + Number(t.monto)
       }
     })
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([cat, total]) => [
-      cat, total, hijoMap[cat] ? Object.entries(hijoMap[cat]).sort((a, b) => b[1] - a[1]) : []
-    ])
+    const categorias = new Set([...Object.keys(map), ...Object.keys(hijoMap)])
+    return [...categorias].map(cat => {
+      const hijoEntries = hijoMap[cat] ? Object.entries(hijoMap[cat]).sort((a, b) => b[1] - a[1]) : []
+      const totalResto = map[cat] || 0
+      const totalCat = totalResto + hijoEntries.reduce((s, [, m]) => s + m, 0)
+      return [cat, totalResto, hijoEntries, totalCat]
+    }).sort((a, b) => b[3] - a[3])
   }
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -1223,6 +1230,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
   const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
   const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
+  // Igual que en categoriasResumen: el total de la categoría es solo el
+  // "resto" (sin hijos), para no duplicar lo que ya muestra su pastilla.
+  const totalesConResto = (map, hijoMap) => {
+    const categorias = new Set([...Object.keys(map), ...Object.keys(hijoMap)])
+    return [...categorias].map(cat => {
+      const hijoTotal = hijoMap[cat] ? Object.values(hijoMap[cat]).reduce((s, m) => s + m, 0) : 0
+      return [cat, map[cat] || 0, (map[cat] || 0) + hijoTotal]
+    }).sort((a, b) => b[2] - a[2]).map(([cat, totalResto]) => [cat, totalResto])
+  }
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -1230,19 +1246,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             const esUsd = t.moneda === 'USD'
-            const destino = esUsd ? mapUsd : map
-            destino[cat] = (destino[cat] || 0) + Number(t.monto)
             const hijo = getChildName(t)
             if (hijo) {
               const destinoHijo = esUsd ? hijoMapUsd : hijoMap
               if (!destinoHijo[cat]) destinoHijo[cat] = {}
               destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+            } else {
+              const destino = esUsd ? mapUsd : map
+              destino[cat] = (destino[cat] || 0) + Number(t.monto)
             }
           })
         })
         return [
-          Object.entries(map).sort((a, b) => b[1] - a[1]),
-          Object.entries(mapUsd).sort((a, b) => b[1] - a[1]),
+          totalesConResto(map, hijoMap),
+          totalesConResto(mapUsd, hijoMapUsd),
           hijoMap,
           hijoMapUsd,
         ]
@@ -1307,11 +1324,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       : []
                     return (
                       <React.Fragment key={cat}>
-                        <span
-                          onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                          style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                          {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                        </span>
+                        {total > 0 && (
+                          <span
+                            onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                            {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                          </span>
+                        )}
                         {hijosCat.map(([hijo, monto]) => (
                           <span key={`${cat}-${hijo}`}
                             style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
@@ -1331,11 +1350,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       : []
                     return (
                       <React.Fragment key={`usd-${cat}`}>
-                        <span
-                          onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                          style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                          {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
-                        </span>
+                        {total > 0 && (
+                          <span
+                            onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (catGeneralSeleccionada && catGeneralSeleccionada !== cat) ? 0.3 : 1, outline: catGeneralSeleccionada === cat ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                            {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
+                          </span>
+                        )}
                         {hijosCat.map(([hijo, monto]) => (
                           <span key={`usd-${cat}-${hijo}`}
                             style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
@@ -1416,9 +1437,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
                         {categoriasResumen(items).map(([cat, total, hijosCat]) => (
                           <React.Fragment key={cat}>
-                            <span style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
-                              {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                            </span>
+                            {total > 0 && (
+                              <span style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                                {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                              </span>
+                            )}
                             {hijosCat.map(([hijo, monto]) => (
                               <span key={`${cat}-${hijo}`} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
                                 {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
