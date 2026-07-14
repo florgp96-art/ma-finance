@@ -1148,9 +1148,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
     const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
-    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && t.tipo !== 'neutro' && perteneceCicloActual(t, ultimoCierre, mesCorte))
+    // Un movimiento "neutro" en la cuenta de la tarjeta solo puede ser un pago hecho
+    // hacia esa tarjeta — se resta del total pendiente, no se ignora.
+    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))
     if (sueltas.length === 0 && !cicloDesdeManual) return null
-    const signo = (t) => t.tipo === 'ingreso' ? -1 : 1
+    const signo = (t) => (t.tipo === 'ingreso' || t.tipo === 'neutro') ? -1 : 1
     const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
     const totalUsd = sueltas.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
     return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte }
@@ -1177,7 +1179,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? (!t.statement_id && t.account_id === s.account_id && t.tipo !== 'neutro' && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
+      ? (!t.statement_id && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
@@ -1190,11 +1192,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return 0
     })
   }
-  // Los reintegros/devoluciones (tipo "ingreso") ya restan del total a pagar, pero no
-  // pintan como si fueran un gasto de esa categoría — se excluyen del desglose.
+  // Los reintegros/devoluciones (tipo "ingreso") y los pagos (tipo "neutro") ya restan
+  // del total a pagar, pero no pintan como si fueran un gasto de esa categoría — se
+  // excluyen del desglose.
   const categoriasResumen = (items) => {
     const map = {}
-    items.filter(t => t.tipo !== 'ingreso').forEach(t => {
+    items.filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
       map[cat] = (map[cat] || 0) + Number(t.monto)
     })
@@ -1211,7 +1214,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? (() => {
         const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
-          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso').forEach(t => {
+          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             const destino = t.moneda === 'USD' ? mapUsd : map
             destino[cat] = (destino[cat] || 0) + Number(t.monto)
@@ -1227,7 +1230,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? (() => {
         const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
-          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso').forEach(t => {
+          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
