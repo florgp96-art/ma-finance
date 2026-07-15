@@ -1224,6 +1224,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return [cat, totalResto, hijoEntries, totalCat]
     }).sort((a, b) => b[3] - a[3])
   }
+  // "Bruto" = suma de gastos sin restar pagos/reintegros (lo que muestran las
+  // pastillas de categoría). La diferencia contra totalAPagarGeneral es lo
+  // que ya se pagó/reintegró de este ciclo.
+  const totalBrutoAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + itemsPorStatement(s)
+    .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
+    .reduce((s2, t) => s2 + Number(t.monto), 0), 0)
+  const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
+  const pctPagadoGeneral = totalBrutoAPagarGeneral > 0 ? Math.min(100, Math.round((montoPagadoGeneral / totalBrutoAPagarGeneral) * 100)) : 0
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1258,6 +1266,33 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             }
           })
         })
+        // Los pagos parciales ya hechos (montoPagadoGeneral) se descuentan de
+        // las pastillas en lugar de solo restarse del total: primero de los
+        // gastos de Amelia (en cualquier categoría), después de los propios
+        // (Personal, Ropa, Educación) y por último del resto, de mayor a menor.
+        let restante = montoPagadoGeneral
+        const restar = (obj, key) => {
+          if (restante <= 0) return
+          const actual = obj[key] || 0
+          if (actual <= 0) return
+          const descuento = Math.min(actual, restante)
+          obj[key] = actual - descuento
+          restante -= descuento
+        }
+        const entradasAmelia = Object.entries(hijoMap)
+          .flatMap(([cat, hijos]) => Object.keys(hijos).filter(h => h === 'Amelia').map(h => [cat, h]))
+          .sort((a, b) => hijoMap[b[0]][b[1]] - hijoMap[a[0]][a[1]])
+        entradasAmelia.forEach(([cat, hijo]) => restar(hijoMap[cat], hijo))
+        ;['Personal', 'Ropa', 'Educación'].forEach(cat => restar(map, cat))
+        const candidatosResto = [
+          ...Object.keys(map).filter(c => !['Personal', 'Ropa', 'Educación'].includes(c)).map(cat => ({ tipo: 'cat', cat })),
+          ...Object.entries(hijoMap).flatMap(([cat, hijos]) => Object.keys(hijos).filter(h => h !== 'Amelia').map(hijo => ({ tipo: 'hijo', cat, hijo }))),
+        ].sort((a, b) => {
+          const va = a.tipo === 'cat' ? (map[a.cat] || 0) : (hijoMap[a.cat]?.[a.hijo] || 0)
+          const vb = b.tipo === 'cat' ? (map[b.cat] || 0) : (hijoMap[b.cat]?.[b.hijo] || 0)
+          return vb - va
+        })
+        candidatosResto.forEach(c => c.tipo === 'cat' ? restar(map, c.cat) : restar(hijoMap[c.cat], c.hijo))
         return [
           totalesConResto(map, hijoMap),
           totalesConResto(mapUsd, hijoMapUsd),
@@ -1319,6 +1354,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </div>
           </div>
+          {allAccounts && totalBrutoAPagarGeneral > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado</span>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>{pctPagadoGeneral}%</span>
+              </div>
+              <div style={{ height: '10px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pctPagadoGeneral}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
+              </div>
+              <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '6px 0 0' }}>
+                $ {formatMonto(Math.round(montoPagadoGeneral))} pagado de $ {formatMonto(Math.round(totalBrutoAPagarGeneral))}
+              </p>
+            </div>
+          )}
           {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               {categoriasResumenGeneral.length > 0 && (
