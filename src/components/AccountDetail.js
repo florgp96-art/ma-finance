@@ -1245,16 +1245,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       .reduce((s2, t) => s2 + Number(t.monto), 0)
     totalBrutoAPagarGeneral += brutoStatement
     if (!s._virtual) {
-      const ultimoCierreCuenta = statements
+      // Los "sueltos" solo se atribuyen a este resumen si su fecha cae dentro
+      // del período propio de este resumen (después del cierre anterior de
+      // la cuenta) — si no, un pago de un resumen previo ya resuelto se
+      // colaría acá.
+      const cierreDeEste = s.fecha_hasta || s.fecha_vencimiento
+      const cierreAnterior = statements
         .filter(st => st.account_id === s.account_id)
-        .reduce((max, st) => {
-          const f = st.fecha_hasta || st.fecha_vencimiento
-          return f && (!max || f > max) ? f : max
-        }, null)
+        .map(st => st.fecha_hasta || st.fecha_vencimiento)
+        .filter(f => f && (!cierreDeEste || f < cierreDeEste))
+        .sort()
+        .pop() || null
       const pagosStatement = transactions.filter(t => {
         if (pagoIdsUsados.has(t.id) || t.moneda === 'USD' || (t.tipo !== 'neutro' && t.tipo !== 'ingreso')) return false
         if (t.statement_id === s.id) return true
-        return !t.statement_id && t.account_id === s.account_id && (!ultimoCierreCuenta || t.fecha < ultimoCierreCuenta)
+        return !t.statement_id && t.account_id === s.account_id && (!cierreDeEste || t.fecha < cierreDeEste) && (!cierreAnterior || t.fecha > cierreAnterior)
       })
       pagosStatement.forEach(t => { pagoIdsUsados.add(t.id); ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }) })
       const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
