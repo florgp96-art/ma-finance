@@ -1227,13 +1227,31 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
   // "Bruto" = suma de gastos sin restar pagos/reintegros (lo que muestran las
   // pastillas de categoría). La diferencia contra totalAPagarGeneral es lo
-  // que ya se pagó/reintegró de este ciclo.
-  const totalBrutoAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + itemsPorStatement(s)
-    .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
-    .reduce((s2, t) => s2 + Number(t.monto), 0), 0)
+  // que ya se pagó/reintegró: en el ciclo actual (statementsSinResumen) son
+  // los movimientos "sueltos"; en un resumen real y cerrado, el total ya
+  // viene neteado por el banco (el PDF resta los pagos recibidos antes del
+  // cierre), así que buscamos esos pagos/reintegros ya cargados con ese
+  // statement_id para poder mostrarlos con su fecha real. Lo que sobre sin
+  // explicar queda como "ajuste" (ej. una bonificación del banco no cargada
+  // como transacción aparte).
+  let totalBrutoAPagarGeneral = 0
+  const ajustesGenerales = []
+  statementsAPagar.forEach(s => {
+    const brutoStatement = itemsPorStatement(s)
+      .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
+      .reduce((s2, t) => s2 + Number(t.monto), 0)
+    totalBrutoAPagarGeneral += brutoStatement
+    if (!s._virtual) {
+      const pagosStatement = transactions.filter(t => t.statement_id === s.id && (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.moneda !== 'USD')
+      pagosStatement.forEach(t => ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }))
+      const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
+      const residual = brutoStatement - (Number(s.total_resumen) || 0) - pagosRegistrados
+      if (residual > 1) ajustesGenerales.push({ monto: residual, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
+    }
+  })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
   const pctPagadoGeneral = totalBrutoAPagarGeneral > 0 ? Math.min(100, Math.round((montoPagadoGeneral / totalBrutoAPagarGeneral) * 100)) : 0
-  const pagosGeneral = statementsAPagar.flatMap(s => s.pagos || []).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+  const pagosGeneral = [...statementsAPagar.flatMap(s => s.pagos || []), ...ajustesGenerales].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1377,8 +1395,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {pagosGeneral.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {pagosGeneral.map((p, i) => (
-                    <span key={i} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
-                      {p.tipo === 'ingreso' ? 'Reintegro' : 'Pago'}: $ {formatMonto(p.monto)} · {p.fecha ? new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                    <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
+                      {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
                     </span>
                   ))}
                 </div>
