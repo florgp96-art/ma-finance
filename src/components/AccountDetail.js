@@ -1227,10 +1227,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
   // "Bruto" = suma de gastos sin restar pagos/reintegros (lo que muestran las
   // pastillas de categoría). La diferencia contra totalAPagarGeneral es lo
-  // que ya se pagó/reintegró de este ciclo, más cualquier ajuste entre el
-  // total importado de un resumen real y la suma de sus transacciones
-  // categorizadas (ej. una bonificación del banco que no se cargó como
-  // transacción aparte).
+  // que ya se pagó/reintegró: en el ciclo actual (statementsSinResumen) son
+  // los movimientos "sueltos"; en un resumen real y cerrado, el total ya
+  // viene neteado por el banco (el PDF resta los pagos recibidos antes del
+  // cierre), así que buscamos esos pagos/reintegros ya cargados con ese
+  // statement_id para poder mostrarlos con su fecha real. Lo que sobre sin
+  // explicar queda como "ajuste" (ej. una bonificación del banco no cargada
+  // como transacción aparte).
   let totalBrutoAPagarGeneral = 0
   const ajustesGenerales = []
   statementsAPagar.forEach(s => {
@@ -1239,8 +1242,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       .reduce((s2, t) => s2 + Number(t.monto), 0)
     totalBrutoAPagarGeneral += brutoStatement
     if (!s._virtual) {
-      const ajuste = brutoStatement - (Number(s.total_resumen) || 0)
-      if (ajuste > 1) ajustesGenerales.push({ monto: ajuste, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
+      const pagosStatement = transactions.filter(t => t.statement_id === s.id && (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.moneda !== 'USD')
+      pagosStatement.forEach(t => ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }))
+      const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
+      const residual = brutoStatement - (Number(s.total_resumen) || 0) - pagosRegistrados
+      if (residual > 1) ajustesGenerales.push({ monto: residual, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
     }
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
