@@ -70,6 +70,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [userEmail, setUserEmail] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
+  }, [])
 
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
@@ -2997,7 +3002,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
