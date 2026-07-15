@@ -1230,10 +1230,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // que ya se pagó/reintegró: en el ciclo actual (statementsSinResumen) son
   // los movimientos "sueltos"; en un resumen real y cerrado, el total ya
   // viene neteado por el banco (el PDF resta los pagos recibidos antes del
-  // cierre), así que buscamos esos pagos/reintegros ya cargados con ese
-  // statement_id para poder mostrarlos con su fecha real. Lo que sobre sin
-  // explicar queda como "ajuste" (ej. una bonificación del banco no cargada
-  // como transacción aparte).
+  // cierre), así que buscamos esos pagos/reintegros para poder mostrarlos
+  // con su fecha real: primero los que ya quedaron con ese statement_id
+  // asignado, y también los "sueltos" (sin resumen asignado todavía) cuya
+  // fecha cae dentro del período de este resumen. Lo que sobre sin explicar
+  // después de eso queda como "ajuste" (ej. una bonificación del banco no
+  // cargada como transacción aparte).
+  const pagoIdsUsados = new Set()
   let totalBrutoAPagarGeneral = 0
   const ajustesGenerales = []
   statementsAPagar.forEach(s => {
@@ -1242,8 +1245,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       .reduce((s2, t) => s2 + Number(t.monto), 0)
     totalBrutoAPagarGeneral += brutoStatement
     if (!s._virtual) {
-      const pagosStatement = transactions.filter(t => t.statement_id === s.id && (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.moneda !== 'USD')
-      pagosStatement.forEach(t => ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }))
+      const ultimoCierreCuenta = statements
+        .filter(st => st.account_id === s.account_id)
+        .reduce((max, st) => {
+          const f = st.fecha_hasta || st.fecha_vencimiento
+          return f && (!max || f > max) ? f : max
+        }, null)
+      const pagosStatement = transactions.filter(t => {
+        if (pagoIdsUsados.has(t.id) || t.moneda === 'USD' || (t.tipo !== 'neutro' && t.tipo !== 'ingreso')) return false
+        if (t.statement_id === s.id) return true
+        return !t.statement_id && t.account_id === s.account_id && (!ultimoCierreCuenta || t.fecha < ultimoCierreCuenta)
+      })
+      pagosStatement.forEach(t => { pagoIdsUsados.add(t.id); ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }) })
       const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
       const residual = brutoStatement - (Number(s.total_resumen) || 0) - pagosRegistrados
       if (residual > 1) ajustesGenerales.push({ monto: residual, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
