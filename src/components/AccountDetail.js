@@ -1378,7 +1378,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {pagosGeneral.map((p, i) => (
                     <span key={i} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
-                      {p.tipo === 'ingreso' ? '↩️' : '💸'} $ {formatMonto(p.monto)} · {p.fecha ? new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                      {p.tipo === 'ingreso' ? 'Reintegro' : 'Pago'}: $ {formatMonto(p.monto)} · {p.fecha ? new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
                     </span>
                   ))}
                 </div>
