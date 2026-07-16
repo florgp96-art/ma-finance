@@ -1290,6 +1290,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalBrutoBarra = totalBrutoAPagarGeneral + totalGastosFijosMes
   const montoPagadoBarra = montoPagadoGeneral + totalGastosFijosMes
   const pctPagadoBarra = totalBrutoBarra > 0 ? Math.min(100, Math.round((montoPagadoBarra / totalBrutoBarra) * 100)) : 0
+  // Cuota alimentaria: lo que ya se cobró este mes del padre de cada hijo se
+  // resta de lo que ese hijo "debe" en las pastillas — es una preferencia
+  // personal de esta cuenta, no un comportamiento general de la app.
+  const PADRE_POR_HIJO = { Vitto: 'Matko', Amelia: 'Faustino' }
+  const coincideTexto = (t, nombre) => [t.tag, t.categories?.nombre, t.subcategories?.nombre, t.nombre, t.detalle]
+    .some(campo => (campo || '').toLowerCase().includes(nombre.toLowerCase()))
+  const ingresosPadresDelMes = Object.fromEntries(
+    Object.entries(PADRE_POR_HIJO).map(([hijo, padre]) => [hijo, transactions
+      .filter(t => t.tipo === 'ingreso' && t.moneda !== 'USD' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO && coincideTexto(t, padre))
+      .reduce((sum, t) => sum + Number(t.monto), 0)])
+  )
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1324,36 +1335,25 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             }
           })
         })
-        // Los pagos parciales ya hechos (montoPagadoGeneral) se descuentan de
-        // las pastillas en lugar de solo restarse del total: primero de los
-        // gastos de Amelia (en cualquier categoría), después de los propios
-        // (Personal, Ropa, Educación) y por último del resto, de mayor a menor.
-        // Es una preferencia personal de esta cuenta, no un comportamiento
-        // general de la app.
+        // Lo que ya se cobró este mes de cuota alimentaria del padre de cada
+        // hijo se descuenta de sus categorías (de mayor a menor), no de las
+        // del dueño de la cuenta. Es una preferencia personal de esta cuenta,
+        // no un comportamiento general de la app.
         if (userEmail === 'florgp96@gmail.com') {
-          let restante = montoPagadoGeneral
-          const restar = (obj, key) => {
+          Object.keys(PADRE_POR_HIJO).forEach(hijo => {
+            let restante = ingresosPadresDelMes[hijo] || 0
             if (restante <= 0) return
-            const actual = obj[key] || 0
-            if (actual <= 0) return
-            const descuento = Math.min(actual, restante)
-            obj[key] = actual - descuento
-            restante -= descuento
-          }
-          const entradasAmelia = Object.entries(hijoMap)
-            .flatMap(([cat, hijos]) => Object.keys(hijos).filter(h => h === 'Amelia').map(h => [cat, h]))
-            .sort((a, b) => hijoMap[b[0]][b[1]] - hijoMap[a[0]][a[1]])
-          entradasAmelia.forEach(([cat, hijo]) => restar(hijoMap[cat], hijo))
-          ;['Personal', 'Ropa', 'Educación'].forEach(cat => restar(map, cat))
-          const candidatosResto = [
-            ...Object.keys(map).filter(c => !['Personal', 'Ropa', 'Educación'].includes(c)).map(cat => ({ tipo: 'cat', cat })),
-            ...Object.entries(hijoMap).flatMap(([cat, hijos]) => Object.keys(hijos).filter(h => h !== 'Amelia').map(hijo => ({ tipo: 'hijo', cat, hijo }))),
-          ].sort((a, b) => {
-            const va = a.tipo === 'cat' ? (map[a.cat] || 0) : (hijoMap[a.cat]?.[a.hijo] || 0)
-            const vb = b.tipo === 'cat' ? (map[b.cat] || 0) : (hijoMap[b.cat]?.[b.hijo] || 0)
-            return vb - va
+            const catsDelHijo = Object.keys(hijoMap)
+              .filter(cat => (hijoMap[cat]?.[hijo] || 0) > 0)
+              .sort((a, b) => hijoMap[b][hijo] - hijoMap[a][hijo])
+            catsDelHijo.forEach(cat => {
+              if (restante <= 0) return
+              const actual = hijoMap[cat][hijo] || 0
+              const descuento = Math.min(actual, restante)
+              hijoMap[cat][hijo] = actual - descuento
+              restante -= descuento
+            })
           })
-          candidatosResto.forEach(c => c.tipo === 'cat' ? restar(map, c.cat) : restar(hijoMap[c.cat], c.hijo))
         }
         // Los gastos fijos del mes (débito, alquiler/expensas) se suman
         // recién acá, después de descontar los pagos parciales de tarjeta —
@@ -1589,6 +1589,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         </span>
                       ))}
                     </div>
+                    {!esUsdSel && userEmail === 'florgp96@gmail.com' && (ingresosPadresDelMes[nombreSel] || 0) > 0 && (
+                      <p style={{ margin: '8px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                        Ya se descontó $ {formatMonto(ingresosPadresDelMes[nombreSel])} cobrado de {PADRE_POR_HIJO[nombreSel]} este mes.
+                      </p>
+                    )}
                   </div>
                 )
               })()}
