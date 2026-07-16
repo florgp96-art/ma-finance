@@ -431,6 +431,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
+  const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const guardarCicloDesde = async (accountId, fecha) => {
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
     await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
@@ -1268,8 +1269,26 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
-  const pctPagadoGeneral = totalBrutoAPagarGeneral > 0 ? Math.min(100, Math.round((montoPagadoGeneral / totalBrutoAPagarGeneral) * 100)) : 0
   const pagosGeneral = [...statementsAPagar.flatMap(s => s.pagos || []), ...ajustesGenerales].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+  // La barra de "Pagado" no es solo tarjetas: suma también los gastos fijos
+  // de este mes que no pasan por resumen — todo gasto de cuenta débito, más
+  // alquiler/expensas (transferencia) sin importar la cuenta. Estos se pagan
+  // en el momento de cargarlos, así que aportan por igual al total y a lo
+  // pagado (no hay estado "pendiente" para ellos, a diferencia de la tarjeta).
+  const primerDiaMesActual = `${mesActual}-01`
+  const accountTipoById = new Map((accounts || []).map(a => [a.id, a.tipo]))
+  const gastosFijosDelMes = allAccounts ? transactions.filter(t => {
+    if (t.tipo !== 'gasto' || t.moneda === 'USD') return false
+    if (!t.fecha || t.fecha < primerDiaMesActual || t.fecha > hoyISO) return false
+    const accTipo = accountTipoById.get(t.account_id)
+    if (accTipo === 'credito') return false
+    const esAlquilerOExpensas = t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
+    return accTipo === 'debito' || esAlquilerOExpensas
+  }) : []
+  const totalGastosFijosMes = gastosFijosDelMes.reduce((sum, t) => sum + Number(t.monto), 0)
+  const totalBrutoBarra = totalBrutoAPagarGeneral + totalGastosFijosMes
+  const montoPagadoBarra = montoPagadoGeneral + totalGastosFijosMes
+  const pctPagadoBarra = totalBrutoBarra > 0 ? Math.min(100, Math.round((montoPagadoBarra / totalBrutoBarra) * 100)) : 0
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1343,6 +1362,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ]
       })()
     : [[], [], {}, {}]
+  // Una sola pastilla por hijo (suma de todas sus categorías), en vez de una
+  // pastilla repetida por cada categoría en la que gastó. Al hacer click se
+  // desglosa por categoría (hijoCategoriasBreakdown).
+  const sumarHijosPorNombre = (porCategoria) => {
+    const totales = {}
+    Object.values(porCategoria).forEach(porHijo => {
+      Object.entries(porHijo).forEach(([hijo, monto]) => { totales[hijo] = (totales[hijo] || 0) + monto })
+    })
+    return Object.entries(totales).filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1])
+  }
+  const hijosTotalesGeneral = sumarHijosPorNombre(hijosPorCategoriaGeneral)
+  const hijosTotalesGeneralUsd = sumarHijosPorNombre(hijosPorCategoriaGeneralUsd)
+  const hijoCategoriasBreakdown = (hijoNombre, porCategoria) =>
+    Object.entries(porCategoria)
+      .filter(([, porHijo]) => porHijo[hijoNombre] > 0)
+      .map(([cat, porHijo]) => [cat, porHijo[hijoNombre]])
+      .sort((a, b) => b[1] - a[1])
   const [subcatsCatGeneral, subcatsCatGeneralUsd] = (soloAPagar && catGeneralSeleccionada)
     ? (() => {
         const map = {}, mapUsd = {}
@@ -1382,7 +1418,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {mostrarTabAPagar && vistaApagarActiva && (
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-            <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar{allAccounts ? ' — todas las tarjetas' : ''}</h3>
+            <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar</h3>
             <div style={{ textAlign: 'right' }}>
               {totalAPagarGeneral < 0 ? (
                 <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>Total a favor: $ {formatMonto(Math.abs(totalAPagarGeneral))}</p>
@@ -1398,17 +1434,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </div>
           </div>
-          {allAccounts && totalBrutoAPagarGeneral > 0 && (
+          {allAccounts && totalBrutoBarra > 0 && (
             <div style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
                 <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado</span>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>· {pctPagadoGeneral}%</span>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>· {pctPagadoBarra}%</span>
               </div>
               <div style={{ height: '10px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pctPagadoGeneral}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
+                <div style={{ height: '100%', width: `${pctPagadoBarra}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
               <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '6px 0 0' }}>
-                $ {formatMonto(Math.round(montoPagadoGeneral))} pagado de $ {formatMonto(Math.round(totalBrutoAPagarGeneral))}
+                $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes (tarjetas + débito + alquiler/expensas)
               </p>
               {pagosGeneral.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
@@ -1426,9 +1462,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {categoriasResumenGeneral.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {categoriasResumenGeneral.map(([cat, total]) => {
-                    const hijosCat = hijosPorCategoriaGeneral[cat]
-                      ? Object.entries(hijosPorCategoriaGeneral[cat]).sort((a, b) => b[1] - a[1])
-                      : []
                     const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
                     const hayAlgoSeleccionado = !!catGeneralSeleccionada
                     return (
@@ -1440,16 +1473,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                             {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
                           </span>
                         )}
-                        {hijosCat.filter(([, monto]) => monto > 0).map(([hijo, monto]) => {
-                          const hijoPillSeleccionada = catGeneralSeleccionada === cat && hijoGeneralSeleccionado === hijo
-                          return (
-                            <span key={`${cat}-${hijo}`}
-                              onClick={() => { const des = hijoPillSeleccionada; setCatGeneralSeleccionada(des ? null : cat); setHijoGeneralSeleccionado(des ? null : hijo) }}
-                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !hijoPillSeleccionada) ? 0.3 : 1, outline: hijoPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                              {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
-                            </span>
-                          )
-                        })}
                       </React.Fragment>
                     )
                   })}
@@ -1458,9 +1481,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {categoriasResumenGeneralUsd.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
                   {categoriasResumenGeneralUsd.map(([cat, total]) => {
-                    const hijosCat = hijosPorCategoriaGeneralUsd[cat]
-                      ? Object.entries(hijosPorCategoriaGeneralUsd[cat]).sort((a, b) => b[1] - a[1])
-                      : []
                     const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
                     const hayAlgoSeleccionado = !!catGeneralSeleccionada
                     return (
@@ -1472,16 +1492,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                             {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
                           </span>
                         )}
-                        {hijosCat.map(([hijo, monto]) => {
-                          const hijoPillSeleccionada = catGeneralSeleccionada === cat && hijoGeneralSeleccionado === hijo
-                          return (
-                            <span key={`usd-${cat}-${hijo}`}
-                              onClick={() => { const des = hijoPillSeleccionada; setCatGeneralSeleccionada(des ? null : cat); setHijoGeneralSeleccionado(des ? null : hijo) }}
-                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !hijoPillSeleccionada) ? 0.3 : 1, outline: hijoPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                              {customIcons?.[hijo] || '👧'} {hijo} · {cat}: U$S {formatMontoFull(monto)}
-                            </span>
-                          )
-                        })}
                       </React.Fragment>
                     )
                   })}
@@ -1508,6 +1518,49 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </div>
                 </div>
               )}
+              {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                  {hijosTotalesGeneral.map(([hijo, total]) => {
+                    const seleccionado = hijoTotalExpandido === hijo
+                    return (
+                      <span key={hijo}
+                        onClick={() => setHijoTotalExpandido(h => h === hijo ? null : hijo)}
+                        style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#F0EDEC' : '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', outline: seleccionado ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                        {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(total)}
+                      </span>
+                    )
+                  })}
+                  {hijosTotalesGeneralUsd.map(([hijo, total]) => {
+                    const seleccionado = hijoTotalExpandido === `usd-${hijo}`
+                    return (
+                      <span key={`usd-${hijo}`}
+                        onClick={() => setHijoTotalExpandido(h => h === `usd-${hijo}` ? null : `usd-${hijo}`)}
+                        style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#F0EDEC' : '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', outline: seleccionado ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
+                        {customIcons?.[hijo] || '👧'} {hijo}: U$S {formatMontoFull(total)}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              {hijoTotalExpandido && (() => {
+                const esUsdSel = hijoTotalExpandido.startsWith('usd-')
+                const nombreSel = esUsdSel ? hijoTotalExpandido.slice(4) : hijoTotalExpandido
+                const breakdown = hijoCategoriasBreakdown(nombreSel, esUsdSel ? hijosPorCategoriaGeneralUsd : hijosPorCategoriaGeneral)
+                return (
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      {customIcons?.[nombreSel] || '👧'} {nombreSel} por categoría
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {breakdown.map(([cat, monto]) => (
+                        <span key={cat} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                          {resolveIcon(cat)} {cat}: {esUsdSel ? 'U$S' : '$'} {esUsdSel ? formatMontoFull(monto) : formatMonto(monto)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
           {statementsAPagar.length === 0 ? (
