@@ -92,6 +92,7 @@ export default function Dashboard() {
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
   const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
+  const [cuotasPendientesExpandido, setCuotasPendientesExpandido] = useState(null)
   const toastTimeoutRef = useRef(null)
   const showToast = (msg, type = 'success') => {
     clearTimeout(toastTimeoutRef.current)
@@ -2269,12 +2270,29 @@ export default function Dashboard() {
               return (
                 <div style={{ ...styles.savingsPanel }}>
                   <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
-                  {periods.map(([period, data], pi) => (
-                    <div key={period} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: pi > 0 ? '6px 0 0' : '2px 0 0' }}>
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{mesLabel(period)}</span>
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
-                    </div>
-                  ))}
+                  {periods.map(([period, data], pi) => {
+                    const expandido = cuotasPendientesExpandido === period
+                    return (
+                      <div key={period} style={{ padding: pi > 0 ? '6px 0 0' : '2px 0 0' }}>
+                        <div
+                          onClick={() => setCuotasPendientesExpandido(p => p === period ? null : period)}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', cursor: 'pointer' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{expandido ? '▾' : '▸'} {mesLabel(period)}</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
+                        </div>
+                        {expandido && (
+                          <div style={{ marginTop: '6px', paddingLeft: '8px', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                            {data.items.map((it, ii) => (
+                              <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', padding: '2px 0' }}>
+                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
+                                <span style={{ whiteSpace: 'nowrap' }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })()}
