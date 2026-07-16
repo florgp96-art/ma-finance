@@ -1294,13 +1294,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // resta de lo que ese hijo "debe" en las pastillas — es una preferencia
   // personal de esta cuenta, no un comportamiento general de la app.
   const PADRE_POR_HIJO = { Vitto: 'Matko', Amelia: 'Faustino' }
+  const sinAcentos = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const coincideTexto = (t, nombre) => [t.tag, t.categories?.nombre, t.subcategories?.nombre, t.nombre, t.detalle]
-    .some(campo => (campo || '').toLowerCase().includes(nombre.toLowerCase()))
+    .some(campo => sinAcentos(campo).includes(sinAcentos(nombre)))
   const ingresosPadresDelMes = Object.fromEntries(
     Object.entries(PADRE_POR_HIJO).map(([hijo, padre]) => [hijo, transactions
       .filter(t => t.tipo === 'ingreso' && t.moneda !== 'USD' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO && coincideTexto(t, padre))
       .reduce((sum, t) => sum + Number(t.monto), 0)])
   )
+  // Ingresos propios (Moms Food, Community Manager) van para Personal +
+  // Trabajo. El ingreso de mamá cubre primero Alquiler/Expensas, y lo que
+  // sobra se suma al mismo pozo de Personal + Trabajo. Es una preferencia
+  // personal de esta cuenta, no un comportamiento general de la app.
+  const ingresosEsteMes = transactions.filter(t => t.tipo === 'ingreso' && t.moneda !== 'USD' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO)
+  const totalIngresosPropios = ['Moms Food', 'Community Manager']
+    .reduce((sum, nombre) => sum + ingresosEsteMes.filter(t => coincideTexto(t, nombre)).reduce((s, t) => s + Number(t.monto), 0), 0)
+  const totalIngresoMama = ingresosEsteMes.filter(t => coincideTexto(t, 'Mamá')).reduce((sum, t) => sum + Number(t.monto), 0)
+  const totalAlquilerExpensasMes = gastosFijosDelMes
+    .filter(t => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
+    .reduce((sum, t) => sum + Number(t.monto), 0)
+  const mamaParaAlquilerExpensas = Math.min(totalIngresoMama, totalAlquilerExpensasMes)
+  const mamaExcedente = totalIngresoMama - mamaParaAlquilerExpensas
+  const poolPersonalTrabajo = totalIngresosPropios + mamaExcedente
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1368,6 +1383,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             map[cat] = (map[cat] || 0) + Number(t.monto)
           }
         })
+        if (userEmail === 'florgp96@gmail.com') {
+          // El ingreso de mamá primero descuenta Alquiler/Expensas (ya
+          // sumado dentro de "Casa" en el paso de arriba).
+          if (mamaParaAlquilerExpensas > 0) {
+            map['Casa'] = Math.max(0, (map['Casa'] || 0) - mamaParaAlquilerExpensas)
+          }
+          let restantePool = poolPersonalTrabajo
+          ;['Personal', 'Trabajo']
+            .sort((a, b) => (map[b] || 0) - (map[a] || 0))
+            .forEach(cat => {
+              if (restantePool <= 0) return
+              const actual = map[cat] || 0
+              if (actual <= 0) return
+              const descuento = Math.min(actual, restantePool)
+              map[cat] = actual - descuento
+              restantePool -= descuento
+            })
+        }
         return [
           totalesConResto(map, hijoMap),
           totalesConResto(mapUsd, hijoMapUsd),
@@ -1548,6 +1581,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     ))}
                   </div>
                 </div>
+              )}
+              {userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0) && (
+                <p style={{ margin: '10px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                  {mamaParaAlquilerExpensas > 0 && <>Ya se descontaron $ {formatMonto(mamaParaAlquilerExpensas)} de Casa (alquiler/expensas cubiertos con lo cobrado de mamá). </>}
+                  {poolPersonalTrabajo > 0 && <>Ya se descontaron $ {formatMonto(poolPersonalTrabajo)} de Personal/Trabajo (Moms Food + Community Manager{mamaExcedente > 0 ? ' + excedente de mamá' : ''}).</>}
+                </p>
               )}
               {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
