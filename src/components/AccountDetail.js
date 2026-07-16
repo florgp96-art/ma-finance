@@ -432,6 +432,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
+  const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
   const guardarCicloDesde = async (accountId, fecha) => {
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
     await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
@@ -1354,6 +1355,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           })
           candidatosResto.forEach(c => c.tipo === 'cat' ? restar(map, c.cat) : restar(hijoMap[c.cat], c.hijo))
         }
+        // Los gastos fijos del mes (débito, alquiler/expensas) se suman
+        // recién acá, después de descontar los pagos parciales de tarjeta —
+        // esos ya están totalmente pagados, no hay que restarles nada.
+        gastosFijosDelMes.forEach(t => {
+          const cat = t.categories?.nombre || 'A Identificar'
+          const hijo = getChildName(t)
+          if (hijo) {
+            if (!hijoMap[cat]) hijoMap[cat] = {}
+            hijoMap[cat][hijo] = (hijoMap[cat][hijo] || 0) + Number(t.monto)
+          } else {
+            map[cat] = (map[cat] || 0) + Number(t.monto)
+          }
+        })
         return [
           totalesConResto(map, hijoMap),
           totalesConResto(mapUsd, hijoMapUsd),
@@ -1394,6 +1408,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const destino = t.moneda === 'USD' ? mapUsd : map
             destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
           })
+        })
+        gastosFijosDelMes.forEach(t => {
+          const cat = t.categories?.nombre || 'A Identificar'
+          if (cat !== catGeneralSeleccionada) return
+          const hijo = getChildName(t)
+          if (hijoGeneralSeleccionado ? hijo !== hijoGeneralSeleccionado : !!hijo) return
+          const subcat = t.subcategories?.nombre || 'Sin subcategoría'
+          map[subcat] = (map[subcat] || 0) + Number(t.monto)
         })
         return [
           Object.entries(map).sort((a, b) => b[1] - a[1]),
@@ -1447,12 +1469,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes (tarjetas + débito + alquiler/expensas)
               </p>
               {pagosGeneral.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                  {pagosGeneral.map((p, i) => (
-                    <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
-                      {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
-                    </span>
-                  ))}
+                <div style={{ marginTop: '8px' }}>
+                  <span
+                    onClick={() => setPagosParcialesExpandido(v => !v)}
+                    style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', userSelect: 'none' }}>
+                    {pagosParcialesExpandido ? '▾' : '▸'} Pagos parciales ({pagosGeneral.length})
+                  </span>
+                  {pagosParcialesExpandido && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      {pagosGeneral.map((p, i) => (
+                        <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
+                          {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
