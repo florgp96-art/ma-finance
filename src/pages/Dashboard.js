@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
+import { dividirTresVias } from '../lib/divisionTresVias'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -565,7 +566,7 @@ export default function Dashboard() {
       }
     }
 
-    await supabase.from('transactions').insert({
+    const movimientoNuevo = {
       user_id: user.id,
       account_id: accountId,
       fecha: efectivo.fecha,
@@ -583,7 +584,8 @@ export default function Dashboard() {
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
-    })
+    }
+    await supabase.from('transactions').insert(dividirTresVias([movimientoNuevo], categoriasDB, subcategoriasDB))
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -1036,9 +1038,10 @@ export default function Dashboard() {
         }
       })
 
-      await supabase.from('transactions').insert(toInsert)
+      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias)
+      await supabase.from('transactions').insert(toInsertFinal)
       const omitidas = exactDupes.length
-      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
+      showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1081,9 +1084,10 @@ export default function Dashboard() {
         }
       })
 
-      await supabase.from('transactions').insert(toInsert)
+      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias)
+      await supabase.from('transactions').insert(toInsertFinal)
       const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
-      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
+      showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null); setExcelDupReview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1966,8 +1970,9 @@ export default function Dashboard() {
       })
 
       const insertedIds = []
-      if (txEgresos.length > 0) {
-        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado')
+      const txEgresosFinal = dividirTresVias(txEgresos, categorias, subcategorias)
+      if (txEgresosFinal.length > 0) {
+        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresosFinal).select('id, detalle, estado')
         if (errEg) {
           showToast(`Error egresos: ${errEg.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (egresos): ${errEg.message}` })
@@ -2092,7 +2097,8 @@ export default function Dashboard() {
         return
       }
 
-      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+      const transaccionesFinal = dividirTresVias(transacciones, categorias, subcategorias)
+      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transaccionesFinal).select('id, detalle, estado')
       if (errTxTarjeta) {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
