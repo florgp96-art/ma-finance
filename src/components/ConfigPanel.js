@@ -1,6 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG } from './AccountDetail'
+import { FECHA_DIVISION_3_DESDE, CASA_SUBCATS_DIVISION_3, aplicaDivisionTresVias } from '../lib/divisionTresVias'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -26,6 +27,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [catTab, setCatTab] = useState('categorias') // 'categorias' | 'iconos'
   const [showAliases, setShowAliases] = useState(false)
   const [showCambiarClave, setShowCambiarClave] = useState(false)
+  const [dividiendoTresVias, setDividiendoTresVias] = useState(false)
 
   // Hijos form
   const [newHijoNombre, setNewHijoNombre] = useState('')
@@ -108,6 +110,73 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('children').delete().eq('id', id).eq('user_id', user.id)
     fetchChildren()
+  }
+
+  // Divide retroactivamente (una sola vez, sin duplicar en reintentos) los
+  // gastos ya cargados de Comida y de Casa (Alquiler/Expensas/Luz/Gas/
+  // Internet/Teléfono) desde FECHA_DIVISION_3_DESDE en 3 partes iguales:
+  // Vitto, Amelia y "yo" (la transacción original, sin tag, se achica a un
+  // tercio). Los gastos nuevos ya se dividen solos desde donde se cargan
+  // (ver dividirTresVias en src/lib/divisionTresVias.js).
+  const handleDividirTresViasRetro = async () => {
+    if (!window.confirm(`Esto va a dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y de Casa (${CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el ${FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar. ¿Continuar?`)) return
+    setDividiendoTresVias(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      for (const nombre of ['Vitto', 'Amelia']) {
+        if (!(childrenDB || []).some(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+          await supabase.from('children').insert({ user_id: user.id, nombre })
+        }
+      }
+      const comidaId = categoriasDB?.find(c => c.nombre === 'Comida')?.id
+      const casaId = categoriasDB?.find(c => c.nombre === 'Casa')?.id
+      const subServiciosIds = new Set(
+        (subcategoriasDB || []).filter(s => s.category_id === casaId && CASA_SUBCATS_DIVISION_3.includes(s.nombre)).map(s => s.id)
+      )
+      const idsCategorias = [comidaId, casaId].filter(Boolean)
+      if (idsCategorias.length === 0) {
+        showToast('No encontré las categorías "Comida" o "Casa".', 'error')
+        return
+      }
+      const { data: candidatas, error } = await supabase.from('transactions')
+        .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
+        .gte('fecha', FECHA_DIVISION_3_DESDE).in('category_id', idsCategorias)
+      if (error) { showToast('Error buscando movimientos: ' + error.message, 'error'); return }
+      // El filtro por marca "(1/3)" se hace en JS (no en la query) para no
+      // pisarse con el manejo de NULL de Postgres en nombre IS NULL.
+      const aDividir = (candidatas || []).filter(t =>
+        !(t.nombre || '').includes('(1/3)') && aplicaDivisionTresVias(t, comidaId, casaId, subServiciosIds)
+      )
+      if (aDividir.length === 0) {
+        showToast('No hay movimientos nuevos para dividir.')
+        return
+      }
+      let procesados = 0
+      for (const t of aDividir) {
+        const monto = Number(t.monto) || 0
+        if (monto <= 0) continue
+        const parteVitto = Math.round((monto / 3) * 100) / 100
+        const parteAmelia = Math.round((monto / 3) * 100) / 100
+        const parteYo = Math.round((monto - parteVitto - parteAmelia) * 100) / 100
+        const nombreBase = t.nombre || t.detalle || ''
+        const { error: errUpd } = await supabase.from('transactions')
+          .update({ monto: parteYo, nombre: `${nombreBase} (1/3)` })
+          .eq('id', t.id).eq('user_id', user.id)
+        if (errUpd) continue
+        const { id, ...resto } = t
+        await supabase.from('transactions').insert([
+          { ...resto, monto: parteVitto, tag: 'Vitto', nombre: `${nombreBase} (1/3)` },
+          { ...resto, monto: parteAmelia, tag: 'Amelia', nombre: `${nombreBase} (1/3)` },
+        ])
+        procesados++
+      }
+      showToast(`${procesados} gastos divididos en 3 (Vitto / Amelia / vos).`)
+      fetchChildren?.()
+      onRefresh?.()
+    } finally {
+      setDividiendoTresVias(false)
+    }
   }
 
   const handleAddCategoria = async (e) => {
@@ -353,6 +422,14 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               />
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
             </form>
+            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
+              <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 10px' }}>
+                Dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y Casa ({CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el {FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar.
+              </p>
+              <button type="button" style={{ ...s.saveBtn, width: '100%' }} onClick={handleDividirTresViasRetro} disabled={dividiendoTresVias}>
+                {dividiendoTresVias ? 'Dividiendo…' : '🔀 Dividir en 3 (Vitto/Amelia/vos)'}
+              </button>
+            </div>
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
               <button style={s.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
             </div>
