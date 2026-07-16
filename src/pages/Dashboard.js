@@ -2215,7 +2215,18 @@ export default function Dashboard() {
               if (conCuotas.length === 0) return null
 
               const stripCuotaSuffix = n => (n || '').replace(/\s+\d+\/\d+\s*$/, '').trim()
-              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${Math.round(t.monto)}|${t.cuotas_total}|${t.account_id}`
+              // El mes en que arrancó la compra (cuota 1) identifica la compra de
+              // forma estable entre sus cuotas, a diferencia del monto: si el monto
+              // varía cuota a cuota (ej. en dólares, con el tipo de cambio de cada
+              // mes), usar Math.round(monto) partía la misma compra en varias
+              // entradas, cada una proyectando sus propias cuotas restantes por
+              // separado — duplicando el total de los meses futuros.
+              const mesInicioCompra = t => {
+                const f = new Date(t.fecha + 'T12:00:00')
+                const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+              }
+              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
               const latestByPurchase = {}
               conCuotas.forEach(t => {
                 const key = groupKey(t)
