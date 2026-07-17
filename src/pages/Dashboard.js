@@ -2215,7 +2215,17 @@ export default function Dashboard() {
               )
               if (conCuotas.length === 0) return null
 
-              const stripCuotaSuffix = n => (n || '').replace(/\s+\d+\/\d+\s*$/, '').trim()
+              // Sacar primero la marca de "dividir en 3" (Vitto/Amelia/yo) y recién
+              // después el sufijo de cuota propio del banco ("Compra 4/12"): si la
+              // marca queda pegada al final, el "4/12" ya no está al final del
+              // string y no se reconoce como sufijo, así que cada cuota de una
+              // misma compra dividida quedaba con un nombre distinto ("Compra 4/12
+              // (1/3)", "Compra 3/12 (1/3)", ...) y se contaban como compras
+              // separadas, cada una proyectando sus cuotas restantes por separado.
+              const stripCuotaSuffix = n => (n || '')
+                .replace(/\s*\(1\/3\)\s*$/, '')
+                .replace(/\s+\d+\/\d+\s*$/, '')
+                .trim()
               // El mes en que arrancó la compra (cuota 1) identifica la compra de
               // forma estable entre sus cuotas, a diferencia del monto: si el monto
               // varía cuota a cuota (ej. en dólares, con el tipo de cambio de cada
@@ -2228,10 +2238,21 @@ export default function Dashboard() {
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
               }
               const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
+              // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales
+              // con el mismo número de cuota — hay que sumarlas para recuperar el
+              // monto total de esa cuota, no quedarnos con una sola parte.
+              const maxCuotaPorGrupo = {}
+              conCuotas.forEach(t => {
+                const key = groupKey(t)
+                const cn = t.cuota_numero || 0
+                if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
+              })
               const latestByPurchase = {}
               conCuotas.forEach(t => {
                 const key = groupKey(t)
-                if (!latestByPurchase[key] || (t.cuota_numero || 0) > (latestByPurchase[key].cuota_numero || 0)) latestByPurchase[key] = t
+                if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
+                if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
+                latestByPurchase[key].monto += Number(t.monto)
               })
 
               const today = new Date()
