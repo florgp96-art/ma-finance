@@ -2210,8 +2210,12 @@ export default function Dashboard() {
             )}
             {/* Widget: Cuotas pendientes */}
             {(() => {
+              // Alquiler/Expensas no son compras financiadas aunque hayan quedado
+              // cargadas con cuotas — son un gasto fijo recurrente, no algo con
+              // fecha de fin, así que no cuentan para esta proyección.
               const conCuotas = accountTransactions.filter(t =>
-                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha
+                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha &&
+                !(t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
               )
               if (conCuotas.length === 0) return null
 
