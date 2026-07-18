@@ -2112,6 +2112,47 @@ export default function Dashboard() {
         showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
       }
 
+      // Las transacciones que el preview marcó como "ya cargadas" y el usuario dejó sin
+      // tildar no se reimportan, pero si quedan sueltas (sin statement_id) siguen
+      // contando en "Ciclo actual" — duplicando un monto que ya viene incluido en el
+      // total de este resumen. Hay que ligarlas a este resumen para que dejen de contar
+      // aparte.
+      const noSeleccionadasDupes = statementData.transacciones
+        .map((t, i) => ({ t, i }))
+        .filter(({ i }) => pdfTxDuplicadas.has(i) && !pdfTxSelections.has(i))
+      if (noSeleccionadasDupes.length > 0) {
+        const { data: sueltasCuenta } = await supabase.from('transactions')
+          .select('id, fecha, monto').eq('account_id', account.id).is('statement_id', null)
+        let billingMesLink = null
+        if (statementData.fecha_facturacion) {
+          const parts = statementData.fecha_facturacion.split('/')
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+            billingMesLink = `${year}-${parts[1].padStart(2,'0')}`
+          }
+        }
+        const fechaCercanaLink = (f1, f2, dias = 2) => {
+          if (!f1 || !f2) return false
+          const d1 = new Date(f1.slice(0, 10) + 'T12:00:00')
+          const d2 = new Date(f2.slice(0, 10) + 'T12:00:00')
+          return Math.abs(d1 - d2) <= dias * 86400000
+        }
+        const usadas = new Set()
+        const idsParaLigar = []
+        noSeleccionadasDupes.forEach(({ t }) => {
+          const esCuota = t.cuotas_total > 1
+          const match = (sueltasCuenta || []).find(e =>
+            !usadas.has(e.id) &&
+            Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01 &&
+            (esCuota && billingMesLink ? e.fecha?.slice(0, 7) === billingMesLink : fechaCercanaLink(e.fecha, t.fecha, 2))
+          )
+          if (match) { usadas.add(match.id); idsParaLigar.push(match.id) }
+        })
+        if (idsParaLigar.length > 0) {
+          await supabase.from('transactions').update({ statement_id: statement.id }).in('id', idsParaLigar)
+        }
+      }
+
       // Preparar paso identificar — deduplicar por detalle
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
       const seen2 = new Set()
