@@ -65,6 +65,24 @@ const addMonths = (fechaISO, n) => {
   return d.toISOString().slice(0, 10)
 }
 
+// Supabase/PostgREST limita a 1000 filas por consulta si no se pagina. Las cuentas con
+// mucho historial superan eso fácil, así que una consulta sin paginar puede devolver solo
+// una porción de las transacciones existentes — rompiendo silenciosamente cualquier
+// comparación (ej. detección de duplicados) que dependa de "todo lo que ya está cargado".
+const fetchAllTxPages = async (buildQuery) => {
+  const PAGE = 1000
+  let all = []
+  let page = 0
+  while (true) {
+    const { data } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
+    if (!data || data.length === 0) break
+    all = all.concat(data)
+    if (data.length < PAGE) break
+    page++
+  }
+  return all
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
@@ -1587,10 +1605,12 @@ export default function Dashboard() {
       // también esa cuenta, nunca se detectan como duplicados los ingresos ya cargados a mano.
       const ingresosAcc = accounts.find(a => a.tipo === 'ingreso')
       const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
-      const { data: txExistentes } = await supabase.from('transactions')
-        .select('fecha, monto, account_id')
-        .eq('user_id', user.id)
-        .in('account_id', accountIds)
+      const txExistentes = await fetchAllTxPages(() =>
+        supabase.from('transactions')
+          .select('fecha, monto, account_id')
+          .eq('user_id', user.id)
+          .in('account_id', accountIds)
+      )
 
       let billingMes = null
       if (fechaFacturacion) {
@@ -1601,7 +1621,7 @@ export default function Dashboard() {
         }
       }
 
-      const fechaCercana = (f1, f2, dias = 2) => {
+      const fechaCercana = (f1, f2, dias = 5) => {
         if (!f1 || !f2) return false
         const d1 = new Date(f1.slice(0, 10) + 'T12:00:00')
         const d2 = new Date(f2.slice(0, 10) + 'T12:00:00')
@@ -1619,7 +1639,7 @@ export default function Dashboard() {
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
-          return fechaCercana(e.fecha, t.fecha, 2)
+          return fechaCercana(e.fecha, t.fecha, 5)
         })
         if (isDupe) dupes.add(i)
         else selec.add(i)
@@ -2079,8 +2099,9 @@ export default function Dashboard() {
 
       // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
       // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
-      const { data: existentesTarjeta } = await supabase.from('transactions')
-        .select('fecha, monto, detalle').eq('account_id', account.id)
+      const existentesTarjeta = await fetchAllTxPages(() =>
+        supabase.from('transactions').select('fecha, monto, detalle').eq('account_id', account.id)
+      )
       const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
       const transacciones = transaccionesCandidatas.filter(cand =>
         !(existentesTarjeta || []).some(e =>
@@ -2112,17 +2133,20 @@ export default function Dashboard() {
         showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
       }
 
-      // Las transacciones que el preview marcó como "ya cargadas" y el usuario dejó sin
-      // tildar no se reimportan, pero si quedan sueltas (sin statement_id) siguen
-      // contando en "Ciclo actual" — duplicando un monto que ya viene incluido en el
-      // total de este resumen. Hay que ligarlas a este resumen para que dejen de contar
-      // aparte.
-      const noSeleccionadasDupes = statementData.transacciones
+      // Las transacciones del PDF que el usuario dejó sin tildar (sea porque el preview las
+      // marcó como "ya cargadas", o porque las destildó a mano al ver que ya estaban) no se
+      // reimportan — pero si el movimiento correspondiente ya existía suelto (sin
+      // statement_id) en la cuenta, hay que ligarlo a este resumen. Si no, ese movimiento
+      // sigue sin pertenecer a ningún resumen: no aparece en el "Detalle" del resumen
+      // recién cargado y sigue contando aparte en "Ciclo actual", como si el resumen no
+      // incluyera esa plata (cuando en realidad sí la incluye, en su total).
+      const noSeleccionadas = statementData.transacciones
         .map((t, i) => ({ t, i }))
-        .filter(({ i }) => pdfTxDuplicadas.has(i) && !pdfTxSelections.has(i))
-      if (noSeleccionadasDupes.length > 0) {
-        const { data: sueltasCuenta } = await supabase.from('transactions')
-          .select('id, fecha, monto').eq('account_id', account.id).is('statement_id', null)
+        .filter(({ i }) => !pdfTxSelections.has(i))
+      if (noSeleccionadas.length > 0) {
+        const sueltasCuenta = await fetchAllTxPages(() =>
+          supabase.from('transactions').select('id, fecha, monto').eq('account_id', account.id).is('statement_id', null)
+        )
         let billingMesLink = null
         if (statementData.fecha_facturacion) {
           const parts = statementData.fecha_facturacion.split('/')
@@ -2131,7 +2155,7 @@ export default function Dashboard() {
             billingMesLink = `${year}-${parts[1].padStart(2,'0')}`
           }
         }
-        const fechaCercanaLink = (f1, f2, dias = 2) => {
+        const fechaCercanaLink = (f1, f2, dias = 5) => {
           if (!f1 || !f2) return false
           const d1 = new Date(f1.slice(0, 10) + 'T12:00:00')
           const d2 = new Date(f2.slice(0, 10) + 'T12:00:00')
@@ -2139,12 +2163,12 @@ export default function Dashboard() {
         }
         const usadas = new Set()
         const idsParaLigar = []
-        noSeleccionadasDupes.forEach(({ t }) => {
+        noSeleccionadas.forEach(({ t }) => {
           const esCuota = t.cuotas_total > 1
           const match = (sueltasCuenta || []).find(e =>
             !usadas.has(e.id) &&
             Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01 &&
-            (esCuota && billingMesLink ? e.fecha?.slice(0, 7) === billingMesLink : fechaCercanaLink(e.fecha, t.fecha, 2))
+            (esCuota && billingMesLink ? e.fecha?.slice(0, 7) === billingMesLink : fechaCercanaLink(e.fecha, t.fecha, 5))
           )
           if (match) { usadas.add(match.id); idsParaLigar.push(match.id) }
         })
@@ -2152,6 +2176,12 @@ export default function Dashboard() {
           await supabase.from('transactions').update({ statement_id: statement.id }).in('id', idsParaLigar)
         }
       }
+
+      // El "Contando desde" manual (ciclo_actual_desde) existe para trackear el gasto
+      // sin resumen todavía; una vez que llega el PDF real, ese propósito ya se cumplió.
+      // Si no se limpia, la tarjeta "Ciclo actual" sigue apareciendo (aunque en $0) en vez
+      // de desaparecer, y el próximo ciclo abierto quedaría mal acotado por una fecha vieja.
+      await supabase.from('accounts').update({ ciclo_actual_desde: null }).eq('id', account.id)
 
       // Preparar paso identificar — deduplicar por detalle
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
