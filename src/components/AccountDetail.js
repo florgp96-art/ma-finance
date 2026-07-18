@@ -496,10 +496,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
 
   // Un movimiento suelto (sin statement_id, ej. cargado a mano o por Excel mientras se
-  // esperaba el resumen) pertenece automáticamente al primer resumen real de esa cuenta
-  // cuyo cierre (fecha_hasta, o vencimiento si no hay fecha de cierre) sea posterior a su
-  // fecha — la fecha de corte la define el resumen, no hace falta trackearla a mano. Se
-  // liga en la DB y se refleja al toque en la lista en memoria, sin esperar otro fetch.
+  // esperaba el resumen) pertenece automáticamente al resumen real de esa cuenta cuya
+  // ventana propia lo cubre: después del cierre del resumen ANTERIOR de esa cuenta y
+  // hasta el cierre de este resumen. Si no hay un resumen anterior (es el primero que se
+  // carga para la cuenta), no hay de dónde sacar ese límite inferior real — usar "todo lo
+  // anterior sin límite" arrastraría meses de historial viejo ya resuelto que no tiene
+  // nada que ver, así que se aproxima con la duración típica de un ciclo (~40 días).
+  // Los pagos ("neutro") quedan afuera: no son un ítem más del resumen, son plata que
+  // achica el saldo pendiente (ver statementsRealesConUsd), y se manejan aparte.
+  // También se deshacen acá los vínculos de una versión anterior de este fix que no
+  // tenía ese límite inferior y había ligado movimientos viejos que no correspondían —
+  // se detectan igual (por fecha, no por cómo se generaron) y se sueltan.
+  const DIAS_CICLO_APROX = 40
   const reconciliarSueltas = async (txs, stmts) => {
     const cierresPorCuenta = new Map()
     stmts.forEach(st => {
@@ -510,20 +518,50 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       cierresPorCuenta.set(st.account_id, list)
     })
     cierresPorCuenta.forEach(list => list.sort((a, b) => a.cierre.localeCompare(b.cierre)))
+    const restarDias = (fechaISO, dias) => {
+      const d = new Date(fechaISO + 'T00:00:00')
+      d.setDate(d.getDate() - dias)
+      return d.toISOString().slice(0, 10)
+    }
+    const ventanaDe = (accountId, cierre) => {
+      const list = cierresPorCuenta.get(accountId) || []
+      const idx = list.findIndex(c => c.cierre === cierre)
+      return idx > 0 ? list[idx - 1].cierre : restarDias(cierre, DIAS_CICLO_APROX)
+    }
+
     const grupos = new Map()
     txs.forEach(t => {
-      if (t.statement_id || !t.fecha) return
+      if (t.statement_id || !t.fecha || t.tipo === 'neutro') return
       const candidatos = cierresPorCuenta.get(t.account_id)
-      const destino = candidatos && candidatos.find(c => c.cierre >= t.fecha)
+      const destino = candidatos && candidatos.find(c => {
+        const desde = ventanaDe(t.account_id, c.cierre)
+        return c.cierre >= t.fecha && t.fecha > desde
+      })
       if (!destino) return
       if (!grupos.has(destino.id)) grupos.set(destino.id, [])
       grupos.get(destino.id).push(t)
     })
-    if (grupos.size === 0) return
-    await Promise.all([...grupos.entries()].map(([stmtId, list]) =>
-      supabase.from('transactions').update({ statement_id: stmtId }).in('id', list.map(t => t.id))
-    ))
+
+    const desligar = []
+    txs.forEach(t => {
+      if (!t.statement_id || t.tipo === 'neutro' || !t.fecha) return
+      const st = stmts.find(s => s.id === t.statement_id)
+      const cierre = st && (st.fecha_hasta || st.fecha_vencimiento)
+      if (!cierre) return
+      const desde = ventanaDe(t.account_id, cierre)
+      const dentro = t.fecha <= cierre && t.fecha > desde
+      if (!dentro) desligar.push(t)
+    })
+
+    if (grupos.size === 0 && desligar.length === 0) return
+    await Promise.all([
+      ...[...grupos.entries()].map(([stmtId, list]) =>
+        supabase.from('transactions').update({ statement_id: stmtId }).in('id', list.map(t => t.id))
+      ),
+      ...(desligar.length > 0 ? [supabase.from('transactions').update({ statement_id: null }).in('id', desligar.map(t => t.id))] : [])
+    ])
     grupos.forEach((list, stmtId) => list.forEach(t => { t.statement_id = stmtId }))
+    desligar.forEach(t => { t.statement_id = null })
   }
 
   const fetchData = async () => {
@@ -1367,13 +1405,36 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
   const hoyISO = new Date().toISOString().slice(0, 10)
   const mesActual = hoyISO.slice(0, 7)
+  // Un resumen real sigue "activo" (con su propia tarjeta en "A pagar") mientras tenga
+  // saldo pendiente — no hay que esperar a que venza para que aparezca ni se borra solo
+  // por haber vencido: si no se pagó completo, sigue mostrándose con lo que falta, se
+  // haya pagado a tiempo o no. El saldo se calcula descontando del total del PDF los
+  // pagos sueltos (tipo "neutro"/reintegros) posteriores al cierre de este resumen y
+  // anteriores al cierre del siguiente (si ya hay uno) — esos son los que todavía no
+  // vinieron incluidos en ningún PDF.
+  const saldoPendienteDe = (s) => {
+    const cierre = s.fecha_hasta || s.fecha_vencimiento
+    if (!cierre) return Number(s.total_resumen) || 0
+    const cierresCuenta = statements
+      .filter(st => st.account_id === s.account_id)
+      .map(st => st.fecha_hasta || st.fecha_vencimiento)
+      .filter(Boolean)
+      .sort()
+    const cierreSiguiente = cierresCuenta.find(c => c > cierre) || null
+    const pagosPosteriores = transactions.filter(t =>
+      t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
+      (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
+      t.fecha > cierre && (!cierreSiguiente || t.fecha <= cierreSiguiente)
+    )
+    const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
+    return (Number(s.total_resumen) || 0) - totalPagosPosteriores
+  }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
-  // resumen no califica para mostrarse solo (ej. no se pudo leer la fecha de
-  // vencimiento, o ya venció), el movimiento no puede quedar invisible: se cuenta
-  // igual dentro de "Ciclo actual" en vez de desaparecer.
+  // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
+  // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
   const statementIdsConTarjetaPropia = new Set(
-    statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO).map(s => s.id)
+    statements.filter(s => Math.round(saldoPendienteDe(s)) > 0).map(s => s.id)
   )
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
@@ -1425,13 +1486,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }).filter(Boolean)
   // Los resúmenes reales solo guardan el total en pesos del PDF — el total en USD se
   // calcula acá sumando las transacciones en dólares que quedaron dentro de ese resumen.
+  // El total en pesos que se muestra es el saldo pendiente (ver saldoPendienteDe), no el
+  // monto fijo del PDF: sigue apareciendo mientras falte pagar algo, sin importar si ya
+  // venció, y desaparece recién cuando queda saldado.
   const statementsRealesConUsd = statements
-    .filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO)
     .map(s => {
       const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
       const totalUsd = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
-      return { ...s, total_usd: totalUsd }
+      return { ...s, _totalOriginal: Number(s.total_resumen) || 0, total_resumen: saldoPendienteDe(s), total_usd: totalUsd }
     })
+    .filter(s => Math.round(s.total_resumen) > 0 || Math.round(s.total_usd) !== 0)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statementsRealesConUsd]
         .sort((a, b) => {
@@ -1521,7 +1585,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })
       pagosStatement.forEach(t => { pagoIdsUsados.add(t.id); ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }) })
       const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
-      const residual = brutoStatement - (Number(s.total_resumen) || 0) - pagosRegistrados
+      const residual = brutoStatement - (Number(s._totalOriginal ?? s.total_resumen) || 0) - pagosRegistrados
       if (residual > 1) ajustesGenerales.push({ monto: residual, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
     }
   })
@@ -1933,7 +1997,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         )}
                         {diasRestantes !== null && (
                           <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
-                            {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
+                            {diasRestantes < 0
+                              ? `Vencido hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) === 1 ? '' : 's'}`
+                              : diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
                           </p>
                         )}
                       </div>
