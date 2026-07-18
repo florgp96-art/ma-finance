@@ -1489,12 +1489,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // resumen anterior (recién cerrado), no aportando al ciclo nuevo — por eso, además de tener
   // que ser posterior al corte, tiene que caer en el mes de hoy (si no, es un pago viejo que
   // ya saldó el resumen anterior).
+  // Estrictamente posterior al cierre — no "en o después", para que un movimiento
+  // fechado justo el día del cierre quede siempre del mismo lado que en
+  // saldoPendienteDe/reconciliarSueltas (que lo tratan como parte del resumen que
+  // recién cerró, no del ciclo nuevo). Si esto no coincidiera, un mismo pago podría
+  // contarse en "Ciclo actual" y a la vez no descontarse del resumen real, o viceversa.
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
     if ((t.cuotas_total || 1) > 1) {
       const mesTx = t.fecha?.slice(0, 7)
       return mesTx === (mesCorte || mesActual)
     }
-    const enRango = (!ultimoCierre || t.fecha >= ultimoCierre) && t.fecha <= hoyISO
+    const enRango = (!ultimoCierre || t.fecha > ultimoCierre) && t.fecha <= hoyISO
     if (t.tipo === 'neutro') return enRango && t.fecha?.slice(0, 7) === mesActual
     return enRango
   }
@@ -1502,14 +1507,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
   // de esa cuenta — si no, cualquier carga vieja por Excel (que nunca tiene statement_id)
-  // se sumaría como si fuera de este mes.
+  // se sumaría como si fuera de este mes. El cierre usado acá tiene que ser EXACTAMENTE
+  // el mismo que usa saldoPendienteDe para el resumen activo de la cuenta (cierreDe del
+  // resumen con el vencimiento más reciente) — si se calculara por separado (ej. el
+  // fecha_hasta más grande de cualquier resumen), podría dar un valor distinto y un
+  // mismo pago quedaría contado en un lado pero no en el otro.
   const statementsSinResumen = cuentasCreditoAPagar.map(a => {
-    const ultimoCierreAuto = statements
-      .filter(st => st.account_id === a.id)
-      .reduce((max, st) => {
-        const f = cierreDe(st)
-        return f && (!max || f > max) ? f : max
-      }, null)
+    const statementsCuenta = statements.filter(st => st.account_id === a.id && st.fecha_vencimiento)
+    const statementActivo = statementsCuenta.reduce((max, st) =>
+      (!max || st.fecha_vencimiento > max.fecha_vencimiento) ? st : max, null)
+    const ultimoCierreAuto = statementActivo ? cierreDe(statementActivo) : null
     const cicloDesdeManual = cicloDesdeOverride[a.id] !== undefined ? cicloDesdeOverride[a.id] : (a.ciclo_actual_desde || null)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
