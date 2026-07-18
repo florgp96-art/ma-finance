@@ -529,14 +529,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return idx > 0 ? list[idx - 1].cierre : restarDias(cierre, DIAS_CICLO_APROX)
     }
 
+    // Una cuota se carga con una fecha estimada (mismo día que la compra original, mes
+    // corrido según el número de cuota) que no necesariamente coincide con la fecha real
+    // de facturación de ningún resumen puntual — por eso, igual que en perteneceCicloActual,
+    // para cuotas se compara por mes exacto contra el mes de cierre del resumen, no por
+    // fecha exacta ni por la ventana de días de los demás movimientos.
+    const perteneceAlCierre = (t, cierre, desde) => {
+      if ((t.cuotas_total || 1) > 1) return t.fecha.slice(0, 7) === cierre.slice(0, 7)
+      return cierre >= t.fecha && t.fecha > desde
+    }
+
     const grupos = new Map()
     txs.forEach(t => {
       if (t.statement_id || !t.fecha || t.tipo === 'neutro') return
       const candidatos = cierresPorCuenta.get(t.account_id)
-      const destino = candidatos && candidatos.find(c => {
-        const desde = ventanaDe(t.account_id, c.cierre)
-        return c.cierre >= t.fecha && t.fecha > desde
-      })
+      const destino = candidatos && candidatos.find(c => perteneceAlCierre(t, c.cierre, ventanaDe(t.account_id, c.cierre)))
       if (!destino) return
       if (!grupos.has(destino.id)) grupos.set(destino.id, [])
       grupos.get(destino.id).push(t)
@@ -549,8 +556,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const cierre = st && (st.fecha_hasta || st.fecha_vencimiento)
       if (!cierre) return
       const desde = ventanaDe(t.account_id, cierre)
-      const dentro = t.fecha <= cierre && t.fecha > desde
-      if (!dentro) desligar.push(t)
+      if (!perteneceAlCierre(t, cierre, desde)) desligar.push(t)
     })
 
     if (grupos.size === 0 && desligar.length === 0) return
