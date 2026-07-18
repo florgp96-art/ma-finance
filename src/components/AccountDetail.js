@@ -1426,18 +1426,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // que falta (descontando cualquier pago parcial ya cargado) hasta quedar en $0, sin
   // importar si ya venció.
   const saldoPendienteDe = (s) => {
-    const cierre = s.fecha_hasta || s.fecha_vencimiento
-    if (!cierre) return Number(s.total_resumen) || 0
-    const cierresCuenta = statements
-      .filter(st => st.account_id === s.account_id)
-      .map(st => st.fecha_hasta || st.fecha_vencimiento)
-      .filter(Boolean)
+    if (!s.fecha_vencimiento) return Number(s.total_resumen) || 0
+    // Un pago se hace ANTES del vencimiento de la tarjeta (para eso existe la fecha
+    // límite) — usar el cierre/vencimiento de ESTE resumen como piso haría que ningún
+    // pago normal (hecho a tiempo) cuente nunca. El piso correcto es el vencimiento del
+    // resumen ANTERIOR de la cuenta: cualquier pago suelto posterior a esa fecha es un
+    // pago hacia ESTE resumen (el único activo, ya que solo se llega acá para el último).
+    const vencimientoAnterior = statements
+      .filter(st => st.account_id === s.account_id && st.fecha_vencimiento && st.fecha_vencimiento < s.fecha_vencimiento)
+      .map(st => st.fecha_vencimiento)
       .sort()
-    const cierreSiguiente = cierresCuenta.find(c => c > cierre) || null
+      .pop() || null
     const pagosPosteriores = transactions.filter(t =>
       t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
       (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-      t.fecha > cierre && (!cierreSiguiente || t.fecha <= cierreSiguiente)
+      (!vencimientoAnterior || t.fecha > vencimientoAnterior)
     )
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
