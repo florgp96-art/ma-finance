@@ -539,9 +539,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return cierre >= t.fecha && t.fecha > desde
     }
 
+    // Un pago o reintegro suelto (tipo "neutro" o "ingreso") en la cuenta de una tarjeta
+    // no es un ítem más del resumen: es plata que achica el saldo pendiente (ver
+    // saldoPendienteDe, más abajo en el archivo), igual que ya se trata en "Ciclo actual".
+    // Si se lo dejara auto-ligar acá como si fuera una compra más, quedaría "adentro" del
+    // resumen sin restar nada de su total mostrado.
+    const esPagoOReintegro = (t) => t.tipo === 'neutro' || t.tipo === 'ingreso'
     const grupos = new Map()
     txs.forEach(t => {
-      if (t.statement_id || !t.fecha || t.tipo === 'neutro') return
+      if (t.statement_id || !t.fecha || esPagoOReintegro(t)) return
       const candidatos = cierresPorCuenta.get(t.account_id)
       const destino = candidatos && candidatos.find(c => perteneceAlCierre(t, c.cierre, ventanaDe(t.account_id, c.cierre)))
       if (!destino) return
@@ -551,7 +557,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
     const desligar = []
     txs.forEach(t => {
-      if (!t.statement_id || t.tipo === 'neutro' || !t.fecha) return
+      if (!t.statement_id || esPagoOReintegro(t) || !t.fecha) return
       const st = stmts.find(s => s.id === t.statement_id)
       const cierre = st && (st.fecha_hasta || st.fecha_vencimiento)
       if (!cierre) return
