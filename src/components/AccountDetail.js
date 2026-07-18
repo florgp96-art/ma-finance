@@ -36,6 +36,18 @@ export const formatFechaCorta = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) 
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
+// El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
+// cuando falta, se aproxima restándole al vencimiento la brecha típica entre el cierre
+// y el vencimiento de una tarjeta (~7 días), en vez de usar el vencimiento tal cual
+// (que haría creer que la tarjeta cierra el mismo día que vence).
+const DIAS_CIERRE_A_VENCIMIENTO = 7
+const restarDiasISO = (fechaISO, dias) => {
+  const d = new Date(fechaISO + 'T00:00:00')
+  d.setDate(d.getDate() - dias)
+  return d.toISOString().slice(0, 10)
+}
+const cierreDe = (s) => s.fecha_hasta || (s.fecha_vencimiento ? restarDiasISO(s.fecha_vencimiento, DIAS_CIERRE_A_VENCIMIENTO) : null)
+
 export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
   return `${MESES[parseInt(month) - 1]} ${year}`
@@ -511,22 +523,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const reconciliarSueltas = async (txs, stmts) => {
     const cierresPorCuenta = new Map()
     stmts.forEach(st => {
-      const cierre = st.fecha_hasta || st.fecha_vencimiento
+      const cierre = cierreDe(st)
       if (!cierre) return
       const list = cierresPorCuenta.get(st.account_id) || []
       list.push({ id: st.id, cierre })
       cierresPorCuenta.set(st.account_id, list)
     })
     cierresPorCuenta.forEach(list => list.sort((a, b) => a.cierre.localeCompare(b.cierre)))
-    const restarDias = (fechaISO, dias) => {
-      const d = new Date(fechaISO + 'T00:00:00')
-      d.setDate(d.getDate() - dias)
-      return d.toISOString().slice(0, 10)
-    }
     const ventanaDe = (accountId, cierre) => {
       const list = cierresPorCuenta.get(accountId) || []
       const idx = list.findIndex(c => c.cierre === cierre)
-      return idx > 0 ? list[idx - 1].cierre : restarDias(cierre, DIAS_CICLO_APROX)
+      return idx > 0 ? list[idx - 1].cierre : restarDiasISO(cierre, DIAS_CICLO_APROX)
     }
 
     // Una cuota se carga con una fecha estimada (mismo día que la compra original, mes
@@ -559,7 +566,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     txs.forEach(t => {
       if (!t.statement_id || esPagoOReintegro(t) || !t.fecha) return
       const st = stmts.find(s => s.id === t.statement_id)
-      const cierre = st && (st.fecha_hasta || st.fecha_vencimiento)
+      const cierre = st && cierreDe(st)
       if (!cierre) return
       const desde = ventanaDe(t.account_id, cierre)
       if (!perteneceAlCierre(t, cierre, desde)) desligar.push(t)
@@ -1426,21 +1433,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // que falta (descontando cualquier pago parcial ya cargado) hasta quedar en $0, sin
   // importar si ya venció.
   const saldoPendienteDe = (s) => {
-    if (!s.fecha_vencimiento) return Number(s.total_resumen) || 0
-    // Un pago se hace ANTES del vencimiento de la tarjeta (para eso existe la fecha
-    // límite) — usar el cierre/vencimiento de ESTE resumen como piso haría que ningún
-    // pago normal (hecho a tiempo) cuente nunca. El piso correcto es el vencimiento del
-    // resumen ANTERIOR de la cuenta: cualquier pago suelto posterior a esa fecha es un
-    // pago hacia ESTE resumen (el único activo, ya que solo se llega acá para el último).
-    const vencimientoAnterior = statements
-      .filter(st => st.account_id === s.account_id && st.fecha_vencimiento && st.fecha_vencimiento < s.fecha_vencimiento)
-      .map(st => st.fecha_vencimiento)
-      .sort()
-      .pop() || null
+    const cierre = cierreDe(s)
+    if (!cierre) return Number(s.total_resumen) || 0
+    // El total del PDF ya viene neteado por el banco con cualquier pago hecho ANTES de
+    // que la tarjeta cerrara (por eso el total del resumen suele ser menor a la suma
+    // bruta de sus compras) — solo hay que restar los pagos sueltos hechos DESPUÉS del
+    // cierre, que todavía no llegaron a reflejarse en ningún PDF.
     const pagosPosteriores = transactions.filter(t =>
       t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
       (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-      (!vencimientoAnterior || t.fecha > vencimientoAnterior)
+      t.fecha > cierre
     )
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
@@ -1499,7 +1501,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const ultimoCierreAuto = statements
       .filter(st => st.account_id === a.id)
       .reduce((max, st) => {
-        const f = st.fecha_hasta || st.fecha_vencimiento
+        const f = cierreDe(st)
         return f && (!max || f > max) ? f : max
       }, null)
     const cicloDesdeManual = cicloDesdeOverride[a.id] !== undefined ? cicloDesdeOverride[a.id] : (a.ciclo_actual_desde || null)
@@ -1604,10 +1606,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // del período propio de este resumen (después del cierre anterior de
       // la cuenta) — si no, un pago de un resumen previo ya resuelto se
       // colaría acá.
-      const cierreDeEste = s.fecha_hasta || s.fecha_vencimiento
+      const cierreDeEste = cierreDe(s)
       const cierreAnterior = statements
         .filter(st => st.account_id === s.account_id)
-        .map(st => st.fecha_hasta || st.fecha_vencimiento)
+        .map(st => cierreDe(st))
         .filter(f => f && (!cierreDeEste || f < cierreDeEste))
         .sort()
         .pop() || null
