@@ -1430,14 +1430,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
   }
-  const esElUltimoDeLaCuenta = (s) => {
-    const cierre = s.fecha_hasta || s.fecha_vencimiento
-    if (!cierre) return true
-    return !statements.some(st => st.account_id === s.account_id && (st.fecha_hasta || st.fecha_vencimiento) > cierre)
-  }
+  // Siempre se muestra el resumen con el vencimiento más reciente de la cuenta, sin
+  // importar si ya venció o no — cualquier otro resumen de esa cuenta queda afuera,
+  // sea porque ya está reemplazado por uno más nuevo o porque nunca tuvo una fecha de
+  // vencimiento real (esos, si tienen movimientos propios, se ven en "Ciclo actual").
   const sigueActivo = (s) => {
-    const noVencidoAun = s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO
-    if (!noVencidoAun && !esElUltimoDeLaCuenta(s)) return false
+    if (!s.fecha_vencimiento) return false
+    const esElUltimo = !statements.some(st =>
+      st.account_id === s.account_id && st.fecha_vencimiento && st.fecha_vencimiento > s.fecha_vencimiento
+    )
+    if (!esElUltimo) return false
     return Math.round(saldoPendienteDe(s)) > 0
   }
   const cuentasCreditoAPagar = mostrarTabAPagar
