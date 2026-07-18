@@ -409,6 +409,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
+  const [expandedSplits, setExpandedSplits] = useState(new Set())
   const [selectedMeses, setSelectedMeses] = useState([])
 const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
@@ -912,6 +913,211 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     .filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
     .sort((a, b) => (a.nombre || a.detalle || '').toLowerCase().localeCompare((b.nombre || b.detalle || '').toLowerCase(), 'es'))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
+
+  // Los gastos divididos con hijos (división en 3, o alias de tipo "split") se guardan
+  // como 2-3 transacciones reales separadas, para que totales, gráficos y "a pagar" por
+  // hijo funcionen sin lógica especial en ningún otro lado (ver src/lib/divisionTresVias.js).
+  // Acá solo agrupamos esas filas para la VISTA de la tabla: mismo día/cuenta/nombre/
+  // categoría/subcategoría/moneda, con exactamente una fila por "clase" de tag (sin tag =
+  // "yo", o un hijo), ordenadas por monto para desambiguar cuando el mismo día hay más de
+  // una compra idéntica dividida. No toca los datos guardados.
+  const gruposSplitPorTxId = (() => {
+    const buckets = new Map()
+    identificadas.forEach(t => {
+      if (t.tipo !== 'gasto') return
+      const key = [t.account_id || '', t.fecha || '', norm(t.nombre || t.detalle || ''), t.category_id || '', t.subcategory_id || '', t.moneda || ''].join('|')
+      if (!buckets.has(key)) buckets.set(key, [])
+      buckets.get(key).push(t)
+    })
+    const porId = new Map()
+    buckets.forEach(txsBucket => {
+      if (txsBucket.length < 2) return
+      const porTag = new Map()
+      txsBucket.forEach(t => {
+        const tagKey = t.tag || '__sin_tag__'
+        if (!porTag.has(tagKey)) porTag.set(tagKey, [])
+        porTag.get(tagKey).push(t)
+      })
+      const clases = [...porTag.values()]
+      if (clases.length < 2 || clases.length > 3) return
+      const k = clases[0].length
+      if (k < 1 || !clases.every(c => c.length === k)) return
+      clases.forEach(c => c.sort((a, b) => Math.abs(Number(a.monto) || 0) - Math.abs(Number(b.monto) || 0)))
+      for (let i = 0; i < k; i++) {
+        const txsGrupo = clases.map(c => c[i])
+        const key = `grupo-${txsGrupo.map(t => t.id).sort().join('-')}`
+        const total = txsGrupo.reduce((s, t) => s + (Number(t.monto) || 0), 0)
+        const hijos = txsGrupo.map(t => t.tag).filter(Boolean)
+        txsGrupo.forEach(t => porId.set(t.id, { key, txs: txsGrupo, total, hijos }))
+      }
+    })
+    return porId
+  })()
+
+  const filasTabla = []
+  const gruposYaAgregados = new Set()
+  identificadas.forEach(tx => {
+    const grupo = gruposSplitPorTxId.get(tx.id)
+    if (!grupo) { filasTabla.push({ tipo: 'single', tx }); return }
+    if (gruposYaAgregados.has(grupo.key)) return
+    gruposYaAgregados.add(grupo.key)
+    const enEdicion = grupo.txs.some(t => t.id === editingTx)
+    filasTabla.push({ tipo: 'grupo', grupo, expandido: enEdicion || expandedSplits.has(grupo.key) })
+  })
+
+  const renderTxRow = (tx) => (
+    <tr key={tx.id} style={styles.tr}>
+      {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
+      <td style={{...styles.td, whiteSpace: 'nowrap'}}>
+        {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
+      </td>
+      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+        {editingTx === tx.id ? (
+          <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
+            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
+              <option key={a.id} value={a.id}>{a.nombre}</option>
+            ))}
+          </select>
+        ) : (
+          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+        )}
+      </td>
+      {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
+        <>
+          <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
+            <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
+              {tx.nombre || tx.detalle}
+            </div>
+            {(tx.children?.nombre || tx.tag) && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
+              <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
+                👧 {tx.children?.nombre || tx.tag}
+              </span>
+            )}
+          </td>
+          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+            {(esVistaIngresos || tx.tipo === 'ingreso') ? (
+              <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                {tx.tag || '—'}
+              </span>
+            ) : (
+              <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
+              </span>
+            )}
+          </td>
+          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+            <span style={{fontSize:'12px', color:'#888'}}>
+              {esVistaIngresos ? '' : (tx.subcategories?.nombre || '—')}
+            </span>
+          </td>
+        </>
+      )}
+      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+        {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
+      </td>
+      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+        <span style={{
+          fontSize: '11px', fontWeight: '500',
+          color: tx.moneda === 'USD' ? '#5588aa' : '#666',
+          backgroundColor: tx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
+          padding: '2px 6px', borderRadius: '8px'
+        }}>
+          {tx.moneda || 'ARS'}
+        </span>
+      </td>
+      <td style={{...styles.td, textAlign:'right', fontWeight:'600',
+        whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
+        color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
+        {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+      </td>
+      {editingTx === tx.id ? renderEditActions(tx) : (
+        <td style={styles.td}>
+          <div style={{display:'flex', gap:'4px'}}>
+            <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+            <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
+          </div>
+        </td>
+      )}
+      </>)}
+    </tr>
+  )
+
+  const toggleGrupoExpandido = (key, abrir) => setExpandedSplits(prev => {
+    const next = new Set(prev)
+    if (abrir) next.add(key); else next.delete(key)
+    return next
+  })
+
+  const renderFilaGrupo = (grupo, expandido) => {
+    const repTx = grupo.txs[0]
+    if (expandido) {
+      return (
+        <React.Fragment key={grupo.key}>
+          <tr style={{ ...styles.tr, opacity: 0.85 }}>
+            <td colSpan={isMobile ? 4 : 9} style={{ ...styles.td, paddingTop: '6px', paddingBottom: '6px' }}>
+              <button
+                onClick={() => toggleGrupoExpandido(grupo.key, false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: darkMode ? '#8C7B8C' : '#5C4F5C', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, fontFamily: '"Montserrat", sans-serif' }}
+              >
+                ▾ Dividido en {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''} — ocultar detalle
+              </button>
+            </td>
+          </tr>
+          {grupo.txs.map(tx => renderTxRow(tx))}
+        </React.Fragment>
+      )
+    }
+    return (
+      <tr key={grupo.key} style={styles.tr}>
+        <td style={{...styles.td, whiteSpace: 'nowrap'}}>
+          {isMobile ? formatFechaCorta(repTx.fecha) : formatFecha(repTx.fecha)}
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+          <span style={{fontSize:'12px', color:'#888'}}>{repTx.accounts?.nombre || '—'}</span>
+        </td>
+        <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
+          <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
+            {repTx.nombre || repTx.detalle}
+          </div>
+          <button
+            onClick={() => toggleGrupoExpandido(grupo.key, true)}
+            style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px', border: 'none', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}
+          >
+            🔀 Dividido en {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
+          </button>
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+          <span style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+            {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
+          </span>
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+          <span style={{fontSize:'12px', color:'#888'}}>{repTx.subcategories?.nombre || '—'}</span>
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+          {repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}
+        </td>
+        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
+          <span style={{
+            fontSize: '11px', fontWeight: '500',
+            color: repTx.moneda === 'USD' ? '#5588aa' : '#666',
+            backgroundColor: repTx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
+            padding: '2px 6px', borderRadius: '8px'
+          }}>
+            {repTx.moneda || 'ARS'}
+          </span>
+        </td>
+        <td style={{...styles.td, textAlign:'right', fontWeight:'600',
+          whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
+          color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
+          -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
+        </td>
+        <td style={styles.td}>
+          <button style={styles.editBtn} title="Ver detalle" onClick={() => toggleGrupoExpandido(grupo.key, true)}>▾</button>
+        </td>
+      </tr>
+    )
+  }
 
   const handleExportCSV = () => {
     const q = (val) => {
@@ -2246,82 +2452,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </tr>
           </thead>
           <tbody>
-            {identificadas.map(tx => (
-              <tr key={tx.id} style={styles.tr}>
-                {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
-                <td style={{...styles.td, whiteSpace: 'nowrap'}}>
-                  {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
-                </td>
-                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                  {editingTx === tx.id ? (
-                    <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                      {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
-                        <option key={a.id} value={a.id}>{a.nombre}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                  )}
-                </td>
-                {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
-                  <>
-                    <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
-                      <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
-                        {tx.nombre || tx.detalle}
-                      </div>
-                      {(tx.children?.nombre || tx.tag) && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
-                        <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
-                          👧 {tx.children?.nombre || tx.tag}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                      {(esVistaIngresos || tx.tipo === 'ingreso') ? (
-                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                          {tx.tag || '—'}
-                        </span>
-                      ) : (
-                        <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                          {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                      <span style={{fontSize:'12px', color:'#888'}}>
-                        {esVistaIngresos ? '' : (tx.subcategories?.nombre || '—')}
-                      </span>
-                    </td>
-                  </>
-                )}
-                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                  {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
-                </td>
-                <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                  <span style={{
-                    fontSize: '11px', fontWeight: '500',
-                    color: tx.moneda === 'USD' ? '#5588aa' : '#666',
-                    backgroundColor: tx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
-                    padding: '2px 6px', borderRadius: '8px'
-                  }}>
-                    {tx.moneda || 'ARS'}
-                  </span>
-                </td>
-                <td style={{...styles.td, textAlign:'right', fontWeight:'600',
-                  whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
-                  color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
-                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-                </td>
-                {editingTx === tx.id ? renderEditActions(tx) : (
-                  <td style={styles.td}>
-                    <div style={{display:'flex', gap:'4px'}}>
-                      <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
-                      <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
-                    </div>
-                  </td>
-                )}
-                </>)}
-              </tr>
-            ))}
+            {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
         </table>
         </div>
