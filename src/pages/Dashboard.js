@@ -2119,6 +2119,36 @@ export default function Dashboard() {
         return
       }
 
+      // El PDF informa un total final en dólares (statementData.total_dolares) que puede
+      // no coincidir con la simple suma de los consumos en USD del período, porque ya
+      // viene neteado con un saldo a favor/en contra arrastrado del resumen anterior
+      // (ej. un sobrepago del mes pasado). Se agrega una transacción de ajuste en USD
+      // para que el total que muestra la app coincida con el que realmente informa el
+      // banco, en vez de ignorar ese arrastre.
+      if (statementData.total_dolares !== undefined && statementData.total_dolares !== null) {
+        const sumaUsdReal = transacciones
+          .filter(t => t.moneda === 'USD' && t.tipo !== 'neutro')
+          .reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * t.monto, 0)
+        const ajusteUsd = sumaUsdReal - Number(statementData.total_dolares)
+        if (Math.abs(ajusteUsd) > 0.01) {
+          let fechaAjuste = new Date().toISOString().slice(0, 10)
+          if (fechaResumen) {
+            const parts = fechaResumen.split('/')
+            if (parts.length === 3) {
+              const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+              fechaAjuste = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+            }
+          }
+          transacciones.push({
+            user_id: user.id, account_id: account.id, statement_id: statement.id,
+            fecha: fechaAjuste, nombre: 'Saldo anterior en USD', detalle: 'Saldo anterior en USD',
+            monto: Math.abs(ajusteUsd), moneda: 'USD', cuotas_total: 1, cuota_numero: 1,
+            tipo: ajusteUsd > 0 ? 'ingreso' : 'gasto', category_id: getCategoryId('A Identificar'),
+            subcategory_id: null, tag: null, estado: 'identificado', es_manual: false,
+          })
+        }
+      }
+
       const transaccionesFinal = dividirTresVias(transacciones, categorias, subcategorias)
       const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transaccionesFinal).select('id, detalle, estado')
       if (errTxTarjeta) {
