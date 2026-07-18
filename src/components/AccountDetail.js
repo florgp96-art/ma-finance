@@ -433,10 +433,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
-  const guardarCicloDesde = async (accountId, fecha) => {
+  const cicloDesdeTimers = useRef({})
+  const guardarCicloDesde = (accountId, fecha) => {
+    // El input es un <input type="date">: al escribirlo a mano dispara un onChange
+    // por cada segmento (día/mes/año) que se completa, no solo al terminar. Sin
+    // debounce, cada uno de esos disparos guardaba en la DB y refrescaba todas las
+    // cuentas (fetchAllData), lo que desmontaba el panel entero ("Cargando datos...")
+    // y le hacía perder el foco al input a mitad de tipeo.
     setCicloDesdeOverride(prev => ({ ...prev, [accountId]: fecha || null }))
-    await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
-    onAccountsChanged?.()
+    clearTimeout(cicloDesdeTimers.current[accountId])
+    cicloDesdeTimers.current[accountId] = setTimeout(async () => {
+      await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
+      onAccountsChanged?.()
+    }, 800)
   }
 
   // Notificar al padre cuando cambia el período seleccionado
@@ -1119,6 +1128,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
   const hoyISO = new Date().toISOString().slice(0, 10)
   const mesActual = hoyISO.slice(0, 7)
+  // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
+  // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
+  // resumen no califica para mostrarse solo (ej. no se pudo leer la fecha de
+  // vencimiento, o ya venció), el movimiento no puede quedar invisible: se cuenta
+  // igual dentro de "Ciclo actual" en vez de desaparecer.
+  const statementIdsConTarjetaPropia = new Set(
+    statements.filter(s => s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO).map(s => s.id)
+  )
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
     : []
@@ -1159,7 +1176,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
     // Un movimiento "neutro" en la cuenta de la tarjeta solo puede ser un pago hecho
     // hacia esa tarjeta — se resta del total pendiente, no se ignora.
-    const sueltas = transactions.filter(t => !t.statement_id && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))
+    const sueltas = transactions.filter(t => (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))
     if (sueltas.length === 0 && !cicloDesdeManual) return null
     const signo = (t) => (t.tipo === 'ingreso' || t.tipo === 'neutro') ? -1 : 1
     const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
@@ -1189,7 +1206,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? (!t.statement_id && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
+      ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
