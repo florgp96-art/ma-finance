@@ -2133,49 +2133,10 @@ export default function Dashboard() {
         showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
       }
 
-      // Las transacciones del PDF que el usuario dejó sin tildar (sea porque el preview las
-      // marcó como "ya cargadas", o porque las destildó a mano al ver que ya estaban) no se
-      // reimportan — pero si el movimiento correspondiente ya existía suelto (sin
-      // statement_id) en la cuenta, hay que ligarlo a este resumen. Si no, ese movimiento
-      // sigue sin pertenecer a ningún resumen: no aparece en el "Detalle" del resumen
-      // recién cargado y sigue contando aparte en "Ciclo actual", como si el resumen no
-      // incluyera esa plata (cuando en realidad sí la incluye, en su total).
-      const noSeleccionadas = statementData.transacciones
-        .map((t, i) => ({ t, i }))
-        .filter(({ i }) => !pdfTxSelections.has(i))
-      if (noSeleccionadas.length > 0) {
-        const sueltasCuenta = await fetchAllTxPages(() =>
-          supabase.from('transactions').select('id, fecha, monto').eq('account_id', account.id).is('statement_id', null)
-        )
-        let billingMesLink = null
-        if (statementData.fecha_facturacion) {
-          const parts = statementData.fecha_facturacion.split('/')
-          if (parts.length === 3) {
-            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
-            billingMesLink = `${year}-${parts[1].padStart(2,'0')}`
-          }
-        }
-        const fechaCercanaLink = (f1, f2, dias = 5) => {
-          if (!f1 || !f2) return false
-          const d1 = new Date(f1.slice(0, 10) + 'T12:00:00')
-          const d2 = new Date(f2.slice(0, 10) + 'T12:00:00')
-          return Math.abs(d1 - d2) <= dias * 86400000
-        }
-        const usadas = new Set()
-        const idsParaLigar = []
-        noSeleccionadas.forEach(({ t }) => {
-          const esCuota = t.cuotas_total > 1
-          const match = (sueltasCuenta || []).find(e =>
-            !usadas.has(e.id) &&
-            Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01 &&
-            (esCuota && billingMesLink ? e.fecha?.slice(0, 7) === billingMesLink : fechaCercanaLink(e.fecha, t.fecha, 5))
-          )
-          if (match) { usadas.add(match.id); idsParaLigar.push(match.id) }
-        })
-        if (idsParaLigar.length > 0) {
-          await supabase.from('transactions').update({ statement_id: statement.id }).in('id', idsParaLigar)
-        }
-      }
+      // Los movimientos sueltos (sin statement_id) que caen dentro del período que este
+      // resumen cierra se ligan solos la próxima vez que se abra la cuenta — ver
+      // reconciliarSueltas en AccountDetail.js, que usa directamente la fecha de cierre
+      // del resumen en vez de tratar de adivinar cuáles del PDF ya estaban cargadas.
 
       // El "Contando desde" manual (ciclo_actual_desde) existe para trackear el gasto
       // sin resumen todavía; una vez que llega el PDF real, ese propósito ya se cumplió.

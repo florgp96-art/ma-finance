@@ -435,13 +435,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
   const cicloDesdeTimers = useRef({})
-  const vincularConResumen = async (accountId, itemIds, targetStatementId) => {
-    if (!window.confirm(`¿Vincular estos ${itemIds.length} movimientos con ese resumen? Van a dejar de contarse aparte en "Ciclo actual".`)) return
-    await supabase.from('transactions').update({ statement_id: targetStatementId }).in('id', itemIds)
-    await supabase.from('accounts').update({ ciclo_actual_desde: null }).eq('id', accountId)
-    setCicloDesdeOverride(prev => ({ ...prev, [accountId]: null }))
-    onAccountsChanged?.()
-  }
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
     // por cada segmento (día/mes/año) que se completa, no solo al terminar. Sin
@@ -502,6 +495,37 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return all
   }
 
+  // Un movimiento suelto (sin statement_id, ej. cargado a mano o por Excel mientras se
+  // esperaba el resumen) pertenece automáticamente al primer resumen real de esa cuenta
+  // cuyo cierre (fecha_hasta, o vencimiento si no hay fecha de cierre) sea posterior a su
+  // fecha — la fecha de corte la define el resumen, no hace falta trackearla a mano. Se
+  // liga en la DB y se refleja al toque en la lista en memoria, sin esperar otro fetch.
+  const reconciliarSueltas = async (txs, stmts) => {
+    const cierresPorCuenta = new Map()
+    stmts.forEach(st => {
+      const cierre = st.fecha_hasta || st.fecha_vencimiento
+      if (!cierre) return
+      const list = cierresPorCuenta.get(st.account_id) || []
+      list.push({ id: st.id, cierre })
+      cierresPorCuenta.set(st.account_id, list)
+    })
+    cierresPorCuenta.forEach(list => list.sort((a, b) => a.cierre.localeCompare(b.cierre)))
+    const grupos = new Map()
+    txs.forEach(t => {
+      if (t.statement_id || !t.fecha) return
+      const candidatos = cierresPorCuenta.get(t.account_id)
+      const destino = candidatos && candidatos.find(c => c.cierre >= t.fecha)
+      if (!destino) return
+      if (!grupos.has(destino.id)) grupos.set(destino.id, [])
+      grupos.get(destino.id).push(t)
+    })
+    if (grupos.size === 0) return
+    await Promise.all([...grupos.entries()].map(([stmtId, list]) =>
+      supabase.from('transactions').update({ statement_id: stmtId }).in('id', list.map(t => t.id))
+    ))
+    grupos.forEach((list, stmtId) => list.forEach(t => { t.statement_id = stmtId }))
+  }
+
   const fetchData = async () => {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -528,6 +552,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const subcatRes = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
       : { data: [] }
+    await reconciliarSueltas(txs, stmtRes.data || [])
     setTransactions(txs)
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
@@ -563,6 +588,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const subcatRes = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
       : { data: [] }
+    await reconciliarSueltas(txs, stmtRes.data || [])
     setTransactions(txs)
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
@@ -1878,19 +1904,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
                 const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
                 const tarjetaExpandida = tarjetaAbierta.has(s.id)
-                // Si esta tarjeta es "Ciclo actual" (movimientos sueltos) y ya existe un
-                // resumen real cargado cuyo cierre cubre las fechas de todos esos
-                // movimientos, es que quedaron sin vincular (ej. por un import viejo antes
-                // de este fix) — se ofrece un botón para ligarlos y que dejen de duplicar.
-                const resumenParaVincular = s._virtual && items.length > 0
-                  ? statements
-                      .filter(st => st.account_id === s.account_id)
-                      .filter(st => {
-                        const cierre = st.fecha_hasta || st.fecha_vencimiento
-                        return cierre && items.every(it => it.fecha <= cierre)
-                      })
-                      .sort((a, b) => (a.fecha_hasta || a.fecha_vencimiento).localeCompare(b.fecha_hasta || b.fecha_vencimiento))[0]
-                  : null
                 return (
                   <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
                     <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
@@ -1902,13 +1915,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                             <input type="date" value={s.cicloDesde || ''} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
                               style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
                             {!s.cicloDesde && '(auto)'}
-                            {resumenParaVincular && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); vincularConResumen(s.account_id, items.map(it => it.id), resumenParaVincular.id) }}
-                                style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#5C4F8C' : '#c9b8f0'}`, backgroundColor: darkMode ? '#3A2F4A' : '#f0ebfa', color: '#7c5cbf', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                                🔗 Vincular con {resumenParaVincular.periodo || mesLabel(resumenParaVincular.fecha_hasta?.slice(0, 7) || '')}
-                              </button>
-                            )}
                           </p>
                         ) : (
                           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>{`Vence: ${s.fecha_vencimiento}`}</p>
