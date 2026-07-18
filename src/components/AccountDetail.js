@@ -1714,10 +1714,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         <table style={styles.table}>
                           <thead>
                             <tr>
-                              <th style={styles.thSortable} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
-                              <th style={styles.thSortable} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
-                              <th style={{ ...styles.thSortable, display: isMobile ? 'none' : undefined }} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
-                              <th style={{ ...styles.thSortable, textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
+                              <th style={{...styles.thSortable, width: isMobile ? '40%' : '35%'}} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
+                              <th style={{...styles.thSortable, width: isMobile ? '30%' : '25%'}} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
+                              <th style={{ ...styles.thSortable, width: '20%', display: isMobile ? 'none' : undefined }} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
+                              <th style={{ ...styles.thSortable, width: isMobile ? '30%' : '20%', textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2166,14 +2166,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>Fecha</th>
-                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Detalle original</th>
-                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>
-                <th style={styles.th}>Nombre</th>
-                <th style={styles.th}>Categoría</th>
-                <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
-                <th style={styles.th}>Monto</th>
-                <th style={styles.th}></th>
+                <th style={{...styles.th, width: isMobile ? '13%' : '8%'}}>Fecha</th>
+                <th style={{...styles.th, width: '18%', display: isMobile ? 'none' : undefined}}>Detalle original</th>
+                <th style={{...styles.th, width: '10%', display: isMobile ? 'none' : undefined}}>Cuenta</th>
+                <th style={{...styles.th, width: isMobile ? '34%' : '20%'}}>Nombre</th>
+                <th style={{...styles.th, width: isMobile ? '20%' : '12%'}}>Categoría</th>
+                <th style={{...styles.th, width: '10%', display: isMobile ? 'none' : undefined}}>Subcategoría</th>
+                <th style={{...styles.th, width: isMobile ? '18%' : '10%'}}>Monto</th>
+                <th style={{...styles.th, width: isMobile ? '15%' : '12%'}}></th>
               </tr>
             </thead>
             <tbody>
@@ -2234,15 +2234,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <table style={styles.table}>
           <thead>
             <tr>
-              {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : undefined)}
-              {thSortable('Cuenta', 'cuenta', isMobile)}
-              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : undefined)}
-              {thSortable('Categoría', 'categoria', isMobile)}
-              {thSortable('Subcategoría', 'subcategoria', isMobile)}
-              {thSortable('Cuotas', 'cuotas', isMobile)}
-              {thSortable('Moneda', 'moneda', isMobile)}
-              {thSortable('Monto', 'monto', false, isMobile ? '25%' : undefined)}
-              <th style={{...styles.th, ...(isMobile ? { width: '13%' } : {})}}></th>
+              {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : '9%')}
+              {thSortable('Cuenta', 'cuenta', isMobile, isMobile ? undefined : '11%')}
+              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : '20%')}
+              {thSortable('Categoría', 'categoria', isMobile, isMobile ? undefined : '12%')}
+              {thSortable('Subcategoría', 'subcategoria', isMobile, isMobile ? undefined : '12%')}
+              {thSortable('Cuotas', 'cuotas', isMobile, isMobile ? undefined : '8%')}
+              {thSortable('Moneda', 'moneda', isMobile, isMobile ? undefined : '8%')}
+              {thSortable('Monto', 'monto', false, isMobile ? '25%' : '11%')}
+              <th style={{...styles.th, width: isMobile ? '13%' : '9%'}}></th>
             </tr>
           </thead>
           <tbody>
@@ -2277,7 +2277,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </td>
                     <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
                       {(esVistaIngresos || tx.tipo === 'ingreso') ? (
-                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                        <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                           {tx.tag || '—'}
                         </span>
                       ) : (
@@ -2341,13 +2341,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <table style={styles.table}>
                 <thead>
                   <tr>
-                    <th style={styles.th}>Fecha</th>
-                    <th style={styles.th}>Nombre</th>
-                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Categoría</th>
-                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Subcategoría</th>
-                    <th style={{...styles.th, display: isMobile ? 'none' : undefined}}>Cuenta</th>
-                    <th style={styles.th}>Monto</th>
-                    <th style={styles.th}></th>
+                    <th style={{...styles.th, width: isMobile ? '15%' : '10%'}}>Fecha</th>
+                    <th style={{...styles.th, width: isMobile ? '45%' : '25%'}}>Nombre</th>
+                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Categoría</th>
+                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Subcategoría</th>
+                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Cuenta</th>
+                    <th style={{...styles.th, width: isMobile ? '22%' : '12%'}}>Monto</th>
+                    <th style={{...styles.th, width: isMobile ? '18%' : '8%'}}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2433,7 +2433,7 @@ const getStyles = (dark, mobile) => {
     bubbleSection: { marginBottom: '32px' },
     tableSection: { marginBottom: '32px' },
     tableHint: { fontSize: '13px', color: muted, margin: '-8px 0 12px 0' },
-    table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: mobile ? 'fixed' : undefined },
+    table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: 'fixed' },
     th: {
       textAlign: 'left', padding: mobile ? '6px 8px' : '10px 12px', fontSize: '11px',
       color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400'
@@ -2444,7 +2444,7 @@ const getStyles = (dark, mobile) => {
       cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
     },
     sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
-    td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt },
+    td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt, overflowWrap: 'break-word', wordBreak: 'break-word' },
     tr: { transition: 'background 0.1s' },
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
     detalle: { fontSize: '12px', color: muted, fontFamily: 'monospace' },
