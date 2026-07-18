@@ -1405,13 +1405,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
   const hoyISO = new Date().toISOString().slice(0, 10)
   const mesActual = hoyISO.slice(0, 7)
-  // Un resumen real sigue "activo" (con su propia tarjeta en "A pagar") mientras tenga
-  // saldo pendiente — no hay que esperar a que venza para que aparezca ni se borra solo
-  // por haber vencido: si no se pagó completo, sigue mostrándose con lo que falta, se
-  // haya pagado a tiempo o no. El saldo se calcula descontando del total del PDF los
-  // pagos sueltos (tipo "neutro"/reintegros) posteriores al cierre de este resumen y
-  // anteriores al cierre del siguiente (si ya hay uno) — esos son los que todavía no
-  // vinieron incluidos en ningún PDF.
+  // Una tarjeta de crédito real arrastra sola el saldo no pagado al resumen siguiente
+  // (el banco ya lo suma ahí) — por eso un resumen VIEJO (ya reemplazado por uno más
+  // nuevo de la misma cuenta) se sigue ocultando apenas vence, sin excepción: lo que
+  // faltaba pagar ya está reflejado en el total del resumen que le sigue, mostrarlo
+  // aparte sería duplicar esa deuda. El ÚLTIMO resumen de cada cuenta es distinto: como
+  // todavía no hay un resumen más nuevo que lo haya absorbido, sigue mostrándose con lo
+  // que falta (descontando cualquier pago parcial ya cargado) hasta quedar en $0, sin
+  // importar si ya venció.
   const saldoPendienteDe = (s) => {
     const cierre = s.fecha_hasta || s.fecha_vencimiento
     if (!cierre) return Number(s.total_resumen) || 0
@@ -1429,16 +1430,31 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
   }
+  const esElUltimoDeLaCuenta = (s) => {
+    const cierre = s.fecha_hasta || s.fecha_vencimiento
+    if (!cierre) return true
+    return !statements.some(st => st.account_id === s.account_id && (st.fecha_hasta || st.fecha_vencimiento) > cierre)
+  }
+  const sigueActivo = (s) => {
+    const noVencidoAun = s.fecha_vencimiento && s.fecha_vencimiento >= hoyISO
+    if (!noVencidoAun && !esElUltimoDeLaCuenta(s)) return false
+    return Math.round(saldoPendienteDe(s)) > 0
+  }
+  const cuentasCreditoAPagar = mostrarTabAPagar
+    ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
+    : []
+  // "A pagar" es solo para tarjetas de crédito — los resúmenes de cuentas de
+  // banco/ingresos (que nunca tienen vencimiento real) quedaban afuera antes solo por
+  // efecto colateral del filtro de fecha; ahora que ese filtro no es lo único que decide
+  // si se muestra un resumen, hay que excluirlos por tipo de cuenta explícitamente.
+  const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
   // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
   const statementIdsConTarjetaPropia = new Set(
-    statements.filter(s => Math.round(saldoPendienteDe(s)) > 0).map(s => s.id)
+    statements.filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s)).map(s => s.id)
   )
-  const cuentasCreditoAPagar = mostrarTabAPagar
-    ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
-    : []
   // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
   // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
   // real de la tarjeta — por eso para cuotas se compara por mes exacto contra el mes del
@@ -1490,12 +1506,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // monto fijo del PDF: sigue apareciendo mientras falte pagar algo, sin importar si ya
   // venció, y desaparece recién cuando queda saldado.
   const statementsRealesConUsd = statements
+    .filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s))
     .map(s => {
       const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
       const totalUsd = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
       return { ...s, _totalOriginal: Number(s.total_resumen) || 0, total_resumen: saldoPendienteDe(s), total_usd: totalUsd }
     })
-    .filter(s => Math.round(s.total_resumen) > 0 || Math.round(s.total_usd) !== 0)
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statementsRealesConUsd]
         .sort((a, b) => {
