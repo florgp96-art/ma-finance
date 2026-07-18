@@ -25,6 +25,14 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const isMobile = windowWidth < 768
+
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -301,12 +309,21 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
           </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  {['Fecha', 'Descripción', 'Categoría', 'Subcategoría', 'Forma de pago', 'Monto', ''].map(h => (
+                  {[
+                    { h: 'Fecha', w: isMobile ? '14%' : '8%' },
+                    { h: 'Descripción', w: isMobile ? '32%' : '24%' },
+                    { h: 'Categoría', w: isMobile ? '20%' : '14%' },
+                    { h: 'Subcategoría', w: '13%', hideMobile: true },
+                    { h: 'Forma de pago', w: '13%', hideMobile: true },
+                    { h: 'Monto', w: isMobile ? '20%' : '16%' },
+                    { h: '', w: isMobile ? '14%' : '12%' },
+                  ].map(({ h, w, hideMobile }) => (
                     <th key={h} style={{
-                      textAlign: 'left', padding: '8px 10px',
+                      textAlign: 'left', padding: '8px 10px', width: w,
+                      display: hideMobile && isMobile ? 'none' : undefined,
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
                       color: '#6e6e73', fontWeight: '400', fontSize: '11px',
                       textTransform: 'uppercase', letterSpacing: '0.04em'
@@ -336,7 +353,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                             : <span style={{ color: '#aaa' }}>—</span>
                         }
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px', display: isMobile ? 'none' : undefined }}>
                         {isEditing
                           ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: darkMode ? 'dark' : 'light' }}>
                               <option value="">—</option>
@@ -345,7 +362,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                           : t.subcategories?.nombre || '—'
                         }
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px' }}>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px', display: isMobile ? 'none' : undefined }}>
                         {t.accounts?.nombre || '—'}
                       </td>
                       <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
