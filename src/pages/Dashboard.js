@@ -1607,7 +1607,7 @@ export default function Dashboard() {
       const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
       const txExistentes = await fetchAllTxPages(() =>
         supabase.from('transactions')
-          .select('fecha, monto, account_id')
+          .select('fecha, monto, moneda, account_id')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
       )
@@ -1636,6 +1636,7 @@ export default function Dashboard() {
         const cuentaEsperada = (esIngreso && ingresosAcc) ? ingresosAcc.id : accountId
         const isDupe = txExistentes?.some(e => {
           if (e.account_id !== cuentaEsperada) return false
+          if ((e.moneda || 'ARS') !== (t.moneda || 'ARS')) return false
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
@@ -2100,12 +2101,13 @@ export default function Dashboard() {
       // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
       // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
       const existentesTarjeta = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('fecha, monto, detalle').eq('account_id', account.id)
+        supabase.from('transactions').select('fecha, monto, moneda, detalle').eq('account_id', account.id)
       )
       const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
       const transacciones = transaccionesCandidatas.filter(cand =>
         !(existentesTarjeta || []).some(e =>
           e.fecha === cand.fecha &&
+          (e.moneda || 'ARS') === (cand.moneda || 'ARS') &&
           Math.abs(Number(e.monto) - cand.monto) < 0.01 &&
           normDetTarjeta(e.detalle) === normDetTarjeta(cand.detalle)
         )
