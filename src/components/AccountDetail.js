@@ -46,7 +46,13 @@ const restarDiasISO = (fechaISO, dias) => {
   d.setDate(d.getDate() - dias)
   return d.toISOString().slice(0, 10)
 }
-const cierreDe = (s) => s.fecha_hasta || (s.fecha_vencimiento ? restarDiasISO(s.fecha_vencimiento, DIAS_CIERRE_A_VENCIMIENTO) : null)
+// fecha_hasta solo es confiable si es efectivamente ANTERIOR al vencimiento (un cierre
+// nunca puede caer en o después de la fecha límite de pago) — si el parseo del PDF la
+// dejó igual o posterior a fecha_vencimiento, se descarta y se usa la aproximación.
+const cierreDe = (s) => {
+  if (s.fecha_hasta && (!s.fecha_vencimiento || s.fecha_hasta < s.fecha_vencimiento)) return s.fecha_hasta
+  return s.fecha_vencimiento ? restarDiasISO(s.fecha_vencimiento, DIAS_CIERRE_A_VENCIMIENTO) : null
+}
 
 export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
@@ -1528,7 +1534,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     .filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s))
     .map(s => {
       const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
-      const totalUsd = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+      const totalUsdLinked = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+      // Igual que con el saldo pendiente en pesos: un pago o reintegro suelto en dólares
+      // (cargado a mano, sin statement_id) también tiene que restar del total en USD, no
+      // solo lo que ya vino vinculado al importar el PDF.
+      const cierre = cierreDe(s)
+      const pagosUsdPosteriores = cierre
+        ? transactions.filter(t =>
+            t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
+            (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.fecha > cierre
+          )
+        : []
+      const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
+      const totalUsd = totalUsdLinked - totalPagosUsdPosteriores
       return { ...s, _totalOriginal: Number(s.total_resumen) || 0, total_resumen: saldoPendienteDe(s), total_usd: totalUsd }
     })
   const statementsAPagar = mostrarTabAPagar
