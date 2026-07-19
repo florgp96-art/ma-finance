@@ -1522,9 +1522,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
     const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
-    // Un movimiento "neutro" en la cuenta de la tarjeta solo puede ser un pago hecho
-    // hacia esa tarjeta — se resta del total pendiente, no se ignora.
-    const sueltas = transactions.filter(t => (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))
+    // Si hay un resumen real activo para esta cuenta, cualquier pago o reintegro suelto
+    // (neutro/ingreso) le pertenece a ESE resumen — se resta de su saldo pendiente (ver
+    // saldoPendienteDe), nunca se muestra aparte acá. Si se lo dejara pasar, un mismo
+    // pago aparecería simultáneamente como "Ciclo actual" y como descuento del resumen
+    // real. Solo las compras nuevas (no pagos) siguen contando como Ciclo actual — son
+    // gasto que todavía no vino en ningún PDF.
+    const hayResumenActivo = statementActivo ? sigueActivo(statementActivo) : false
+    const sueltas = transactions.filter(t => {
+      if (!((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))) return false
+      if (hayResumenActivo && (t.tipo === 'neutro' || t.tipo === 'ingreso')) return false
+      return true
+    })
     if (sueltas.length === 0 && !cicloDesdeManual) return null
     const signo = (t) => (t.tipo === 'ingreso' || t.tipo === 'neutro') ? -1 : 1
     const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
