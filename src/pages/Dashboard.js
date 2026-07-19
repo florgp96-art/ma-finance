@@ -179,8 +179,6 @@ export default function Dashboard() {
   const [dashboardTab, setDashboardTab] = useState('resumen')
   const tabsScrollRef = useRef(null)
   const [sharedPeriod, setSharedPeriod] = useState([])
-  const [vencimientosList, setVencimientosList] = useState([])
-  const [loadingVenc, setLoadingVenc] = useState(false)
 
   // Excel import
   const [showExcel, setShowExcel] = useState(false)
@@ -397,12 +395,6 @@ export default function Dashboard() {
     return () => window.removeEventListener('resize', measure)
   }, [dolarRates, tcTipo, tipoCambio])
 
-  useEffect(() => {
-    if (dashboardTab === 'apagar' && selectedAccount === 'all') {
-      fetchVencimientos()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboardTab, selectedAccount])
 
   useEffect(() => {
     const handleResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight) }
@@ -661,21 +653,6 @@ export default function Dashboard() {
       } catch {}
       setDolarRates(map)
     } catch {}
-  }
-
-  const fetchVencimientos = async () => {
-    setLoadingVenc(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const today = new Date().toISOString().slice(0, 10)
-    const { data } = await supabase
-      .from('statements')
-      .select('id, periodo, fecha_vencimiento, total_resumen, accounts(nombre)')
-      .eq('user_id', user.id)
-      .not('fecha_vencimiento', 'is', null)
-      .gte('fecha_vencimiento', today)
-      .order('fecha_vencimiento', { ascending: true })
-    setVencimientosList(data || [])
-    setLoadingVenc(false)
   }
 
   const parseExcelDate = (val) => {
@@ -3052,53 +3029,6 @@ export default function Dashboard() {
 
                 {dashboardTab === 'apagar' && (
                   <div style={{ marginTop: '32px' }}>
-                    <div style={{ marginBottom: '32px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 16px 0' }}>
-                        💳 Próximos vencimientos de tarjetas
-                      </h3>
-                      {loadingVenc ? (
-                        <p style={{ color: '#aaa', fontSize: '14px' }}>Cargando...</p>
-                      ) : vencimientosList.length === 0 ? (
-                        <p style={{ color: '#aaa', fontSize: '14px' }}>No hay vencimientos próximos. Los vencimientos se guardan automáticamente al cargar un PDF.</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {vencimientosList.map(s => {
-                            const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
-                            const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
-                            return (
-                              <div key={s.id} style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '14px 18px', borderRadius: '12px',
-                                backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
-                                border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
-                              }}>
-                                <div>
-                                  <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                                    💳 {s.accounts?.nombre || '—'}
-                                  </p>
-                                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
-                                    {s.periodo} · Vence: {s.fecha_vencimiento}
-                                  </p>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  {s.total_resumen > 0 && (
-                                    <p style={{ margin: 0, fontWeight: '600', fontSize: '16px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                                      $ {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0 }).format(s.total_resumen)}
-                                    </p>
-                                  )}
-                                  {diasRestantes !== null && (
-                                    <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
-                                      {diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                         <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0 }}>
