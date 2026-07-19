@@ -165,11 +165,6 @@ export default function Dashboard() {
   const [showAddCuentaAhorro, setShowAddCuentaAhorro] = useState(false)
   const [newCuentaAhorro, setNewCuentaAhorro] = useState({ cuenta: '', monto: '', moneda: 'ARS' })
 
-  // Metas del mes: ingresos objetivo y límite de egresos — persiste en localStorage
-  const [metaIngresos, setMetaIngresos] = useState(() => localStorage.getItem('ma_meta_ingresos') || '')
-  const [limiteEgresos, setLimiteEgresos] = useState(() => localStorage.getItem('ma_limite_egresos') || '')
-  const [metasMesActual, setMetasMesActual] = useState({ ingresos: 0, gastos: 0 })
-
   // Categorías
 
   // Tipo de cambio
@@ -299,40 +294,6 @@ export default function Dashboard() {
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
   useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro])
   useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro])
-  useEffect(() => { try { localStorage.setItem('ma_meta_ingresos', metaIngresos) } catch {}; if (prefsLoaded.current) persistPref('meta_ingresos', metaIngresos) }, [metaIngresos])
-  useEffect(() => { try { localStorage.setItem('ma_limite_egresos', limiteEgresos) } catch {}; if (prefsLoaded.current) persistPref('limite_egresos', limiteEgresos) }, [limiteEgresos])
-
-  // Metas del mes: trae ingresos y gastos del mes en curso (todas las cuentas) para las barras de progreso
-  useEffect(() => {
-    let cancelado = false
-    const fetchMetasMes = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const now = new Date()
-      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      const nextMes = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10)
-      const { data } = await supabase.from('transactions')
-        .select('monto, moneda, tipo')
-        .eq('user_id', user.id)
-        .in('tipo', ['ingreso', 'gasto'])
-        .gte('fecha', `${mesActual}-01`)
-        .lt('fecha', nextMes)
-      if (cancelado) return
-      const tc = parseFloat(tipoCambio) || 0
-      const tcE = parseFloat(tipoCambioEUR) || 0
-      let ingresos = 0, gastos = 0
-      ;(data || []).forEach(t => {
-        const raw = Math.abs(Number(t.monto) || 0)
-        const valArs = t.moneda === 'USD' ? raw * tc : t.moneda === 'EUR' ? raw * tcE : raw
-        if (t.tipo === 'ingreso') ingresos += valArs
-        else gastos += valArs
-      })
-      setMetasMesActual({ ingresos, gastos })
-    }
-    fetchMetasMes()
-    return () => { cancelado = true }
-  }, [refreshKey, tipoCambio, tipoCambioEUR])
-
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
     const rateVivo = dolarRates[tcTipo]
@@ -396,12 +357,6 @@ export default function Dashboard() {
           .select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__pref__%')
         const prefs = Object.fromEntries((prefRows || []).map(r => [r.texto_original.replace('__pref__', ''), r.nombre_asignado]))
         const readPref = (key) => { try { return prefs[key] !== undefined ? JSON.parse(prefs[key]) : undefined } catch { return undefined } }
-        const metaIngDB = readPref('meta_ingresos')
-        if (metaIngDB !== undefined) setMetaIngresos(metaIngDB || '')
-        else if (metaIngresos) persistPref('meta_ingresos', metaIngresos)
-        const limEgDB = readPref('limite_egresos')
-        if (limEgDB !== undefined) setLimiteEgresos(limEgDB || '')
-        else if (limiteEgresos) persistPref('limite_egresos', limiteEgresos)
         const ahorroDB = readPref('ahorro')
         if (ahorroDB) setAhorro(ahorroDB)
         else if (ahorro && (ahorro.monto || ahorro.anos)) persistPref('ahorro', ahorro)
@@ -443,7 +398,7 @@ export default function Dashboard() {
   }, [dolarRates, tcTipo, tipoCambio])
 
   useEffect(() => {
-    if (dashboardTab === 'vencimientos' && selectedAccount === 'all') {
+    if (dashboardTab === 'apagar' && selectedAccount === 'all') {
       fetchVencimientos()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2765,52 +2720,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Metas del mes: ingresos objetivo y límite de egresos */}
-        <div style={{ padding: isMobile ? '0 12px' : isTablet ? '0 16px' : '0 32px', marginBottom: isMobile ? '12px' : '16px' }}>
-          <div style={{ ...styles.section, padding: isMobile ? '14px 16px' : '18px 24px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '18px' : '32px' }}>
-            {[
-              { key: 'ingresos', label: '💰 Meta de ingresos', valor: metasMesActual.ingresos, meta: metaIngresos, setMeta: setMetaIngresos },
-              { key: 'gastos', label: '📉 Límite de egresos', valor: metasMesActual.gastos, meta: limiteEgresos, setMeta: setLimiteEgresos },
-            ].map(g => {
-              const metaNum = parseFloat(g.meta) || 0
-              const pct = metaNum > 0 ? Math.min(100, Math.round((g.valor / metaNum) * 100)) : 0
-              const excedido = g.key === 'gastos' && metaNum > 0 && g.valor > metaNum
-              const barColor = g.key === 'gastos'
-                ? (excedido ? '#c0392b' : pct > 80 ? '#c07a2b' : '#3a7d44')
-                : '#3a7d44'
-              return (
-                <div key={g.key} style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.03em', color: darkMode ? '#C0B0C0' : '#6e6e73' }}>
-                      {g.label}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Meta $</span>
-                      <input
-                        type="number" value={g.meta} onChange={e => g.setMeta(e.target.value)}
-                        placeholder="0"
-                        style={{
-                          width: isMobile ? '90px' : '100px', padding: '4px 8px', borderRadius: '6px',
-                          border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
-                          background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
-                          fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ height: '10px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, transition: 'width 0.3s ease', borderRadius: '6px' }} />
-                  </div>
-                  <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '6px 0 0' }}>
-                    $ {formatMonto(Math.round(g.valor))}{metaNum > 0 ? ` de $ ${formatMonto(Math.round(metaNum))} (${pct}%)` : ' este mes — definí una meta arriba'}
-                    {excedido && <span style={{ color: '#c0392b', fontWeight: '600' }}> · ¡Superaste el límite!</span>}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
@@ -3093,7 +3002,6 @@ export default function Dashboard() {
                   >
                     {[
                       { key: 'resumen', label: '📊 Resumen' },
-                      { key: 'vencimientos', label: '📅 Vencimientos' },
                       { key: 'apagar', label: '📌 A pagar' },
                       ...childrenDB.map(c => ({ key: c.nombre, label: `${customIcons[c.nombre] || '👧'} ${c.nombre}` }))
                     ].map(tab => (
@@ -3142,8 +3050,8 @@ export default function Dashboard() {
                   />
                 )}
 
-                {dashboardTab === 'vencimientos' && (
-                  <div>
+                {dashboardTab === 'apagar' && (
+                  <div style={{ marginTop: '32px' }}>
                     <div style={{ marginBottom: '32px' }}>
                       <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 16px 0' }}>
                         💳 Próximos vencimientos de tarjetas
