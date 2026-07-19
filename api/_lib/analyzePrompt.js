@@ -170,6 +170,23 @@ REGLAS GENERALES:
 - titular: nombre del titular
 - categoria_sugerida y subcategoria_sugerida: elegí SOLO de las listas de abajo, con el nombre exacto tal como está escrito. Nunca inventes una categoría o subcategoría que no esté en la lista. Si no estás seguro o no encaja en ninguna → "A Identificar"
 - IMPORTANTE: incluí TODAS las transacciones del período, sin omitir ninguna, aunque sean muchas.
+- CARGOS DE CIERRE (resúmenes de tarjeta): después del detalle de consumo, casi todos los
+  resúmenes tienen una sección de cargos entre el SUBTOTAL y el TOTAL A PAGAR — cosas como
+  INTERESES COMPENSATORIOS, INTERESES PUNITORIOS, IMPUESTO DE SELLOS, I.V.A., PERCEPCION
+  IVA, PERCEP. AFIP, PERC. IIBB, COMISION/MANTENIMIENTO DE CUENTA, etc. Son transacciones
+  reales igual que cualquier compra del detalle — NUNCA los omitas ni los ignores porque
+  aparezcan en una sección distinta o con otro formato. Cada uno de estos conceptos tiene
+  que salir como su propia transacción (tipo "gasto", categoría "Débitos" con la
+  subcategoría que corresponda: Impuestos, Percepciones, Intereses).
+- MISMO CARGO EN DOS MONEDAS: un cargo de cierre puede tener un monto en la columna PESOS
+  Y OTRO en la columna DÓLARES en la MISMA fila (ej. "IMPUESTO DE SELLOS   31.908,79   0,97"
+  — son 31.908,79 pesos MÁS 0,97 dólares, dos cargos distintos con el mismo nombre, no una
+  conversión del mismo monto). Cuando eso pase, generá DOS transacciones separadas para esa
+  fila, una con moneda "ARS" y el monto de la columna pesos, otra con moneda "USD" y el
+  monto de la columna dólares — nunca elijas una sola columna y descartes la otra.
+- Verificá que la suma de todas las transacciones que devolvés (en cada moneda) sea
+  coherente con el TOTAL A PAGAR que informa el resumen — si no cierra, revisá si te faltó
+  alguno de estos cargos de cierre antes de responder.
 
 ═══════════════════════════════
 CATEGORÍAS PARA TARJETAS DE CRÉDITO (usar nombres exactos):
