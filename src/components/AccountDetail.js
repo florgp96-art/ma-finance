@@ -46,12 +46,19 @@ const restarDiasISO = (fechaISO, dias) => {
   d.setDate(d.getDate() - dias)
   return d.toISOString().slice(0, 10)
 }
+// Las fechas que llegan de la DB/PDF a veces traen espacios o caracteres de más (ej. un
+// parseo con espacios sobrantes) — eso rompe en silencio cualquier comparación de string
+// (`<`, `>`) sin que se note a simple vista, porque al mostrarse en pantalla no se ve la
+// diferencia. Siempre se normaliza a los 10 caracteres YYYY-MM-DD antes de comparar.
+export const normFecha = (f) => (f || '').trim().slice(0, 10)
 // fecha_hasta solo es confiable si es efectivamente ANTERIOR al vencimiento (un cierre
 // nunca puede caer en o después de la fecha límite de pago) — si el parseo del PDF la
 // dejó igual o posterior a fecha_vencimiento, se descarta y se usa la aproximación.
 const cierreDe = (s) => {
-  if (s.fecha_hasta && (!s.fecha_vencimiento || s.fecha_hasta < s.fecha_vencimiento)) return s.fecha_hasta
-  return s.fecha_vencimiento ? restarDiasISO(s.fecha_vencimiento, DIAS_CIERRE_A_VENCIMIENTO) : null
+  const hasta = normFecha(s.fecha_hasta)
+  const venc = normFecha(s.fecha_vencimiento)
+  if (hasta && (!venc || hasta < venc)) return hasta
+  return venc ? restarDiasISO(venc, DIAS_CIERRE_A_VENCIMIENTO) : null
 }
 
 export const mesLabel = (yearMonth) => {
@@ -548,8 +555,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // para cuotas se compara por mes exacto contra el mes de cierre del resumen, no por
     // fecha exacta ni por la ventana de días de los demás movimientos.
     const perteneceAlCierre = (t, cierre, desde) => {
-      if ((t.cuotas_total || 1) > 1) return t.fecha.slice(0, 7) === cierre.slice(0, 7)
-      return cierre >= t.fecha && t.fecha > desde
+      const fecha = normFecha(t.fecha)
+      if ((t.cuotas_total || 1) > 1) return fecha.slice(0, 7) === cierre.slice(0, 7)
+      return cierre >= fecha && fecha > desde
     }
 
     // Un pago o reintegro suelto (tipo "neutro" o "ingreso") en la cuenta de una tarjeta
@@ -1448,7 +1456,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const pagosPosteriores = transactions.filter(t =>
       t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
       (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-      t.fecha > cierre
+      normFecha(t.fecha) > cierre
     )
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
@@ -1459,8 +1467,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // vencimiento real (esos, si tienen movimientos propios, se ven en "Ciclo actual").
   const sigueActivo = (s) => {
     if (!s.fecha_vencimiento) return false
+    const vencS = normFecha(s.fecha_vencimiento)
     const esElUltimo = !statements.some(st =>
-      st.account_id === s.account_id && st.fecha_vencimiento && st.fecha_vencimiento > s.fecha_vencimiento
+      st.account_id === s.account_id && st.fecha_vencimiento && normFecha(st.fecha_vencimiento) > vencS
     )
     if (!esElUltimo) return false
     return Math.round(saldoPendienteDe(s)) > 0
@@ -1495,12 +1504,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // recién cerró, no del ciclo nuevo). Si esto no coincidiera, un mismo pago podría
   // contarse en "Ciclo actual" y a la vez no descontarse del resumen real, o viceversa.
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
+    const fecha = normFecha(t.fecha)
     if ((t.cuotas_total || 1) > 1) {
-      const mesTx = t.fecha?.slice(0, 7)
+      const mesTx = fecha.slice(0, 7)
       return mesTx === (mesCorte || mesActual)
     }
-    const enRango = (!ultimoCierre || t.fecha > ultimoCierre) && t.fecha <= hoyISO
-    if (t.tipo === 'neutro') return enRango && t.fecha?.slice(0, 7) === mesActual
+    const enRango = (!ultimoCierre || fecha > ultimoCierre) && fecha <= hoyISO
+    if (t.tipo === 'neutro') return enRango && fecha.slice(0, 7) === mesActual
     return enRango
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
@@ -1515,7 +1525,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const statementsSinResumen = cuentasCreditoAPagar.map(a => {
     const statementsCuenta = statements.filter(st => st.account_id === a.id && st.fecha_vencimiento)
     const statementActivo = statementsCuenta.reduce((max, st) =>
-      (!max || st.fecha_vencimiento > max.fecha_vencimiento) ? st : max, null)
+      (!max || normFecha(st.fecha_vencimiento) > normFecha(max.fecha_vencimiento)) ? st : max, null)
     const ultimoCierreAuto = statementActivo ? cierreDe(statementActivo) : null
     const cicloDesdeManual = cicloDesdeOverride[a.id] !== undefined ? cicloDesdeOverride[a.id] : (a.ciclo_actual_desde || null)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
@@ -1558,7 +1568,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const pagosUsdPosteriores = cierre
         ? transactions.filter(t =>
             t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
-            (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.fecha > cierre
+            (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
           )
         : []
       const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
@@ -1650,7 +1660,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const pagosStatement = transactions.filter(t => {
         if (pagoIdsUsados.has(t.id) || t.moneda === 'USD' || (t.tipo !== 'neutro' && t.tipo !== 'ingreso')) return false
         if (t.statement_id === s.id) return true
-        return !t.statement_id && t.account_id === s.account_id && (!cierreDeEste || t.fecha < cierreDeEste) && (!cierreAnterior || t.fecha > cierreAnterior)
+        const fecha = normFecha(t.fecha)
+        return !t.statement_id && t.account_id === s.account_id && (!cierreDeEste || fecha < cierreDeEste) && (!cierreAnterior || fecha > cierreAnterior)
       })
       pagosStatement.forEach(t => { pagoIdsUsados.add(t.id); ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }) })
       const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
