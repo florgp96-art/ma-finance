@@ -47,6 +47,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
+  const [debitosAbierto, setDebitosAbierto] = useState(false)
 
   useEffect(() => {
     if (accounts && accounts.length > 0) fetchAll()
@@ -98,13 +99,15 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     const efectivo = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'efectivo' && !esSuscripcion(t))
     const ingresos = txs.filter(t => t.tipo === 'ingreso')
     const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
-    const totalPagado = sum(pagos) + sum(alquiler) + sum(debitos) + sum(suscripciones) + sum(efectivo)
+    const todos = [...pagos, ...alquiler, ...debitos, ...suscripciones, ...efectivo]
+    const totalPagado = sum(todos)
+    const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda !== 'USD' ? Number(t.monto) : 0), 0)
+    const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
     const totalIngresos = sum(ingresos)
-    return { pagos, alquiler, debitos, suscripciones, efectivo, ingresos, totalPagado, totalIngresos, balance: totalIngresos - totalPagado }
+    return { pagos, alquiler, debitos, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
   }
 
   const actual = desgloseDelMes(selectedMonth)
-  const usaUsd = [...actual.pagos, ...actual.alquiler, ...actual.debitos, ...actual.suscripciones, ...actual.efectivo].some(t => t.moneda === 'USD')
 
   const pagosPorCuenta = new Map()
   actual.pagos.forEach(p => {
@@ -186,15 +189,30 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
         )}
       </div>
 
-      {/* Número protagonista */}
+      {/* Número protagonista: ARS y USD separados, unificado destacado abajo */}
       <div style={{ ...seccion, textAlign: 'center', padding: '24px 20px' }}>
         <p style={label}>Total efectivamente pagado en {mesLabel(selectedMonth)}</p>
-        <p style={{ margin: 0, fontSize: '34px', fontWeight: '700', color: txt }}>$ {formatMonto(actual.totalPagado)}</p>
-        {usaUsd && (
-          <p style={{ margin: '8px 0 0', fontSize: '12px', color: muted }}>
-            {tc > 0 ? `Incluye montos en USD convertidos a $ ${formatMontoFull(tc)} (TC ${tcManual?.enabled ? 'manual' : 'automático'})` : 'Hay montos en USD pero no hay un tipo de cambio configurado — no se están sumando.'}
-          </p>
-        )}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: '0 0 2px', fontSize: '11px', fontWeight: '700', color: muted }}>ARS</p>
+            <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: txt }}>$ {formatMonto(actual.totalPagadoArs)}</p>
+          </div>
+          <div>
+            <p style={{ margin: '0 0 2px', fontSize: '11px', fontWeight: '700', color: muted }}>USD</p>
+            <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: actual.totalPagadoUsd > 0 ? txt : muted }}>U$S {formatMontoFull(actual.totalPagadoUsd)}</p>
+          </div>
+        </div>
+        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
+          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total unificado</p>
+          <p style={{ margin: '4px 0 0', fontSize: '36px', fontWeight: '800', color: txt }}>$ {formatMonto(actual.totalPagado)}</p>
+          {actual.totalPagadoUsd > 0 && (
+            <p style={{ margin: '6px 0 0', fontSize: '12px', color: muted }}>
+              {tc > 0
+                ? `USD convertidos a $ ${formatMontoFull(tc)} (TC ${tcManual?.enabled ? 'manual' : 'automático'})`
+                : 'Hay montos en USD pero no hay un tipo de cambio configurado — no se están sumando al total unificado.'}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Desglose por tipo */}
@@ -222,7 +240,24 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           )
         })}
         {grupoRow('🏠', 'Alquiler / Expensas', actual.alquiler)}
-        {grupoRow('🏦', 'Débitos automáticos', actual.debitos)}
+        {actual.debitos.length > 0 && (
+          <div style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
+            <div onClick={() => setDebitosAbierto(v => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+              <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>{debitosAbierto ? '▾' : '▸'} 🏦 Débitos automáticos</p>
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(actual.debitos.reduce((s, t) => s + aArs(t), 0))}</p>
+            </div>
+            {debitosAbierto && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {actual.debitos.map(t => (
+                  <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', color: muted }}>
+                    <span>{t.nombre || t.detalle} · {formatFecha(t.fecha)}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}>{monedaSymbol(t.moneda)} {formatMontoFull(t.monto)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {grupoRow('📱', 'Suscripciones', actual.suscripciones)}
         {grupoRow('💵', 'Efectivo', actual.efectivo)}
         {pagosPorCuenta.size === 0 && actual.alquiler.length === 0 && actual.debitos.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
