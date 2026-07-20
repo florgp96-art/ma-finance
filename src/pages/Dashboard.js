@@ -3050,7 +3050,7 @@ export default function Dashboard() {
                           padding: isMobile ? '7px 9px' : '9px 16px', border: 'none', cursor: 'pointer', borderRadius: '9px',
                           fontSize: isMobile ? '11.5px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
                           color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
-                          background: dashboardTab === tab.key ? '#6B7BB8' : 'transparent',
+                          background: dashboardTab === tab.key ? '#5C4F5C' : 'transparent',
                           outline: 'none', whiteSpace: 'nowrap', flex: '0 0 auto',
                           transition: 'background-color 0.2s ease, color 0.2s ease'
                         }}
@@ -3099,7 +3099,7 @@ export default function Dashboard() {
                               padding: '8px 16px', border: 'none', borderRadius: '20px', cursor: 'pointer',
                               fontSize: '13.5px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
                               color: activo ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
-                              background: activo ? '#6B7BB8' : (darkMode ? '#2A272A' : '#EDE8EC'),
+                              background: activo ? '#5C4F5C' : (darkMode ? '#2A272A' : '#EDE8EC'),
                               transition: 'background-color 0.2s ease, color 0.2s ease',
                               display: 'flex', alignItems: 'center', gap: '6px'
                             }}
