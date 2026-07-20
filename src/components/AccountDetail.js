@@ -54,7 +54,7 @@ export const normFecha = (f) => (f || '').trim().slice(0, 10)
 // fecha_hasta solo es confiable si es efectivamente ANTERIOR al vencimiento (un cierre
 // nunca puede caer en o después de la fecha límite de pago) — si el parseo del PDF la
 // dejó igual o posterior a fecha_vencimiento, se descarta y se usa la aproximación.
-const cierreDe = (s) => {
+export const cierreDe = (s) => {
   const hasta = normFecha(s.fecha_hasta)
   const venc = normFecha(s.fecha_vencimiento)
   if (hasta && (!venc || hasta < venc)) return hasta
@@ -459,6 +459,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
+  const [cascadaAbierta, setCascadaAbierta] = useState(false)
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -1575,15 +1576,30 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const totalUsd = totalUsdLinked - totalPagosUsdPosteriores
       return { ...s, _totalOriginal: Number(s.total_resumen) || 0, total_resumen: saldoPendienteDe(s), total_usd: totalUsd }
     })
+  // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
+  // resumen. null si no tiene fecha de vencimiento (ej. "Ciclo actual").
+  const diasRestantesDe = (s) => {
+    if (!s.fecha_vencimiento) return null
+    const fecha = new Date(s.fecha_vencimiento + 'T00:00:00')
+    return Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24))
+  }
+  // Jerarquía por urgencia: vencidas primero (de la más vieja a la más
+  // reciente), después las que todavía no vencieron por fecha de
+  // vencimiento ascendente, y por último las que ni siquiera tienen fecha
+  // (el "ciclo actual" en curso, que no es urgente todavía).
   const statementsAPagar = mostrarTabAPagar
     ? [...statementsSinResumen, ...statementsRealesConUsd]
         .sort((a, b) => {
-          if (!a.fecha_vencimiento && !b.fecha_vencimiento) return 0
-          if (!a.fecha_vencimiento) return -1
-          if (!b.fecha_vencimiento) return 1
+          const diasA = diasRestantesDe(a), diasB = diasRestantesDe(b)
+          const grupoDe = (d) => d === null ? 2 : d < 0 ? 0 : 1
+          const grupoA = grupoDe(diasA), grupoB = grupoDe(diasB)
+          if (grupoA !== grupoB) return grupoA - grupoB
+          if (grupoA === 2) return 0
           return a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
         })
     : []
+  const statementsVencidas = statementsAPagar.filter(s => diasRestantesDe(s) < 0)
+  const statementsNoVencidas = statementsAPagar.filter(s => !(diasRestantesDe(s) < 0))
   const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
   const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
@@ -1857,6 +1873,118 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })()
     : [[], []]
 
+  // Una tarjeta de "A pagar": fecha siempre en formato relativo (la
+  // absoluta queda de tooltip), y con un estilo rojo destacado cuando ya
+  // venció (para el bloque "Acción inmediata").
+  const renderStatementCard = (s, esVencida) => {
+    const items = itemsPorStatement(s)
+    const diasRestantes = diasRestantesDe(s)
+    const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
+    const tarjetaExpandida = tarjetaAbierta.has(s.id)
+    return (
+      <div key={s.id} style={{
+        backgroundColor: esVencida ? (darkMode ? '#3A2323' : '#FBEAEA') : (darkMode ? '#2A272A' : '#F0EDEC'),
+        border: `1px solid ${esVencida ? (darkMode ? '#5A3232' : '#F0C4C4') : (darkMode ? '#3A333A' : '#E2DDE0')}`,
+        borderLeft: esVencida ? '4px solid #c0392b' : (darkMode ? '1px solid #3A333A' : '1px solid #E2DDE0'),
+        borderRadius: '14px', padding: '18px 20px',
+      }}>
+        <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
+          <div>
+            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
+            {s._virtual && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                Contando desde
+                <input type="date" value={s.cicloDesde || ''} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
+                  style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
+                {!s.cicloDesde && '(auto)'}
+              </p>
+            )}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            {s.total_resumen < 0 ? (
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
+            ) : (
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
+            )}
+            {s.total_usd !== 0 && (
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
+                {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
+              </p>
+            )}
+            {diasRestantes !== null && (
+              <p
+                title={`Vence: ${s.fecha_vencimiento}`}
+                style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a', cursor: 'default' }}>
+                {diasRestantes < 0
+                  ? `Venció hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) === 1 ? '' : 's'}`
+                  : diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Vence mañana' : `Vence en ${diasRestantes} días`}
+              </p>
+            )}
+          </div>
+        </div>
+        {tarjetaExpandida && items.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+            {categoriasResumen(items).map(([cat, total, hijosCat]) => (
+              <React.Fragment key={cat}>
+                {total > 0 && (
+                  <span style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+                    {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
+                  </span>
+                )}
+                {hijosCat.map(([hijo, monto]) => (
+                  <span key={`${cat}-${hijo}`} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
+                    {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
+                  </span>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+        {tarjetaExpandida && items.length > 0 && (
+          <div
+            onClick={() => toggleDetalleAPagar(s.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: detalleAbierto.has(s.id) ? '10px' : 0 }}>
+            <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+              {detalleAbierto.has(s.id) ? '▾' : '▸'} Detalle ({items.length})
+            </span>
+          </div>
+        )}
+        {tarjetaExpandida && items.length > 0 && detalleAbierto.has(s.id) && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={{...styles.thSortable, width: isMobile ? '40%' : '35%'}} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
+                  <th style={{...styles.thSortable, width: isMobile ? '30%' : '25%'}} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
+                  <th style={{ ...styles.thSortable, width: '20%', display: isMobile ? 'none' : undefined }} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
+                  <th style={{ ...styles.thSortable, width: isMobile ? '30%' : '20%', textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(tx => (
+                  <tr key={tx.id} style={styles.tr}>
+                    <td style={styles.td}>{tx.nombre || tx.detalle}</td>
+                    <td style={styles.td}>
+                      <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                        {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
+                      </span>
+                    </td>
+                    <td style={{ ...styles.td, display: isMobile ? 'none' : undefined }}>
+                      <span style={{ fontSize: '12px', color: '#888' }}>{tx.subcategories?.nombre || '—'}</span>
+                    </td>
+                    <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
+                      {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       {mostrarTabAPagar && !soloAPagar && (
@@ -1872,35 +2000,26 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
       {mostrarTabAPagar && vistaApagarActiva && (
         <div style={{ marginBottom: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-            <h3 style={{ ...styles.chartTitle, margin: 0 }}>📌 A pagar</h3>
-            <div style={{ textAlign: 'right' }}>
-              {totalAPagarGeneral < 0 ? (
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>Total a favor: $ {formatMonto(Math.abs(totalAPagarGeneral))}</p>
-              ) : (
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                  {montoPagadoGeneral > 0 ? 'Total con pagos parciales' : 'Total'}: $ {formatMonto(totalAPagarGeneral)}
-                </p>
-              )}
-              {totalAPagarGeneralUsd !== 0 && (
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '14px', color: totalAPagarGeneralUsd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
-                  {totalAPagarGeneralUsd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(totalAPagarGeneralUsd))}` : `U$S ${formatMontoFull(totalAPagarGeneralUsd)}`}
-                </p>
-              )}
-            </div>
+          <h3 style={{ ...styles.chartTitle, margin: '0 0 16px' }}>📌 A pagar</h3>
+          <div style={{ textAlign: 'center', padding: '20px 16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, marginBottom: '20px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Te falta pagar</p>
+            <p style={{ margin: 0, fontWeight: '700', fontSize: '32px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</p>
+            {totalAPagarGeneralUsd > 0 && (
+              <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                + U$S {formatMontoFull(totalAPagarGeneralUsd)}{parseFloat(tipoCambio) > 0 ? ` (≈ $ ${formatMonto(totalAPagarGeneralUsd * parseFloat(tipoCambio))} · TC $ ${formatMontoFull(parseFloat(tipoCambio))})` : ''}
+              </p>
+            )}
+            {allAccounts && totalBrutoBarra > 0 && (
+              <p style={{ margin: '10px 0 0', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes · {pctPagadoBarra}%
+              </p>
+            )}
           </div>
           {allAccounts && totalBrutoBarra > 0 && (
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado</span>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>· {pctPagadoBarra}%</span>
-              </div>
-              <div style={{ height: '10px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
+              <div style={{ height: '8px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pctPagadoBarra}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
-              <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '6px 0 0' }}>
-                $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes (tarjetas + débito + alquiler/expensas)
-              </p>
               {pagosGeneral.length > 0 && (
                 <div style={{ marginTop: '8px' }}>
                   <span
@@ -1924,7 +2043,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               {categoriasResumenGeneral.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Categorías</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {categoriasResumenGeneral.map(([cat, total]) => {
                     const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
                     const hayAlgoSeleccionado = !!catGeneralSeleccionada
@@ -1940,25 +2061,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </React.Fragment>
                     )
                   })}
+                  </div>
                 </div>
               )}
               {categoriasResumenGeneralUsd.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: categoriasResumenGeneral.length > 0 ? '8px' : 0 }}>
-                  {categoriasResumenGeneralUsd.map(([cat, total]) => {
-                    const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
-                    const hayAlgoSeleccionado = !!catGeneralSeleccionada
-                    return (
-                      <React.Fragment key={`usd-${cat}`}>
-                        {total > 0 && (
-                          <span
-                            onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                            {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
-                          </span>
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
+                <div style={{ marginTop: categoriasResumenGeneral.length > 0 ? '14px' : 0, paddingTop: categoriasResumenGeneral.length > 0 ? '14px' : 0, borderTop: categoriasResumenGeneral.length > 0 ? `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` : 'none' }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💵 En USD</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {categoriasResumenGeneralUsd.map(([cat, total]) => {
+                      const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
+                      const hayAlgoSeleccionado = !!catGeneralSeleccionada
+                      return (
+                        <React.Fragment key={`usd-${cat}`}>
+                          {total > 0 && (
+                            <span
+                              onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
+                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}`, transition: 'opacity 0.15s' }}>
+                              {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
+                            </span>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
               {catGeneralSeleccionada && (subcatsCatGeneral.length > 0 || subcatsCatGeneralUsd.length > 0) && (
@@ -1983,13 +2108,42 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 </div>
               )}
               {userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0) && (
-                <p style={{ margin: '10px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
-                  {mamaParaAlquilerExpensas > 0 && <>Ya se descontaron $ {formatMonto(mamaParaAlquilerExpensas)} de Casa (alquiler/expensas cubiertos con lo cobrado de mamá). </>}
-                  {poolPersonalTrabajo > 0 && <>Ya se descontaron $ {formatMonto(poolPersonalTrabajo)} de Personal/Trabajo (Moms Food + Community Manager{mamaExcedente > 0 ? ' + excedente de mamá' : ''}).</>}
-                </p>
+                <div style={{ marginTop: '10px' }}>
+                  <span
+                    onClick={() => setCascadaAbierta(v => !v)}
+                    style={{ fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#8e8e93', cursor: 'pointer', userSelect: 'none' }}>
+                    {cascadaAbierta ? '▾' : '▸'} Ver de dónde sale cada cobertura
+                  </span>
+                  {cascadaAbierta && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                        <span>Total bruto</span>
+                        <span style={{ fontWeight: '600' }}>$ {formatMonto(totalBrutoAPagarGeneral)}</span>
+                      </div>
+                      {mamaParaAlquilerExpensas > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                          <span>− Cubierto por Casa/mamá</span>
+                          <span style={{ fontWeight: '600', color: '#4a9e7a' }}>− $ {formatMonto(mamaParaAlquilerExpensas)}</span>
+                        </div>
+                      )}
+                      {poolPersonalTrabajo > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                          <span>− Personal/Trabajo (Moms Food + CM{mamaExcedente > 0 ? ' + excedente mamá' : ''})</span>
+                          <span style={{ fontWeight: '600', color: '#4a9e7a' }}>− $ {formatMonto(poolPersonalTrabajo)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0 0', marginTop: '3px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                        <span>Neto a pagar</span>
+                        <span>$ {formatMonto(Math.max(0, totalBrutoAPagarGeneral - mamaParaAlquilerExpensas - poolPersonalTrabajo))}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
               {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Hijos</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {hijosTotalesGeneral.map(([hijo, total]) => {
                     const seleccionado = hijoTotalExpandido === hijo
                     return (
@@ -2010,6 +2164,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </span>
                     )
                   })}
+                  </div>
                 </div>
               )}
               {hijoTotalExpandido && (() => {
@@ -2042,110 +2197,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {statementsAPagar.map(s => {
-                const items = itemsPorStatement(s)
-                const fecha = s.fecha_vencimiento ? new Date(s.fecha_vencimiento + 'T00:00:00') : null
-                const diasRestantes = fecha ? Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24)) : null
-                const nombreCuenta = allAccounts ? (accounts || []).find(a => a.id === s.account_id)?.nombre : null
-                const tarjetaExpandida = tarjetaAbierta.has(s.id)
-                return (
-                  <div key={s.id} style={{ backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '14px', padding: '18px 20px' }}>
-                    <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
-                      <div>
-                        <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
-                        {s._virtual ? (
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            Contando desde
-                            <input type="date" value={s.cicloDesde || ''} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
-                              style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
-                            {!s.cicloDesde && '(auto)'}
-                          </p>
-                        ) : (
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>{`Vence: ${s.fecha_vencimiento}`}</p>
-                        )}
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        {s.total_resumen < 0 ? (
-                          <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
-                        ) : (
-                          <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
-                        )}
-                        {s.total_usd !== 0 && (
-                          <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
-                            {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
-                          </p>
-                        )}
-                        {diasRestantes !== null && (
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a' }}>
-                            {diasRestantes < 0
-                              ? `Vencido hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) === 1 ? '' : 's'}`
-                              : diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {tarjetaExpandida && items.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
-                        {categoriasResumen(items).map(([cat, total, hijosCat]) => (
-                          <React.Fragment key={cat}>
-                            {total > 0 && (
-                              <span style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap' }}>
-                                {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                              </span>
-                            )}
-                            {hijosCat.map(([hijo, monto]) => (
-                              <span key={`${cat}-${hijo}`} style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}` }}>
-                                {customIcons?.[hijo] || '👧'} {hijo} · {cat}: $ {formatMonto(monto)}
-                              </span>
-                            ))}
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    )}
-                    {tarjetaExpandida && items.length > 0 && (
-                      <div
-                        onClick={() => toggleDetalleAPagar(s.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: detalleAbierto.has(s.id) ? '10px' : 0 }}>
-                        <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                          {detalleAbierto.has(s.id) ? '▾' : '▸'} Detalle ({items.length})
-                        </span>
-                      </div>
-                    )}
-                    {tarjetaExpandida && items.length > 0 && detalleAbierto.has(s.id) && (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={styles.table}>
-                          <thead>
-                            <tr>
-                              <th style={{...styles.thSortable, width: isMobile ? '40%' : '35%'}} onClick={() => handleApagarSort('nombre')}>Nombre{apagarSortIcon('nombre')}</th>
-                              <th style={{...styles.thSortable, width: isMobile ? '30%' : '25%'}} onClick={() => handleApagarSort('categoria')}>Categoría{apagarSortIcon('categoria')}</th>
-                              <th style={{ ...styles.thSortable, width: '20%', display: isMobile ? 'none' : undefined }} onClick={() => handleApagarSort('subcategoria')}>Subcategoría{apagarSortIcon('subcategoria')}</th>
-                              <th style={{ ...styles.thSortable, width: isMobile ? '30%' : '20%', textAlign: 'right' }} onClick={() => handleApagarSort('monto')}>Monto{apagarSortIcon('monto')}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {items.map(tx => (
-                              <tr key={tx.id} style={styles.tr}>
-                                <td style={styles.td}>{tx.nombre || tx.detalle}</td>
-                                <td style={styles.td}>
-                                  <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                                    {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
-                                  </span>
-                                </td>
-                                <td style={{ ...styles.td, display: isMobile ? 'none' : undefined }}>
-                                  <span style={{ fontSize: '12px', color: '#888' }}>{tx.subcategories?.nombre || '—'}</span>
-                                </td>
-                                <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
-                                  {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+              {statementsVencidas.length > 0 && (
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    ⚠️ Acción inmediata
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {statementsVencidas.map(s => renderStatementCard(s, true))}
                   </div>
-                )
-              })}
+                </div>
+              )}
+              {statementsNoVencidas.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {statementsNoVencidas.map(s => renderStatementCard(s, false))}
+                </div>
+              )}
             </div>
           )}
         </div>
