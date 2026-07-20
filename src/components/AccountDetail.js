@@ -1955,18 +1955,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </div>
           <div style={{ textAlign: 'right' }}>
             {s.total_resumen < 0 ? (
-              <>
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
-                {s._pagosPosterioresArs > 0 && (
-                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
-                )}
-              </>
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
             ) : (
               <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
             )}
+            {/* "Pagado" tiene que verse siempre que se haya pagado algo este período,
+                no solo cuando el resultado final quedó a favor — si no, un pago
+                parcial (que todavía deja algo pendiente) parece no haberse
+                registrado, aunque sí esté restado del total de arriba. */}
+            {s._pagosPosterioresArs > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
+            )}
             {!s._virtual && s._arrastreEntranteArs > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                Resumen: $ {formatMonto(s._totalOriginal)} − Saldo a favor: $ {formatMonto(s._arrastreEntranteArs)} = A pagar: $ {formatMonto(Math.max(0, s._totalOriginal - s._arrastreEntranteArs))}
+                Resumen: $ {formatMonto(s._totalOriginal)} − Saldo a favor: $ {formatMonto(s._arrastreEntranteArs)}
+                {s._pagosPosterioresArs > 0 && ` − Pagado: $ ${formatMonto(s._pagosPosterioresArs)}`}
+                {s.total_resumen < 0 ? ` = A favor: $ ${formatMonto(Math.abs(s.total_resumen))}` : ` = A pagar: $ ${formatMonto(s.total_resumen)}`}
               </p>
             )}
             {s.total_usd !== 0 && (
@@ -1974,12 +1978,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
               </p>
             )}
-            {s.total_usd < 0 && s._pagosPosterioresUsd > 0 && (
+            {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
             )}
             {!s._virtual && s._arrastreEntranteUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                U$S {formatMontoFull(totalUsdLinkedDe(s))} − Saldo a favor: U$S {formatMontoFull(s._arrastreEntranteUsd)} = A pagar: U$S {formatMontoFull(Math.max(0, totalUsdLinkedDe(s) - s._arrastreEntranteUsd))}
+                U$S {formatMontoFull(totalUsdLinkedDe(s))} − Saldo a favor: U$S {formatMontoFull(s._arrastreEntranteUsd)}
+                {s._pagosPosterioresUsd > 0 && ` − Pagado: U$S ${formatMontoFull(s._pagosPosterioresUsd)}`}
+                {s.total_usd < 0 ? ` = A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : ` = A pagar: U$S ${formatMontoFull(s.total_usd)}`}
               </p>
             )}
             {diasRestantes !== null && (
