@@ -598,6 +598,9 @@ export default function Dashboard() {
       es_manual: true,
       cuotas_total: 1,
       cuota_numero: 1,
+      // TC congelado al momento de cargar el movimiento — el equivalente en ARS de
+      // este movimiento en USD nunca cambia después, aunque se actualice el TC.
+      fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
     await supabase.from('transactions').insert(dividirTresVias([movimientoNuevo], categoriasDB, subcategoriasDB))
 
@@ -989,6 +992,7 @@ export default function Dashboard() {
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.tipo === 'neutro' ? 'identificado' : (catId ? 'identificado' : 'a_identificar'), es_manual: true, ...cuota,
           tag: row.hijo || null,
+          fx_rate: row.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
         }
       })
 
@@ -1035,6 +1039,7 @@ export default function Dashboard() {
           category_id: catId, subcategory_id: getSubcatId(row.subcat, catId),
           estado: row.tipo === 'neutro' ? 'identificado' : (catId ? 'identificado' : 'a_identificar'), es_manual: true, ...cuota,
           tag: row.hijo || null,
+          fx_rate: row.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
         }
       })
 
@@ -1908,7 +1913,8 @@ export default function Dashboard() {
             category_id: null, subcategory_id: null,
             tag: histMatch?.tag || inferirTagIngreso(t.nombre_original, t.nombre_limpio, t.subcategoria_sugerida),
             estado: 'identificado', es_manual: false,
-            account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso'
+            account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso',
+            fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
           })
         } else if (tipoTx !== 'ingreso') {
           txEgresos.push({
@@ -1918,6 +1924,7 @@ export default function Dashboard() {
             monto: Math.abs(t.monto), moneda: t.moneda || 'ARS',
             cuotas_total: null, cuota_numero: null,
             category_id: categoryId, subcategory_id: subcategoryId,
+            fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
             tag: getHijoTag(t.hijo),
             estado: (tipoTx === 'neutro' || (t.nombre_limpio && t.nombre_limpio !== t.nombre_original)) ? 'identificado' : 'a_identificar',
             es_manual: false,
@@ -2027,6 +2034,7 @@ export default function Dashboard() {
             moneda: t.moneda, cuotas_total: t.cuotas_total, cuota_numero: t.cuota_numero,
             tipo: t.tipo === 'neutro' ? 'neutro' : (esCreditoC ? 'ingreso' : 'gasto'), category_id: categoryId,
             subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
+            fx_rate: t.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
             tag: getHijoTag(t.hijo),
             estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
             es_manual: false
@@ -2082,6 +2090,7 @@ export default function Dashboard() {
             monto: Math.abs(ajusteUsd), moneda: 'USD', cuotas_total: 1, cuota_numero: 1,
             tipo: ajusteUsd > 0 ? 'ingreso' : 'gasto', category_id: getCategoryId('A Identificar'),
             subcategory_id: null, tag: null, estado: 'identificado', es_manual: false,
+            fx_rate: parseFloat(tipoCambioEfectivo) || null,
           })
         }
       }
