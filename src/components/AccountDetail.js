@@ -1493,16 +1493,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       .map(s => ({ s, cierre: cierreDe(s) }))
       .filter(x => x.cierre)
       .sort((a, b) => a.cierre.localeCompare(b.cierre))
-    // Si el banco (o una carga manual) deja DOS resúmenes con la misma fecha
-    // de cierre, no hay forma de saber a cuál de los dos correspondía cada
-    // pago — pero tratarlos como si fueran períodos separados con ventanas
-    // propias es peor: uno se queda con ventana vacía (cierre === cierre
-    // siguiente es una ventana imposible) y el otro se lleva TODOS los pagos
-    // de esa fecha, aunque no tengan nada que ver con lo que compró. Se
-    // agrupan los resúmenes con el mismo cierre en un solo "paso" de la
-    // cadena: se suman sus brutos, se comparten los pagos de la ventana, y
-    // el resultado se reparte entre ellos a prorrata de lo que cada uno
-    // facturó (mejor una aproximación razonable que un número inventado).
+    // Una tarjeta no puede tener dos resúmenes reales con la MISMA fecha de
+    // cierre — si aparecen dos, es casi seguro el mismo resumen cargado dos
+    // veces (ej. una recarga porque a la primera le faltaba algo por leer),
+    // no dos períodos distintos. Sumarlos duplicaría el monto facturado; hay
+    // que quedarse con uno solo e ignorar el resto. Se prefiere el cargado
+    // más reciente (created_at) — si esa fecha no está disponible o empata,
+    // el de mayor total (una recarga para corregir datos faltantes suele
+    // agregar cargos que antes no se habían capturado, no quitarlos).
     const grupos = []
     statementsCuenta.forEach(({ s, cierre }) => {
       const ultimo = grupos[grupos.length - 1]
@@ -1521,46 +1519,45 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const diagnostico = []
     grupos.forEach((grupo, idx) => {
       const cierreSiguiente = idx + 1 < grupos.length ? grupos[idx + 1].cierre : null
-      const brutosArs = grupo.items.map(s => Number(s.total_resumen) || 0)
-      const brutoGrupoArs = brutosArs.reduce((a, b) => a + b, 0)
-      const pagosArsTx = txsEnVentana(grupo.cierre, cierreSiguiente, false)
-      const pagosGrupoArs = pagosArsTx.reduce((sum, t) => sum + Number(t.monto), 0)
-      const entranteGrupoArs = arrastreArs
-      const netoGrupoArs = brutoGrupoArs - pagosGrupoArs - entranteGrupoArs
-      arrastreArs = Math.max(0, -netoGrupoArs)
-      const brutosUsd = grupo.items.map(s => totalUsdLinkedDe(s))
-      const brutoGrupoUsd = brutosUsd.reduce((a, b) => a + b, 0)
-      const pagosUsdTx = txsEnVentana(grupo.cierre, cierreSiguiente, true)
-      const pagosGrupoUsd = pagosUsdTx.reduce((sum, t) => sum + Number(t.monto), 0)
-      const entranteGrupoUsd = arrastreUsd
-      const netoGrupoUsd = brutoGrupoUsd - pagosGrupoUsd - entranteGrupoUsd
-      arrastreUsd = Math.max(0, -netoGrupoUsd)
-      const compartido = grupo.items.length > 1
-      grupo.items.forEach((s, i) => {
-        // Prorrata según lo que cada resumen facturó dentro del grupo; si el
-        // grupo entero facturó $0 en esa moneda, se reparte en partes iguales.
-        const shareArs = brutoGrupoArs !== 0 ? brutosArs[i] / brutoGrupoArs : 1 / grupo.items.length
-        const shareUsd = brutoGrupoUsd !== 0 ? brutosUsd[i] / brutoGrupoUsd : 1 / grupo.items.length
-        const brutoArs = brutosArs[i]
-        const pagosArs = pagosGrupoArs * shareArs
-        const entranteArs = entranteGrupoArs * shareArs
-        const netoArs = brutoArs - pagosArs - entranteArs
-        const brutoUsd = brutosUsd[i]
-        const pagosUsd = pagosGrupoUsd * shareUsd
-        const entranteUsd = entranteGrupoUsd * shareUsd
-        const netoUsd = brutoUsd - pagosUsd - entranteUsd
-        arrastrePorStatement.set(s.id, {
-          entranteArs, netoArs, favorGeneradoArs: Math.max(0, -netoArs), pagosArs,
-          entranteUsd, netoUsd, favorGeneradoUsd: Math.max(0, -netoUsd), pagosUsd,
-          compartido,
-        })
-        diagnostico.push({
-          periodo: (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '') || s.id) + (compartido ? ' (cierre compartido con otro resumen — pagos prorrateados)' : ''),
-          cierre: grupo.cierre, cierreSiguiente, compartido,
-          brutoArs, pagosArsTx, pagosArs, entranteArs, netoArs,
-          brutoUsd, pagosUsdTx, pagosUsd, entranteUsd, netoUsd,
-        })
+      const esDuplicado = grupo.items.length > 1
+      const [elegido, ...ignorados] = [...grupo.items].sort((a, b) => {
+        const ca = a.created_at || '', cb = b.created_at || ''
+        if (ca !== cb) return cb.localeCompare(ca)
+        return (Number(b.total_resumen) || 0) - (Number(a.total_resumen) || 0)
       })
+      const brutoArs = Number(elegido.total_resumen) || 0
+      const pagosArsTx = txsEnVentana(grupo.cierre, cierreSiguiente, false)
+      const pagosArs = pagosArsTx.reduce((sum, t) => sum + Number(t.monto), 0)
+      const entranteArs = arrastreArs
+      const netoArs = brutoArs - pagosArs - entranteArs
+      arrastreArs = Math.max(0, -netoArs)
+      const brutoUsd = totalUsdLinkedDe(elegido)
+      const pagosUsdTx = txsEnVentana(grupo.cierre, cierreSiguiente, true)
+      const pagosUsd = pagosUsdTx.reduce((sum, t) => sum + Number(t.monto), 0)
+      const entranteUsd = arrastreUsd
+      const netoUsd = brutoUsd - pagosUsd - entranteUsd
+      arrastreUsd = Math.max(0, -netoUsd)
+      arrastrePorStatement.set(elegido.id, {
+        entranteArs, netoArs, favorGeneradoArs: arrastreArs, pagosArs,
+        entranteUsd, netoUsd, favorGeneradoUsd: arrastreUsd, pagosUsd,
+      })
+      // Los duplicados ignorados quedan en $0/$0 (no cuentan doble, no
+      // muestran su propia tarjeta) — pero siguen listados en el
+      // diagnóstico para poder confirmar que efectivamente son el mismo
+      // resumen repetido.
+      ignorados.forEach(s => arrastrePorStatement.set(s.id, { entranteArs: 0, netoArs: 0, favorGeneradoArs: 0, pagosArs: 0, entranteUsd: 0, netoUsd: 0, favorGeneradoUsd: 0, pagosUsd: 0 }))
+      diagnostico.push({
+        periodo: (elegido.periodo || mesLabel(elegido.fecha_hasta?.slice(0, 7) || '') || elegido.id) + (esDuplicado ? ` (elegido entre ${grupo.items.length} resúmenes con el mismo cierre)` : ''),
+        cierre: grupo.cierre, cierreSiguiente,
+        brutoArs, pagosArsTx, pagosArs, entranteArs, favorGeneradoArs: arrastreArs, netoArs,
+        brutoUsd, pagosUsdTx, pagosUsd, entranteUsd, favorGeneradoUsd: arrastreUsd, netoUsd,
+      })
+      ignorados.forEach(s => diagnostico.push({
+        periodo: `${s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '') || s.id} (IGNORADO — duplicado del mismo cierre, bruto $ ${formatMonto(Number(s.total_resumen) || 0)})`,
+        cierre: grupo.cierre, cierreSiguiente,
+        brutoArs: 0, pagosArsTx: [], pagosArs: 0, entranteArs: 0, favorGeneradoArs: 0, netoArs: 0,
+        brutoUsd: 0, pagosUsdTx: [], pagosUsd: 0, entranteUsd: 0, favorGeneradoUsd: 0, netoUsd: 0,
+      }))
     })
     arrastreDiagnosticoPorCuenta.set(accId, diagnostico)
   })
@@ -2134,9 +2131,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       {d.favorGeneradoArs > 0 ? ` · genera a favor $ ${formatMonto(d.favorGeneradoArs)}` : ''}
                     </p>
                     {d.pagosArsTx.length > 0 && (
-                      <p style={{ margin: '2px 0 0' }}>
-                        Pagos ARS {d.compartido ? 'del cierre compartido (prorrateados)' : 'considerados'}: {d.pagosArsTx.map(t => `${formatFecha(t.fecha)} $${formatMonto(t.monto)}`).join(' · ')}
-                      </p>
+                      <p style={{ margin: '2px 0 0' }}>Pagos ARS considerados: {d.pagosArsTx.map(t => `${formatFecha(t.fecha)} $${formatMonto(t.monto)}`).join(' · ')}</p>
                     )}
                     {(d.brutoUsd !== 0 || d.pagosUsd !== 0 || d.entranteUsd !== 0) && (
                       <>
@@ -2145,9 +2140,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           {d.favorGeneradoUsd > 0 ? ` · genera a favor U$S ${formatMontoFull(d.favorGeneradoUsd)}` : ''}
                         </p>
                         {d.pagosUsdTx.length > 0 && (
-                          <p style={{ margin: '2px 0 0' }}>
-                            Pagos USD {d.compartido ? 'del cierre compartido (prorrateados)' : 'considerados'}: {d.pagosUsdTx.map(t => `${formatFecha(t.fecha)} U$S${formatMontoFull(t.monto)}`).join(' · ')}
-                          </p>
+                          <p style={{ margin: '2px 0 0' }}>Pagos USD considerados: {d.pagosUsdTx.map(t => `${formatFecha(t.fecha)} U$S${formatMontoFull(t.monto)}`).join(' · ')}</p>
                         )}
                       </>
                     )}
