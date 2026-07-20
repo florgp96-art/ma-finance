@@ -1447,49 +1447,33 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // todavía no hay un resumen más nuevo que lo haya absorbido, sigue mostrándose con lo
   // que falta (descontando cualquier pago parcial ya cargado) hasta quedar en $0, sin
   // importar si ya venció.
-  const saldoPendienteDe = (s) => {
-    const cierre = cierreDe(s)
-    if (!cierre) return Number(s.total_resumen) || 0
-    // El total del PDF ya viene neteado por el banco con cualquier pago hecho ANTES de
-    // que la tarjeta cerrara (por eso el total del resumen suele ser menor a la suma
-    // bruta de sus compras) — solo hay que restar los pagos sueltos hechos DESPUÉS del
-    // cierre, que todavía no llegaron a reflejarse en ningún PDF.
-    const pagosPosteriores = transactions.filter(t =>
-      t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
-      (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-      normFecha(t.fecha) > cierre
-    )
-    const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
-    return (Number(s.total_resumen) || 0) - totalPagosPosteriores
-  }
-  // Mismo criterio que saldoPendienteDe pero en dólares: el total en USD de un
-  // resumen es la suma de sus compras en USD ya vinculadas al importar el PDF,
-  // menos cualquier pago/reintegro suelto en USD hecho después del cierre.
+  // El total del PDF ya viene neteado por el banco con cualquier pago hecho ANTES de
+  // que la tarjeta cerrara (por eso el total del resumen suele ser menor a la suma
+  // bruta de sus compras) — solo hay que restar los pagos sueltos hechos DESPUÉS del
+  // cierre, que todavía no llegaron a reflejarse en ningún PDF.
   const totalUsdLinkedDe = (s) => {
     const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
     return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
   }
-  const saldoPendienteUsdDe = (s) => {
-    const cierre = cierreDe(s)
-    const pagosUsdPosteriores = cierre
-      ? transactions.filter(t =>
-          t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
-          (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
-        )
-      : []
-    const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
-    return totalUsdLinkedDe(s) - totalPagosUsdPosteriores
-  }
   // Saldo a favor con arrastre entre períodos, por tarjeta y por moneda: si en
-  // un período los pagos superan el monto del resumen (saldoPendienteDe da
-  // negativo), el excedente no se pierde — pasa como crédito al resumen
-  // siguiente de la MISMA tarjeta, encadenándose si hace falta (si el
-  // excedente también supera al resumen siguiente, lo que sobra sigue
-  // pasando al próximo). Cálculo puramente derivado de statements/
-  // transactions, sin persistir nada nuevo: se recorre el historial completo
-  // de resúmenes reales de cada tarjeta en orden cronológico (por fecha de
-  // cierre), arrastrando el saldo a favor de uno al siguiente, en ARS y en
-  // USD por separado (nunca se mezclan entre sí).
+  // un período los pagos superan el monto del resumen, el excedente no se
+  // pierde — pasa como crédito al resumen siguiente de la MISMA tarjeta,
+  // encadenándose si hace falta (si el excedente también supera al resumen
+  // siguiente, lo que sobra sigue pasando al próximo). Cálculo puramente
+  // derivado de statements/transactions, sin persistir nada nuevo: se
+  // recorre el historial completo de resúmenes reales de cada tarjeta en
+  // orden cronológico (por fecha de cierre), arrastrando el saldo a favor de
+  // uno al siguiente, en ARS y en USD por separado (nunca se mezclan entre
+  // sí).
+  //
+  // Los pagos sueltos ("neutro"/"ingreso" sin statement_id) de un período
+  // quedan acotados entre el cierre de ESE resumen y el cierre del
+  // SIGUIENTE (si lo hay) — no alcanza con "posterior al cierre" sin techo,
+  // porque eso haría que un mismo pago bien posterior (ej. de varios meses
+  // después) se cuente como "extra" de TODOS los resúmenes anteriores a la
+  // vez (cada uno lo ve como posterior a su propio cierre), inflando el
+  // saldo a favor en cadena. Esa ventana sin techo solo es segura para el
+  // ÚLTIMO resumen de la cuenta, que no tiene uno siguiente que la acote.
   const creditAccountIds = new Set((accounts || []).filter(a => a.tipo === 'credito').map(a => a.id))
   const arrastrePorStatement = new Map()
   creditAccountIds.forEach(accId => {
@@ -1498,22 +1482,36 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       .map(s => ({ s, cierre: cierreDe(s) }))
       .filter(x => x.cierre)
       .sort((a, b) => a.cierre.localeCompare(b.cierre))
+    const pagosEnVentana = (cierre, cierreSiguiente, esUsd) => transactions
+      .filter(t =>
+        t.account_id === accId && !t.statement_id &&
+        (esUsd ? t.moneda === 'USD' : t.moneda !== 'USD') &&
+        (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
+        normFecha(t.fecha) > cierre &&
+        (!cierreSiguiente || normFecha(t.fecha) <= cierreSiguiente)
+      )
+      .reduce((sum, t) => sum + Number(t.monto), 0)
     let arrastreArs = 0, arrastreUsd = 0
-    statementsCuenta.forEach(({ s }) => {
+    statementsCuenta.forEach(({ s, cierre }, idx) => {
+      const cierreSiguiente = idx + 1 < statementsCuenta.length ? statementsCuenta[idx + 1].cierre : null
+      const brutoArs = Number(s.total_resumen) || 0
+      const pagosArs = pagosEnVentana(cierre, cierreSiguiente, false)
       const entranteArs = arrastreArs
-      const netoArs = saldoPendienteDe(s) - entranteArs
+      const netoArs = brutoArs - pagosArs - entranteArs
       arrastreArs = Math.max(0, -netoArs)
+      const brutoUsd = totalUsdLinkedDe(s)
+      const pagosUsd = pagosEnVentana(cierre, cierreSiguiente, true)
       const entranteUsd = arrastreUsd
-      const netoUsd = saldoPendienteUsdDe(s) - entranteUsd
+      const netoUsd = brutoUsd - pagosUsd - entranteUsd
       arrastreUsd = Math.max(0, -netoUsd)
       arrastrePorStatement.set(s.id, {
-        entranteArs, netoArs, favorGeneradoArs: arrastreArs,
-        entranteUsd, netoUsd, favorGeneradoUsd: arrastreUsd,
+        entranteArs, netoArs, favorGeneradoArs: arrastreArs, pagosArs,
+        entranteUsd, netoUsd, favorGeneradoUsd: arrastreUsd, pagosUsd,
       })
     })
   })
-  const saldoConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoArs ?? saldoPendienteDe(s)
-  const saldoUsdConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoUsd ?? saldoPendienteUsdDe(s)
+  const saldoConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoArs ?? (Number(s.total_resumen) || 0)
+  const saldoUsdConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoUsd ?? totalUsdLinkedDe(s)
   // Siempre se muestra el resumen con el vencimiento más reciente de la cuenta, sin
   // importar si ya venció o no — cualquier otro resumen de esa cuenta queda afuera,
   // sea porque ya está reemplazado por uno más nuevo o porque nunca tuvo una fecha de
@@ -1627,8 +1625,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         // "Pagado $X · Saldo a favor: $Y" cuando total_resumen queda negativo).
         _arrastreEntranteArs: info?.entranteArs || 0,
         _arrastreEntranteUsd: info?.entranteUsd || 0,
-        _pagosPosterioresArs: (Number(s.total_resumen) || 0) - saldoPendienteDe(s),
-        _pagosPosterioresUsd: totalUsdLinkedDe(s) - saldoPendienteUsdDe(s),
+        _pagosPosterioresArs: info?.pagosArs || 0,
+        _pagosPosterioresUsd: info?.pagosUsd || 0,
       }
     })
   // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
