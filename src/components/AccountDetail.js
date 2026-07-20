@@ -1462,10 +1462,65 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
     return (Number(s.total_resumen) || 0) - totalPagosPosteriores
   }
+  // Mismo criterio que saldoPendienteDe pero en dólares: el total en USD de un
+  // resumen es la suma de sus compras en USD ya vinculadas al importar el PDF,
+  // menos cualquier pago/reintegro suelto en USD hecho después del cierre.
+  const totalUsdLinkedDe = (s) => {
+    const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
+    return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+  }
+  const saldoPendienteUsdDe = (s) => {
+    const cierre = cierreDe(s)
+    const pagosUsdPosteriores = cierre
+      ? transactions.filter(t =>
+          t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
+          (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
+        )
+      : []
+    const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
+    return totalUsdLinkedDe(s) - totalPagosUsdPosteriores
+  }
+  // Saldo a favor con arrastre entre períodos, por tarjeta y por moneda: si en
+  // un período los pagos superan el monto del resumen (saldoPendienteDe da
+  // negativo), el excedente no se pierde — pasa como crédito al resumen
+  // siguiente de la MISMA tarjeta, encadenándose si hace falta (si el
+  // excedente también supera al resumen siguiente, lo que sobra sigue
+  // pasando al próximo). Cálculo puramente derivado de statements/
+  // transactions, sin persistir nada nuevo: se recorre el historial completo
+  // de resúmenes reales de cada tarjeta en orden cronológico (por fecha de
+  // cierre), arrastrando el saldo a favor de uno al siguiente, en ARS y en
+  // USD por separado (nunca se mezclan entre sí).
+  const creditAccountIds = new Set((accounts || []).filter(a => a.tipo === 'credito').map(a => a.id))
+  const arrastrePorStatement = new Map()
+  creditAccountIds.forEach(accId => {
+    const statementsCuenta = statements
+      .filter(s => s.account_id === accId)
+      .map(s => ({ s, cierre: cierreDe(s) }))
+      .filter(x => x.cierre)
+      .sort((a, b) => a.cierre.localeCompare(b.cierre))
+    let arrastreArs = 0, arrastreUsd = 0
+    statementsCuenta.forEach(({ s }) => {
+      const entranteArs = arrastreArs
+      const netoArs = saldoPendienteDe(s) - entranteArs
+      arrastreArs = Math.max(0, -netoArs)
+      const entranteUsd = arrastreUsd
+      const netoUsd = saldoPendienteUsdDe(s) - entranteUsd
+      arrastreUsd = Math.max(0, -netoUsd)
+      arrastrePorStatement.set(s.id, {
+        entranteArs, netoArs, favorGeneradoArs: arrastreArs,
+        entranteUsd, netoUsd, favorGeneradoUsd: arrastreUsd,
+      })
+    })
+  })
+  const saldoConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoArs ?? saldoPendienteDe(s)
+  const saldoUsdConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoUsd ?? saldoPendienteUsdDe(s)
   // Siempre se muestra el resumen con el vencimiento más reciente de la cuenta, sin
   // importar si ya venció o no — cualquier otro resumen de esa cuenta queda afuera,
   // sea porque ya está reemplazado por uno más nuevo o porque nunca tuvo una fecha de
   // vencimiento real (esos, si tienen movimientos propios, se ven en "Ciclo actual").
+  // Además de "falta pagar algo" (> 0), también se sigue mostrando cuando el saldo
+  // dio negativo (quedó a favor) — así el saldo a favor se ve en el período donde
+  // se generó, en vez de desaparecer sin más.
   const sigueActivo = (s) => {
     if (!s.fecha_vencimiento) return false
     const vencS = normFecha(s.fecha_vencimiento)
@@ -1473,7 +1528,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       st.account_id === s.account_id && st.fecha_vencimiento && normFecha(st.fecha_vencimiento) > vencS
     )
     if (!esElUltimo) return false
-    return Math.round(saldoPendienteDe(s)) > 0
+    return Math.round(saldoConArrastreDe(s)) !== 0 || Math.round(saldoUsdConArrastreDe(s) * 100) !== 0
   }
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
@@ -1560,21 +1615,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const statementsRealesConUsd = statements
     .filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s))
     .map(s => {
-      const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
-      const totalUsdLinked = usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
-      // Igual que con el saldo pendiente en pesos: un pago o reintegro suelto en dólares
-      // (cargado a mano, sin statement_id) también tiene que restar del total en USD, no
-      // solo lo que ya vino vinculado al importar el PDF.
-      const cierre = cierreDe(s)
-      const pagosUsdPosteriores = cierre
-        ? transactions.filter(t =>
-            t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
-            (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
-          )
-        : []
-      const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
-      const totalUsd = totalUsdLinked - totalPagosUsdPosteriores
-      return { ...s, _totalOriginal: Number(s.total_resumen) || 0, total_resumen: saldoPendienteDe(s), total_usd: totalUsd }
+      const info = arrastrePorStatement.get(s.id)
+      return {
+        ...s,
+        _totalOriginal: Number(s.total_resumen) || 0,
+        total_resumen: saldoConArrastreDe(s),
+        total_usd: saldoUsdConArrastreDe(s),
+        // Cuánto de este período vino de saldo a favor arrastrado del período
+        // anterior (para el desglose "Resumen: $A − Saldo a favor: $B = A
+        // pagar: $C"), y cuánto se pagó de más este mismo período (para
+        // "Pagado $X · Saldo a favor: $Y" cuando total_resumen queda negativo).
+        _arrastreEntranteArs: info?.entranteArs || 0,
+        _arrastreEntranteUsd: info?.entranteUsd || 0,
+        _pagosPosterioresArs: (Number(s.total_resumen) || 0) - saldoPendienteDe(s),
+        _pagosPosterioresUsd: totalUsdLinkedDe(s) - saldoPendienteUsdDe(s),
+      }
     })
   // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
   // resumen. null si no tiene fecha de vencimiento (ej. "Ciclo actual").
@@ -1902,13 +1957,31 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </div>
           <div style={{ textAlign: 'right' }}>
             {s.total_resumen < 0 ? (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
+              <>
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
+                {s._pagosPosterioresArs > 0 && (
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
+                )}
+              </>
             ) : (
               <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
             )}
+            {!s._virtual && s._arrastreEntranteArs > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                Resumen: $ {formatMonto(s._totalOriginal)} − Saldo a favor: $ {formatMonto(s._arrastreEntranteArs)} = A pagar: $ {formatMonto(Math.max(0, s._totalOriginal - s._arrastreEntranteArs))}
+              </p>
+            )}
             {s.total_usd !== 0 && (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
+              <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
                 {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
+              </p>
+            )}
+            {s.total_usd < 0 && s._pagosPosterioresUsd > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
+            )}
+            {!s._virtual && s._arrastreEntranteUsd > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                U$S {formatMontoFull(totalUsdLinkedDe(s))} − Saldo a favor: U$S {formatMontoFull(s._arrastreEntranteUsd)} = A pagar: U$S {formatMontoFull(Math.max(0, totalUsdLinkedDe(s) - s._arrastreEntranteUsd))}
               </p>
             )}
             {diasRestantes !== null && (
