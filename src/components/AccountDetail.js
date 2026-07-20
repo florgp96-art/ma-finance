@@ -419,7 +419,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged, soloAPagar, userEmail }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -456,10 +456,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
-  const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
-  const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
-  const [cascadaAbierta, setCascadaAbierta] = useState(false)
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -1725,18 +1722,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalBrutoBarra = totalBrutoAPagarGeneral + totalGastosFijosMes
   const montoPagadoBarra = montoPagadoGeneral + totalGastosFijosMes
   const pctPagadoBarra = totalBrutoBarra > 0 ? Math.min(100, Math.round((montoPagadoBarra / totalBrutoBarra) * 100)) : 0
-  // Cuota alimentaria: lo que ya se cobró este mes del padre de cada hijo se
-  // resta de lo que ese hijo "debe" en las pastillas — es una preferencia
-  // personal de esta cuenta, no un comportamiento general de la app.
-  const PADRE_POR_HIJO = { Vitto: 'Matko', Amelia: 'Faustino' }
   const sinAcentos = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const coincideTexto = (t, nombre) => [t.tag, t.categories?.nombre, t.subcategories?.nombre, t.nombre, t.detalle]
     .some(campo => sinAcentos(campo).includes(sinAcentos(nombre)))
-  const ingresosPadresDelMes = Object.fromEntries(
-    Object.entries(PADRE_POR_HIJO).map(([hijo, padre]) => [hijo, transactions
-      .filter(t => t.tipo === 'ingreso' && t.moneda !== 'USD' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO && coincideTexto(t, padre))
-      .reduce((sum, t) => sum + Number(t.monto), 0)])
-  )
   // Ingresos propios (Moms Food, Community Manager) van para Personal +
   // Trabajo. El ingreso de mamá cubre primero Alquiler/Expensas, y lo que
   // sobra se suma al mismo pozo de Personal + Trabajo. Es una preferencia
@@ -1767,6 +1755,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return [cat, map[cat] || 0, (map[cat] || 0) + hijoTotal]
     }).sort((a, b) => b[2] - a[2]).map(([cat, totalResto]) => [cat, totalResto])
   }
+  // Composición del gasto del mes: SIEMPRE montos brutos (compras de
+  // tarjeta + gastos fijos de débito/alquiler), sin descontar coberturas de
+  // Casa/mamá ni Personal/Trabajo ni pagos parciales — esas restas viven
+  // solo en la cascada "¿Cómo se llega al total?", nunca acá. Antes esta
+  // misma lista SÍ las restaba, así que una categoría bajaba (o directamente
+  // desaparecía al llegar a $0) con cada pago parcial sin relación visible
+  // con nada en pantalla.
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -1785,29 +1780,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             }
           })
         })
-        // Lo que ya se cobró este mes de cuota alimentaria del padre de cada
-        // hijo se descuenta de sus categorías (de mayor a menor), no de las
-        // del dueño de la cuenta. Es una preferencia personal de esta cuenta,
-        // no un comportamiento general de la app.
-        if (userEmail === 'florgp96@gmail.com') {
-          Object.keys(PADRE_POR_HIJO).forEach(hijo => {
-            let restante = ingresosPadresDelMes[hijo] || 0
-            if (restante <= 0) return
-            const catsDelHijo = Object.keys(hijoMap)
-              .filter(cat => (hijoMap[cat]?.[hijo] || 0) > 0)
-              .sort((a, b) => hijoMap[b][hijo] - hijoMap[a][hijo])
-            catsDelHijo.forEach(cat => {
-              if (restante <= 0) return
-              const actual = hijoMap[cat][hijo] || 0
-              const descuento = Math.min(actual, restante)
-              hijoMap[cat][hijo] = actual - descuento
-              restante -= descuento
-            })
-          })
-        }
-        // Los gastos fijos del mes (débito, alquiler/expensas) se suman
-        // recién acá, después de descontar los pagos parciales de tarjeta —
-        // esos ya están totalmente pagados, no hay que restarles nada.
         gastosFijosDelMes.forEach(t => {
           const cat = t.categories?.nombre || 'A Identificar'
           const hijo = getChildName(t)
@@ -1818,24 +1790,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             map[cat] = (map[cat] || 0) + Number(t.monto)
           }
         })
-        if (userEmail === 'florgp96@gmail.com') {
-          // El ingreso de mamá primero descuenta Alquiler/Expensas (ya
-          // sumado dentro de "Casa" en el paso de arriba).
-          if (mamaParaAlquilerExpensas > 0) {
-            map['Casa'] = Math.max(0, (map['Casa'] || 0) - mamaParaAlquilerExpensas)
-          }
-          let restantePool = poolPersonalTrabajo
-          ;['Personal', 'Trabajo']
-            .sort((a, b) => (map[b] || 0) - (map[a] || 0))
-            .forEach(cat => {
-              if (restantePool <= 0) return
-              const actual = map[cat] || 0
-              if (actual <= 0) return
-              const descuento = Math.min(actual, restantePool)
-              map[cat] = actual - descuento
-              restantePool -= descuento
-            })
-        }
         return [
           totalesConResto(map, hijoMap),
           totalesConResto(mapUsd, hijoMapUsd),
@@ -1845,8 +1799,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })()
     : [[], [], {}, {}]
   // Una sola pastilla por hijo (suma de todas sus categorías), en vez de una
-  // pastilla repetida por cada categoría en la que gastó. Al hacer click se
-  // desglosa por categoría (hijoCategoriasBreakdown).
+  // pastilla repetida por cada categoría en la que gastó.
   const sumarHijosPorNombre = (porCategoria) => {
     const totales = {}
     Object.values(porCategoria).forEach(porHijo => {
@@ -1856,11 +1809,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
   const hijosTotalesGeneral = sumarHijosPorNombre(hijosPorCategoriaGeneral)
   const hijosTotalesGeneralUsd = sumarHijosPorNombre(hijosPorCategoriaGeneralUsd)
-  const hijoCategoriasBreakdown = (hijoNombre, porCategoria) =>
-    Object.entries(porCategoria)
-      .filter(([, porHijo]) => porHijo[hijoNombre] > 0)
-      .map(([cat, porHijo]) => [cat, porHijo[hijoNombre]])
-      .sort((a, b) => b[1] - a[1])
+  // Subcategorías de la categoría elegida en la lista, sin importar si el
+  // gasto tiene un hijo asociado o no — la lista de categorías ya muestra
+  // el bruto combinado (resto + hijos), así que el desglose por
+  // subcategoría hace lo mismo.
   const [subcatsCatGeneral, subcatsCatGeneralUsd] = (soloAPagar && catGeneralSeleccionada)
     ? (() => {
         const map = {}, mapUsd = {}
@@ -1868,10 +1820,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
-            // Igual que la pastilla: si se eligió un hijo, solo sus gastos;
-            // si se eligió la categoría general, solo el "resto" (sin hijo).
-            const hijo = getChildName(t)
-            if (hijoGeneralSeleccionado ? hijo !== hijoGeneralSeleccionado : !!hijo) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
             const destino = t.moneda === 'USD' ? mapUsd : map
             destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
@@ -1880,8 +1828,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         gastosFijosDelMes.forEach(t => {
           const cat = t.categories?.nombre || 'A Identificar'
           if (cat !== catGeneralSeleccionada) return
-          const hijo = getChildName(t)
-          if (hijoGeneralSeleccionado ? hijo !== hijoGeneralSeleccionado : !!hijo) return
           const subcat = t.subcategories?.nombre || 'Sin subcategoría'
           map[subcat] = (map[subcat] || 0) + Number(t.monto)
         })
@@ -1891,6 +1837,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ]
       })()
     : [[], []]
+  // Total del mes que sirve de punto de partida a la cascada "¿Cómo se
+  // llega al total?": construido para terminar SIEMPRE, por definición
+  // algebraica, en el mismo número que el header (totalAPagarGeneral) — no
+  // es una coincidencia que haya que verificar, se arma sumándole de vuelta
+  // exactamente lo que la cascada va a restar después.
+  const totalDelMesCascada = totalAPagarGeneral + mamaParaAlquilerExpensas + poolPersonalTrabajo + montoPagadoGeneral
+  // Igual que categoriasBrutoSubtotalArs de abajo, pero antes de sumar
+  // hijos — se usa para mostrar el subtotal y, si no coincide con
+  // totalDelMesCascada, una nota corta explicando por qué (normalmente,
+  // gastos de débito/alquiler que no forman parte de la deuda de tarjetas).
+  const categoriasBrutoSubtotalArs = categoriasResumenGeneral.reduce((s, [, t]) => s + t, 0)
+    + hijosTotalesGeneral.reduce((s, [, t]) => s + t, 0)
 
   // Una tarjeta de "A pagar": fecha siempre en formato relativo (la
   // absoluta queda de tooltip), y con un estilo rojo destacado cuando ya
@@ -2052,177 +2010,155 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={{ height: '8px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pctPagadoBarra}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
-              {pagosGeneral.length > 0 && (
-                <div style={{ marginTop: '8px' }}>
-                  <span
-                    onClick={() => setPagosParcialesExpandido(v => !v)}
-                    style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', userSelect: 'none' }}>
-                    {pagosParcialesExpandido ? '▾' : '▸'} Pagos parciales ({pagosGeneral.length})
-                  </span>
-                  {pagosParcialesExpandido && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                      {pagosGeneral.map((p, i) => (
-                        <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
-                          {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
-                        </span>
+            </div>
+          )}
+          {/* Cascada única: composición del total vs. estado de pago, siempre
+              terminando en el mismo número que el header de arriba. */}
+          {allAccounts && totalDelMesCascada > 0 && (
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>¿Cómo se llega al total?</p>
+              <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                  <span>Total del mes</span>
+                  <span style={{ fontWeight: '600' }}>$ {formatMonto(totalDelMesCascada)}</span>
+                </div>
+                {userEmail === 'florgp96@gmail.com' && mamaParaAlquilerExpensas > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a' }}>
+                    <span>− Cubierto por Casa/mamá</span>
+                    <span style={{ fontWeight: '600' }}>− $ {formatMonto(mamaParaAlquilerExpensas)}</span>
+                  </div>
+                )}
+                {userEmail === 'florgp96@gmail.com' && poolPersonalTrabajo > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a' }}>
+                    <span>− Personal/Trabajo{mamaExcedente > 0 ? ' (+ excedente mamá)' : ''}</span>
+                    <span style={{ fontWeight: '600' }}>− $ {formatMonto(poolPersonalTrabajo)}</span>
+                  </div>
+                )}
+                {montoPagadoGeneral > 0 && (
+                  <div>
+                    <div
+                      onClick={() => setPagosParcialesExpandido(v => !v)}
+                      style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a', cursor: 'pointer', userSelect: 'none' }}>
+                      <span>{pagosParcialesExpandido ? '▾' : '▸'} − Pagos parciales ({pagosGeneral.length})</span>
+                      <span style={{ fontWeight: '600' }}>− $ {formatMonto(montoPagadoGeneral)}</span>
+                    </div>
+                    {pagosParcialesExpandido && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '2px 0 8px', paddingLeft: '10px' }}>
+                        {pagosGeneral.map((p, i) => (
+                          <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#1C1A1C' : 'white', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
+                            {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '15px' }}>
+                  <span>= Te falta pagar</span>
+                  <span>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Categorías: composición del gasto del mes, siempre en bruto —
+              no cambia con cada pago parcial. */}
+          {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Gastos del mes por categoría</p>
+              {categoriasResumenGeneral.map(([cat, total]) => total > 0 && (
+                <React.Fragment key={cat}>
+                  <div
+                    onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
+                    <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
+                      {resolveIcon(cat)} {cat}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(total)}</span>
+                  </div>
+                  {catGeneralSeleccionada === cat && subcatsCatGeneral.length > 0 && (
+                    <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {subcatsCatGeneral.map(([subcat, montoSub]) => (
+                        <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                          <span>{subcat}</span>
+                          <span>$ {formatMonto(montoSub)}</span>
+                        </div>
                       ))}
                     </div>
                   )}
+                </React.Fragment>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: '4px', fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                <span>Subtotal</span>
+                <span>$ {formatMonto(categoriasBrutoSubtotalArs)}</span>
+              </div>
+              {Math.round(categoriasBrutoSubtotalArs) !== Math.round(totalDelMesCascada) && (
+                <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                  La diferencia (${formatMonto(Math.abs(categoriasBrutoSubtotalArs - totalDelMesCascada))}) corresponde a gastos de débito/alquiler ya pagados que no forman parte de la deuda de tarjetas de "¿Cómo se llega al total?".
+                </p>
+              )}
+              {categoriasResumenGeneralUsd.length > 0 && (
+                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💵 En USD</p>
+                  {categoriasResumenGeneralUsd.map(([cat, total]) => total > 0 && (
+                    <React.Fragment key={`usd-${cat}`}>
+                      <div
+                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
+                          {resolveIcon(cat)} {cat}
+                        </span>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
+                      </div>
+                      {catGeneralSeleccionada === cat && subcatsCatGeneralUsd.length > 0 && (
+                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
+                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                              <span>{subcat}</span>
+                              <span>U$S {formatMontoFull(montoSub)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
                 </div>
               )}
             </div>
           )}
-          {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
+          {/* Hijos: composición del gasto del mes por hijo, siempre en
+              bruto — cada fila lleva directo a la solapa de ese hijo. */}
+          {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              {categoriasResumenGeneral.length > 0 && (
-                <div>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Categorías</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {categoriasResumenGeneral.map(([cat, total]) => {
-                    const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
-                    const hayAlgoSeleccionado = !!catGeneralSeleccionada
-                    return (
-                      <React.Fragment key={cat}>
-                        {total > 0 && (
-                          <span
-                            onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
-                            style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                            {resolveIcon(cat)} {cat}: $ {formatMonto(total)}
-                          </span>
-                        )}
-                      </React.Fragment>
-                    )
-                  })}
-                  </div>
-                </div>
-              )}
-              {categoriasResumenGeneralUsd.length > 0 && (
-                <div style={{ marginTop: categoriasResumenGeneral.length > 0 ? '14px' : 0, paddingTop: categoriasResumenGeneral.length > 0 ? '14px' : 0, borderTop: categoriasResumenGeneral.length > 0 ? `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` : 'none' }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💵 En USD</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {categoriasResumenGeneralUsd.map(([cat, total]) => {
-                      const catPillSeleccionada = catGeneralSeleccionada === cat && !hijoGeneralSeleccionado
-                      const hayAlgoSeleccionado = !!catGeneralSeleccionada
-                      return (
-                        <React.Fragment key={`usd-${cat}`}>
-                          {total > 0 && (
-                            <span
-                              onClick={() => { setCatGeneralSeleccionada(c => c === cat && !hijoGeneralSeleccionado ? null : cat); setHijoGeneralSeleccionado(null) }}
-                              style={{ backgroundColor: (resolveColor(cat) || '#E0E0E0'), color: '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', opacity: (hayAlgoSeleccionado && !catPillSeleccionada) ? 0.3 : 1, outline: catPillSeleccionada ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', border: `1.5px dashed ${darkMode ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.25)'}`, transition: 'opacity 0.15s' }}>
-                              {resolveIcon(cat)} {cat}: U$S {formatMontoFull(total)}
-                            </span>
-                          )}
-                        </React.Fragment>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {catGeneralSeleccionada && (subcatsCatGeneral.length > 0 || subcatsCatGeneralUsd.length > 0) && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    {hijoGeneralSeleccionado
-                      ? <>{customIcons?.[hijoGeneralSeleccionado] || '👧'} {hijoGeneralSeleccionado} · {catGeneralSeleccionada} por subcategoría</>
-                      : <>{resolveIcon(catGeneralSeleccionada)} {catGeneralSeleccionada} por subcategoría</>}
-                  </p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {subcatsCatGeneral.map(([subcat, total]) => (
-                      <span key={subcat} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                        {subcat}: $ {formatMonto(total)}
-                      </span>
-                    ))}
-                    {subcatsCatGeneralUsd.map(([subcat, total]) => (
-                      <span key={`usd-${subcat}`} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                        {subcat}: U$S {formatMontoFull(total)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0) && (
-                <div style={{ marginTop: '10px' }}>
-                  <span
-                    onClick={() => setCascadaAbierta(v => !v)}
-                    style={{ fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#8e8e93', cursor: 'pointer', userSelect: 'none' }}>
-                    {cascadaAbierta ? '▾' : '▸'} Ver de dónde sale cada cobertura
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Gasto del mes por hijo</p>
+              {hijosTotalesGeneral.map(([hijo, total]) => (
+                <div key={hijo}
+                  onClick={() => onNavigateToHijo?.(hijo)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: onNavigateToHijo ? 'pointer' : 'default' }}>
+                  <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {customIcons?.[hijo] || '👧'} {hijo}
                   </span>
-                  {cascadaAbierta && (
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                        <span>Total bruto</span>
-                        <span style={{ fontWeight: '600' }}>$ {formatMonto(totalBrutoAPagarGeneral)}</span>
-                      </div>
-                      {mamaParaAlquilerExpensas > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                          <span>− Cubierto por Casa/mamá</span>
-                          <span style={{ fontWeight: '600', color: '#4a9e7a' }}>− $ {formatMonto(mamaParaAlquilerExpensas)}</span>
-                        </div>
-                      )}
-                      {poolPersonalTrabajo > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                          <span>− Personal/Trabajo (Moms Food + CM{mamaExcedente > 0 ? ' + excedente mamá' : ''})</span>
-                          <span style={{ fontWeight: '600', color: '#4a9e7a' }}>− $ {formatMonto(poolPersonalTrabajo)}</span>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0 0', marginTop: '3px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                        <span>Neto a pagar</span>
-                        <span>$ {formatMonto(Math.max(0, totalBrutoAPagarGeneral - mamaParaAlquilerExpensas - poolPersonalTrabajo))}</span>
-                      </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    $ {formatMonto(total)} {onNavigateToHijo && <span style={{ opacity: 0.5, fontWeight: '400' }}>›</span>}
+                  </span>
+                </div>
+              ))}
+              {hijosTotalesGeneralUsd.length > 0 && (
+                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💵 En USD</p>
+                  {hijosTotalesGeneralUsd.map(([hijo, total]) => (
+                    <div key={`usd-${hijo}`}
+                      onClick={() => onNavigateToHijo?.(hijo)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: onNavigateToHijo ? 'pointer' : 'default' }}>
+                      <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{customIcons?.[hijo] || '👧'} {hijo}</span>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        U$S {formatMontoFull(total)} {onNavigateToHijo && <span style={{ opacity: 0.5, fontWeight: '400' }}>›</span>}
+                      </span>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
-              {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
-                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Hijos</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {hijosTotalesGeneral.map(([hijo, total]) => {
-                    const seleccionado = hijoTotalExpandido === hijo
-                    return (
-                      <span key={hijo}
-                        onClick={() => setHijoTotalExpandido(h => h === hijo ? null : hijo)}
-                        style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#F0EDEC' : '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', outline: seleccionado ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                        {customIcons?.[hijo] || '👧'} {hijo}: $ {formatMonto(total)}
-                      </span>
-                    )
-                  })}
-                  {hijosTotalesGeneralUsd.map(([hijo, total]) => {
-                    const seleccionado = hijoTotalExpandido === `usd-${hijo}`
-                    return (
-                      <span key={`usd-${hijo}`}
-                        onClick={() => setHijoTotalExpandido(h => h === `usd-${hijo}` ? null : `usd-${hijo}`)}
-                        style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#F0EDEC' : '#3a3a3c', padding: '6px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap', cursor: 'pointer', outline: seleccionado ? `2px solid ${darkMode ? '#F0EDEC' : '#1d1d1f'}` : 'none', transition: 'opacity 0.15s' }}>
-                        {customIcons?.[hijo] || '👧'} {hijo}: U$S {formatMontoFull(total)}
-                      </span>
-                    )
-                  })}
-                  </div>
-                </div>
-              )}
-              {hijoTotalExpandido && (() => {
-                const esUsdSel = hijoTotalExpandido.startsWith('usd-')
-                const nombreSel = esUsdSel ? hijoTotalExpandido.slice(4) : hijoTotalExpandido
-                const breakdown = hijoCategoriasBreakdown(nombreSel, esUsdSel ? hijosPorCategoriaGeneralUsd : hijosPorCategoriaGeneral)
-                return (
-                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                    <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      {customIcons?.[nombreSel] || '👧'} {nombreSel} por categoría
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {breakdown.map(([cat, monto]) => (
-                        <span key={cat} style={{ backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '500', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                          {resolveIcon(cat)} {cat}: {esUsdSel ? 'U$S' : '$'} {esUsdSel ? formatMontoFull(monto) : formatMonto(monto)}
-                        </span>
-                      ))}
-                    </div>
-                    {!esUsdSel && userEmail === 'florgp96@gmail.com' && (ingresosPadresDelMes[nombreSel] || 0) > 0 && (
-                      <p style={{ margin: '8px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
-                        Ya se descontó $ {formatMonto(ingresosPadresDelMes[nombreSel])} cobrado de {PADRE_POR_HIJO[nombreSel]} este mes.
-                      </p>
-                    )}
-                  </div>
-                )
-              })()}
             </div>
           )}
           {statementsAPagar.length === 0 ? (
