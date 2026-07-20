@@ -125,16 +125,15 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     pagosPorCuenta.set(p.account_id, list)
   })
 
-  // DIAGNÓSTICO TEMPORAL — el cálculo de abajo (cuotasComprometidasBuggy) tiene
-  // un bug reportado (total y cantidad de compras imposibles): agrupa por
-  // t.nombre/t.detalle "tal cual", pero esos campos vienen con el sufijo de
-  // cuota del banco pegado (ej. "Compra 3/12"), que cambia en cada fila de la
-  // misma compra real — el Map casi nunca deduplica, así que cada cuota YA
-  // FACTURADA de una misma compra se cuenta como una "compra" aparte, y sus
-  // cuotas restantes quedan sumadas una vez por cada fila histórica en vez de
-  // una sola vez. cuotasComprometidasFixed() usa la misma lógica ya probada en
-  // el widget "Cuotas pendientes" de Dashboard.js (stripCuotaSuffix + agrupar
-  // por mes de inicio de compra) para comparar contra el valor corregido.
+  // Cuotas comprometidas a futuro: para cada compra en cuotas, lo que falta
+  // facturar de acá en adelante. Agrupar por t.nombre/t.detalle "tal cual" no
+  // sirve — esos campos traen pegado el sufijo de cuota del banco (ej.
+  // "Compra 3/12"), que cambia en cada fila de la misma compra real, así que
+  // cada cuota ya facturada terminaba contándose como una "compra" aparte
+  // (confirmado: ver diagnóstico en PR #97). Se agrupa por nombre sin el
+  // sufijo + cuotas_total + cuenta + mes de inicio de la compra (mismo
+  // criterio que ya usa el widget "Cuotas pendientes" de Dashboard.js), y solo
+  // se toma la cuota de mayor número por grupo (la más reciente facturada).
   const stripCuotaSuffix = (n) => (n || '')
     .replace(/\s*\(1\/3\)\s*$/, '')
     .replace(/\s+\d+\/\d+\s*$/, '')
@@ -145,30 +144,13 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   }
-
-  const cuotasComprometidasBuggy = () => {
-    const grupos = new Map()
-    transactions.forEach(t => {
-      if ((t.cuotas_total || 1) <= 1) return
-      const key = `${t.nombre || t.detalle}__${t.cuotas_total}__${t.monto}__${t.account_id}`
-      const existing = grupos.get(key)
-      if (!existing || (t.cuota_numero || 1) > (existing.cuota_numero || 1)) grupos.set(key, t)
-    })
-    let total = 0, compras = 0
-    const detalle = []
-    grupos.forEach(t => {
-      const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-      if (remaining <= 0) return
-      const contribucion = aArs(t) * remaining
-      total += contribucion
-      compras++
-      detalle.push({ nombre: t.nombre || t.detalle || '(sin nombre)', moneda: t.moneda, valorCuota: Number(t.monto), cuotaActual: t.cuota_numero, cuotasTotales: t.cuotas_total, restantes: remaining, contribucion })
-    })
-    return { total, compras, detalle: detalle.sort((a, b) => b.contribucion - a.contribucion) }
-  }
-
-  const cuotasComprometidasFixed = () => {
-    const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1)
+  const cuotasComprometidas = () => {
+    // Alquiler/expensas puede quedar cargado con cuotas_total/cuota_numero
+    // (ej. para trackear los meses de un contrato), pero no es una compra
+    // financiada con fecha de fin real — es un gasto fijo recurrente que no
+    // corresponde proyectar acá (además de que ni siquiera está garantizado
+    // que se vaya a pagar cada mes).
+    const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1 && !esAlquilerOExpensas(t))
     const groupKeyCuota = (t) => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
     const maxCuotaPorGrupo = {}
     conCuotas.forEach(t => {
@@ -187,33 +169,15 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
       latestByPurchase[key].monto += Number(t.monto)
     })
     let total = 0, compras = 0
-    const detalle = []
     Object.values(latestByPurchase).forEach(t => {
       const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
       if (remaining <= 0) return
-      const contribucion = aArs(t) * remaining
-      total += contribucion
+      total += aArs(t) * remaining
       compras++
-      detalle.push({ nombre: stripCuotaSuffix(t.nombre || t.detalle || '') || '(sin nombre)', moneda: t.moneda, valorCuota: Number(t.monto), cuotaActual: t.cuota_numero, cuotasTotales: t.cuotas_total, restantes: remaining, contribucion })
     })
-    return { total, compras, detalle: detalle.sort((a, b) => b.contribucion - a.contribucion) }
+    return { total, compras }
   }
-
-  const cuotasBuggy = cuotasComprometidasBuggy()
-  const cuotasFixed = cuotasComprometidasFixed()
-  // Se sigue mostrando el número viejo (con bug) hasta confirmar el diagnóstico.
-  const cuotas = cuotasBuggy
-
-  useEffect(() => {
-    if (cuotasBuggy.compras === 0) return
-    console.group('🔧 Diagnóstico: Cuotas comprometidas a futuro')
-    console.log(`Cálculo actual (con bug): $${Math.round(cuotasBuggy.total).toLocaleString('es-AR')} · ${cuotasBuggy.compras} "compras"`)
-    console.table(cuotasBuggy.detalle.slice(0, 10))
-    console.log(`Cálculo corregido (preview): $${Math.round(cuotasFixed.total).toLocaleString('es-AR')} · ${cuotasFixed.compras} compras reales`)
-    console.table(cuotasFixed.detalle.slice(0, 10))
-    console.groupEnd()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions])
+  const cuotas = cuotasComprometidas()
 
   const historial = getLast6Months().map(m => ({
     mes: m,
@@ -371,45 +335,6 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           <p style={label}>Cuotas comprometidas a futuro</p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>Estimado: {cuotas.compras} compra{cuotas.compras === 1 ? '' : 's'} en cuotas con saldo pendiente de facturar.</p>
-
-          {/* DIAGNÓSTICO TEMPORAL — se va a sacar en cuanto se confirme el bug */}
-          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `2px dashed ${border}` }}>
-            <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#e07b39', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              🔧 Diagnóstico temporal — no es un valor final
-            </p>
-            <p style={{ margin: '0 0 4px', fontSize: '12px', color: muted }}>
-              Actual (con bug): <strong style={{ color: txt }}>$ {formatMonto(cuotasBuggy.total)}</strong> · {cuotasBuggy.compras} "compras"
-            </p>
-            <p style={{ margin: '0 0 10px', fontSize: '12px', color: muted }}>
-              Corregido (preview): <strong style={{ color: txt }}>$ {formatMonto(cuotasFixed.total)}</strong> · {cuotasFixed.compras} compras reales
-            </p>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '600', color: muted }}>Top 10 del cálculo actual (con bug):</p>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                <thead>
-                  <tr style={{ color: muted, textAlign: 'left' }}>
-                    <th style={{ padding: '3px 6px' }}>Compra</th>
-                    <th style={{ padding: '3px 6px' }}>Cuota</th>
-                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Valor cuota</th>
-                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Restantes</th>
-                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Aporta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cuotasBuggy.detalle.slice(0, 10).map((d, i) => (
-                    <tr key={i} style={{ color: txt, borderTop: `1px solid ${border}` }}>
-                      <td style={{ padding: '3px 6px' }}>{d.nombre}</td>
-                      <td style={{ padding: '3px 6px' }}>{d.cuotaActual}/{d.cuotasTotales}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{monedaSymbol(d.moneda)} {formatMontoFull(d.valorCuota)}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{d.restantes}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>$ {formatMonto(d.contribucion)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p style={{ margin: '10px 0 0', fontSize: '11px', color: muted }}>(También se imprimió el detalle completo en la consola del navegador.)</p>
-          </div>
         </div>
       )}
 
