@@ -460,6 +460,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
   const [cascadaAbierta, setCascadaAbierta] = useState(false)
+  const [diagnosticoArrastreAbierto, setDiagnosticoArrastreAbierto] = useState(() => new Set())
+  const toggleDiagnosticoArrastre = (accountId) => setDiagnosticoArrastreAbierto(prev => {
+    const next = new Set(prev)
+    next.has(accountId) ? next.delete(accountId) : next.add(accountId)
+    return next
+  })
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -1476,13 +1482,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // ÚLTIMO resumen de la cuenta, que no tiene uno siguiente que la acote.
   const creditAccountIds = new Set((accounts || []).filter(a => a.tipo === 'credito').map(a => a.id))
   const arrastrePorStatement = new Map()
+  // DIAGNÓSTICO TEMPORAL — historial completo por cuenta con el detalle de
+  // qué pagos se le atribuyeron a cada resumen, para poder verificar (no
+  // solo confiar a ciegas) de dónde sale un saldo a favor arrastrado. Se
+  // saca en cuanto se confirme que el cálculo da bien.
+  const arrastreDiagnosticoPorCuenta = new Map()
   creditAccountIds.forEach(accId => {
     const statementsCuenta = statements
       .filter(s => s.account_id === accId)
       .map(s => ({ s, cierre: cierreDe(s) }))
       .filter(x => x.cierre)
       .sort((a, b) => a.cierre.localeCompare(b.cierre))
-    const pagosEnVentana = (cierre, cierreSiguiente, esUsd) => transactions
+    const txsEnVentana = (cierre, cierreSiguiente, esUsd) => transactions
       .filter(t =>
         t.account_id === accId && !t.statement_id &&
         (esUsd ? t.moneda === 'USD' : t.moneda !== 'USD') &&
@@ -1490,17 +1501,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         normFecha(t.fecha) > cierre &&
         (!cierreSiguiente || normFecha(t.fecha) <= cierreSiguiente)
       )
-      .reduce((sum, t) => sum + Number(t.monto), 0)
     let arrastreArs = 0, arrastreUsd = 0
+    const diagnostico = []
     statementsCuenta.forEach(({ s, cierre }, idx) => {
       const cierreSiguiente = idx + 1 < statementsCuenta.length ? statementsCuenta[idx + 1].cierre : null
       const brutoArs = Number(s.total_resumen) || 0
-      const pagosArs = pagosEnVentana(cierre, cierreSiguiente, false)
+      const pagosArsTx = txsEnVentana(cierre, cierreSiguiente, false)
+      const pagosArs = pagosArsTx.reduce((sum, t) => sum + Number(t.monto), 0)
       const entranteArs = arrastreArs
       const netoArs = brutoArs - pagosArs - entranteArs
       arrastreArs = Math.max(0, -netoArs)
       const brutoUsd = totalUsdLinkedDe(s)
-      const pagosUsd = pagosEnVentana(cierre, cierreSiguiente, true)
+      const pagosUsdTx = txsEnVentana(cierre, cierreSiguiente, true)
+      const pagosUsd = pagosUsdTx.reduce((sum, t) => sum + Number(t.monto), 0)
       const entranteUsd = arrastreUsd
       const netoUsd = brutoUsd - pagosUsd - entranteUsd
       arrastreUsd = Math.max(0, -netoUsd)
@@ -1508,7 +1521,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         entranteArs, netoArs, favorGeneradoArs: arrastreArs, pagosArs,
         entranteUsd, netoUsd, favorGeneradoUsd: arrastreUsd, pagosUsd,
       })
+      diagnostico.push({
+        periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '') || s.id, cierre, cierreSiguiente,
+        brutoArs, pagosArsTx, pagosArs, entranteArs, favorGeneradoArs: arrastreArs, netoArs,
+        brutoUsd, pagosUsdTx, pagosUsd, entranteUsd, favorGeneradoUsd: arrastreUsd, netoUsd,
+      })
     })
+    arrastreDiagnosticoPorCuenta.set(accId, diagnostico)
   })
   const saldoConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoArs ?? (Number(s.total_resumen) || 0)
   const saldoUsdConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoUsd ?? totalUsdLinkedDe(s)
@@ -2056,6 +2075,47 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {/* DIAGNÓSTICO TEMPORAL — se saca en cuanto se confirme que el arrastre
+            da bien. Muestra el historial completo de resúmenes de la tarjeta con
+            los pagos concretos (fecha + monto) que se le atribuyeron a cada uno,
+            para poder verificar de dónde sale un saldo a favor arrastrado en vez
+            de tener que confiar a ciegas en el número final. */}
+        {!s._virtual && (s._arrastreEntranteArs > 0 || s._arrastreEntranteUsd > 0) && (
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `2px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+            <span
+              onClick={() => toggleDiagnosticoArrastre(s.account_id)}
+              style={{ fontSize: '11px', fontWeight: '700', color: '#e07b39', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+              {diagnosticoArrastreAbierto.has(s.account_id) ? '▾' : '▸'} 🔧 Diagnóstico temporal: de dónde sale el arrastre
+            </span>
+            {diagnosticoArrastreAbierto.has(s.account_id) && (
+              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(arrastreDiagnosticoPorCuenta.get(s.account_id) || []).map((d, i) => (
+                  <div key={i} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, paddingLeft: '8px' }}>
+                    <p style={{ margin: 0, fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{d.periodo} (cierre {d.cierre})</p>
+                    <p style={{ margin: '2px 0 0' }}>
+                      ARS: bruto $ {formatMonto(d.brutoArs)} · entrante $ {formatMonto(d.entranteArs)} · pagos atribuidos $ {formatMonto(d.pagosArs)} · neto $ {formatMonto(d.netoArs)}
+                      {d.favorGeneradoArs > 0 ? ` · genera a favor $ ${formatMonto(d.favorGeneradoArs)}` : ''}
+                    </p>
+                    {d.pagosArsTx.length > 0 && (
+                      <p style={{ margin: '2px 0 0' }}>Pagos ARS considerados: {d.pagosArsTx.map(t => `${formatFecha(t.fecha)} $${formatMonto(t.monto)}`).join(' · ')}</p>
+                    )}
+                    {(d.brutoUsd !== 0 || d.pagosUsd !== 0 || d.entranteUsd !== 0) && (
+                      <>
+                        <p style={{ margin: '4px 0 0' }}>
+                          USD: bruto U$S {formatMontoFull(d.brutoUsd)} · entrante U$S {formatMontoFull(d.entranteUsd)} · pagos atribuidos U$S {formatMontoFull(d.pagosUsd)} · neto U$S {formatMontoFull(d.netoUsd)}
+                          {d.favorGeneradoUsd > 0 ? ` · genera a favor U$S ${formatMontoFull(d.favorGeneradoUsd)}` : ''}
+                        </p>
+                        {d.pagosUsdTx.length > 0 && (
+                          <p style={{ margin: '2px 0 0' }}>Pagos USD considerados: {d.pagosUsdTx.map(t => `${formatFecha(t.fecha)} U$S${formatMontoFull(t.monto)}`).join(' · ')}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
