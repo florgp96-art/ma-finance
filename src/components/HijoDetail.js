@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull } from './AccountDetail'
+import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull, TotalesFooter } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -406,6 +406,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                   )
                 })}
               </tbody>
+              <TotalesFooter txs={sortedTx} tc={tc} darkMode={darkMode} colSpan={7} signed={false} />
             </table>
           </div>
         )}
