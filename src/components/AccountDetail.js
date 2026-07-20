@@ -34,6 +34,18 @@ export const formatMontoFull = (monto) =>
 export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
 export const formatFechaCorta = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) : ''
 
+// Única fuente de verdad para "categoría de un ingreso": la subcategoría real de la
+// categoría "Ingresos" en la base (categories/subcategories) — la usan por igual el
+// modal "Cargar movimiento", la edición inline de la tabla y cualquier otra pantalla
+// que ofrezca esta lista, para que nunca vuelvan a divergir. Nada de tags de texto
+// libre ni listas hardcodeadas: si se agrega una subcategoría nueva en la base,
+// aparece sola en todos lados.
+export const subcategoriasDeIngreso = (categorias, subcategorias) => {
+  const catIngresos = (categorias || []).find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
+  if (!catIngresos) return []
+  return (subcategorias || []).filter(s => s.category_id === catIngresos.id)
+}
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
 // El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
@@ -419,7 +431,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   )
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, ingresoTags, ingresoTagsOcultos, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -690,11 +702,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
     if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
+      // El "tag" elegido acá tiene que ser siempre una subcategoría real de
+      // "Ingresos" (ver subcategoriasDeIngreso) — se guarda category_id/subcategory_id
+      // igual que hace el modal "Cargar movimiento", y se mantiene el tag en
+      // paralelo (mismo nombre) porque otras pantallas siguen agrupando por tag.
+      const ingresoSubcatObj = editTag
+        ? subcategoriasDeIngreso(categories, subcategories).find(s => s.nombre === editTag)
+        : null
+      const catIngresos = categories.find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
       const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange }
+      if (!editTag) {
+        // Sin categoría elegida: limpiar el vínculo.
+        upd.category_id = null
+        upd.subcategory_id = null
+      } else if (ingresoSubcatObj) {
+        upd.category_id = catIngresos?.id || null
+        upd.subcategory_id = ingresoSubcatObj.id
+      }
+      // Si editTag no matchea ninguna subcategoría real (dato viejo sin migrar
+      // todavía), no se toca category_id/subcategory_id — se deja como estaba.
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
       if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -1273,11 +1303,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
 
   const getIngresoTagOpts = () => {
-    const ingresosCat = categories.find(c => c.nombre === 'Ingresos')
-    const ingresosSubcats = ingresosCat ? subcategories.filter(s => s.category_id === ingresosCat.id).map(s => s.nombre) : []
-    const existingTags = [...new Set(transactions.filter(t => t.tipo === 'ingreso' && t.tag).map(t => t.tag))]
-    const ocultos = ingresoTagsOcultos || []
-    const allOpts = [...new Set([...ingresosSubcats, ...existingTags, ...(ingresoTags || [])])].filter(t => !ocultos.includes(t)).sort()
+    const allOpts = subcategoriasDeIngreso(categories, subcategories).map(s => s.nombre)
     return { allOpts, valueIsCustom: editTag && !allOpts.includes(editTag) }
   }
 
