@@ -1,6 +1,6 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
-import { CATEGORY_CONFIG } from './AccountDetail'
+import { CATEGORY_CONFIG, subcategoriasDeIngreso } from './AccountDetail'
 import { FECHA_DIVISION_3_DESDE, CASA_SUBCATS_DIVISION_3, aplicaDivisionTresVias } from '../lib/divisionTresVias'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
@@ -11,9 +11,6 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   childrenDB,
   customIcons,
   userAliases,
-  ingresoTags,
-  onCreateIngresoTag,
-  onDeleteIngresoTag,
   fetchCategorias,
   fetchChildren,
   fetchUserAliases,
@@ -42,7 +39,6 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   // Categorías form
   const [newCatNombre, setNewCatNombre] = useState('')
   const [newCatTipo, setNewCatTipo] = useState('gasto')
-  const [newTagIngreso, setNewTagIngreso] = useState('')
   const [editingCat, setEditingCat] = useState(null)
   const [editingCatNombre, setEditingCatNombre] = useState('')
   const [newSubcatCatId, setNewSubcatCatId] = useState(null)
@@ -473,7 +469,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             {[
               ...(categoriasDB || []).map(c => ({ nombre: c.nombre, tipo: 'cat' })),
               ...(childrenDB || []).map(c => ({ nombre: c.nombre, tipo: 'hijo' })),
-              ...(ingresoTags || []).map(t => ({ nombre: t, tipo: 'ingreso' })),
+              ...subcategoriasDeIngreso(categoriasDB, subcategoriasDB).map(s => ({ nombre: s.nombre, tipo: 'ingreso' })),
             ].map(({ nombre, tipo }) => {
               const defaultIcon = CATEGORY_CONFIG[nombre]?.icon || (tipo === 'hijo' ? '👧' : tipo === 'ingreso' ? '💰' : '❓')
               const currentIcon = customIcons[nombre] || defaultIcon
@@ -607,27 +603,9 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               </select>
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
             </form>
-            {/* Sección: Tags de ingresos */}
-            <div style={{ marginTop: '24px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '16px' }}>
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: txt, fontFamily: '"Montserrat", sans-serif' }}>💰 Tags de ingresos</h4>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-                {(ingresoTags || []).map(tag => (
-                  <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
-                    {tag}
-                    <button onClick={() => onDeleteIngresoTag && onDeleteIngresoTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#999', padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
-                  </span>
-                ))}
-              </div>
-              <form onSubmit={e => { e.preventDefault(); if (newTagIngreso.trim()) { onCreateIngresoTag && onCreateIngresoTag(newTagIngreso.trim()); setNewTagIngreso('') } }} style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  style={{ ...s.input, flex: 1 }}
-                  placeholder="Nuevo tag de ingreso"
-                  value={newTagIngreso}
-                  onChange={e => setNewTagIngreso(e.target.value)}
-                />
-                <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>Agregar</button>
-              </form>
-            </div>
+            {/* Las categorías de ingreso son subcategorías de "Ingresos" como cualquier
+                otra — se agregan/eliminan con el mismo "+ sub" de la tarjeta de arriba,
+                sin una sección aparte que terminaba desincronizada del resto de la app. */}
             </>)}
 
             <div style={{ marginTop: '16px', textAlign: 'right' }}>

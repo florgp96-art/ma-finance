@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { dividirTresVias } from '../lib/divisionTresVias'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -262,8 +262,6 @@ export default function Dashboard() {
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
-  const [ingresoTags, setIngresoTags] = useState([])
-  const [ingresoTagsOcultos, setIngresoTagsOcultos] = useState([])
 
   // Aliases
   const [userAliases, setUserAliases] = useState([])
@@ -354,7 +352,7 @@ export default function Dashboard() {
   }, [dolarRates])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons(); fetchIngresoTags()
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
@@ -622,51 +620,6 @@ export default function Dashboard() {
     }
   }
 
-  const fetchIngresoTags = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const [{ data: txTags }, { data: ruleTags }, { data: hiddenRows }] = await Promise.all([
-      supabase.from('transactions').select('tag').eq('user_id', user.id).eq('tipo', 'ingreso').not('tag', 'is', null),
-      supabase.from('user_rules').select('nombre_asignado').eq('user_id', user.id).like('texto_original', '__tag_ingreso__%'),
-      supabase.from('user_rules').select('nombre_asignado').eq('user_id', user.id).like('texto_original', '__hide_tag_ingreso__%')
-    ])
-    const ocultos = [...new Set((hiddenRows || []).map(r => r.nombre_asignado).filter(Boolean))]
-    const fromTx = (txTags || []).map(t => t.tag).filter(Boolean)
-    const fromRules = (ruleTags || []).map(r => r.nombre_asignado).filter(Boolean)
-    setIngresoTagsOcultos(ocultos)
-    setIngresoTags([...new Set([...fromTx, ...fromRules])].filter(t => !ocultos.includes(t)).sort())
-  }
-
-  const handleCreateIngresoTag = async (nombre) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('user_rules').upsert({
-      user_id: user.id, texto_original: `__tag_ingreso__${nombre}`,
-      nombre_asignado: nombre, category_id: null, subcategory_id: null,
-      veces_confirmado: 1, updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id,texto_original', ignoreDuplicates: true })
-    // Si estaba oculto (borrado antes), volver a mostrarlo
-    await supabase.from('user_rules').delete().eq('user_id', user.id).eq('texto_original', `__hide_tag_ingreso__${nombre}`)
-    setIngresoTagsOcultos(prev => prev.filter(t => t !== nombre))
-    setIngresoTags(prev => [...new Set([...prev, nombre])].sort())
-  }
-
-  const handleDeleteIngresoTag = async (nombre) => {
-    // Además de borrar el tag, lo marcamos como oculto: si el nombre vive como
-    // subcategoría de "Ingresos" o como tag de ingresos ya cargados, sin esta
-    // marca volvería a aparecer solo en los desplegables.
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('user_rules').upsert({
-      user_id: user.id, texto_original: `__hide_tag_ingreso__${nombre}`,
-      nombre_asignado: nombre, category_id: null, subcategory_id: null
-    }, { onConflict: 'user_id,texto_original', ignoreDuplicates: true })
-    setIngresoTagsOcultos(prev => [...new Set([...prev, nombre])])
-    await supabase.from('user_rules').delete().eq('user_id', user.id).eq('texto_original', `__tag_ingreso__${nombre}`)
-    // Los ingresos que usaban esta categoría quedan "a identificar", sin categoría
-    await supabase.from('transactions')
-      .update({ tag: null, estado: 'a_identificar' })
-      .eq('user_id', user.id).eq('tipo', 'ingreso').eq('tag', nombre)
-    setIngresoTags(prev => prev.filter(t => t !== nombre))
-    setRefreshKey(k => k + 1)
-  }
 
   const fetchExchangeRates = async () => {
     const { data } = await supabase.from('exchange_rates').select('periodo, tipo, valor').order('periodo', { ascending: false })
@@ -3066,7 +3019,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} ingresoTagsOcultos={ingresoTagsOcultos} onAccountsChanged={fetchAccounts} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -3211,7 +3164,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setEfectivo(prev => ({ ...prev, cuenta: '' })); setShowMovimiento(true) } : undefined} customIcons={customIcons} ingresoTags={ingresoTags} ingresoTagsOcultos={ingresoTagsOcultos} onAccountsChanged={fetchAccounts} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setEfectivo(prev => ({ ...prev, cuenta: '' })); setShowMovimiento(true) } : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -4070,10 +4023,10 @@ export default function Dashboard() {
                     onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
                     disabled={!efectivo.categoria}>
                     <option value="">— Elegir —</option>
-                    {subcategoriasDB
-                      .filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id)
-                      .filter(s => tipoMovimiento !== 'ingreso' || !ingresoTagsOcultos.includes(s.nombre))
-                      .map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                    {(tipoMovimiento === 'ingreso'
+                      ? subcategoriasDeIngreso(categoriasDB, subcategoriasDB)
+                      : subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id)
+                    ).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                   </select>
                 </div>
               </div>
@@ -4135,9 +4088,6 @@ export default function Dashboard() {
         childrenDB={childrenDB}
         customIcons={customIcons}
         userAliases={userAliases}
-        ingresoTags={ingresoTags}
-        onCreateIngresoTag={handleCreateIngresoTag}
-        onDeleteIngresoTag={handleDeleteIngresoTag}
         fetchCategorias={fetchCategorias}
         fetchChildren={fetchChildren}
         fetchUserAliases={fetchUserAliases}
