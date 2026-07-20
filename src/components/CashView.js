@@ -48,6 +48,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [debitosAbierto, setDebitosAbierto] = useState(false)
+  const [transferenciasAbierto, setTransferenciasAbierto] = useState(false)
 
   useEffect(() => {
     if (accounts && accounts.length > 0) fetchAll()
@@ -83,28 +84,36 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
   const esAlquilerOExpensas = (t) => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
   const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
+  // "Débito automático" en sentido estricto (algo que se debita solo, tipo
+  // seguro/cuota/servicio) es la categoría "Débitos" que el usuario ya puede
+  // asignar a una transacción — no "cualquier gasto de una cuenta débito",
+  // que en la práctica son transferencias comunes (Comida, Transporte, etc.).
+  const esDebitoAutomatico = (t) => t.categories?.nombre === 'Débitos'
 
-  // Clasifica los movimientos "efectivamente pagados" de un mes en 5 grupos
-  // sin superposición entre ellos, siguiendo el mismo modelo de datos que ya
-  // usa la vista de A pagar (pago de tarjeta = transacción tipo "neutro" en
-  // una cuenta de crédito; débito/efectivo = cuentas de ese tipo; alquiler/
-  // expensas se identifica por categoría, sin importar la cuenta).
+  // Clasifica los movimientos "efectivamente pagados" de un mes en grupos sin
+  // superposición entre ellos, siguiendo el mismo modelo de datos que ya usa
+  // la vista de A pagar (pago de tarjeta = transacción tipo "neutro" en una
+  // cuenta de crédito; débito/efectivo = cuentas de ese tipo; alquiler/
+  // expensas se identifica por categoría, sin importar la cuenta; dentro de
+  // una cuenta débito, lo categorizado como "Débitos" son los automáticos de
+  // verdad, y el resto son transferencias comunes).
   const desgloseDelMes = (mes) => {
     const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
     const tipoCuenta = (t) => accountTipoById.get(t.account_id)
     const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
     const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t))
-    const debitos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t))
+    const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t) && !esAlquilerOExpensas(t))
+    const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t) && !esDebitoAutomatico(t))
     const suscripciones = txs.filter(t => t.tipo === 'gasto' && esSuscripcion(t) && tipoCuenta(t) !== 'credito')
     const efectivo = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'efectivo' && !esSuscripcion(t))
     const ingresos = txs.filter(t => t.tipo === 'ingreso')
     const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
-    const todos = [...pagos, ...alquiler, ...debitos, ...suscripciones, ...efectivo]
+    const todos = [...pagos, ...alquiler, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
     const totalPagado = sum(todos)
     const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda !== 'USD' ? Number(t.monto) : 0), 0)
     const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
     const totalIngresos = sum(ingresos)
-    return { pagos, alquiler, debitos, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
+    return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
   }
 
   const actual = desgloseDelMes(selectedMonth)
@@ -116,10 +125,28 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     pagosPorCuenta.set(p.account_id, list)
   })
 
-  // Cuotas comprometidas a futuro: para cada compra en cuotas (agrupando por
-  // nombre+monto+cuotas_total+cuenta para no contar cada cuota facturada por
-  // separado), lo que falta facturar de acá en adelante.
-  const cuotasComprometidas = () => {
+  // DIAGNÓSTICO TEMPORAL — el cálculo de abajo (cuotasComprometidasBuggy) tiene
+  // un bug reportado (total y cantidad de compras imposibles): agrupa por
+  // t.nombre/t.detalle "tal cual", pero esos campos vienen con el sufijo de
+  // cuota del banco pegado (ej. "Compra 3/12"), que cambia en cada fila de la
+  // misma compra real — el Map casi nunca deduplica, así que cada cuota YA
+  // FACTURADA de una misma compra se cuenta como una "compra" aparte, y sus
+  // cuotas restantes quedan sumadas una vez por cada fila histórica en vez de
+  // una sola vez. cuotasComprometidasFixed() usa la misma lógica ya probada en
+  // el widget "Cuotas pendientes" de Dashboard.js (stripCuotaSuffix + agrupar
+  // por mes de inicio de compra) para comparar contra el valor corregido.
+  const stripCuotaSuffix = (n) => (n || '')
+    .replace(/\s*\(1\/3\)\s*$/, '')
+    .replace(/\s+\d+\/\d+\s*$/, '')
+    .trim()
+  const mesInicioCompra = (t) => {
+    if (!t.fecha) return ''
+    const f = new Date(t.fecha + 'T12:00:00')
+    const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  const cuotasComprometidasBuggy = () => {
     const grupos = new Map()
     transactions.forEach(t => {
       if ((t.cuotas_total || 1) <= 1) return
@@ -128,15 +155,65 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
       if (!existing || (t.cuota_numero || 1) > (existing.cuota_numero || 1)) grupos.set(key, t)
     })
     let total = 0, compras = 0
+    const detalle = []
     grupos.forEach(t => {
       const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
       if (remaining <= 0) return
-      total += aArs(t) * remaining
+      const contribucion = aArs(t) * remaining
+      total += contribucion
       compras++
+      detalle.push({ nombre: t.nombre || t.detalle || '(sin nombre)', moneda: t.moneda, valorCuota: Number(t.monto), cuotaActual: t.cuota_numero, cuotasTotales: t.cuotas_total, restantes: remaining, contribucion })
     })
-    return { total, compras }
+    return { total, compras, detalle: detalle.sort((a, b) => b.contribucion - a.contribucion) }
   }
-  const cuotas = cuotasComprometidas()
+
+  const cuotasComprometidasFixed = () => {
+    const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1)
+    const groupKeyCuota = (t) => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
+    const maxCuotaPorGrupo = {}
+    conCuotas.forEach(t => {
+      const key = groupKeyCuota(t)
+      const cn = t.cuota_numero || 0
+      if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
+    })
+    // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales con
+    // el mismo número de cuota — hay que sumarlas para recuperar el monto
+    // total de esa cuota, no quedarnos con una sola parte.
+    const latestByPurchase = {}
+    conCuotas.forEach(t => {
+      const key = groupKeyCuota(t)
+      if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
+      if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
+      latestByPurchase[key].monto += Number(t.monto)
+    })
+    let total = 0, compras = 0
+    const detalle = []
+    Object.values(latestByPurchase).forEach(t => {
+      const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
+      if (remaining <= 0) return
+      const contribucion = aArs(t) * remaining
+      total += contribucion
+      compras++
+      detalle.push({ nombre: stripCuotaSuffix(t.nombre || t.detalle || '') || '(sin nombre)', moneda: t.moneda, valorCuota: Number(t.monto), cuotaActual: t.cuota_numero, cuotasTotales: t.cuotas_total, restantes: remaining, contribucion })
+    })
+    return { total, compras, detalle: detalle.sort((a, b) => b.contribucion - a.contribucion) }
+  }
+
+  const cuotasBuggy = cuotasComprometidasBuggy()
+  const cuotasFixed = cuotasComprometidasFixed()
+  // Se sigue mostrando el número viejo (con bug) hasta confirmar el diagnóstico.
+  const cuotas = cuotasBuggy
+
+  useEffect(() => {
+    if (cuotasBuggy.compras === 0) return
+    console.group('🔧 Diagnóstico: Cuotas comprometidas a futuro')
+    console.log(`Cálculo actual (con bug): $${Math.round(cuotasBuggy.total).toLocaleString('es-AR')} · ${cuotasBuggy.compras} "compras"`)
+    console.table(cuotasBuggy.detalle.slice(0, 10))
+    console.log(`Cálculo corregido (preview): $${Math.round(cuotasFixed.total).toLocaleString('es-AR')} · ${cuotasFixed.compras} compras reales`)
+    console.table(cuotasFixed.detalle.slice(0, 10))
+    console.groupEnd()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions])
 
   const historial = getLast6Months().map(m => ({
     mes: m,
@@ -164,6 +241,31 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           {extra}
         </div>
         <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(totalArs)}</p>
+      </div>
+    )
+  }
+
+  // Igual que grupoRow, pero expandible: al abrirlo lista cada movimiento
+  // individual (nombre, fecha, monto en su moneda original).
+  const grupoRowExpandible = (icono, nombre, list, abierto, setAbierto) => {
+    if (list.length === 0) return null
+    const totalArs = list.reduce((s, t) => s + aArs(t), 0)
+    return (
+      <div key={nombre} style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
+        <div onClick={() => setAbierto(v => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+          <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>{abierto ? '▾' : '▸'} {icono} {nombre}</p>
+          <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(totalArs)}</p>
+        </div>
+        {abierto && (
+          <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {list.map(t => (
+              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', color: muted }}>
+                <span>{t.nombre || t.detalle} · {formatFecha(t.fecha)}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{monedaSymbol(t.moneda)} {formatMontoFull(t.monto)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -240,27 +342,11 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           )
         })}
         {grupoRow('🏠', 'Alquiler / Expensas', actual.alquiler)}
-        {actual.debitos.length > 0 && (
-          <div style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
-            <div onClick={() => setDebitosAbierto(v => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>{debitosAbierto ? '▾' : '▸'} 🏦 Débitos automáticos</p>
-              <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(actual.debitos.reduce((s, t) => s + aArs(t), 0))}</p>
-            </div>
-            {debitosAbierto && (
-              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {actual.debitos.map(t => (
-                  <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', color: muted }}>
-                    <span>{t.nombre || t.detalle} · {formatFecha(t.fecha)}</span>
-                    <span style={{ whiteSpace: 'nowrap' }}>{monedaSymbol(t.moneda)} {formatMontoFull(t.monto)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {grupoRowExpandible('🏦', 'Débitos automáticos', actual.debitosAutomaticos, debitosAbierto, setDebitosAbierto)}
+        {grupoRowExpandible('🔁', 'Transferencias', actual.transferencias, transferenciasAbierto, setTransferenciasAbierto)}
         {grupoRow('📱', 'Suscripciones', actual.suscripciones)}
         {grupoRow('💵', 'Efectivo', actual.efectivo)}
-        {pagosPorCuenta.size === 0 && actual.alquiler.length === 0 && actual.debitos.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
+        {pagosPorCuenta.size === 0 && actual.alquiler.length === 0 && actual.debitosAutomaticos.length === 0 && actual.transferencias.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
           <p style={{ margin: 0, fontSize: '13px', color: muted }}>No hay pagos registrados este mes.</p>
         )}
       </div>
@@ -285,6 +371,45 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           <p style={label}>Cuotas comprometidas a futuro</p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>Estimado: {cuotas.compras} compra{cuotas.compras === 1 ? '' : 's'} en cuotas con saldo pendiente de facturar.</p>
+
+          {/* DIAGNÓSTICO TEMPORAL — se va a sacar en cuanto se confirme el bug */}
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `2px dashed ${border}` }}>
+            <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#e07b39', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              🔧 Diagnóstico temporal — no es un valor final
+            </p>
+            <p style={{ margin: '0 0 4px', fontSize: '12px', color: muted }}>
+              Actual (con bug): <strong style={{ color: txt }}>$ {formatMonto(cuotasBuggy.total)}</strong> · {cuotasBuggy.compras} "compras"
+            </p>
+            <p style={{ margin: '0 0 10px', fontSize: '12px', color: muted }}>
+              Corregido (preview): <strong style={{ color: txt }}>$ {formatMonto(cuotasFixed.total)}</strong> · {cuotasFixed.compras} compras reales
+            </p>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '600', color: muted }}>Top 10 del cálculo actual (con bug):</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ color: muted, textAlign: 'left' }}>
+                    <th style={{ padding: '3px 6px' }}>Compra</th>
+                    <th style={{ padding: '3px 6px' }}>Cuota</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Valor cuota</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Restantes</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>Aporta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cuotasBuggy.detalle.slice(0, 10).map((d, i) => (
+                    <tr key={i} style={{ color: txt, borderTop: `1px solid ${border}` }}>
+                      <td style={{ padding: '3px 6px' }}>{d.nombre}</td>
+                      <td style={{ padding: '3px 6px' }}>{d.cuotaActual}/{d.cuotasTotales}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{monedaSymbol(d.moneda)} {formatMontoFull(d.valorCuota)}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{d.restantes}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>$ {formatMonto(d.contribucion)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ margin: '10px 0 0', fontSize: '11px', color: muted }}>(También se imprimió el detalle completo en la consola del navegador.)</p>
+          </div>
         </div>
       )}
 
