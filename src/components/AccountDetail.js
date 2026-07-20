@@ -1618,14 +1618,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           return a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
         })
     : []
-  const statementsVencidas = statementsAPagar.filter(s => diasRestantesDe(s) < 0)
-  const statementsNoVencidas = statementsAPagar.filter(s => !(diasRestantesDe(s) < 0))
-  // Cálculo BOTTOM-UP (regla A): la suma de lo pendiente de cada obligación visible en
-  // pantalla, cada una recortada a >= 0 antes de sumar — así un sobrepago informativo en
-  // una tarjeta nunca puede "tapar" (netear) lo que sigue debiendo otra. Nunca puede dar
-  // más de lo que en verdad falta pagar.
-  const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + Math.max(0, Number(s.total_resumen) || 0), 0)
-  const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
+  // "Te falta pagar" es únicamente lo YA facturado (resúmenes reales, con
+  // vencimiento real) — un resumen abierto ("Ciclo actual") todavía no venció, no es
+  // deuda exigible este mes: se muestra aparte, en "Próximos vencimientos", y no suma acá.
+  const statementsFacturados = statementsAPagar.filter(s => !s._virtual)
+  const statementsVencidas = statementsFacturados.filter(s => diasRestantesDe(s) < 0)
+  const statementsNoVencidas = statementsFacturados.filter(s => !(diasRestantesDe(s) < 0))
+  // Cálculo BOTTOM-UP (regla A): la suma de lo pendiente de cada obligación YA
+  // facturada visible en pantalla, cada una recortada a >= 0 antes de sumar — así un
+  // sobrepago informativo en una tarjeta nunca puede "tapar" (netear) lo que sigue
+  // debiendo otra. Nunca puede dar más de lo que en verdad falta pagar.
+  const totalAPagarGeneral = statementsFacturados.reduce((sum, s) => sum + Math.max(0, Number(s.total_resumen) || 0), 0)
+  const totalAPagarGeneralUsd = statementsFacturados.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
+  // Lo que se está acumulando en resúmenes todavía abiertos (no facturados): informativo,
+  // no suma a "Te falta pagar" — recién se factura (y empieza a "deberse") en el
+  // próximo cierre de cada tarjeta.
+  const totalProximoResumenArs = statementsSinResumen.reduce((sum, s) => sum + Math.max(0, Number(s.total_resumen) || 0), 0)
+  const totalProximoResumenUsd = statementsSinResumen.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
       ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
@@ -1712,6 +1721,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const mamaParaAlquilerExpensas = Math.min(totalIngresoMama, totalAlquilerExpensasMes)
   const mamaExcedente = totalIngresoMama - mamaParaAlquilerExpensas
   const poolPersonalTrabajo = totalIngresosPropios + mamaExcedente
+  // Cualquier ingreso de este mes que no matchee ninguno de los nombres de arriba —
+  // para que "Ingresos de este mes" no oculte plata que sí entró.
+  const totalOtrosIngresos = Math.max(0, ingresosEsteMes.reduce((sum, t) => sum + Number(t.monto), 0) - totalIngresosPropios - totalIngresoMama)
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1834,14 +1846,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       }}>
         <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
           <div>
-            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
+            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Resumen abierto' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
             {s._virtual && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                Contando desde
-                <input type="date" value={s.cicloDesde || ''} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
-                  style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
-                {!s.cicloDesde && '(auto)'}
-              </p>
+              <>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#4a9e7a' }}>Todavía no facturado · se incluye en el próximo resumen</p>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Contando desde
+                  <input type="date" value={s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : '')} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
+                    style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
+                  {!s.cicloDesde && '(auto)'}
+                </p>
+              </>
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -1984,18 +1999,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Bottom-up (regla A): lista cada obligación real en pantalla con su propio
-              pendiente — ya no una resta global ("Total del mes − coberturas − pagos")
-              que podía desalinearse del header. Esto ES literalmente cómo se arma
+          {/* Bottom-up (regla A): lista cada obligación YA FACTURADA en pantalla con su
+              propio pendiente — nunca una resta global que podía desalinearse del
+              header, y nunca un resumen todavía abierto (ver "Próximos vencimientos"
+              más abajo): "Te falta pagar" es exigible este mes, no lo que se está
+              acumulando para el próximo cierre. Esto ES literalmente cómo se arma
               totalAPagarGeneral, así que termina siempre, por construcción, en el mismo
               número: no hay otra cuenta que concilie. */}
-          {allAccounts && statementsAPagar.length > 0 && (
+          {allAccounts && statementsFacturados.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>¿Qué compone lo que falta pagar?</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                {statementsAPagar.map(s => {
+                {statementsFacturados.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
-                  const label = `${nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}${s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}`
+                  const label = `${nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}${s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}`
                   const saldada = Math.round(s.total_resumen) <= 0 && Math.round(s.total_usd * 100) <= 0
                   return (
                     <div key={s.id} style={{ padding: '5px 0' }}>
@@ -2023,16 +2040,49 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Cubierto este mes: informativo, no resta de "Te falta pagar" ni de
+          {/* Próximos vencimientos: lo que se está acumulando en resúmenes todavía
+              abiertos (compras/cuotas nuevas desde el último cierre de cada tarjeta) —
+              informativo, no suma a "Te falta pagar": recién pasa a ser deuda exigible
+              cuando el banco cierra ese resumen. */}
+          {allAccounts && statementsSinResumen.length > 0 && (
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🕐 Próximos vencimientos</p>
+              <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".</p>
+              <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                {statementsSinResumen.map(s => {
+                  const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
+                  return (
+                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                      <span>{nombreCuenta ? `💳 ${nombreCuenta}` : 'Resumen abierto'}</span>
+                      <span style={{ fontWeight: '600' }}>
+                        {[
+                          s.total_resumen > 0 ? `$ ${formatMonto(s.total_resumen)}` : null,
+                          s.total_usd > 0 ? `U$S ${formatMontoFull(s.total_usd)}` : null,
+                        ].filter(Boolean).join(' + ') || '$ 0'}
+                      </span>
+                    </div>
+                  )
+                })}
+                {(totalProximoResumenArs > 0 || totalProximoResumenUsd > 0) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '15px' }}>
+                    <span>Total acumulado</span>
+                    <span>$ {formatMonto(totalProximoResumenArs)}{totalProximoResumenUsd > 0 ? ` + U$S ${formatMontoFull(totalProximoResumenUsd)}` : ''}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Ingresos de este mes: informativo, no resta de "Te falta pagar" ni de
               ninguna otra cuenta — es una preferencia personal de esta cuenta, no un
               cálculo que tenga que conciliar con nada más en pantalla. */}
-          {allAccounts && userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0) && (
+          {allAccounts && userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0 || totalOtrosIngresos > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cubierto este mes</p>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ingresos de este mes</p>
+              <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Informativo — no resta de "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {mamaParaAlquilerExpensas > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
-                    <span>Casa/mamá (alquiler/expensas)</span>
+                    <span>Cubre alquiler/expensas (Casa/mamá)</span>
                     <span style={{ fontWeight: '600' }}>$ {formatMonto(mamaParaAlquilerExpensas)}</span>
                   </div>
                 )}
@@ -2040,6 +2090,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
                     <span>Personal/Trabajo{mamaExcedente > 0 ? ' (+ excedente mamá)' : ''}</span>
                     <span style={{ fontWeight: '600' }}>$ {formatMonto(poolPersonalTrabajo)}</span>
+                  </div>
+                )}
+                {totalOtrosIngresos > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                    <span>Otros ingresos</span>
+                    <span style={{ fontWeight: '600' }}>$ {formatMonto(totalOtrosIngresos)}</span>
                   </div>
                 )}
               </div>
@@ -2141,7 +2197,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </div>
           )}
-          {statementsAPagar.length === 0 ? (
+          {statementsFacturados.length === 0 && statementsSinResumen.length === 0 ? (
             <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -2158,6 +2214,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {statementsNoVencidas.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {statementsNoVencidas.map(s => renderStatementCard(s, false))}
+                </div>
+              )}
+              {statementsSinResumen.length > 0 && (
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    🕐 Próximos vencimientos (todavía no facturado)
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {statementsSinResumen.map(s => renderStatementCard(s, false))}
+                  </div>
                 </div>
               )}
             </div>
