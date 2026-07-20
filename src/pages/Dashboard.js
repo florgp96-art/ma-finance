@@ -6,6 +6,7 @@ import { dividirTresVias } from '../lib/divisionTresVias'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
+import CashView from '../components/CashView'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
@@ -173,6 +174,18 @@ export default function Dashboard() {
   const [tcTipo, setTcTipo] = useState(() => localStorage.getItem('tc_tipo_ma') || 'blue')
   const [exchangeRates, setExchangeRates] = useState([])
   const [dolarRates, setDolarRates] = useState({})
+  // Tipo de cambio manual (setting editable por el usuario, opcional): si está
+  // activado, se usa en vez de la cotización automática para los totales
+  // combinados ARS+USD (Resúmenes mensuales, A pagar).
+  const [tcManual, setTcManual] = useState(() => {
+    try { const s = localStorage.getItem('tc_manual_ma'); return s ? JSON.parse(s) : { valor: null, enabled: false } } catch { return { valor: null, enabled: false } }
+  })
+  const tipoCambioEfectivo = (tcManual?.enabled && tcManual?.valor) ? String(tcManual.valor) : tipoCambio
+  const guardarTipoCambioManual = (valor) => {
+    setTcManual(valor)
+    try { localStorage.setItem('tc_manual_ma', JSON.stringify(valor)) } catch {}
+    persistPref('tc_manual', valor)
+  }
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
@@ -361,6 +374,8 @@ export default function Dashboard() {
         const cuentasAhorroDB = readPref('cuentas_ahorro')
         if (Array.isArray(cuentasAhorroDB)) setCuentasAhorro(cuentasAhorroDB)
         else if (cuentasAhorro.length > 0) persistPref('cuentas_ahorro', cuentasAhorro)
+        const tcManualDB = readPref('tc_manual')
+        if (tcManualDB) setTcManual(tcManualDB)
         prefsLoaded.current = true
 
         // Mini chart: últimos 6 meses — guardamos txs crudas para recalcular con TC live
@@ -2678,6 +2693,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openTipoCambio()}>💱 TIPO DE CAMBIO</button>
                       </div>
                     )}
                   </div>
@@ -2882,6 +2898,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openTipoCambio()}>💱 TIPO DE CAMBIO</button>
                     </div>
                   )}
                 </>
@@ -2963,7 +2980,7 @@ export default function Dashboard() {
               </div>
             )
           })()}
-          {(isTablet || (!isMobile && selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar'))) && sideWidgets()}
+          {(isTablet || (!isMobile && selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar' || dashboardTab === 'caja'))) && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
           {/* Contenido derecho */}
@@ -2978,7 +2995,8 @@ export default function Dashboard() {
                     style={{ display: 'flex', overflowX: 'auto', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}
                   >
                     {[
-                      { key: 'resumen', label: '📊 Resumen' },
+                      { key: 'resumen', label: '📊 Movimientos del mes' },
+                      { key: 'caja', label: '💵 Resúmenes mensuales' },
                       { key: 'apagar', label: '📌 A pagar' },
                       ...childrenDB.map(c => ({ key: c.nombre, label: `${customIcons[c.nombre] || '👧'} ${c.nombre}` }))
                     ].map(tab => (
@@ -3010,8 +3028,12 @@ export default function Dashboard() {
                   <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} ingresoTagsOcultos={ingresoTagsOcultos} onAccountsChanged={fetchAccounts} />
                 )}
 
+                {dashboardTab === 'caja' && (
+                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} customIcons={customIcons} />
+                )}
+
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {childrenDB.some(c => c.nombre === dashboardTab) && (
@@ -3127,7 +3149,7 @@ export default function Dashboard() {
 
           {/* Widgets — desktop: tercera columna fija a la derecha (se oculta en Resumen/A pagar
               de Todas las cuentas para darle más ancho a la tabla) */}
-          {!isMobile && !isTablet && !(selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar')) && (
+          {!isMobile && !isTablet && !(selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar' || dashboardTab === 'caja')) && (
           <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
             {sideWidgets()}
           </div>
@@ -4048,6 +4070,8 @@ export default function Dashboard() {
         saveCustomIcon={saveCustomIcon}
         showToast={showToast}
         onRefresh={() => setRefreshKey(k => k + 1)}
+        tcManual={tcManual}
+        onSaveTC={guardarTipoCambioManual}
       />
     </>
   )

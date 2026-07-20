@@ -20,6 +20,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   saveCustomIcon,
   showToast,
   onRefresh,
+  tcManual,
+  onSaveTC,
 }, ref) {
   // Modal visibility
   const [showHijos, setShowHijos] = useState(false)
@@ -27,7 +29,12 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [catTab, setCatTab] = useState('categorias') // 'categorias' | 'iconos'
   const [showAliases, setShowAliases] = useState(false)
   const [showCambiarClave, setShowCambiarClave] = useState(false)
+  const [showTipoCambio, setShowTipoCambio] = useState(false)
   const [dividiendoTresVias, setDividiendoTresVias] = useState(false)
+
+  // Tipo de cambio manual
+  const [tcInput, setTcInput] = useState('')
+  const [tcEnabledInput, setTcEnabledInput] = useState(false)
 
   // Hijos form
   const [newHijoNombre, setNewHijoNombre] = useState('')
@@ -92,6 +99,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     openAliases: () => { fetchUserAliases(); setShowAliases(true) },
     openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
     openIconos: () => { setCatTab('iconos'); setShowCategorias(true) },
+    openTipoCambio: () => { setTcInput(tcManual?.valor != null ? String(tcManual.valor) : ''); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
   }))
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -248,6 +256,15 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setClaveMsg({ tipo: 'ok', texto: '¡Contraseña actualizada correctamente!' })
     setNuevaClave('')
     setConfirmarClave('')
+  }
+
+  const handleSaveTC = (e) => {
+    e.preventDefault()
+    const valor = parseFloat(tcInput)
+    if (!valor || valor <= 0) { showToast?.('Ingresá un tipo de cambio válido.', 'error'); return }
+    onSaveTC?.({ valor, enabled: tcEnabledInput })
+    setShowTipoCambio(false)
+    showToast?.('Tipo de cambio guardado.')
   }
 
   // Cuenta cuántos gastos coinciden con la palabra clave de una regla pero todavía
@@ -781,6 +798,40 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               )}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" style={s.cancelBtn} onClick={() => setShowCambiarClave(false)}>Cancelar</button>
+                <button type="submit" style={s.saveBtn}>Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Tipo de cambio */}
+      {showTipoCambio && (
+        <div style={s.overlay}>
+          <div style={{ ...s.modal, maxWidth: '380px' }}>
+            <h3 style={s.modalTitle}>💱 Tipo de cambio</h3>
+            <form onSubmit={handleSaveTC} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={s.label}>Dólar manual (ARS por USD)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  style={s.input}
+                  placeholder="Ej: 1250"
+                  value={tcInput}
+                  onChange={e => setTcInput(e.target.value)}
+                  required
+                />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, cursor: 'pointer' }}>
+                <input type="checkbox" checked={tcEnabledInput} onChange={e => setTcEnabledInput(e.target.checked)} />
+                Usar este valor en vez de la cotización automática
+              </label>
+              <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                Se usa para convertir montos en USD a ARS en los totales combinados (ej. Resúmenes mensuales, A pagar). Si lo dejás desactivado, se sigue usando la cotización automática de siempre.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="button" style={s.cancelBtn} onClick={() => setShowTipoCambio(false)}>Cancelar</button>
                 <button type="submit" style={s.saveBtn}>Guardar</button>
               </div>
             </form>
