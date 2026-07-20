@@ -46,6 +46,16 @@ export const subcategoriasDeIngreso = (categorias, subcategorias) => {
   return (subcategorias || []).filter(s => s.category_id === catIngresos.id)
 }
 
+// Texto de tooltip con el TC usado para el equivalente en ARS de un movimiento en
+// USD: siempre el TC congelado del movimiento (fx_rate) — nunca el TC actual — y
+// solo cae al TC vigente como aproximación en movimientos viejos sin fx_rate.
+export const tcTooltipDe = (tx, tcFallback) => {
+  if (tx.moneda !== 'USD') return undefined
+  const tc = Number(tx.fx_rate) || parseFloat(tcFallback) || 0
+  if (tc <= 0) return undefined
+  return `U$S ${formatMonto(Math.abs(Number(tx.monto)))} · TC $ ${formatMontoFull(tc)} = $ ${formatMonto(Math.abs(Number(tx.monto)) * tc)}`
+}
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
 // El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
@@ -876,8 +886,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const moneda = t.moneda || 'ARS'
         if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
         if (moneda === 'USD') {
+          // TC congelado del movimiento (fx_rate) si lo tiene — nunca el TC actual
+          // para algo histórico. Solo cae al TC del período (tc) en datos viejos
+          // de antes de que existiera fx_rate.
+          const tcTx = Number(t.fx_rate) || tcNum
           acc[cat].originalUSD += monto
-          if (tcNum > 0) acc[cat].value += monto * tcNum
+          if (tcTx > 0) acc[cat].value += monto * tcTx
         } else if (moneda === 'EUR') {
           acc[cat].originalEUR += monto
           if (tcEUR > 0) acc[cat].value += monto * tcEUR
@@ -905,7 +919,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const txs = mesTxs.filter(t => getChildName(t) === name && t.tipo === 'gasto')
     return {
       name,
-      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
+      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
       originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
       originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
       originalEUR: txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + Number(t.monto), 0),
@@ -917,7 +931,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
       const persona = getChildName(t) || 'Personal'
       if (!acc[persona]) acc[persona] = { name: persona, value: 0, originalARS: 0, originalUSD: 0 }
-      const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+      const monto = t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
       acc[persona].value += monto
       if (t.moneda === 'ARS') acc[persona].originalARS += Number(t.monto)
       else acc[persona].originalUSD += Number(t.monto)
@@ -1167,7 +1181,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       </td>
       <td style={{...styles.td, textAlign:'right', fontWeight:'600',
         whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
-        color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
+        color: darkMode ? '#F0EDEC' : '#2d2d2d'}}
+        title={tcTooltipDe(tx, tcEfectivo)}>
         {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
       </td>
       {editingTx === tx.id ? renderEditActions(tx) : (
@@ -2810,7 +2825,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
                         )}
                       </td>
-                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}}>
+                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcEfectivo)}>
                         {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
                       </td>
                       {editingTx === tx.id ? renderEditActions(tx) : (
