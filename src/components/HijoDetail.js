@@ -25,6 +25,8 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
+  const [sortKey, setSortKey] = useState('fecha')
+  const [sortDir, setSortDir] = useState('desc')
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
   const isMobile = windowWidth < 768
 
@@ -164,6 +166,25 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const subcatsParaEditar = subcategories.filter(s => {
     const cat = categories.find(c => c.nombre === editCategoria)
     return cat && s.category_id === cat.id
+  })
+
+  // Mismo patrón reutilizable de ordenamiento clickeable que ya usan las tablas
+  // de AccountDetail.js (handleSort/sortIcon/thSortable) — para aplicar después
+  // en las demás listas de movimientos de la app (tarea 3).
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir(key === 'fecha' ? 'desc' : 'asc') }
+  }
+  const sortIcon = (key) => sortKey !== key ? ' ↕' : (sortDir === 'asc' ? ' ↑' : ' ↓')
+  const sortedTx = [...filteredTx].sort((a, b) => {
+    let valA, valB
+    if (sortKey === 'fecha') { valA = a.fecha || ''; valB = b.fecha || '' }
+    else if (sortKey === 'descripcion') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
+    else if (sortKey === 'categoria') { valA = (a.categories?.nombre || '').toLowerCase(); valB = (b.categories?.nombre || '').toLowerCase() }
+    else { valA = Number(a.monto); valB = Number(b.monto) }
+    if (valA < valB) return sortDir === 'asc' ? -1 : 1
+    if (valA > valB) return sortDir === 'asc' ? 1 : -1
+    return 0
   })
 
   const s = getStyles(darkMode)
@@ -313,26 +334,28 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
               <thead>
                 <tr>
                   {[
-                    { h: 'Fecha', w: isMobile ? '14%' : '8%' },
-                    { h: 'Descripción', w: isMobile ? '32%' : '24%' },
-                    { h: 'Categoría', w: isMobile ? '20%' : '14%' },
+                    { h: 'Fecha', w: isMobile ? '14%' : '8%', key: 'fecha' },
+                    { h: 'Descripción', w: isMobile ? '32%' : '24%', key: 'descripcion' },
+                    { h: 'Categoría', w: isMobile ? '20%' : '14%', key: 'categoria' },
                     { h: 'Subcategoría', w: '13%', hideMobile: true },
                     { h: 'Forma de pago', w: '13%', hideMobile: true },
-                    { h: 'Monto', w: isMobile ? '20%' : '16%' },
+                    { h: 'Monto', w: isMobile ? '20%' : '16%', key: 'monto' },
                     { h: '', w: isMobile ? '14%' : '12%' },
-                  ].map(({ h, w, hideMobile }) => (
-                    <th key={h} style={{
+                  ].map(({ h, w, hideMobile, key }) => (
+                    <th key={h || 'acciones'} onClick={key ? () => handleSort(key) : undefined} style={{
                       textAlign: 'left', padding: '8px 10px', width: w,
                       display: hideMobile && isMobile ? 'none' : undefined,
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
                       color: '#6e6e73', fontWeight: '400', fontSize: '11px',
-                      textTransform: 'uppercase', letterSpacing: '0.04em'
-                    }}>{h}</th>
+                      textTransform: 'uppercase', letterSpacing: '0.04em',
+                      cursor: key ? 'pointer' : undefined, userSelect: key ? 'none' : undefined,
+                      whiteSpace: 'nowrap'
+                    }}>{h}{key && <span style={{ fontSize: '10px', color: darkMode ? '#5A4A5A' : '#bbb' }}>{sortIcon(key)}</span>}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredTx.map((t, i) => {
+                {sortedTx.map((t, i) => {
                   const isEditing = editingTx === t.id
                   return (
                     <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
