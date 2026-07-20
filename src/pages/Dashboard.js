@@ -192,6 +192,8 @@ export default function Dashboard() {
   const [dashboardTab, setDashboardTab] = useState('resumen')
   const tabsScrollRef = useRef(null)
   const [sharedPeriod, setSharedPeriod] = useState([])
+  const [selectedHijoNombre, setSelectedHijoNombre] = useState(null)
+  const [hijosResumenMes, setHijosResumenMes] = useState({})
 
   // Excel import
   const [showExcel, setShowExcel] = useState(false)
@@ -224,6 +226,39 @@ export default function Dashboard() {
   const [tieneHijos, setTieneHijos] = useState(null)
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
+
+  useEffect(() => {
+    if (childrenDB.length === 0) return
+    if (!selectedHijoNombre || !childrenDB.some(c => c.nombre === selectedHijoNombre)) {
+      setSelectedHijoNombre(childrenDB[0].nombre)
+    }
+  }, [childrenDB, selectedHijoNombre])
+
+  useEffect(() => {
+    if (dashboardTab !== 'hijos' || childrenDB.length === 0) return
+    let cancelled = false
+    const fetchResumenHijos = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const now = new Date()
+      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const resultados = {}
+      await Promise.all(childrenDB.map(async c => {
+        const { data } = await supabase.from('transactions')
+          .select('monto, moneda, fecha')
+          .eq('user_id', user.id)
+          .gt('monto', 0)
+          .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
+          .gte('fecha', `${mesActual}-01`)
+        resultados[c.nombre] = (data || [])
+          .filter(t => t.moneda === 'ARS')
+          .reduce((s, t) => s + Number(t.monto), 0)
+      }))
+      if (!cancelled) setHijosResumenMes(resultados)
+    }
+    fetchResumenHijos()
+    return () => { cancelled = true }
+  }, [dashboardTab, childrenDB, refreshKey])
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
@@ -2987,18 +3022,22 @@ export default function Dashboard() {
           <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
-                {/* Tabs — General + hijos dinámicos */}
+                {/* Tabs — patrón pill/segmented */}
                 <div style={{ position: 'relative', marginBottom: '24px' }}>
                   <div
                     ref={tabsScrollRef}
                     className="tabs-scroll"
-                    style={{ display: 'flex', overflowX: 'auto', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}
+                    style={{
+                      display: 'flex', gap: '3px', overflowX: 'auto',
+                      background: darkMode ? '#2A272A' : '#EDE8EC',
+                      borderRadius: '12px', padding: '3px'
+                    }}
                   >
                     {[
                       { key: 'resumen', label: '📊 Movimientos del mes' },
                       { key: 'caja', label: '💵 Resúmenes mensuales' },
                       { key: 'apagar', label: '📌 A pagar' },
-                      ...childrenDB.map(c => ({ key: c.nombre, label: `${customIcons[c.nombre] || '👧'} ${c.nombre}` }))
+                      ...(childrenDB.length > 0 ? [{ key: 'hijos', label: '👧 Hijos' }] : [])
                     ].map(tab => (
                       <button key={tab.key}
                         data-tab={tab.key}
@@ -3008,20 +3047,22 @@ export default function Dashboard() {
                           el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
                         }}
                         style={{
-                          padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
-                          fontSize: isMobile ? '13px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
-                          color: dashboardTab === tab.key ? '#5C4F5C' : '#6e6e73',
-                          borderBottom: dashboardTab === tab.key ? '2px solid #5C4F5C' : '2px solid transparent',
-                          marginBottom: '-2px', outline: 'none', transition: 'color 0.15s',
-                          whiteSpace: 'nowrap'
+                          padding: isMobile ? '7px 9px' : '9px 16px', border: 'none', cursor: 'pointer', borderRadius: '9px',
+                          fontSize: isMobile ? '11.5px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
+                          color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
+                          background: dashboardTab === tab.key ? '#6B7BB8' : 'transparent',
+                          outline: 'none', whiteSpace: 'nowrap', flex: '0 0 auto',
+                          transition: 'background-color 0.2s ease, color 0.2s ease'
                         }}
                       >
                         {tab.label}
                       </button>
                     ))}
                   </div>
-                  {/* Gradiente para indicar que hay más tabs a la derecha */}
-                  <div style={{ position: 'absolute', right: 0, top: 0, height: 'calc(100% - 2px)', width: '48px', background: `linear-gradient(to right, transparent, ${darkMode ? '#2A272A' : 'white'})`, pointerEvents: 'none' }} />
+                  {/* Gradiente para indicar que hay más tabs a la derecha en mobile */}
+                  {isMobile && (
+                    <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '28px', borderRadius: '0 12px 12px 0', background: `linear-gradient(to right, transparent, ${darkMode ? '#2A272A' : '#EDE8EC'})`, pointerEvents: 'none' }} />
+                  )}
                 </div>
 
                 {dashboardTab === 'resumen' && (
@@ -3033,20 +3074,53 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={setDashboardTab} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={(nombre) => { setSelectedHijoNombre(nombre); setDashboardTab('hijos') }} />
                 )}
 
-                {childrenDB.some(c => c.nombre === dashboardTab) && (
-                  <HijoDetail
-                    hijoNombre={dashboardTab}
-                    hijoId={childrenDB.find(c => c.nombre === dashboardTab)?.id}
-                    darkMode={darkMode}
-                    tipoCambio={tipoCambio}
-                    tipoCambioEUR={tipoCambioEUR}
-                    tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))}
-                    refreshKey={refreshKey}
-                    initialPeriod={sharedPeriod}
-                  />
+                {dashboardTab === 'hijos' && childrenDB.length > 0 && (
+                  <div>
+                    {Object.keys(hijosResumenMes).length > 0 && (
+                      <div style={{ fontSize: '13px', color: darkMode ? '#C0B0C0' : '#6e6e73', marginBottom: '14px', fontFamily: '"Montserrat", sans-serif' }}>
+                        {childrenDB.map((c, i) => (
+                          <span key={c.id}>
+                            {i > 0 && ' · '}
+                            {c.nombre}: {formatMontoFull(hijosResumenMes[c.nombre] || 0)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                      {childrenDB.map(c => {
+                        const activo = (selectedHijoNombre || childrenDB[0].nombre) === c.nombre
+                        return (
+                          <button key={c.id}
+                            onClick={() => setSelectedHijoNombre(c.nombre)}
+                            style={{
+                              padding: '8px 16px', border: 'none', borderRadius: '20px', cursor: 'pointer',
+                              fontSize: '13.5px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
+                              color: activo ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
+                              background: activo ? '#6B7BB8' : (darkMode ? '#2A272A' : '#EDE8EC'),
+                              transition: 'background-color 0.2s ease, color 0.2s ease',
+                              display: 'flex', alignItems: 'center', gap: '6px'
+                            }}
+                          >
+                            <span>{customIcons[c.nombre] || '👧'}</span>
+                            <span>{c.nombre}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <HijoDetail
+                      hijoNombre={selectedHijoNombre || childrenDB[0].nombre}
+                      hijoId={childrenDB.find(c => c.nombre === (selectedHijoNombre || childrenDB[0].nombre))?.id}
+                      darkMode={darkMode}
+                      tipoCambio={tipoCambio}
+                      tipoCambioEUR={tipoCambioEUR}
+                      tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))}
+                      refreshKey={refreshKey}
+                      initialPeriod={sharedPeriod}
+                    />
+                  </div>
                 )}
 
                 {dashboardTab === 'apagar' && (
