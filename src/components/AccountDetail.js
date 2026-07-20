@@ -460,12 +460,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [hijoTotalExpandido, setHijoTotalExpandido] = useState(null)
   const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
   const [cascadaAbierta, setCascadaAbierta] = useState(false)
-  const [diagnosticoArrastreAbierto, setDiagnosticoArrastreAbierto] = useState(() => new Set())
-  const toggleDiagnosticoArrastre = (accountId) => setDiagnosticoArrastreAbierto(prev => {
-    const next = new Set(prev)
-    next.has(accountId) ? next.delete(accountId) : next.add(accountId)
-    return next
-  })
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -1461,119 +1455,41 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
     return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
   }
-  // Saldo a favor con arrastre entre períodos, por tarjeta y por moneda: si en
-  // un período los pagos superan el monto del resumen, el excedente no se
-  // pierde — pasa como crédito al resumen siguiente de la MISMA tarjeta,
-  // encadenándose si hace falta (si el excedente también supera al resumen
-  // siguiente, lo que sobra sigue pasando al próximo). Cálculo puramente
-  // derivado de statements/transactions, sin persistir nada nuevo: se
-  // recorre el historial completo de resúmenes reales de cada tarjeta en
-  // orden cronológico (por fecha de cierre), arrastrando el saldo a favor de
-  // uno al siguiente, en ARS y en USD por separado (nunca se mezclan entre
-  // sí).
-  //
-  // Los pagos sueltos ("neutro"/"ingreso" sin statement_id) de un período
-  // quedan acotados entre el cierre de ESE resumen y el cierre del
-  // SIGUIENTE (si lo hay) — no alcanza con "posterior al cierre" sin techo,
-  // porque eso haría que un mismo pago bien posterior (ej. de varios meses
-  // después) se cuente como "extra" de TODOS los resúmenes anteriores a la
-  // vez (cada uno lo ve como posterior a su propio cierre), inflando el
-  // saldo a favor en cadena. Esa ventana sin techo solo es segura para el
-  // ÚLTIMO resumen de la cuenta, que no tiene uno siguiente que la acote.
-  const creditAccountIds = new Set((accounts || []).filter(a => a.tipo === 'credito').map(a => a.id))
-  const arrastrePorStatement = new Map()
-  // DIAGNÓSTICO TEMPORAL — historial completo por cuenta con el detalle de
-  // qué pagos se le atribuyeron a cada resumen, para poder verificar (no
-  // solo confiar a ciegas) de dónde sale un saldo a favor arrastrado. Se
-  // saca en cuanto se confirme que el cálculo da bien.
-  const arrastreDiagnosticoPorCuenta = new Map()
-  creditAccountIds.forEach(accId => {
-    const statementsCuenta = statements
-      .filter(s => s.account_id === accId)
-      .map(s => ({ s, cierre: cierreDe(s) }))
-      .filter(x => x.cierre)
-      .sort((a, b) => a.cierre.localeCompare(b.cierre))
-    // Una tarjeta no puede tener dos resúmenes reales con la MISMA fecha de
-    // cierre — si aparecen dos, hay un problema de datos. PERO no hay forma
-    // confiable de saber, solo por eso, si es el mismo resumen cargado dos
-    // veces (duplicado real) o dos resúmenes DISTINTOS cuya fecha quedó mal
-    // cargada y coincidió por accidente — descartar uno asumiendo que es un
-    // duplicado es GRAVE si en realidad no lo es: se pierde de vista una
-    // deuda real entera (pasó exactamente eso acá: se descartaron $2.965.574
-    // reales creyendo que eran un duplicado). Ante la duda, siempre se suman
-    // los brutos de todos — en el peor caso (si de verdad son un duplicado)
-    // el total queda un poco alto, pero nunca desaparece plata que sí se
-    // debía. El resultado se reparte entre ellos a prorrata de lo que cada
-    // uno facturó, solo para poder mostrar un número en cada tarjeta.
-    const grupos = []
-    statementsCuenta.forEach(({ s, cierre }) => {
-      const ultimo = grupos[grupos.length - 1]
-      if (ultimo && ultimo.cierre === cierre) ultimo.items.push(s)
-      else grupos.push({ cierre, items: [s] })
-    })
-    const txsEnVentana = (cierre, cierreSiguiente, esUsd) => transactions
-      .filter(t =>
-        t.account_id === accId && !t.statement_id &&
-        (esUsd ? t.moneda === 'USD' : t.moneda !== 'USD') &&
-        (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-        normFecha(t.fecha) > cierre &&
-        (!cierreSiguiente || normFecha(t.fecha) <= cierreSiguiente)
-      )
-    let arrastreArs = 0, arrastreUsd = 0
-    const diagnostico = []
-    grupos.forEach((grupo, idx) => {
-      const cierreSiguiente = idx + 1 < grupos.length ? grupos[idx + 1].cierre : null
-      const esGrupoCompartido = grupo.items.length > 1
-      const brutosArs = grupo.items.map(s => Number(s.total_resumen) || 0)
-      const brutoGrupoArs = brutosArs.reduce((a, b) => a + b, 0)
-      const pagosArsTx = txsEnVentana(grupo.cierre, cierreSiguiente, false)
-      const pagosGrupoArs = pagosArsTx.reduce((sum, t) => sum + Number(t.monto), 0)
-      const entranteGrupoArs = arrastreArs
-      const netoGrupoArs = brutoGrupoArs - pagosGrupoArs - entranteGrupoArs
-      arrastreArs = Math.max(0, -netoGrupoArs)
-      const brutosUsd = grupo.items.map(s => totalUsdLinkedDe(s))
-      const brutoGrupoUsd = brutosUsd.reduce((a, b) => a + b, 0)
-      const pagosUsdTx = txsEnVentana(grupo.cierre, cierreSiguiente, true)
-      const pagosGrupoUsd = pagosUsdTx.reduce((sum, t) => sum + Number(t.monto), 0)
-      const entranteGrupoUsd = arrastreUsd
-      const netoGrupoUsd = brutoGrupoUsd - pagosGrupoUsd - entranteGrupoUsd
-      arrastreUsd = Math.max(0, -netoGrupoUsd)
-      grupo.items.forEach((s, i) => {
-        // Prorrata según lo que cada resumen facturó dentro del grupo; si el
-        // grupo entero facturó $0 en esa moneda, se reparte en partes iguales.
-        const shareArs = brutoGrupoArs !== 0 ? brutosArs[i] / brutoGrupoArs : 1 / grupo.items.length
-        const shareUsd = brutoGrupoUsd !== 0 ? brutosUsd[i] / brutoGrupoUsd : 1 / grupo.items.length
-        const brutoArs = brutosArs[i]
-        const pagosArs = pagosGrupoArs * shareArs
-        const entranteArs = entranteGrupoArs * shareArs
-        const netoArs = brutoArs - pagosArs - entranteArs
-        const brutoUsd = brutosUsd[i]
-        const pagosUsd = pagosGrupoUsd * shareUsd
-        const entranteUsd = entranteGrupoUsd * shareUsd
-        const netoUsd = brutoUsd - pagosUsd - entranteUsd
-        arrastrePorStatement.set(s.id, {
-          entranteArs, netoArs, favorGeneradoArs: Math.max(0, -netoArs), pagosArs,
-          entranteUsd, netoUsd, favorGeneradoUsd: Math.max(0, -netoUsd), pagosUsd,
-        })
-        diagnostico.push({
-          periodo: (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '') || s.id) + (esGrupoCompartido ? ` (cierre compartido con otro resumen del mismo cierre — sumado, pagos prorrateados)` : ''),
-          cierre: grupo.cierre, cierreSiguiente,
-          brutoArs, pagosArsTx, pagosArs, entranteArs, favorGeneradoArs: Math.max(0, -netoArs), netoArs,
-          brutoUsd, pagosUsdTx, pagosUsd, entranteUsd, favorGeneradoUsd: Math.max(0, -netoUsd), netoUsd,
-        })
-      })
-    })
-    arrastreDiagnosticoPorCuenta.set(accId, diagnostico)
-  })
-  const saldoConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoArs ?? (Number(s.total_resumen) || 0)
-  const saldoUsdConArrastreDe = (s) => arrastrePorStatement.get(s.id)?.netoUsd ?? totalUsdLinkedDe(s)
+  // Regla única, sin arrastre entre resúmenes: A pagar de un resumen = total
+  // del resumen − pagos con fecha posterior a SU cierre, por moneda (ARS y
+  // USD por separado). Los pagos con fecha anterior o igual al cierre no se
+  // usan para nada acá: el banco ya los descontó del total que figura en el
+  // PDF. Si los pagos posteriores superan el total, el sobrante se muestra
+  // como sobrepago informativo en ESE resumen — no se arrastra a ningún otro
+  // período: el próximo PDF del banco ya lo va a traer descontado solo.
+  const saldoPendienteDe = (s) => {
+    const cierre = cierreDe(s)
+    if (!cierre) return Number(s.total_resumen) || 0
+    const pagosPosteriores = transactions.filter(t =>
+      t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
+      (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
+      normFecha(t.fecha) > cierre
+    )
+    const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
+    return (Number(s.total_resumen) || 0) - totalPagosPosteriores
+  }
+  const saldoPendienteUsdDe = (s) => {
+    const cierre = cierreDe(s)
+    const pagosUsdPosteriores = cierre
+      ? transactions.filter(t =>
+          t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
+          (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
+        )
+      : []
+    const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
+    return totalUsdLinkedDe(s) - totalPagosUsdPosteriores
+  }
   // Siempre se muestra el resumen con el vencimiento más reciente de la cuenta, sin
   // importar si ya venció o no — cualquier otro resumen de esa cuenta queda afuera,
   // sea porque ya está reemplazado por uno más nuevo o porque nunca tuvo una fecha de
   // vencimiento real (esos, si tienen movimientos propios, se ven en "Ciclo actual").
-  // Además de "falta pagar algo" (> 0), también se sigue mostrando cuando el saldo
-  // dio negativo (quedó a favor) — así el saldo a favor se ve en el período donde
-  // se generó, en vez de desaparecer sin más.
+  // Además de "falta pagar algo" (!= 0), también se sigue mostrando cuando el saldo
+  // dio negativo (sobrepago informativo), en vez de desaparecer sin más.
   const sigueActivo = (s) => {
     if (!s.fecha_vencimiento) return false
     const vencS = normFecha(s.fecha_vencimiento)
@@ -1581,7 +1497,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       st.account_id === s.account_id && st.fecha_vencimiento && normFecha(st.fecha_vencimiento) > vencS
     )
     if (!esElUltimo) return false
-    return Math.round(saldoConArrastreDe(s)) !== 0 || Math.round(saldoUsdConArrastreDe(s) * 100) !== 0
+    return Math.round(saldoPendienteDe(s)) !== 0 || Math.round(saldoPendienteUsdDe(s) * 100) !== 0
   }
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
@@ -1668,20 +1584,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const statementsRealesConUsd = statements
     .filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s))
     .map(s => {
-      const info = arrastrePorStatement.get(s.id)
       return {
         ...s,
         _totalOriginal: Number(s.total_resumen) || 0,
-        total_resumen: saldoConArrastreDe(s),
-        total_usd: saldoUsdConArrastreDe(s),
-        // Cuánto de este período vino de saldo a favor arrastrado del período
-        // anterior (para el desglose "Resumen: $A − Saldo a favor: $B = A
-        // pagar: $C"), y cuánto se pagó de más este mismo período (para
-        // "Pagado $X · Saldo a favor: $Y" cuando total_resumen queda negativo).
-        _arrastreEntranteArs: info?.entranteArs || 0,
-        _arrastreEntranteUsd: info?.entranteUsd || 0,
-        _pagosPosterioresArs: info?.pagosArs || 0,
-        _pagosPosterioresUsd: info?.pagosUsd || 0,
+        total_resumen: saldoPendienteDe(s),
+        total_usd: saldoPendienteUsdDe(s),
+        // Cuánto se pagó de más este mismo período, para mostrar "Pagado $X"
+        // junto al sobrepago informativo cuando total_resumen queda negativo.
+        _pagosPosterioresArs: (Number(s.total_resumen) || 0) - saldoPendienteDe(s),
+        _pagosPosterioresUsd: totalUsdLinkedDe(s) - saldoPendienteUsdDe(s),
       }
     })
   // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
@@ -2010,38 +1921,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </div>
           <div style={{ textAlign: 'right' }}>
             {s.total_resumen < 0 ? (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>A favor: $ {formatMonto(Math.abs(s.total_resumen))}</p>
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>Sobrepago: $ {formatMonto(Math.abs(s.total_resumen))}</p>
             ) : (
               <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
             )}
             {/* "Pagado" tiene que verse siempre que se haya pagado algo este período,
-                no solo cuando el resultado final quedó a favor — si no, un pago
+                no solo cuando el resultado final quedó en sobrepago — si no, un pago
                 parcial (que todavía deja algo pendiente) parece no haberse
-                registrado, aunque sí esté restado del total de arriba. */}
+                registrado, aunque sí esté restado del total de arriba. Es solo
+                informativo: no se arrastra a ningún otro resumen — si el pago de
+                más ya quedó reflejado en el próximo PDF del banco, va a coincidir
+                solo, sin que la app tenga que hacer nada. */}
             {s._pagosPosterioresArs > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
             )}
-            {!s._virtual && s._arrastreEntranteArs > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                Resumen: $ {formatMonto(s._totalOriginal)} − Saldo a favor: $ {formatMonto(s._arrastreEntranteArs)}
-                {s._pagosPosterioresArs > 0 && ` − Pagado: $ ${formatMonto(s._pagosPosterioresArs)}`}
-                {s.total_resumen < 0 ? ` = A favor: $ ${formatMonto(Math.abs(s.total_resumen))}` : ` = A pagar: $ ${formatMonto(s.total_resumen)}`}
-              </p>
-            )}
             {s.total_usd !== 0 && (
               <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
-                {s.total_usd < 0 ? `A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
+                {s.total_usd < 0 ? `Sobrepago: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
               </p>
             )}
             {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
-            )}
-            {!s._virtual && s._arrastreEntranteUsd > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                U$S {formatMontoFull(totalUsdLinkedDe(s))} − Saldo a favor: U$S {formatMontoFull(s._arrastreEntranteUsd)}
-                {s._pagosPosterioresUsd > 0 && ` − Pagado: U$S ${formatMontoFull(s._pagosPosterioresUsd)}`}
-                {s.total_usd < 0 ? ` = A favor: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : ` = A pagar: U$S ${formatMontoFull(s.total_usd)}`}
-              </p>
             )}
             {diasRestantes !== null && (
               <p
@@ -2111,47 +2011,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        {/* DIAGNÓSTICO TEMPORAL — se saca en cuanto se confirme que el arrastre
-            da bien. Muestra el historial completo de resúmenes de la tarjeta con
-            los pagos concretos (fecha + monto) que se le atribuyeron a cada uno,
-            para poder verificar de dónde sale un saldo a favor arrastrado en vez
-            de tener que confiar a ciegas en el número final. */}
-        {!s._virtual && (s._arrastreEntranteArs > 0 || s._arrastreEntranteUsd > 0) && (
-          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `2px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-            <span
-              onClick={() => toggleDiagnosticoArrastre(s.account_id)}
-              style={{ fontSize: '11px', fontWeight: '700', color: '#e07b39', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
-              {diagnosticoArrastreAbierto.has(s.account_id) ? '▾' : '▸'} 🔧 Diagnóstico temporal: de dónde sale el arrastre
-            </span>
-            {diagnosticoArrastreAbierto.has(s.account_id) && (
-              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {(arrastreDiagnosticoPorCuenta.get(s.account_id) || []).map((d, i) => (
-                  <div key={i} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, paddingLeft: '8px' }}>
-                    <p style={{ margin: 0, fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{d.periodo} (cierre {d.cierre})</p>
-                    <p style={{ margin: '2px 0 0' }}>
-                      ARS: bruto $ {formatMonto(d.brutoArs)} · entrante $ {formatMonto(d.entranteArs)} · pagos atribuidos $ {formatMonto(d.pagosArs)} · neto $ {formatMonto(d.netoArs)}
-                      {d.favorGeneradoArs > 0 ? ` · genera a favor $ ${formatMonto(d.favorGeneradoArs)}` : ''}
-                    </p>
-                    {d.pagosArsTx.length > 0 && (
-                      <p style={{ margin: '2px 0 0' }}>Pagos ARS considerados: {d.pagosArsTx.map(t => `${formatFecha(t.fecha)} $${formatMonto(t.monto)}`).join(' · ')}</p>
-                    )}
-                    {(d.brutoUsd !== 0 || d.pagosUsd !== 0 || d.entranteUsd !== 0) && (
-                      <>
-                        <p style={{ margin: '4px 0 0' }}>
-                          USD: bruto U$S {formatMontoFull(d.brutoUsd)} · entrante U$S {formatMontoFull(d.entranteUsd)} · pagos atribuidos U$S {formatMontoFull(d.pagosUsd)} · neto U$S {formatMontoFull(d.netoUsd)}
-                          {d.favorGeneradoUsd > 0 ? ` · genera a favor U$S ${formatMontoFull(d.favorGeneradoUsd)}` : ''}
-                        </p>
-                        {d.pagosUsdTx.length > 0 && (
-                          <p style={{ margin: '2px 0 0' }}>Pagos USD considerados: {d.pagosUsdTx.map(t => `${formatFecha(t.fecha)} U$S${formatMontoFull(t.monto)}`).join(' · ')}</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>
