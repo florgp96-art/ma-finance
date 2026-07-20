@@ -456,7 +456,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
-  const [pagosParcialesExpandido, setPagosParcialesExpandido] = useState(false)
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -560,7 +559,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
     // Un pago o reintegro suelto (tipo "neutro" o "ingreso") en la cuenta de una tarjeta
     // no es un ítem más del resumen: es plata que achica el saldo pendiente (ver
-    // saldoPendienteDe, más abajo en el archivo), igual que ya se trata en "Ciclo actual".
+    // calcularEstadoStatement, más abajo en el archivo), igual que ya se trata en "Ciclo actual".
     // Si se lo dejara auto-ligar acá como si fuera una compra más, quedaría "adentro" del
     // resumen sin restar nada de su total mostrado.
     const esPagoOReintegro = (t) => t.tipo === 'neutro' || t.tipo === 'ingreso'
@@ -1452,50 +1451,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
     return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
   }
-  // Regla única, sin arrastre entre resúmenes: A pagar de un resumen = total
-  // del resumen − pagos con fecha posterior a SU cierre, por moneda (ARS y
-  // USD por separado). Los pagos con fecha anterior o igual al cierre no se
-  // usan para nada acá: el banco ya los descontó del total que figura en el
-  // PDF. Si los pagos posteriores superan el total, el sobrante se muestra
-  // como sobrepago informativo en ESE resumen — no se arrastra a ningún otro
-  // período: el próximo PDF del banco ya lo va a traer descontado solo.
-  const saldoPendienteDe = (s) => {
-    const cierre = cierreDe(s)
-    if (!cierre) return Number(s.total_resumen) || 0
-    const pagosPosteriores = transactions.filter(t =>
-      t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' &&
-      (t.tipo === 'neutro' || t.tipo === 'ingreso') &&
-      normFecha(t.fecha) > cierre
-    )
-    const totalPagosPosteriores = pagosPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
-    return (Number(s.total_resumen) || 0) - totalPagosPosteriores
-  }
-  const saldoPendienteUsdDe = (s) => {
-    const cierre = cierreDe(s)
-    const pagosUsdPosteriores = cierre
-      ? transactions.filter(t =>
-          t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' &&
-          (t.tipo === 'neutro' || t.tipo === 'ingreso') && normFecha(t.fecha) > cierre
-        )
-      : []
-    const totalPagosUsdPosteriores = pagosUsdPosteriores.reduce((sum, t) => sum + Number(t.monto), 0)
-    return totalUsdLinkedDe(s) - totalPagosUsdPosteriores
-  }
-  // Siempre se muestra el resumen con el vencimiento más reciente de la cuenta, sin
-  // importar si ya venció o no — cualquier otro resumen de esa cuenta queda afuera,
-  // sea porque ya está reemplazado por uno más nuevo o porque nunca tuvo una fecha de
-  // vencimiento real (esos, si tienen movimientos propios, se ven en "Ciclo actual").
-  // Además de "falta pagar algo" (!= 0), también se sigue mostrando cuando el saldo
-  // dio negativo (sobrepago informativo), en vez de desaparecer sin más.
-  const sigueActivo = (s) => {
-    if (!s.fecha_vencimiento) return false
-    const vencS = normFecha(s.fecha_vencimiento)
-    const esElUltimo = !statements.some(st =>
-      st.account_id === s.account_id && st.fecha_vencimiento && normFecha(st.fecha_vencimiento) > vencS
-    )
-    if (!esElUltimo) return false
-    return Math.round(saldoPendienteDe(s)) !== 0 || Math.round(saldoPendienteUsdDe(s) * 100) !== 0
-  }
   const cuentasCreditoAPagar = mostrarTabAPagar
     ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
     : []
@@ -1504,92 +1459,141 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // efecto colateral del filtro de fecha; ahora que ese filtro no es lo único que decide
   // si se muestra un resumen, hay que excluirlos por tipo de cuenta explícitamente.
   const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
+  // Resúmenes reales de cada cuenta, ordenados cronológicamente por cierre — es la
+  // "cadena" completa de statements, no solo el último. La usamos tanto para atribuir
+  // pagos a la ventana que le corresponde a cada uno (regla B) como para saber cuál es
+  // el más reciente (el único que se sigue mostrando solo, ver esUltimoDeCuenta).
+  const statementsPorCuenta = new Map()
+  cuentasCreditoAPagar.forEach(a => {
+    const propios = statements
+      .filter(st => st.account_id === a.id && st.fecha_vencimiento && cierreDe(st))
+      .sort((s1, s2) => cierreDe(s1).localeCompare(cierreDe(s2)))
+    statementsPorCuenta.set(a.id, propios)
+  })
+  const esUltimoDeCuenta = (s) => {
+    const propios = statementsPorCuenta.get(s.account_id) || []
+    return propios.length > 0 && propios[propios.length - 1].id === s.id
+  }
+  // Atribución de pagos (regla B): un pago/reintegro pertenece al statement X si su
+  // fecha cae después del cierre de X y hasta el cierre del statement siguiente de la
+  // misma cuenta inclusive (o hasta hoy, si X es el último). Si lo atribuido supera el
+  // total del statement, el sobrante es "excedente" — informativo, nunca se resta de
+  // otro statement ni se arrastra: si X está saldado (pendiente 0), sus pagos quedan
+  // retenidos ahí y no se derraman a "Ciclo actual".
+  const calcularEstadoStatement = (s, cierreSiguiente) => {
+    const cierre = cierreDe(s)
+    const enVentana = (t) => {
+      const fecha = normFecha(t.fecha)
+      return fecha > cierre && (!cierreSiguiente || fecha <= cierreSiguiente)
+    }
+    const pagosArs = transactions.filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const pagosUsd = transactions.filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
+    const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
+    const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
+    const pendienteUsdSinClamp = totalUsdLinkedDe(s) - totalPagosUsd
+    return {
+      pendienteArs: Math.max(0, pendienteArsSinClamp),
+      excedenteArs: Math.max(0, -pendienteArsSinClamp),
+      pendienteUsd: Math.max(0, pendienteUsdSinClamp),
+      excedenteUsd: Math.max(0, -pendienteUsdSinClamp),
+      totalPagosArs, totalPagosUsd,
+    }
+  }
+  const estadosStatement = new Map()
+  cuentasCreditoAPagar.forEach(a => {
+    const propios = statementsPorCuenta.get(a.id) || []
+    propios.forEach((s, i) => {
+      const cierreSiguiente = i < propios.length - 1 ? cierreDe(propios[i + 1]) : null
+      estadosStatement.set(s.id, calcularEstadoStatement(s, cierreSiguiente))
+    })
+  })
+  // Un resumen real solo se sigue mostrando solo si (a) es el más reciente de la cuenta
+  // — el banco ya arrastra el saldo no pagado de uno viejo al que le sigue, mostrarlo
+  // aparte duplicaría esa deuda — y (b) todavía le queda algo pendiente en alguna
+  // moneda. Al llegar a $0 desaparece sin más: nada de "sobrepago" fantasma en su
+  // propia tarjeta (ese excedente, si lo hay, es informativo y vive en "Ciclo actual").
+  const esVisible = (s) => {
+    if (!esUltimoDeCuenta(s)) return false
+    const st = estadosStatement.get(s.id)
+    if (!st) return false
+    return Math.round(st.pendienteArs) > 0 || Math.round(st.pendienteUsd * 100) > 0
+  }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
   // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
   const statementIdsConTarjetaPropia = new Set(
-    statements.filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s)).map(s => s.id)
+    statements.filter(s => cuentaCreditoIds.has(s.account_id) && esVisible(s)).map(s => s.id)
   )
   // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
   // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
   // real de la tarjeta — por eso para cuotas se compara por mes exacto contra el mes del
   // corte (ni el mes anterior ni el siguiente), en vez de por fecha exacta. El resto de los
-  // movimientos sí tiene fecha real, así que se compara exacto. Un pago (tipo "neutro") es
-  // un caso aparte: si cae poquitos días después del corte, en la práctica está saldando el
-  // resumen anterior (recién cerrado), no aportando al ciclo nuevo — por eso, además de tener
-  // que ser posterior al corte, tiene que caer en el mes de hoy (si no, es un pago viejo que
-  // ya saldó el resumen anterior).
-  // Estrictamente posterior al cierre — no "en o después", para que un movimiento
-  // fechado justo el día del cierre quede siempre del mismo lado que en
-  // saldoPendienteDe/reconciliarSueltas (que lo tratan como parte del resumen que
-  // recién cerró, no del ciclo nuevo). Si esto no coincidiera, un mismo pago podría
-  // contarse en "Ciclo actual" y a la vez no descontarse del resumen real, o viceversa.
+  // movimientos sí tiene fecha real, así que se compara exacto. "Ciclo actual" solo
+  // cuenta COMPRAS nuevas (nunca pagos/reintegros: esos ya se atribuyeron a saldar el
+  // statement anterior en calcularEstadoStatement, y no vuelven a contarse acá).
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
+    if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
     const fecha = normFecha(t.fecha)
     if ((t.cuotas_total || 1) > 1) {
       const mesTx = fecha.slice(0, 7)
       return mesTx === (mesCorte || mesActual)
     }
-    const enRango = (!ultimoCierre || fecha > ultimoCierre) && fecha <= hoyISO
-    if (t.tipo === 'neutro') return enRango && fecha.slice(0, 7) === mesActual
-    return enRango
+    return (!ultimoCierre || fecha > ultimoCierre) && fecha <= hoyISO
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
   // de esa cuenta — si no, cualquier carga vieja por Excel (que nunca tiene statement_id)
-  // se sumaría como si fuera de este mes. El cierre usado acá tiene que ser EXACTAMENTE
-  // el mismo que usa saldoPendienteDe para el resumen activo de la cuenta (cierreDe del
-  // resumen con el vencimiento más reciente) — si se calculara por separado (ej. el
-  // fecha_hasta más grande de cualquier resumen), podría dar un valor distinto y un
-  // mismo pago quedaría contado en un lado pero no en el otro.
+  // se sumaría como si fuera de este mes.
   const statementsSinResumen = cuentasCreditoAPagar.map(a => {
-    const statementsCuenta = statements.filter(st => st.account_id === a.id && st.fecha_vencimiento)
-    const statementActivo = statementsCuenta.reduce((max, st) =>
-      (!max || normFecha(st.fecha_vencimiento) > normFecha(max.fecha_vencimiento)) ? st : max, null)
-    const ultimoCierreAuto = statementActivo ? cierreDe(statementActivo) : null
+    const propios = statementsPorCuenta.get(a.id) || []
+    const ultimoReal = propios.length > 0 ? propios[propios.length - 1] : null
+    const ultimoCierreAuto = ultimoReal ? cierreDe(ultimoReal) : null
     const cicloDesdeManual = cicloDesdeOverride[a.id] !== undefined ? cicloDesdeOverride[a.id] : (a.ciclo_actual_desde || null)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
     const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
-    // Si hay un resumen real activo para esta cuenta, cualquier pago o reintegro suelto
-    // (neutro/ingreso) le pertenece a ESE resumen — se resta de su saldo pendiente (ver
-    // saldoPendienteDe), nunca se muestra aparte acá. Si se lo dejara pasar, un mismo
-    // pago aparecería simultáneamente como "Ciclo actual" y como descuento del resumen
-    // real. Solo las compras nuevas (no pagos) siguen contando como Ciclo actual — son
-    // gasto que todavía no vino en ningún PDF.
-    const hayResumenActivo = statementActivo ? sigueActivo(statementActivo) : false
-    const sueltas = transactions.filter(t => {
-      if (!((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte))) return false
-      if (hayResumenActivo && (t.tipo === 'neutro' || t.tipo === 'ingreso')) return false
-      return true
-    })
-    if (sueltas.length === 0 && !cicloDesdeManual) return null
-    const signo = (t) => (t.tipo === 'ingreso' || t.tipo === 'neutro') ? -1 : 1
-    const total = sueltas.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
-    const totalUsd = sueltas.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + signo(t) * Number(t.monto), 0)
-    const pagos = sueltas.filter(t => (t.tipo === 'neutro' || t.tipo === 'ingreso') && t.moneda !== 'USD').map(t => ({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }))
-    return { id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null, total_resumen: total, total_usd: totalUsd, _virtual: true, cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte, pagos }
+    const compras = transactions.filter(t =>
+      (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) &&
+      t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte)
+    )
+    // Excedente informativo del último resumen real, si quedó pagado de más: no se
+    // arrastra ni se resta de nada, solo se muestra como nota en "Ciclo actual".
+    const estadoUltimo = ultimoReal ? estadosStatement.get(ultimoReal.id) : null
+    const excedenteArs = estadoUltimo?.excedenteArs || 0
+    const excedenteUsd = estadoUltimo?.excedenteUsd || 0
+    if (compras.length === 0 && !cicloDesdeManual && excedenteArs === 0 && excedenteUsd === 0) return null
+    const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+    const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+    return {
+      id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
+      total_resumen: total, total_usd: totalUsd, _virtual: true,
+      cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte,
+      _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
+    }
   }).filter(Boolean)
   // Los resúmenes reales solo guardan el total en pesos del PDF — el total en USD se
-  // calcula acá sumando las transacciones en dólares que quedaron dentro de ese resumen.
-  // El total en pesos que se muestra es el saldo pendiente (ver saldoPendienteDe), no el
-  // monto fijo del PDF: sigue apareciendo mientras falte pagar algo, sin importar si ya
-  // venció, y desaparece recién cuando queda saldado.
+  // calcula acá sumando las transacciones en dólares que quedaron dentro de ese resumen
+  // (incluye el ajuste de saldo a favor/en contra que ya informó el banco en el PDF, ver
+  // Dashboard.js: se carga una vez al importar y nunca se recalcula acá, solo se le
+  // restan los pagos posteriores como a cualquier otro monto del resumen).
+  // El total en pesos que se muestra es el pendiente (nunca negativo: ver esVisible),
+  // sigue apareciendo mientras falte pagar algo, sin importar si ya venció, y
+  // desaparece recién cuando queda saldado.
   const statementsRealesConUsd = statements
-    .filter(s => cuentaCreditoIds.has(s.account_id) && sigueActivo(s))
+    .filter(s => cuentaCreditoIds.has(s.account_id) && esVisible(s))
     .map(s => {
+      const st = estadosStatement.get(s.id)
       return {
         ...s,
-        _totalOriginal: Number(s.total_resumen) || 0,
-        total_resumen: saldoPendienteDe(s),
-        total_usd: saldoPendienteUsdDe(s),
-        // Cuánto se pagó de más este mismo período, para mostrar "Pagado $X"
-        // junto al sobrepago informativo cuando total_resumen queda negativo.
-        _pagosPosterioresArs: (Number(s.total_resumen) || 0) - saldoPendienteDe(s),
-        _pagosPosterioresUsd: totalUsdLinkedDe(s) - saldoPendienteUsdDe(s),
+        total_resumen: st.pendienteArs,
+        total_usd: st.pendienteUsd,
+        // Cuánto se pagó de este mismo resumen, para mostrar "Pagado $X".
+        _pagosPosterioresArs: st.totalPagosArs,
+        _pagosPosterioresUsd: st.totalPagosUsd,
       }
     })
   // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
@@ -1616,8 +1620,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     : []
   const statementsVencidas = statementsAPagar.filter(s => diasRestantesDe(s) < 0)
   const statementsNoVencidas = statementsAPagar.filter(s => !(diasRestantesDe(s) < 0))
-  const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_resumen) || 0), 0)
-  const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0)
+  // Cálculo BOTTOM-UP (regla A): la suma de lo pendiente de cada obligación visible en
+  // pantalla, cada una recortada a >= 0 antes de sumar — así un sobrepago informativo en
+  // una tarjeta nunca puede "tapar" (netear) lo que sigue debiendo otra. Nunca puede dar
+  // más de lo que en verdad falta pagar.
+  const totalAPagarGeneral = statementsAPagar.reduce((sum, s) => sum + Math.max(0, Number(s.total_resumen) || 0), 0)
+  const totalAPagarGeneralUsd = statementsAPagar.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
       ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
@@ -1659,50 +1667,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }).sort((a, b) => b[3] - a[3])
   }
   // "Bruto" = suma de gastos sin restar pagos/reintegros (lo que muestran las
-  // pastillas de categoría). La diferencia contra totalAPagarGeneral es lo
-  // que ya se pagó/reintegró: en el ciclo actual (statementsSinResumen) son
-  // los movimientos "sueltos"; en un resumen real y cerrado, el total ya
-  // viene neteado por el banco (el PDF resta los pagos recibidos antes del
-  // cierre), así que buscamos esos pagos/reintegros para poder mostrarlos
-  // con su fecha real: primero los que ya quedaron con ese statement_id
-  // asignado, y también los "sueltos" (sin resumen asignado todavía) cuya
-  // fecha cae dentro del período de este resumen. Lo que sobre sin explicar
-  // después de eso queda como "ajuste" (ej. una bonificación del banco no
-  // cargada como transacción aparte).
-  const pagoIdsUsados = new Set()
+  // pastillas de categoría). La diferencia contra totalAPagarGeneral (siempre
+  // >= 0, ver regla A) es lo que ya se pagó de este mes, para la barra de progreso.
   let totalBrutoAPagarGeneral = 0
-  const ajustesGenerales = []
   statementsAPagar.forEach(s => {
-    const brutoStatement = itemsPorStatement(s)
+    totalBrutoAPagarGeneral += itemsPorStatement(s)
       .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
       .reduce((s2, t) => s2 + Number(t.monto), 0)
-    totalBrutoAPagarGeneral += brutoStatement
-    if (!s._virtual) {
-      // Los "sueltos" solo se atribuyen a este resumen si su fecha cae dentro
-      // del período propio de este resumen (después del cierre anterior de
-      // la cuenta) — si no, un pago de un resumen previo ya resuelto se
-      // colaría acá.
-      const cierreDeEste = cierreDe(s)
-      const cierreAnterior = statements
-        .filter(st => st.account_id === s.account_id)
-        .map(st => cierreDe(st))
-        .filter(f => f && (!cierreDeEste || f < cierreDeEste))
-        .sort()
-        .pop() || null
-      const pagosStatement = transactions.filter(t => {
-        if (pagoIdsUsados.has(t.id) || t.moneda === 'USD' || (t.tipo !== 'neutro' && t.tipo !== 'ingreso')) return false
-        if (t.statement_id === s.id) return true
-        const fecha = normFecha(t.fecha)
-        return !t.statement_id && t.account_id === s.account_id && (!cierreDeEste || fecha < cierreDeEste) && (!cierreAnterior || fecha > cierreAnterior)
-      })
-      pagosStatement.forEach(t => { pagoIdsUsados.add(t.id); ajustesGenerales.push({ monto: Number(t.monto), fecha: t.fecha, tipo: t.tipo }) })
-      const pagosRegistrados = pagosStatement.reduce((s2, t) => s2 + Number(t.monto), 0)
-      const residual = brutoStatement - (Number(s._totalOriginal ?? s.total_resumen) || 0) - pagosRegistrados
-      if (residual > 1) ajustesGenerales.push({ monto: residual, fecha: s.fecha_vencimiento, periodo: s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''), tipo: 'ajuste' })
-    }
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
-  const pagosGeneral = [...statementsAPagar.flatMap(s => s.pagos || []), ...ajustesGenerales].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
   // La barra de "Pagado" no es solo tarjetas: suma también los gastos fijos
   // de este mes que no pasan por resumen — todo gasto de cuenta débito, más
   // alquiler/expensas (transferencia) sin importar la cuenta. Estos se pagan
@@ -1837,16 +1810,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ]
       })()
     : [[], []]
-  // Total del mes que sirve de punto de partida a la cascada "¿Cómo se
-  // llega al total?": construido para terminar SIEMPRE, por definición
-  // algebraica, en el mismo número que el header (totalAPagarGeneral) — no
-  // es una coincidencia que haya que verificar, se arma sumándole de vuelta
-  // exactamente lo que la cascada va a restar después.
-  const totalDelMesCascada = totalAPagarGeneral + mamaParaAlquilerExpensas + poolPersonalTrabajo + montoPagadoGeneral
-  // Igual que categoriasBrutoSubtotalArs de abajo, pero antes de sumar
-  // hijos — se usa para mostrar el subtotal y, si no coincide con
-  // totalDelMesCascada, una nota corta explicando por qué (normalmente,
-  // gastos de débito/alquiler que no forman parte de la deuda de tarjetas).
+  // Subtotal de "Gastos del mes por categoría": sale de la MISMA selección de
+  // transacciones que arma categoriasResumenGeneral/hijosTotalesGeneral (itemsPorStatement
+  // de cada statement + gastosFijosDelMes) — un solo criterio, no hay otro "total del
+  // mes" calculado por separado con el que pueda desalinearse.
   const categoriasBrutoSubtotalArs = categoriasResumenGeneral.reduce((s, [, t]) => s + t, 0)
     + hijosTotalesGeneral.reduce((s, [, t]) => s + t, 0)
 
@@ -1878,11 +1845,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
-            {s.total_resumen < 0 ? (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: '#4a9e7a' }}>Sobrepago: $ {formatMonto(Math.abs(s.total_resumen))}</p>
-            ) : (
-              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
-            )}
+            <p style={{ margin: 0, fontWeight: '600', fontSize: '18px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(s.total_resumen)}</p>
             {/* "Pagado" tiene que verse siempre que se haya pagado algo este período,
                 no solo cuando el resultado final quedó en sobrepago — si no, un pago
                 parcial (que todavía deja algo pendiente) parece no haberse
@@ -1894,12 +1857,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
             )}
             {s.total_usd !== 0 && (
-              <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: s.total_usd < 0 ? '#4a9e7a' : (darkMode ? '#9A8A9A' : '#6e6e73') }}>
-                {s.total_usd < 0 ? `Sobrepago: U$S ${formatMontoFull(Math.abs(s.total_usd))}` : `U$S ${formatMontoFull(s.total_usd)}`}
+              <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                U$S {formatMontoFull(s.total_usd)}
               </p>
             )}
             {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
+            )}
+            {/* Excedente informativo: lo que sobró de pagar de más el resumen anterior
+                (ya saldado, por eso desapareció su propia tarjeta) — dato de este ciclo,
+                nunca se resta de nada ni se arrastra a ningún otro período. */}
+            {s._excedenteArs > 0 && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>Sobrepago del resumen anterior: $ {formatMonto(s._excedenteArs)}</p>
+            )}
+            {s._excedenteUsd > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>Sobrepago del resumen anterior: U$S {formatMontoFull(s._excedenteUsd)}</p>
             )}
             {diasRestantes !== null && (
               <p
@@ -2012,51 +1984,64 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Cascada única: composición del total vs. estado de pago, siempre
-              terminando en el mismo número que el header de arriba. */}
-          {allAccounts && totalDelMesCascada > 0 && (
+          {/* Bottom-up (regla A): lista cada obligación real en pantalla con su propio
+              pendiente — ya no una resta global ("Total del mes − coberturas − pagos")
+              que podía desalinearse del header. Esto ES literalmente cómo se arma
+              totalAPagarGeneral, así que termina siempre, por construcción, en el mismo
+              número: no hay otra cuenta que concilie. */}
+          {allAccounts && statementsAPagar.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>¿Cómo se llega al total?</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>¿Qué compone lo que falta pagar?</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
-                  <span>Total del mes</span>
-                  <span style={{ fontWeight: '600' }}>$ {formatMonto(totalDelMesCascada)}</span>
-                </div>
-                {userEmail === 'florgp96@gmail.com' && mamaParaAlquilerExpensas > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a' }}>
-                    <span>− Cubierto por Casa/mamá</span>
-                    <span style={{ fontWeight: '600' }}>− $ {formatMonto(mamaParaAlquilerExpensas)}</span>
-                  </div>
-                )}
-                {userEmail === 'florgp96@gmail.com' && poolPersonalTrabajo > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a' }}>
-                    <span>− Personal/Trabajo{mamaExcedente > 0 ? ' (+ excedente mamá)' : ''}</span>
-                    <span style={{ fontWeight: '600' }}>− $ {formatMonto(poolPersonalTrabajo)}</span>
-                  </div>
-                )}
-                {montoPagadoGeneral > 0 && (
-                  <div>
-                    <div
-                      onClick={() => setPagosParcialesExpandido(v => !v)}
-                      style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', color: '#4a9e7a', cursor: 'pointer', userSelect: 'none' }}>
-                      <span>{pagosParcialesExpandido ? '▾' : '▸'} − Pagos parciales ({pagosGeneral.length})</span>
-                      <span style={{ fontWeight: '600' }}>− $ {formatMonto(montoPagadoGeneral)}</span>
-                    </div>
-                    {pagosParcialesExpandido && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '2px 0 8px', paddingLeft: '10px' }}>
-                        {pagosGeneral.map((p, i) => (
-                          <span key={i} title={p.tipo === 'ajuste' ? `Diferencia entre el total importado del resumen (${p.periodo}) y la suma de sus gastos categorizados` : undefined} style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', backgroundColor: darkMode ? '#1C1A1C' : 'white', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '3px 9px' }}>
-                            {p.tipo === 'ingreso' ? 'Reintegro' : p.tipo === 'ajuste' ? `Ajuste resumen ${p.periodo || ''}` : 'Pago'}: $ {formatMonto(p.monto)}{p.fecha ? ` · ${new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : ''}
-                          </span>
-                        ))}
+                {statementsAPagar.map(s => {
+                  const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
+                  const label = `${nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}${s._virtual ? 'Ciclo actual' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}`
+                  const saldada = Math.round(s.total_resumen) <= 0 && Math.round(s.total_usd * 100) <= 0
+                  return (
+                    <div key={s.id} style={{ padding: '5px 0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>{label}</span>
+                        <span style={{ fontWeight: '600' }}>
+                          {saldada ? 'Saldada' : [
+                            s.total_resumen > 0 ? `$ ${formatMonto(s.total_resumen)}` : null,
+                            s.total_usd > 0 ? `U$S ${formatMontoFull(s.total_usd)}` : null,
+                          ].filter(Boolean).join(' + ')}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {(s._excedenteArs > 0 || s._excedenteUsd > 0) && (
+                        <div style={{ fontSize: '11px', color: '#4a9e7a' }}>
+                          Sobrepago del resumen anterior{s._excedenteArs > 0 ? `: $ ${formatMonto(s._excedenteArs)}` : ''}{s._excedenteUsd > 0 ? ` ${s._excedenteArs > 0 ? '+ ' : ': '}U$S ${formatMontoFull(s._excedenteUsd)}` : ''}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '15px' }}>
                   <span>= Te falta pagar</span>
-                  <span>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</span>
+                  <span>$ {formatMonto(totalAPagarGeneral)}{totalAPagarGeneralUsd > 0 ? ` + U$S ${formatMontoFull(totalAPagarGeneralUsd)}` : ''}</span>
                 </div>
+              </div>
+            </div>
+          )}
+          {/* Cubierto este mes: informativo, no resta de "Te falta pagar" ni de
+              ninguna otra cuenta — es una preferencia personal de esta cuenta, no un
+              cálculo que tenga que conciliar con nada más en pantalla. */}
+          {allAccounts && userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0) && (
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cubierto este mes</p>
+              <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                {mamaParaAlquilerExpensas > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                    <span>Casa/mamá (alquiler/expensas)</span>
+                    <span style={{ fontWeight: '600' }}>$ {formatMonto(mamaParaAlquilerExpensas)}</span>
+                  </div>
+                )}
+                {poolPersonalTrabajo > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                    <span>Personal/Trabajo{mamaExcedente > 0 ? ' (+ excedente mamá)' : ''}</span>
+                    <span style={{ fontWeight: '600' }}>$ {formatMonto(poolPersonalTrabajo)}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2092,11 +2077,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <span>Subtotal</span>
                 <span>$ {formatMonto(categoriasBrutoSubtotalArs)}</span>
               </div>
-              {Math.round(categoriasBrutoSubtotalArs) !== Math.round(totalDelMesCascada) && (
-                <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
-                  La diferencia (${formatMonto(Math.abs(categoriasBrutoSubtotalArs - totalDelMesCascada))}) corresponde a gastos de débito/alquiler ya pagados que no forman parte de la deuda de tarjetas de "¿Cómo se llega al total?".
-                </p>
-              )}
               {categoriasResumenGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                   <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💵 En USD</p>
