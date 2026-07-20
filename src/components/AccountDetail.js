@@ -896,16 +896,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     total: Number(s.total_resumen) || 0
   }))
 
-  const ingresosBarData = (() => {
-    const byMonth = {}
-    transactions.filter(t => t.tipo === 'ingreso' && t.moneda === 'ARS').forEach(t => {
-      const m = t.fecha?.slice(0, 7)
-      if (!m) return
-      byMonth[m] = (byMonth[m] || 0) + Number(t.monto)
-    })
-    return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
-  })()
-
   const mesTxs = selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
@@ -926,6 +916,25 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return parseFloat(tipoCambioEUR) || 0
   }
   const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+
+  // "Total por mes" de ingresos: incluye USD/EUR convertidos (antes solo sumaba
+  // ARS) — USD con el TC congelado de cada movimiento (fx_rate), cayendo al TC
+  // del mes (ya histórico vía tcMap) solo si ese movimiento no lo tiene.
+  const ingresosBarData = (() => {
+    const byMonth = {}
+    transactions.filter(t => t.tipo === 'ingreso').forEach(t => {
+      const m = t.fecha?.slice(0, 7)
+      if (!m) return
+      const monto = Number(t.monto)
+      const equivArs = t.moneda === 'USD'
+        ? monto * (Number(t.fx_rate) || getTC(m))
+        : t.moneda === 'EUR'
+          ? monto * getTCEUR(m)
+          : monto
+      byMonth[m] = (byMonth[m] || 0) + equivArs
+    })
+    return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
+  })()
 
   const buildBubbleData = (txList, tc) => {
     const tcNum = parseFloat(tc) || 0
@@ -1001,7 +1010,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * (parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
           if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
           acc[cat].value += monto
           if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
@@ -2402,7 +2411,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {selectedMeses.length > 0 && mesTxs.length > 0 && (() => {
         const divider = <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
         const egresosEquivARS = totalARS + totalUSD * tcEfectivo + totalEUR * tcEUR
-        const ingresosEquivARS = totalIngresosARS + totalIngresosUSD * tcEfectivo + totalIngresosEUR * tcEUR
+        // Unificado con el TC congelado de cada movimiento (fx_rate, tarea 4) — no
+        // el TC actual — para que el equivalente de ingresos históricos en USD no
+        // cambie retroactivamente al actualizar el TC configurado.
+        const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcEfectivo, { signed: false }).unificado + totalIngresosEUR * tcEUR
         const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
@@ -2425,6 +2437,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <p style={styles.summaryLabel}>Total Ingresos EUR</p>
                   <p style={{ ...styles.summaryValue, fontSize: '18px' }}>€ {formatMontoFull(totalIngresosEUR)}</p>
                 </>}
+              </div>
+            )}
+            {/* Unificado: solo si hay mezcla de monedas — si todo es ARS, ya lo
+                muestra la card de arriba y este número sería redundante. */}
+            {esVistaIngresos && totalIngresosARS > 0 && (totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
+              <div style={styles.summaryCard}>
+                <p style={styles.summaryLabel}>Total Ingresos unificado (ARS)</p>
+                <p style={styles.summaryValue}>$ {formatMonto(ingresosEquivARS)}</p>
+                <p style={{ fontSize: '10px', color: '#8e8e93', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
               </div>
             )}
 
@@ -2575,6 +2596,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {esVistaIngresos && ingresosBarData.length > 0 && (
         <div style={styles.chartSection}>
           <h3 style={styles.chartTitle}>📊 Total por mes</h3>
+          <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-6px 0 12px', fontStyle: 'italic' }}>
+            Incluye ingresos en U$S/€ convertidos a pesos al TC de cada movimiento.
+          </p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ingresosBarData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
@@ -2618,6 +2642,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
                 {esVistaIngresos ? 'Gráficos de ingresos' : 'Gráficos de gastos'}
               </p>
+              {esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
+                <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-6px 0 12px', fontStyle: 'italic' }}>
+                  Los ingresos en U$S{totalIngresosEUR > 0 ? '/€' : ''} están convertidos a pesos al TC de cada movimiento.
+                </p>
+              )}
               {/* Selector de tipo de gráfico */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
