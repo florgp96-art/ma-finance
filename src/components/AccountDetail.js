@@ -56,6 +56,56 @@ export const tcTooltipDe = (tx, tcFallback) => {
   return `U$S ${formatMonto(Math.abs(Number(tx.monto)))} · TC $ ${formatMontoFull(tc)} = $ ${formatMonto(Math.abs(Number(tx.monto)) * tc)}`
 }
 
+// Totales ARS / USD / unificado en ARS de una lista de movimientos — pensado para
+// reflejar EXACTAMENTE las filas visibles después de aplicar los filtros activos
+// (búsqueda, rango de fechas, categoría, etc.) en cualquier tabla de movimientos.
+// El unificado convierte USD con el TC congelado de cada movimiento (fx_rate),
+// cayendo al TC vigente solo si ese movimiento todavía no lo tiene.
+export const totalesDeLista = (txs, tcFallback, { signed = true } = {}) => {
+  const tcNum = parseFloat(tcFallback) || 0
+  let ars = 0, usd = 0, unificado = 0
+  ;(txs || []).forEach(t => {
+    const monto = Number(t.monto) || 0
+    const signo = !signed ? 1 : (t.tipo === 'ingreso' ? 1 : -1)
+    if (t.moneda === 'USD') {
+      const tc = Number(t.fx_rate) || tcNum
+      usd += signo * monto
+      unificado += signo * monto * tc
+    } else if (t.moneda === 'ARS') {
+      ars += signo * monto
+      unificado += signo * monto
+    }
+  })
+  return { ars, usd, unificado }
+}
+
+// Pie de tabla reutilizable con el total en vivo de lo que se ve — mobile-first,
+// nunca más de 2 líneas (ver tarea 3). signed=false para listas de un solo signo
+// (ej. gastos de un hijo), donde no tiene sentido mostrar el total en negativo.
+export function TotalesFooter({ txs, tc, darkMode, colSpan, signed = true }) {
+  const { ars, usd, unificado } = totalesDeLista(txs, tc, { signed })
+  if (Math.round(ars) === 0 && Math.round(usd * 100) === 0) return null
+  const hayAmbas = Math.round(ars) !== 0 && Math.round(usd * 100) !== 0
+  return (
+    <tfoot>
+      <tr>
+        <td colSpan={colSpan} style={{ padding: 0, borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+          <div style={{
+            padding: '10px 10px', fontSize: '12px', fontWeight: '600',
+            color: darkMode ? '#F0EDEC' : '#1d1d1f',
+            display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline'
+          }}>
+            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', fontSize: '10px', letterSpacing: '0.04em' }}>Total</span>
+            {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
+            {Math.round(usd * 100) !== 0 && <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(usd)}</span>}
+            {hayAmbas && <span style={{ color: darkMode ? '#9A8A9A' : '#8e8e93', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
+          </div>
+        </td>
+      </tr>
+    </tfoot>
+  )
+}
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
 // El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
@@ -1996,6 +2046,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </tr>
                 ))}
               </tbody>
+              <TotalesFooter txs={items} tc={tipoCambio} darkMode={darkMode} colSpan={4} />
             </table>
           </div>
         )}
@@ -2771,6 +2822,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tbody>
             {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
+          <TotalesFooter txs={identificadas} tc={tcEfectivo} darkMode={darkMode} colSpan={9} />
         </table>
         </div>
       </div>
