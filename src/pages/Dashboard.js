@@ -3,12 +3,12 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { dividirTresVias } from '../lib/divisionTresVias'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
 import * as XLSX from 'xlsx'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
 const PROCESSING_MSGS = [
@@ -277,9 +277,13 @@ export default function Dashboard() {
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
   const [accountTransactions, setAccountTransactions] = useState([])
-  const [sidebarCatEvol, setSidebarCatEvol] = useState('')
-  const [sidebarCatEvolOpen, setSidebarCatEvolOpen] = useState(false)
-  const sidebarCatEvolRef = useRef(null)
+  // Selección múltiple y libre de categorías/subcategorías/hijos (gasto) o tags
+  // (ingreso) para el gráfico de evolución — array de claves 'cat:X' | 'sub:X::Y' |
+  // 'hijo:X' | 'ingreso:X'. evolucionTipo decide qué "mundo" (gasto o ingreso) se
+  // ofrece para elegir; cambiar el switch limpia la selección porque son conjuntos
+  // de opciones distintos.
+  const [sidebarCatEvol, setSidebarCatEvol] = useState([])
+  const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const dolarCardRef = useRef(null)
   const configPanelRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
@@ -436,14 +440,6 @@ export default function Dashboard() {
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate])
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (sidebarCatEvolRef.current && !sidebarCatEvolRef.current.contains(e.target)) setSidebarCatEvolOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
 
   useLayoutEffect(() => {
     const measure = () => { if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight) }
@@ -2262,16 +2258,25 @@ export default function Dashboard() {
     return Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
   }, [accountTransactions, tipoCambio])
 
-  // Evolución por categoría (sidebar): opciones de categoría/ingreso/hijo con datos +
-  // serie de 6 meses de la selección activa. Memoizado a nivel del componente por la
-  // misma razón que cuotasPendientesMemo (sideWidgets no puede llamar hooks). Antes
-  // reconstruía un mapa de TC de euro POR CADA TRANSACCIÓN dentro del reduce, en cada
-  // render — ahora usa el tcMapEUR ya memoizado más arriba.
+  // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
+  // (gasto) o tag (ingreso) con datos + serie de 6 meses de CADA selección activa —
+  // selección múltiple y libre, mezclando categorías y subcategorías a la vez.
+  // Memoizado a nivel del componente por la misma razón que cuotasPendientesMemo
+  // (sideWidgets no puede llamar hooks). El TC histórico (tcMap/tcMapEUR, promedio
+  // por mes según el tipo de dólar elegido) es el mismo criterio que ya usa el resto
+  // de la app para convertir USD/EUR de meses pasados — no se tocó esa lógica.
   const evolucionCategoriaMemo = useMemo(() => {
     const categoriasConTx = [...new Set(
       accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
         .map(t => t.categories.nombre)
     )].sort()
+    // Subcategorías con datos, como pares [categoría, subcategoría] — dos categorías
+    // distintas pueden tener una subcategoría con el mismo nombre, así que la clave
+    // de selección necesita la categoría para no confundirlas.
+    const subcatsConTx = [...new Map(
+      accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre && t.subcategories?.nombre)
+        .map(t => [`${t.categories.nombre}::${t.subcategories.nombre}`, { categoria: t.categories.nombre, subcategoria: t.subcategories.nombre }])
+    ).values()].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.subcategoria.localeCompare(b.subcategoria))
     const ingresosConTx = [...new Set(
       accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
         .map(t => t.tag)
@@ -2281,29 +2286,59 @@ export default function Dashboard() {
       accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
         .map(t => getHijoName(t))
     )].sort()
-    const esHijo = sidebarCatEvol.startsWith('hijo:')
-    const esIngreso = sidebarCatEvol.startsWith('ingreso:')
-    const filtroValor = (esHijo || esIngreso) ? sidebarCatEvol.split(':').slice(1).join(':') : sidebarCatEvol
+
+    const matchesKey = (t, key) => {
+      if (key.startsWith('ingreso:')) return t.tipo === 'ingreso' && t.tag === key.slice(8)
+      if (key.startsWith('hijo:')) return t.tipo === 'gasto' && getHijoName(t) === key.slice(5)
+      if (key.startsWith('sub:')) {
+        const [cat, sub] = key.slice(4).split('::')
+        return t.tipo === 'gasto' && t.categories?.nombre === cat && t.subcategories?.nombre === sub
+      }
+      return t.tipo === 'gasto' && t.categories?.nombre === key.slice(4)
+    }
+    const labelDeKey = (key) => {
+      if (key.startsWith('ingreso:')) return key.slice(8)
+      if (key.startsWith('hijo:')) return key.slice(5)
+      if (key.startsWith('sub:')) { const [cat, sub] = key.slice(4).split('::'); return `${cat} › ${sub}` }
+      return key.slice(4)
+    }
+    // Color/ícono consistentes con el resto de la app: subcategorías toman el color
+    // determinístico de su propio nombre (distinto del de la categoría padre),
+    // hijos el determinístico de su nombre, categorías/ingresos el resolver
+    // compartido (mapeo manual o determinístico).
+    const colorDeKey = (key) => {
+      if (key.startsWith('ingreso:')) return resolveCategoryColor(key.slice(8), { isIncome: true })
+      if (key.startsWith('sub:')) { const [, sub] = key.slice(4).split('::'); return resolveCategoryColor(sub) }
+      if (key.startsWith('hijo:')) return resolveCategoryColor(key.slice(5))
+      return resolveCategoryColor(key.slice(4))
+    }
+    const iconDeKey = (key) => {
+      if (key.startsWith('ingreso:')) return resolveCategoryIcon(key.slice(8), { customIcons, isIncome: true })
+      if (key.startsWith('hijo:')) return customIcons?.[key.slice(5)] || '👧'
+      if (key.startsWith('sub:')) return '·'
+      return resolveCategoryIcon(key.slice(4), { customIcons })
+    }
+
+    const mesActual = new Date().toISOString().slice(0, 7)
     const evolData = getLast6Months().map(m => {
       const tc = tcMap[m] ? Number(tcMap[m]) : (parseFloat(tipoCambio) || 1)
-      const total = accountTransactions
-        .filter(t => {
-          if (!t.fecha?.startsWith(m)) return false
-          if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
-          if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
-          return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
-        })
-        .reduce((s, t) => {
-          const monto = Number(t.monto)
-          const mes = t.fecha?.slice(0,7)
-          const mA = new Date().toISOString().slice(0,7)
-          const tcEuroEvol = mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapEUR[mes] ? Number(tcMapEUR[mes]) : (parseFloat(tipoCambioEUR)||0))
-          return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
-        }, 0)
-      return { mes: mesLabel(m), total }
+      const tcEuro = m === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEUR[m] ? Number(tcMapEUR[m]) : (parseFloat(tipoCambioEUR) || 0))
+      const row = { mes: mesLabel(m) }
+      sidebarCatEvol.forEach(key => {
+        const total = accountTransactions
+          .filter(t => t.fecha?.startsWith(m) && matchesKey(t, key))
+          .reduce((s, t) => {
+            const monto = Number(t.monto)
+            return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuro > 0 ? monto * tcEuro : t.moneda === 'ARS' ? monto : 0)
+          }, 0)
+        row[key] = Math.round(total)
+      })
+      return row
     })
-    return { categoriasConTx, ingresosConTx, hijosConTx, esHijo, esIngreso, filtroValor, evolData }
-  }, [accountTransactions, sidebarCatEvol, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR])
+    const seleccion = sidebarCatEvol.map(key => ({ key, label: labelDeKey(key), color: colorDeKey(key), icon: iconDeKey(key) }))
+
+    return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion }
+  }, [accountTransactions, sidebarCatEvol, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, customIcons])
 
   const sideWidgets = () => (
     <>
@@ -2374,62 +2409,74 @@ export default function Dashboard() {
             })()}
 
             {(() => {
-              const { categoriasConTx, ingresosConTx, hijosConTx, filtroValor, evolData } = evolucionCategoriaMemo
+              const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion } = evolucionCategoriaMemo
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-              const tiposPresentes = [categoriasConTx.length > 0, ingresosConTx.length > 0, hijosConTx.length > 0].filter(Boolean).length
-              const multigrupo = tiposPresentes >= 2
+              const toggleClave = (key) => setSidebarCatEvol(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol([]) } }
+              const chip = (key, label, icon) => {
+                const activo = sidebarCatEvol.includes(key)
+                const color = resolveCategoryColor(key.includes('::') ? key.split('::')[1] : label, { isIncome: evolucionTipo === 'ingreso' })
+                return (
+                  <button key={key} onClick={() => toggleClave(key)}
+                    style={{ padding: '5px 11px', borderRadius: '16px', border: `1.5px solid ${activo ? color : borderClr}`, backgroundColor: activo ? color : 'transparent', color: activo ? '#2d2d2d' : txtClr, fontSize: '11px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400', outline: 'none', whiteSpace: 'nowrap' }}>
+                    {icon} {label}
+                  </button>
+                )
+              }
+              const sinOpciones = evolucionTipo === 'gasto'
+                ? categoriasConTx.length === 0 && hijosConTx.length === 0
+                : ingresosConTx.length === 0
               return (
                 <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>📈 Evolución por categoría</h3>
-                  {/* Custom dropdown evolución */}
-                  <div ref={sidebarCatEvolRef} style={{ position: 'relative', marginBottom: '14px' }}>
-                    <button onClick={() => setSidebarCatEvolOpen(o => !o)} style={{ width: '100%', padding: '7px 28px 7px 10px', borderRadius: '8px', border: `1px solid ${borderClr}`, fontSize: '12px', outline: 'none', backgroundColor: bgClr, color: sidebarCatEvol ? txtClr : '#8e8e93', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer', textAlign: 'left', position: 'relative', boxSizing: 'border-box' }}>
-                      {sidebarCatEvol === '' ? '— Elegir —' : filtroValor || sidebarCatEvol}
-                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '10px', color: '#8e8e93', pointerEvents: 'none' }}>▾</span>
-                    </button>
-                    {sidebarCatEvolOpen && (
-                      <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 300, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
-                        <button onClick={() => { setSidebarCatEvol(''); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: '#8e8e93', fontFamily: '"Montserrat", sans-serif' }}>— Elegir —</button>
-                        {ingresosConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Ingresos</div>}
-                          {ingresosConTx.map(t => <button key={`ingreso:${t}`} onClick={() => { setSidebarCatEvol(`ingreso:${t}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `ingreso:${t}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{t}</button>)}
-                        </>)}
-                        {categoriasConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Egresos</div>}
-                          {categoriasConTx.map(c => <button key={c} onClick={() => { setSidebarCatEvol(c); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === c ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === c ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{c}</button>)}
-                        </>)}
-                        {hijosConTx.length > 0 && (<>
-                          {multigrupo && <div style={{ padding: '5px 12px 3px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', borderTop: `1px solid ${borderClr}` }}>Hijos</div>}
-                          {hijosConTx.map(h => <button key={`hijo:${h}`} onClick={() => { setSidebarCatEvol(`hijo:${h}`); setSidebarCatEvolOpen(false) }} style={{ width: '100%', textAlign: 'left', padding: '6px 14px', background: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: sidebarCatEvol === `hijo:${h}` ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }}>{h}</button>)}
-                        </>)}
-                      </div>
-                    )}
+                  <h3 style={styles.savingsPanelTitle}>📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'} · ARS (USD/EUR convertidos) · últimos 6 meses</h3>
+                  <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
+                    {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
+                      <button key={opt.v} onClick={() => cambiarTipo(opt.v)}
+                        style={{ flex: 1, padding: '6px 0', border: 'none', background: evolucionTipo === opt.v ? '#5C4F5C' : 'transparent', color: evolucionTipo === opt.v ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                  {sidebarCatEvol ? (
-                    <ResponsiveContainer width="100%" height={170}>
-                      <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-                        <XAxis dataKey="mes" tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                        <YAxis tick={{ fontSize: 9, fill: '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={65} />
-                        <Tooltip content={({ active, payload, label }) => {
-                          if (!active || !payload || payload.length === 0) return null
-                          return (
-                            <div style={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', padding: '6px 10px', boxShadow: '0 2px 10px rgba(0,0,0,0.12)' }}>
-                              <p style={{ margin: 0, color: txtClr, fontWeight: '600' }}>{label}</p>
-                              <p style={{ margin: '2px 0 0', color: darkMode ? '#C8B8C8' : '#555', fontWeight: '600' }}>$ {formatMontoFull(payload[0].value)}</p>
-                            </div>
-                          )
-                        }} />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                          {evolData.map((_, i) => (
-                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                  {/* Chips de selección múltiple — categorías/subcategorías/hijos (gastos)
+                      o tags (ingresos), mezclados libremente, pensados para tocar con el
+                      dedo en mobile en vez de un dropdown de un solo valor. */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {evolucionTipo === 'gasto' && categoriasConTx.map(c => chip(`cat:${c}`, c, resolveCategoryIcon(c, { customIcons })))}
+                    {evolucionTipo === 'gasto' && subcatsConTx.map(({ categoria, subcategoria }) => chip(`sub:${categoria}::${subcategoria}`, `${categoria} › ${subcategoria}`, '·'))}
+                    {evolucionTipo === 'gasto' && hijosConTx.map(h => chip(`hijo:${h}`, h, customIcons?.[h] || '👧'))}
+                    {evolucionTipo === 'ingreso' && ingresosConTx.map(t => chip(`ingreso:${t}`, t, resolveCategoryIcon(t, { customIcons, isIncome: true })))}
+                    {sinOpciones && <p style={{ color: '#8e8e93', fontSize: '12px', margin: 0 }}>Sin datos para elegir todavía.</p>}
+                  </div>
+                  {seleccion.length > 0 ? (
+                    <>
+                      <ResponsiveContainer width="100%" height={190}>
+                        <LineChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                          <XAxis dataKey="mes" tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} />
+                          <YAxis tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={60} />
+                          <Tooltip
+                            formatter={(value, key) => [`$ ${formatMontoFull(value)}`, seleccion.find(s => s.key === key)?.label || key]}
+                            labelFormatter={(l) => l}
+                            contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
+                            labelStyle={{ color: txtClr, fontWeight: '600' }}
+                          />
+                          {seleccion.map(s => (
+                            <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2.5, fill: s.color }} />
                           ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: '8px' }}>
+                        {seleccion.map(s => (
+                          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: txtClr }}>
+                            <div style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: s.color, flexShrink: 0 }} />
+                            {s.icon} {s.label}
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   ) : (
-                    <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Seleccioná una categoría para ver su evolución.</p>
+                    !sinOpciones && <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Elegí una o más categorías, subcategorías, hijos o ingresos para ver su evolución.</p>
                   )}
                 </div>
               )
@@ -3092,6 +3139,7 @@ export default function Dashboard() {
                       tcMapEUR={tcMapEUR}
                       refreshKey={refreshKey}
                       initialPeriod={sharedPeriod}
+                      customIcons={customIcons}
                     />
                   </div>
                 )}

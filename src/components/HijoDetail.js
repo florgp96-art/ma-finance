@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento } from './AccountDetail'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -13,12 +13,18 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod }) {
+export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod, customIcons }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const mesDropdownRef = useRef(null)
+  // Mismo selector Donut/Barras (y misma clave de localStorage) que AccountDetail.js —
+  // preferencia consistente en toda la app en vez de un chart fijo distinto por pantalla.
+  const [chartType, setChartType] = useState(() => {
+    const saved = localStorage.getItem('chart_type_ma')
+    return saved === 'donut' || saved === 'bars' ? saved : 'donut'
+  })
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
   const [editingTx, setEditingTx] = useState(null)
@@ -100,7 +106,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   // uno de los últimos 6 meses (18 barridos) y antes se recalculaba todo esto en cada
   // render, incluso uno ajeno (editar una fila, cambiar de orden). Ningún cálculo
   // interno se modificó.
-  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, bubbleData, monthlyData } = useMemo(() => {
+  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, monthlyData } = useMemo(() => {
     const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
 
     const filteredTx = selectedMeses.length > 0
@@ -123,7 +129,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
       else catMap[cat].originalUSD += t.monto
     })
-    const bubbleData = Object.entries(catMap)
+    const catData = Object.entries(catMap)
       .map(([name, val]) => ({ name, ...val }))
       .sort((a, b) => b.value - a.value)
 
@@ -145,7 +151,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       return { mes: mesLabel(ym), total: Math.round(ars + usd + eur * getTCEURForMonth(ym)) }
     })
 
-    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, bubbleData, monthlyData }
+    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, monthlyData }
   }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR])
 
   const startEdit = (tx) => {
@@ -298,18 +304,75 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
         )}
       </div>
 
-      {/* Bubble chart */}
-      {bubbleData.length > 0 && (
+      {/* Gastos por categoría: Donut/Barras, mismo dataset (catData) para las dos */}
+      {catData.length > 0 && (() => {
+        const periodoLabel = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
+          : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
+          : selectedMeses.length === 0 ? 'todos los meses'
+          : `${selectedMeses.length} meses`
+        const monedaLabel = (totalUSD > 0 || totalEUR > 0) ? 'ARS (USD/EUR convertidos)' : 'ARS'
+        return (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Gastos por categoría</h3>
-          <BubbleChart data={bubbleData} darkMode={darkMode} />
+          <h3 style={s.cardTitle}>Gastos por categoría · {monedaLabel} · {periodoLabel}</h3>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
+            {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
+              <button key={opt.type}
+                onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
+                style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: chartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {chartType === 'donut' && (
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
+              <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
+                <PieChart>
+                  <Pie data={catData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
+                    {catData.map((entry, idx) => (
+                      <Cell key={idx} fill={resolveCategoryColor(entry.name)} stroke="none" />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
+                {catData.map((entry, idx) => (
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                    <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: resolveCategoryColor(entry.name), flexShrink: 0 }} />
+                    <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveCategoryIcon(entry.name, { customIcons })} {entry.name}</span>
+                    <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {chartType === 'bars' && (() => {
+            const rowH = 36
+            const chartH = Math.max(180, catData.length * rowH + 24)
+            return (
+              <ResponsiveContainer width="100%" height={chartH}>
+                <BarChart data={catData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+                  <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                  <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                  <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {catData.map((entry, idx) => (
+                      <Cell key={idx} fill={resolveCategoryColor(entry.name)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )
+          })()}
         </div>
-      )}
+        )
+      })()}
 
       {/* Evolución mensual */}
       {monthlyData.some(m => m.total > 0) && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Evolución mensual — últimos 6 meses</h3>
+          <h3 style={s.cardTitle}>Evolución mensual de gastos · ARS (USD/EUR convertidos) · últimos 6 meses</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
@@ -384,7 +447,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
                           : t.categories?.nombre
-                            ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{CATEGORY_CONFIG[t.categories.nombre]?.icon} {t.categories.nombre}</span>
+                            ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
                             : <span style={{ color: '#aaa' }}>—</span>
                         }
                       </td>
