@@ -2692,7 +2692,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {vencList.length > 0 && (
-                        <div onClick={() => { setSelectedAccount('all'); setDashboardTab('vencimientos') }}
+                        <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                           style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '4px 10px', cursor: 'pointer' }}>
                           <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
                             <span style={{ fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
@@ -2709,7 +2709,7 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
                   {tcChip('Dólar', rateActivo, 'U$S 1')}
                   {tcChip('Euro', eurValor, '€1')}
-                  <div onClick={() => { setSelectedAccount('all'); setDashboardTab('vencimientos') }}
+                  <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
                     <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Vencimientos</p>
                     <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
