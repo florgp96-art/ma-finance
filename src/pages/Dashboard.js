@@ -348,7 +348,7 @@ export default function Dashboard() {
     })
   }, [])
 
-  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol('') }, [selectedAccount])
+  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol([]) }, [selectedAccount])
   useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro])
   useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro])
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
