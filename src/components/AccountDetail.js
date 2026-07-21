@@ -1617,8 +1617,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // El total del PDF ya viene neteado por el banco con cualquier pago hecho ANTES de
   // que la tarjeta cerrara (por eso el total del resumen suele ser menor a la suma
   // bruta de sus compras) — solo hay que restar los pagos sueltos hechos DESPUÉS del
-  // cierre, que todavía no llegaron a reflejarse en ningún PDF.
+  // cierre, que todavía no llegaron a reflejarse en ningún PDF. En dólares, igual que
+  // en pesos, se confía directamente en el total que informó el banco (incluye
+  // cualquier saldo a favor en esa moneda) en vez de reconstruirlo sumando renglones —
+  // un pago en USD hecho antes del cierre ya está neteado ahí y no hay que restarlo de
+  // nuevo. Solo si el resumen es viejo y no tiene ese total guardado, se recalcula
+  // sumando los ítems vinculados (sin contar pagos, que antes no se restaban).
   const totalUsdLinkedDe = (s) => {
+    if (s.total_dolares !== null && s.total_dolares !== undefined) return Number(s.total_dolares)
     const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
     return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
   }

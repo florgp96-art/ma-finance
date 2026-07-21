@@ -187,6 +187,12 @@ REGLAS GENERALES:
 - Verificá que la suma de todas las transacciones que devolvés (en cada moneda) sea
   coherente con el TOTAL A PAGAR que informa el resumen — si no cierra, revisá si te faltó
   alguno de estos cargos de cierre antes de responder.
+- total_pesos y total_dolares: son el total final que el resumen informa para pagar en
+  cada moneda (buscá explícitamente "TOTAL PESOS"/"TOTAL A PAGAR" y "TOTAL DÓLARES" en el
+  resumen), NUNCA los recalcules sumando las transacciones que extrajiste. Si el resumen
+  informa un SALDO A FAVOR en esa moneda (el cliente pagó de más y el banco le debe a él,
+  no al revés) devolvé ese total como número NEGATIVO — no lo omitas ni lo pongas en 0.
+  Esto es común en dólares cuando hubo un pago en esa moneda que superó lo consumido.
 
 ═══════════════════════════════
 CATEGORÍAS PARA TARJETAS DE CRÉDITO (usar nombres exactos):
