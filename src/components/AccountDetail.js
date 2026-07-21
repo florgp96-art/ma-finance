@@ -1627,7 +1627,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
 
-  // Contar transacciones por período de cada extracto, ordenados por mes descendente
+  // Contar transacciones de cada extracto, ordenados por mes descendente — por
+  // vínculo real (statement_id, el mismo campo que liga reconciliarSueltas y que ya
+  // usa "A pagar" en itemsPorStatement), no por si la fecha de la transacción cae en
+  // el mismo mes que el cierre del extracto: esa aproximación por fecha daba 0 tx
+  // apenas fecha_hasta venía vacío (ej. en la vista Ingresos, donde además statements
+  // y transactions pueden pertenecer a cuentas distintas) y no reflejaba lo que el
+  // extracto realmente tiene vinculado.
   const stmtsConTx = useMemo(() => [...statements]
     .sort((a, b) => {
       const pa = a.periodo || a.fecha_hasta?.slice(0, 7) || ''
@@ -1635,8 +1641,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return pb.localeCompare(pa)
     })
     .map(s => {
-      const mes = s.fecha_hasta?.slice(0, 7) || ''
-      const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
+      const count = transactions.filter(t => t.statement_id === s.id).length
       return { ...s, txCount: count }
     })
   , [statements, transactions])
