@@ -199,7 +199,7 @@ export default function Dashboard() {
   const [showExcel, setShowExcel] = useState(false)
   const [importMenuOpen, setImportMenuOpen] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
-  const [egresosOpen, setEgresosOpen] = useState(true)
+  const [cuentasOpen, setCuentasOpen] = useState(true)
   const [excelFile, setExcelFile] = useState(null)
   const [excelPreview, setExcelPreview] = useState(null)
   const updateExcelPreviewRow = (index, changes) =>
@@ -2738,7 +2738,7 @@ export default function Dashboard() {
             {/* Zona media scrollable: lista de cuentas */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', ...(isMobile ? { flex: 1, overflowY: 'auto', minHeight: 0, paddingTop: '8px' } : {}) }}>
             {(() => {
-              const egresoCuentas = accounts.filter(a => a.tipo !== 'ingreso')
+              const cuentasNoIngreso = accounts.filter(a => a.tipo !== 'ingreso')
               const ingresoCuentas = accounts.filter(a => a.tipo === 'ingreso')
 
               const accountIcon = (tipo) => {
@@ -2789,7 +2789,7 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* EGRESOS + INGRESOS en la misma fila */}
+                  {/* CUENTAS + INGRESOS en la misma fila */}
                   {(() => {
                     const cuentaIngresos = ingresoCuentas[0]
                     const isIngresosSelected = !!(cuentaIngresos?.id && selectedAccount?.id === cuentaIngresos.id)
@@ -2810,20 +2810,20 @@ export default function Dashboard() {
                             onClick={handleClickIngresos}>
                             <span style={{ ...styles.sidebarTitle, ...(isIngresosSelected ? { color: darkMode ? '#8C7B8C' : '#5C4F5C', fontWeight: '600' } : {}) }}>INGRESOS</span>
                           </div>
-                          {/* Header EGRESOS — derecha, con flecha */}
+                          {/* Header CUENTAS — derecha, con flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                            onClick={() => setEgresosOpen(o => !o)}>
-                            <span style={styles.sidebarTitle}>EGRESOS</span>
-                            <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: egresosOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
+                            onClick={() => setCuentasOpen(o => !o)}>
+                            <span style={styles.sidebarTitle}>CUENTAS</span>
+                            <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: cuentasOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
                           </div>
                         </div>
 
-                        {/* Lista cuentas EGRESOS (solo cuando está abierta) */}
-                        {egresosOpen && (
+                        {/* Lista de cuentas (solo cuando está abierta) */}
+                        {cuentasOpen && (
                           <div style={{ ...styles.accountsList, marginBottom: '12px', marginTop: '8px' }}>
-                            {egresoCuentas.length === 0
-                              ? <p style={styles.emptyText}>Sin cuentas de egreso.</p>
-                              : egresoCuentas.map(renderAccount)
+                            {cuentasNoIngreso.length === 0
+                              ? <p style={styles.emptyText}>Sin cuentas.</p>
+                              : cuentasNoIngreso.map(renderAccount)
                             }
                             <p style={{ fontSize: '11px', color: '#9A8A9A', margin: '8px 0 0', textAlign: 'center', fontStyle: 'italic' }}>
                               Agregá más cuentas en Configuración ⚙️
