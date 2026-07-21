@@ -47,8 +47,15 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
-  const [debitosAbierto, setDebitosAbierto] = useState(false)
-  const [transferenciasAbierto, setTransferenciasAbierto] = useState(false)
+  // Un solo Set con las claves de los ítems desplegados del "Desglose de pagos" —
+  // mismo patrón para Mastercard/Visa/Alquiler/Débitos/etc., cualquiera sea la
+  // cantidad real de cuentas/categorías que tenga cada usuario.
+  const [gruposAbiertos, setGruposAbiertos] = useState(() => new Set())
+  const toggleGrupo = (key) => setGruposAbiertos(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
 
   useEffect(() => {
     if (accounts && accounts.length > 0) fetchAll()
@@ -195,34 +202,23 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   const seccion = { backgroundColor: panel, border: `1px solid ${border}`, borderRadius: '14px', padding: '18px 20px', marginBottom: '20px' }
   const label = { fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }
 
-  const grupoRow = (icono, nombre, list, extra) => {
-    if (list.length === 0) return null
+  // Cada ítem del desglose: colapsado por defecto mostrando solo ícono + nombre
+  // + total; al abrirlo lista cada pago individual (fecha y monto). renderDetalle
+  // es opcional para casos con formato de detalle propio (ej. las tarjetas, que
+  // muestran a qué resumen corresponde cada pago).
+  const grupoRowExpandible = (key, icono, nombre, list, renderDetalle) => {
+    if (!list || list.length === 0) return null
+    const abierto = gruposAbiertos.has(key)
     const totalArs = list.reduce((s, t) => s + aArs(t), 0)
     return (
-      <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: `1px solid ${border}`, gap: '10px' }}>
-        <div>
-          <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>{icono} {nombre}</p>
-          {extra}
-        </div>
-        <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(totalArs)}</p>
-      </div>
-    )
-  }
-
-  // Igual que grupoRow, pero expandible: al abrirlo lista cada movimiento
-  // individual (nombre, fecha, monto en su moneda original).
-  const grupoRowExpandible = (icono, nombre, list, abierto, setAbierto) => {
-    if (list.length === 0) return null
-    const totalArs = list.reduce((s, t) => s + aArs(t), 0)
-    return (
-      <div key={nombre} style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
-        <div onClick={() => setAbierto(v => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+      <div key={key} style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
+        <div onClick={() => toggleGrupo(key)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
           <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>{abierto ? '▾' : '▸'} {icono} {nombre}</p>
           <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(totalArs)}</p>
         </div>
         {abierto && (
           <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {list.map(t => (
+            {list.map(t => renderDetalle ? renderDetalle(t) : (
               <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', color: muted }}>
                 <span>{t.nombre || t.detalle} · {formatFecha(t.fecha)}</span>
                 <span style={{ whiteSpace: 'nowrap' }}>{monedaSymbol(t.moneda)} {formatMontoFull(t.monto)}</span>
@@ -281,35 +277,27 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
         </div>
       </div>
 
-      {/* Desglose por tipo */}
+      {/* Desglose de pagos */}
       <div style={seccion}>
-        <p style={label}>Desglose por tipo</p>
+        <p style={label}>Desglose de pagos</p>
         {[...pagosPorCuenta.entries()].map(([accountId, pagosCuenta]) => {
           const nombreCuenta = accountNombreById.get(accountId) || 'Tarjeta'
-          const totalCuenta = pagosCuenta.reduce((s, t) => s + aArs(t), 0)
-          return (
-            <div key={accountId} style={{ padding: '10px 0', borderBottom: `1px solid ${border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: txt }}>💳 {nombreCuenta}</p>
-                <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: txt, whiteSpace: 'nowrap' }}>$ {formatMonto(totalCuenta)}</p>
+          return grupoRowExpandible(`cuenta-${accountId}`, '💳', nombreCuenta, pagosCuenta, (pago) => {
+            const stmt = statementDelPago(pago, statements)
+            const periodo = stmt ? (stmt.periodo || mesLabel(stmt.fecha_hasta?.slice(0, 7) || '')) : null
+            return (
+              <div key={pago.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', color: muted }}>
+                <span>{periodo ? `resumen ${periodo} → ` : ''}pagado {formatFecha(pago.fecha)}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{monedaSymbol(pago.moneda)} {formatMontoFull(pago.monto)}</span>
               </div>
-              {pagosCuenta.map(pago => {
-                const stmt = statementDelPago(pago, statements)
-                const periodo = stmt ? (stmt.periodo || mesLabel(stmt.fecha_hasta?.slice(0, 7) || '')) : null
-                return (
-                  <p key={pago.id} style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>
-                    {periodo ? `resumen ${periodo} → ` : ''}pagado {formatFecha(pago.fecha)}: {monedaSymbol(pago.moneda)} {formatMontoFull(pago.monto)}
-                  </p>
-                )
-              })}
-            </div>
-          )
+            )
+          })
         })}
-        {grupoRow('🏠', 'Alquiler / Expensas', actual.alquiler)}
-        {grupoRowExpandible('🏦', 'Débitos automáticos', actual.debitosAutomaticos, debitosAbierto, setDebitosAbierto)}
-        {grupoRowExpandible('🔁', 'Transferencias', actual.transferencias, transferenciasAbierto, setTransferenciasAbierto)}
-        {grupoRow('📱', 'Suscripciones', actual.suscripciones)}
-        {grupoRow('💵', 'Efectivo', actual.efectivo)}
+        {grupoRowExpandible('alquiler', '🏠', 'Alquiler / Expensas', actual.alquiler)}
+        {grupoRowExpandible('debitos', '🏦', 'Débitos automáticos', actual.debitosAutomaticos)}
+        {grupoRowExpandible('transferencias', '🔁', 'Transferencias', actual.transferencias)}
+        {grupoRowExpandible('suscripciones', '📱', 'Suscripciones', actual.suscripciones)}
+        {grupoRowExpandible('efectivo', '💵', 'Efectivo', actual.efectivo)}
         {pagosPorCuenta.size === 0 && actual.alquiler.length === 0 && actual.debitosAutomaticos.length === 0 && actual.transferencias.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
           <p style={{ margin: 0, fontSize: '13px', color: muted }}>No hay pagos registrados este mes.</p>
         )}
