@@ -1881,26 +1881,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalBrutoBarra = totalBrutoAPagarGeneral + totalGastosFijosMes
   const montoPagadoBarra = montoPagadoGeneral + totalGastosFijosMes
   const pctPagadoBarra = totalBrutoBarra > 0 ? Math.min(100, Math.round((montoPagadoBarra / totalBrutoBarra) * 100)) : 0
-  const sinAcentos = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-  const coincideTexto = (t, nombre) => [t.tag, t.categories?.nombre, t.subcategories?.nombre, t.nombre, t.detalle]
-    .some(campo => sinAcentos(campo).includes(sinAcentos(nombre)))
-  // Ingresos propios (Moms Food, Community Manager) van para Personal +
-  // Trabajo. El ingreso de mamá cubre primero Alquiler/Expensas, y lo que
-  // sobra se suma al mismo pozo de Personal + Trabajo. Es una preferencia
-  // personal de esta cuenta, no un comportamiento general de la app.
-  const ingresosEsteMes = transactions.filter(t => t.tipo === 'ingreso' && t.moneda !== 'USD' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO)
-  const totalIngresosPropios = ['Moms Food', 'Community Manager']
-    .reduce((sum, nombre) => sum + ingresosEsteMes.filter(t => coincideTexto(t, nombre)).reduce((s, t) => s + Number(t.monto), 0), 0)
-  const totalIngresoMama = ingresosEsteMes.filter(t => coincideTexto(t, 'Mamá')).reduce((sum, t) => sum + Number(t.monto), 0)
-  const totalAlquilerExpensasMes = gastosFijosDelMes
-    .filter(t => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
-    .reduce((sum, t) => sum + Number(t.monto), 0)
-  const mamaParaAlquilerExpensas = Math.min(totalIngresoMama, totalAlquilerExpensasMes)
-  const mamaExcedente = totalIngresoMama - mamaParaAlquilerExpensas
-  const poolPersonalTrabajo = totalIngresosPropios + mamaExcedente
-  // Cualquier ingreso de este mes que no matchee ninguno de los nombres de arriba —
-  // para que "Ingresos de este mes" no oculte plata que sí entró.
-  const totalOtrosIngresos = Math.max(0, ingresosEsteMes.reduce((sum, t) => sum + Number(t.monto), 0) - totalIngresosPropios - totalIngresoMama)
+  const ingresosEsteMes = transactions.filter(t => t.tipo === 'ingreso' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO)
+  const ingresosPorCategoriaMes = Object.values(ingresosEsteMes.reduce((acc, t) => {
+    const nombre = t.tag || t.subcategories?.nombre || t.categories?.nombre || 'Sin categoría'
+    if (!acc[nombre]) acc[nombre] = { nombre, ars: 0, usd: 0, unificado: 0 }
+    if (t.moneda === 'USD') {
+      const tc = tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo
+      acc[nombre].usd += Number(t.monto)
+      acc[nombre].unificado += Number(t.monto) * tc
+    } else {
+      acc[nombre].ars += Number(t.monto)
+      acc[nombre].unificado += Number(t.monto)
+    }
+    return acc
+  }, {})).sort((a, b) => b.unificado - a.unificado)
   const handleApagarSort = (key) => {
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
@@ -1918,12 +1912,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }).sort((a, b) => b[2] - a[2]).map(([cat, totalResto]) => [cat, totalResto])
   }
   // Composición del gasto del mes: SIEMPRE montos brutos (compras de
-  // tarjeta + gastos fijos de débito/alquiler), sin descontar coberturas de
-  // Casa/mamá ni Personal/Trabajo ni pagos parciales — esas restas viven
-  // solo en la cascada "¿Cómo se llega al total?", nunca acá. Antes esta
-  // misma lista SÍ las restaba, así que una categoría bajaba (o directamente
-  // desaparecía al llegar a $0) con cada pago parcial sin relación visible
-  // con nada en pantalla.
+  // tarjeta + gastos fijos de débito/alquiler), sin descontar pagos
+  // parciales — esas restas viven solo en la cascada de "A pagar", nunca acá.
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -2257,32 +2247,33 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Ingresos de este mes: informativo, no resta de "Te falta pagar" ni de
-              ninguna otra cuenta — es una preferencia personal de esta cuenta, no un
-              cálculo que tenga que conciliar con nada más en pantalla. */}
-          {allAccounts && userEmail === 'florgp96@gmail.com' && (mamaParaAlquilerExpensas > 0 || poolPersonalTrabajo > 0 || totalOtrosIngresos > 0) && (
+          {/* Ingresos de este mes: informativo, no resta de "Te falta pagar". */}
+          {allAccounts && ingresosPorCategoriaMes.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ingresos de este mes</p>
               <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Informativo — no resta de "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                {mamaParaAlquilerExpensas > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
-                    <span>Cubre alquiler/expensas (Casa/mamá)</span>
-                    <span style={{ fontWeight: '600' }}>$ {formatMonto(mamaParaAlquilerExpensas)}</span>
+                {ingresosPorCategoriaMes.map(c => (
+                  <div key={c.nombre} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', gap: '10px' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.nombre}>
+                      {customIcons?.[c.nombre] || INCOME_CATEGORY_CONFIG[c.nombre]?.icon || CATEGORY_CONFIG[c.nombre]?.icon || '💰'} {c.nombre}
+                    </span>
+                    <span style={{ fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {c.ars > 0 ? `$ ${formatMonto(c.ars)}` : ''}
+                      {c.ars > 0 && c.usd > 0 ? ' + ' : ''}
+                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} ($ ${formatMonto(c.unificado - c.ars)})` : ''}
+                    </span>
                   </div>
-                )}
-                {poolPersonalTrabajo > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
-                    <span>Personal/Trabajo{mamaExcedente > 0 ? ' (+ excedente mamá)' : ''}</span>
-                    <span style={{ fontWeight: '600' }}>$ {formatMonto(poolPersonalTrabajo)}</span>
-                  </div>
-                )}
-                {totalOtrosIngresos > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
-                    <span>Otros ingresos</span>
-                    <span style={{ fontWeight: '600' }}>$ {formatMonto(totalOtrosIngresos)}</span>
-                  </div>
-                )}
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '13px' }}>
+                <span>Total</span>
+                <span>
+                  {(() => {
+                    const t = ingresosPorCategoriaMes.reduce((acc, c) => ({ ars: acc.ars + c.ars, usd: acc.usd + c.usd, unificado: acc.unificado + c.unificado }), { ars: 0, usd: 0, unificado: 0 })
+                    return <>$ {formatMonto(t.ars)}{t.usd > 0 ? ` + U$S ${formatMonto(t.usd)}` : ''}{t.usd > 0 ? ` (≈ $ ${formatMonto(t.unificado)})` : ''}</>
+                  })()}
+                </span>
               </div>
             </div>
           )}
