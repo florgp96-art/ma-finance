@@ -817,6 +817,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
   , [transactions])
 
+  // Al entrar a la pestaña (o cambiar de cuenta), arrancar con el mes actual ya
+  // seleccionado — o el más reciente con datos, si el actual no tiene movimientos —
+  // en vez de mostrar el selector vacío y obligar a un click extra cada vez. Es un
+  // respaldo del default que ya arma fetchData/fetchAllData: si por lo que sea
+  // selectedMeses queda vacío una vez que hay datos, lo completa acá. Se dispara una
+  // sola vez por cuenta/refresh (el ref se resetea junto con el efecto que dispara el
+  // fetch) para no pelearse con "Deseleccionar todos", que también deja selectedMeses
+  // en [].
+  const autoSelectedMonthRef = useRef(false)
+  useEffect(() => { autoSelectedMonthRef.current = false }, [account, allAccounts, refreshKey])
+  useEffect(() => {
+    if (autoSelectedMonthRef.current) return
+    if (selectedMeses.length > 0 || mesesDisponibles.length === 0) return
+    autoSelectedMonthRef.current = true
+    const mesActual = new Date().toISOString().slice(0, 7)
+    setSelectedMeses([mesesDisponibles.includes(mesActual) ? mesActual : mesesDisponibles[0]])
+  }, [mesesDisponibles, selectedMeses])
+
   const toggleMes = (m) => {
     setSelectedMeses(prev =>
       prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
@@ -1627,7 +1645,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
 
-  // Contar transacciones por período de cada extracto, ordenados por mes descendente
+  // Contar transacciones de cada extracto, ordenados por mes descendente — por
+  // vínculo real (statement_id, el mismo campo que liga reconciliarSueltas y que ya
+  // usa "A pagar" en itemsPorStatement), no por si la fecha de la transacción cae en
+  // el mismo mes que el cierre del extracto: esa aproximación por fecha daba 0 tx
+  // apenas fecha_hasta venía vacío (ej. en la vista Ingresos, donde además statements
+  // y transactions pueden pertenecer a cuentas distintas) y no reflejaba lo que el
+  // extracto realmente tiene vinculado.
   const stmtsConTx = useMemo(() => [...statements]
     .sort((a, b) => {
       const pa = a.periodo || a.fecha_hasta?.slice(0, 7) || ''
@@ -1635,8 +1659,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return pb.localeCompare(pa)
     })
     .map(s => {
-      const mes = s.fecha_hasta?.slice(0, 7) || ''
-      const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
+      const count = transactions.filter(t => t.statement_id === s.id).length
       return { ...s, txCount: count }
     })
   , [statements, transactions])
