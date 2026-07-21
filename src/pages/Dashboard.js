@@ -2784,7 +2784,7 @@ export default function Dashboard() {
               onClick={() => setSidebarOpen(false)}
             />
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { width: isTablet ? '200px' : '240px', flexShrink: 0, alignSelf: 'flex-start' }) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { width: isTablet ? '232px' : '272px', flexShrink: 0, alignSelf: 'flex-start' }) }}>
           <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: 'flex', width: '85vw', maxWidth: '360px', transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: sidebarOpen ? 'auto' : 'none' } : {}) }}>
              {/* Zona top fija: solo mobile — botón cerrar */}
             {isMobile && (
