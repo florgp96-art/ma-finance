@@ -20,6 +20,28 @@ export const CATEGORY_CONFIG = {
 }
 
 const BAR_COLOR = '#5C4F5C'
+// Identidad por categoría de ingreso — mismo criterio que CATEGORY_CONFIG (icono +
+// color propio, con contraste real de tono, no solo de luminosidad). Los nombres
+// tienen que matchear exactamente el nombre de la subcategoría real bajo "Ingresos"
+// (ver subcategoriasDeIngreso); cualquier categoría que no esté acá cae al color de
+// INCOME_PALETTE por índice, así que una categoría nueva en la base nunca rompe nada,
+// solo no tiene ícono propio hasta que se agregue acá.
+export const INCOME_CATEGORY_CONFIG = {
+  'Mama':                          { icon: '👩', color: '#F5C6D3' },
+  'Cuota Alimentaria Faustino':    { icon: '👦', color: '#B8D4E8' },
+  'Cuota Alimentaria Matko':       { icon: '👦', color: '#A8DDD0' },
+  'Cuota Alimentaria':             { icon: '👶', color: '#D4C4E8' },
+  'Freelance':                     { icon: '💻', color: '#A8B8D8' },
+  'Moms Food':                     { icon: '🍲', color: '#F5C99A' },
+  'Reintegros':                    { icon: '🔄', color: '#B8E0B0' },
+  'Sueldo':                        { icon: '💼', color: '#E8D48A' },
+  'Alquileres':                    { icon: '🏠', color: '#E0A898' },
+  'Inversiones':                   { icon: '📈', color: '#8ACFC4' },
+  'Negocio propio':                { icon: '🏪', color: '#F0A8A0' },
+  'Prestamo':                      { icon: '🤝', color: '#D4B896' },
+  'Devoluciones':                  { icon: '↩️', color: '#A0D8DC' },
+  'Otros':                         { icon: '📦', color: '#C8C4C0' },
+}
 const INCOME_PALETTE = ['#5C4F5C','#8C7B8C','#C4B8C4','#6A5A6A','#9A8A9A','#7A6A7A','#B4A8B4','#4A3F4A']
 const CHILDREN_PALETTE = ['#A8C4E8', '#E8C4A8', '#C4E8A8', '#E8A8C4', '#C4A8E8']
 
@@ -282,11 +304,21 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
             const isHovered = hoveredIdx === globalIdx && !selectedBubble
             const isDimmed = selectedBubble && !isSelected
             const hasSubcats = subcatMap?.[b.name]?.length > 0
+            const hasUSD = (b.originalUSD || 0) > 0
             const effectiveR = isSelected ? b.r + 14 : isHovered ? b.r + 4 : b.r
-            const iconSize = effectiveR > 60 ? 30 : effectiveR > 45 ? 24 : effectiveR > 35 ? 18 : 14
-            const pctSize = effectiveR > 60 ? 13 : effectiveR > 45 ? 11 : effectiveR > 35 ? 9 : 7
-            const iconY = effectiveR > 30 ? b.y - effectiveR * 0.22 : b.y
-            const pctY = effectiveR > 30 ? b.y + effectiveR * 0.28 : b.y + effectiveR * 0.5 + 8
+            // Burbujas grandes muestran nombre además de ícono + % (nunca solo el
+            // %); las chicas se quedan en ícono + % por falta de espacio.
+            const esGrande = effectiveR > 55
+            const esMuyGrande = effectiveR > 75
+            const iconSize = effectiveR > 60 ? 26 : effectiveR > 45 ? 22 : effectiveR > 35 ? 18 : 14
+            const pctSize = effectiveR > 60 ? 12 : effectiveR > 45 ? 11 : effectiveR > 35 ? 9 : 7
+            const nameSize = esMuyGrande ? 11 : 10
+            const maxChars = Math.max(6, Math.floor(effectiveR / 4.2))
+            const shortBubbleName = b.name.length > maxChars ? b.name.slice(0, maxChars - 1) + '…' : b.name
+            const iconY = esGrande ? b.y - effectiveR * 0.42 : effectiveR > 30 ? b.y - effectiveR * 0.22 : b.y
+            const nameY = b.y - effectiveR * 0.08
+            const pctY = esGrande ? b.y + effectiveR * 0.28 : effectiveR > 30 ? b.y + effectiveR * 0.28 : b.y + effectiveR * 0.5 + 8
+            const montoY = b.y + effectiveR * 0.55
             return (
               <g key={b.name}
                 style={{ cursor: hasSubcats ? 'pointer' : 'default' }}
@@ -320,6 +352,12 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                   opacity={isDimmed ? 0 : 1}
                   style={{ transition: 'r 0.25s, opacity 0.3s' }}
                 />
+                {/* Badge USD: anillo punteado (mismo lenguaje visual que los chips
+                    USD de "A pagar") en vez de una marca "U$S" flotante suelta. */}
+                {hasUSD && !isDimmed && (
+                  <circle cx={b.x} cy={b.y} r={effectiveR + 3}
+                    fill="none" stroke="#5588aa" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.85} />
+                )}
                 <text x={b.x} y={iconY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={iconSize}
@@ -327,6 +365,16 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                   style={{ transition: 'opacity 0.3s' }}>
                   {cfg.icon}
                 </text>
+                {esGrande && (
+                  <text x={b.x} y={nameY}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={nameSize} fontWeight="600"
+                    fill={darkMode ? '#2d2d2d' : '#2d2d2d'}
+                    opacity={isDimmed ? 0 : 0.85}
+                    style={{ transition: 'opacity 0.3s' }}>
+                    {shortBubbleName}
+                  </text>
+                )}
                 <text x={b.x} y={pctY}
                   textAnchor="middle" dominantBaseline="middle"
                   fontSize={pctSize} fill={darkMode ? '#ccc' : '#444'} fontWeight="700"
@@ -334,16 +382,19 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
                   style={{ transition: 'opacity 0.3s' }}>
                   {b.pct}%
                 </text>
+                {esMuyGrande && (
+                  <text x={b.x} y={montoY}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fontSize={9} fontWeight="500"
+                    fill={darkMode ? '#3a3a3c' : '#3a3a3c'}
+                    opacity={isDimmed ? 0 : 0.75}
+                    style={{ transition: 'opacity 0.3s' }}>
+                    $ {formatMonto(b.value)}
+                  </text>
+                )}
                 {hasSubcats && !isSelected && !isDimmed && (
                   <circle cx={b.x} cy={b.y + b.r - 8} r={3}
                     fill={darkMode ? '#9A8A9A' : '#5C4F5C'} opacity={0.5} />
-                )}
-                {(b.originalUSD || 0) > 0 && b.r > 28 && !isDimmed && (
-                  <text x={b.x} y={b.y + effectiveR - 10}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fontSize={7} fill="#5588aa" fontWeight="700" opacity={0.8}>
-                    U$S
-                  </text>
                 )}
               </g>
             )
@@ -439,9 +490,9 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
           const usdAmt = (b.originalUSD || 0)
           const hasUSD = usdAmt > 0
           return (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'flex-start', gap: '6px', fontSize: '12px' }}>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, marginTop: '2px', outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
-              <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', lineHeight: '1.3' }}>{cfg.icon} {b.name}</span>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: cfg.color, flexShrink: 0, outline: darkMode ? '1px solid rgba(255,255,255,0.2)' : 'none' }} />
+              <span title={`${cfg.icon} ${b.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cfg.icon} {b.name}</span>
               <div style={{ textAlign: 'right' }}>
                 {/* Solo-dólares: U$S como monto principal y la equivalencia en
                     pesos abajo — antes aparecía el mismo número dos veces
@@ -482,9 +533,9 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
           <>
             <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, margin: '4px 0' }} />
             {childRows.map((c, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'flex-start', gap: '6px', fontSize: '12px' }}>
-                <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#f5a623', flexShrink: 0, marginTop: '2px' }} />
-                <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>👧 {c.name}</span>
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#f5a623', flexShrink: 0 }} />
+                <span title={`👧 ${c.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>👧 {c.name}</span>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: '600', color: darkMode ? '#f5f5f7' : '#1d1d1f', whiteSpace: 'nowrap' }}>
                     $ {formatMonto(c.originalARS || 0)}
@@ -1048,17 +1099,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return customIcons?.[name] || CATEGORY_CONFIG[name]?.icon || childExtraConfig[name]?.icon || child?.icono || (child ? '👧' : '❓')
   }
   const resolveColor = (name) => CATEGORY_CONFIG[name]?.color || childExtraConfig[name]?.color || '#E0E0E0'
-  const getFullChartColor = (entry, idx) => esVistaIngresos ? INCOME_PALETTE[idx % INCOME_PALETTE.length] : resolveColor(entry.name)
   const mergedExtraConfig = {
     ...childExtraConfig,
     ...Object.fromEntries(Object.entries(customIcons || {}).map(([n, icon]) => [n, { ...(childExtraConfig[n] || CATEGORY_CONFIG[n] || { color: '#E0E0E0' }), icon }]))
   }
+  // Identidad por categoría de ingreso: ícono y color propios (INCOME_CATEGORY_CONFIG)
+  // — nunca el mismo emoji/tono para todas. Una categoría nueva sin mapeo cae a un
+  // color de INCOME_PALETTE por índice (rotando, nunca todas del mismo tono) en vez
+  // de romper o repetir el primer color.
   const ingresoExtraConfig = Object.fromEntries(
     ingresoBubbleData.map((entry, i) => [
       entry.name,
-      { icon: customIcons?.[entry.name] || CATEGORY_CONFIG[entry.name]?.icon || '💰', color: INCOME_PALETTE[i % INCOME_PALETTE.length] }
+      {
+        icon: customIcons?.[entry.name] || INCOME_CATEGORY_CONFIG[entry.name]?.icon || CATEGORY_CONFIG[entry.name]?.icon || '💰',
+        color: INCOME_CATEGORY_CONFIG[entry.name]?.color || INCOME_PALETTE[i % INCOME_PALETTE.length],
+      }
     ])
   )
+  const getFullChartColor = (entry, idx) => esVistaIngresos ? (ingresoExtraConfig[entry.name]?.color || INCOME_PALETTE[idx % INCOME_PALETTE.length]) : resolveColor(entry.name)
   const effectiveChartType = chartType
 
   // Subcategory breakdown por categoría para drill-down en BubbleChart
@@ -2718,7 +2776,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     {fullChartData.map((entry, idx) => (
                       <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                         <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getFullChartColor(entry, idx), flexShrink: 0 }} />
-                        <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>{esVistaIngresos ? '' : resolveIcon(entry.name)} {entry.name}</span>
+                        <span title={`${esVistaIngresos ? (ingresoExtraConfig[entry.name]?.icon || '💰') : resolveIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{esVistaIngresos ? (ingresoExtraConfig[entry.name]?.icon || '💰') : resolveIcon(entry.name)} {entry.name}</span>
                         <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
                       </div>
                     ))}
