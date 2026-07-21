@@ -46,12 +46,26 @@ export const subcategoriasDeIngreso = (categorias, subcategorias) => {
   return (subcategorias || []).filter(s => s.category_id === catIngresos.id)
 }
 
-// Texto de tooltip con el TC usado para el equivalente en ARS de un movimiento en
-// USD: siempre el TC congelado del movimiento (fx_rate) — nunca el TC actual — y
-// solo cae al TC vigente como aproximación en movimientos viejos sin fx_rate.
-export const tcTooltipDe = (tx, tcFallback) => {
+// TC para un movimiento histórico en USD: prioriza el promedio del MES de ese
+// movimiento (tcMap, ya filtrado por el tipo de dólar elegido — blue/oficial/
+// tarjeta/etc. — así que un cambio de tipo se refleja también en datos viejos,
+// nunca se queda pegado a un tipo congelado). Si no hay promedio cargado para
+// ese mes, cae al TC que tenía configurado el movimiento al cargarse (fx_rate)
+// — mejor aproximación que el TC de HOY para algo viejo — y solo como último
+// recurso (o si es el mes actual) usa el TC vigente.
+export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
+  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesTx = t.fecha?.slice(0, 7)
+  if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioActual) || 0
+  if (tcMap && tcMap[mesTx]) return Number(tcMap[mesTx])
+  if (t.fx_rate) return Number(t.fx_rate)
+  return parseFloat(tipoCambioActual) || 0
+}
+
+// Texto de tooltip con el TC usado para el equivalente en ARS de un movimiento en USD.
+export const tcTooltipDe = (tx, tcMap, tipoCambioActual) => {
   if (tx.moneda !== 'USD') return undefined
-  const tc = Number(tx.fx_rate) || parseFloat(tcFallback) || 0
+  const tc = tcDeMovimiento(tx, tcMap, tipoCambioActual)
   if (tc <= 0) return undefined
   return `U$S ${formatMonto(Math.abs(Number(tx.monto)))} · TC $ ${formatMontoFull(tc)} = $ ${formatMonto(Math.abs(Number(tx.monto)) * tc)}`
 }
@@ -59,16 +73,15 @@ export const tcTooltipDe = (tx, tcFallback) => {
 // Totales ARS / USD / unificado en ARS de una lista de movimientos — pensado para
 // reflejar EXACTAMENTE las filas visibles después de aplicar los filtros activos
 // (búsqueda, rango de fechas, categoría, etc.) en cualquier tabla de movimientos.
-// El unificado convierte USD con el TC congelado de cada movimiento (fx_rate),
-// cayendo al TC vigente solo si ese movimiento todavía no lo tiene.
-export const totalesDeLista = (txs, tcFallback, { signed = true } = {}) => {
-  const tcNum = parseFloat(tcFallback) || 0
+// El unificado convierte cada USD con tcDeMovimiento (promedio del mes/tipo elegido,
+// nunca el TC de hoy para algo viejo).
+export const totalesDeLista = (txs, tcMap, tipoCambioActual, { signed = true } = {}) => {
   let ars = 0, usd = 0, unificado = 0
   ;(txs || []).forEach(t => {
     const monto = Number(t.monto) || 0
     const signo = !signed ? 1 : (t.tipo === 'ingreso' ? 1 : -1)
     if (t.moneda === 'USD') {
-      const tc = Number(t.fx_rate) || tcNum
+      const tc = tcDeMovimiento(t, tcMap, tipoCambioActual)
       usd += signo * monto
       unificado += signo * monto * tc
     } else if (t.moneda === 'ARS') {
@@ -82,8 +95,8 @@ export const totalesDeLista = (txs, tcFallback, { signed = true } = {}) => {
 // Pie de tabla reutilizable con el total en vivo de lo que se ve — mobile-first,
 // nunca más de 2 líneas (ver tarea 3). signed=false para listas de un solo signo
 // (ej. gastos de un hijo), donde no tiene sentido mostrar el total en negativo.
-export function TotalesFooter({ txs, tc, darkMode, colSpan, signed = true }) {
-  const { ars, usd, unificado } = totalesDeLista(txs, tc, { signed })
+export function TotalesFooter({ txs, tcMap, tipoCambio, darkMode, colSpan, signed = true }) {
+  const { ars, usd, unificado } = totalesDeLista(txs, tcMap, tipoCambio, { signed })
   if (Math.round(ars) === 0 && Math.round(usd * 100) === 0) return null
   const hayAmbas = Math.round(ars) !== 0 && Math.round(usd * 100) !== 0
   return (
@@ -918,8 +931,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
 
   // "Total por mes" de ingresos: incluye USD/EUR convertidos (antes solo sumaba
-  // ARS) — USD con el TC congelado de cada movimiento (fx_rate), cayendo al TC
-  // del mes (ya histórico vía tcMap) solo si ese movimiento no lo tiene.
+  // ARS) — USD con el TC del mes de cada movimiento (según el tipo de dólar
+  // elegido), nunca el TC de hoy para algo viejo.
   const ingresosBarData = (() => {
     const byMonth = {}
     transactions.filter(t => t.tipo === 'ingreso').forEach(t => {
@@ -927,7 +940,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (!m) return
       const monto = Number(t.monto)
       const equivArs = t.moneda === 'USD'
-        ? monto * (Number(t.fx_rate) || getTC(m))
+        ? monto * tcDeMovimiento(t, tcMap, tipoCambio)
         : t.moneda === 'EUR'
           ? monto * getTCEUR(m)
           : monto
@@ -945,10 +958,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const moneda = t.moneda || 'ARS'
         if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
         if (moneda === 'USD') {
-          // TC congelado del movimiento (fx_rate) si lo tiene — nunca el TC actual
-          // para algo histórico. Solo cae al TC del período (tc) en datos viejos
-          // de antes de que existiera fx_rate.
-          const tcTx = Number(t.fx_rate) || tcNum
+          // TC del mes de este movimiento (según el tipo de dólar elegido) —
+          // nunca el TC de hoy para algo viejo. tc (el período seleccionado) es
+          // el fallback si tcDeMovimiento no tiene nada mejor para ofrecer.
+          const tcTx = tcDeMovimiento(t, tcMap, tipoCambio) || tcNum
           acc[cat].originalUSD += monto
           if (tcTx > 0) acc[cat].value += monto * tcTx
         } else if (moneda === 'EUR') {
@@ -978,7 +991,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const txs = mesTxs.filter(t => getChildName(t) === name && t.tipo === 'gasto')
     return {
       name,
-      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
+      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
       originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
       originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
       originalEUR: txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + Number(t.monto), 0),
@@ -990,7 +1003,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
       const persona = getChildName(t) || 'Personal'
       if (!acc[persona]) acc[persona] = { name: persona, value: 0, originalARS: 0, originalUSD: 0 }
-      const monto = t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+      const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
       acc[persona].value += monto
       if (t.moneda === 'ARS') acc[persona].originalARS += Number(t.monto)
       else acc[persona].originalUSD += Number(t.monto)
@@ -1010,7 +1023,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * (Number(t.fx_rate) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
           if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
           acc[cat].value += monto
           if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
@@ -1241,7 +1254,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       <td style={{...styles.td, textAlign:'right', fontWeight:'600',
         whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
         color: darkMode ? '#F0EDEC' : '#2d2d2d'}}
-        title={tcTooltipDe(tx, tcEfectivo)}>
+        title={tcTooltipDe(tx, tcMap, tipoCambio)}>
         {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
       </td>
       {editingTx === tx.id ? renderEditActions(tx) : (
@@ -2055,7 +2068,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </tr>
                 ))}
               </tbody>
-              <TotalesFooter txs={items} tc={tipoCambio} darkMode={darkMode} colSpan={4} />
+              <TotalesFooter txs={items} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={4} />
             </table>
           </div>
         )}
@@ -2411,10 +2424,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {selectedMeses.length > 0 && mesTxs.length > 0 && (() => {
         const divider = <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '8px 0' }} />
         const egresosEquivARS = totalARS + totalUSD * tcEfectivo + totalEUR * tcEUR
-        // Unificado con el TC congelado de cada movimiento (fx_rate, tarea 4) — no
-        // el TC actual — para que el equivalente de ingresos históricos en USD no
-        // cambie retroactivamente al actualizar el TC configurado.
-        const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcEfectivo, { signed: false }).unificado + totalIngresosEUR * tcEUR
+        // Unificado con el TC del mes de cada movimiento (tcMap, ya según el tipo de
+        // dólar elegido) — no el TC de hoy — para que el equivalente de ingresos
+        // históricos en USD no cambie retroactivamente al actualizar el TC.
+        const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcMap, tipoCambio, { signed: false }).unificado + totalIngresosEUR * tcEUR
         const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
@@ -2851,7 +2864,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tbody>
             {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
-          <TotalesFooter txs={identificadas} tc={tcEfectivo} darkMode={darkMode} colSpan={9} />
+          <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={9} />
         </table>
         </div>
       </div>
@@ -2906,7 +2919,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
                         )}
                       </td>
-                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcEfectivo)}>
+                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
                         {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
                       </td>
                       {editingTx === tx.id ? renderEditActions(tx) : (
