@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months } from './AccountDetail'
@@ -79,118 +79,128 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     setLoading(false)
   }
 
-  const accountTipoById = new Map((accounts || []).map(a => [a.id, a.tipo]))
+  const accountTipoById = useMemo(() => new Map((accounts || []).map(a => [a.id, a.tipo])), [accounts])
   const accountNombreById = new Map((accounts || []).map(a => [a.id, a.nombre]))
   const tc = parseFloat(tipoCambio) || 0
-  const aArs = (t) => t.moneda === 'USD' ? Number(t.monto) * tc : Number(t.monto)
+  const aArs = useCallback((t) => t.moneda === 'USD' ? Number(t.monto) * tc : Number(t.monto), [tc])
 
-  const mesesDisponibles = [...new Set([
+  const mesesDisponibles = useMemo(() => [...new Set([
     ...transactions.map(t => normFecha(t.fecha).slice(0, 7)).filter(Boolean),
     new Date().toISOString().slice(0, 7),
   ])].sort().reverse()
+  , [transactions])
 
-  const esAlquilerOExpensas = (t) => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
-  const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
-  // "Débito automático" en sentido estricto (algo que se debita solo, tipo
-  // seguro/cuota/servicio) es la categoría "Débitos" que el usuario ya puede
-  // asignar a una transacción — no "cualquier gasto de una cuenta débito",
-  // que en la práctica son transferencias comunes (Comida, Transporte, etc.).
-  const esDebitoAutomatico = (t) => t.categories?.nombre === 'Débitos'
+  // Bloque "desglose del mes" (actual + cuotas comprometidas + historial 6 meses):
+  // desgloseDelMes filtra TODAS las transacciones y se llama 7 veces por render (1 para
+  // el mes seleccionado + 6 para el historial) — memoizado como un todo para que un
+  // re-render ajeno (abrir/cerrar un ítem del desglose, hover) no dispare esos 7 barridos
+  // de nuevo. Ningún cálculo interno se modificó.
+  const { actual, pagosPorCuenta, cuotas, historial } = useMemo(() => {
+    const esAlquilerOExpensas = (t) => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
+    const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
+    // "Débito automático" en sentido estricto (algo que se debita solo, tipo
+    // seguro/cuota/servicio) es la categoría "Débitos" que el usuario ya puede
+    // asignar a una transacción — no "cualquier gasto de una cuenta débito",
+    // que en la práctica son transferencias comunes (Comida, Transporte, etc.).
+    const esDebitoAutomatico = (t) => t.categories?.nombre === 'Débitos'
 
-  // Clasifica los movimientos "efectivamente pagados" de un mes en grupos sin
-  // superposición entre ellos, siguiendo el mismo modelo de datos que ya usa
-  // la vista de A pagar (pago de tarjeta = transacción tipo "neutro" en una
-  // cuenta de crédito; débito/efectivo = cuentas de ese tipo; alquiler/
-  // expensas se identifica por categoría, sin importar la cuenta; dentro de
-  // una cuenta débito, lo categorizado como "Débitos" son los automáticos de
-  // verdad, y el resto son transferencias comunes).
-  const desgloseDelMes = (mes) => {
-    const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
-    const tipoCuenta = (t) => accountTipoById.get(t.account_id)
-    const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
-    const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t))
-    const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t) && !esAlquilerOExpensas(t))
-    const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t) && !esDebitoAutomatico(t))
-    const suscripciones = txs.filter(t => t.tipo === 'gasto' && esSuscripcion(t) && tipoCuenta(t) !== 'credito')
-    const efectivo = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'efectivo' && !esSuscripcion(t))
-    const ingresos = txs.filter(t => t.tipo === 'ingreso')
-    const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
-    const todos = [...pagos, ...alquiler, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
-    const totalPagado = sum(todos)
-    const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda !== 'USD' ? Number(t.monto) : 0), 0)
-    const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
-    const totalIngresos = sum(ingresos)
-    return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
-  }
+    // Clasifica los movimientos "efectivamente pagados" de un mes en grupos sin
+    // superposición entre ellos, siguiendo el mismo modelo de datos que ya usa
+    // la vista de A pagar (pago de tarjeta = transacción tipo "neutro" en una
+    // cuenta de crédito; débito/efectivo = cuentas de ese tipo; alquiler/
+    // expensas se identifica por categoría, sin importar la cuenta; dentro de
+    // una cuenta débito, lo categorizado como "Débitos" son los automáticos de
+    // verdad, y el resto son transferencias comunes).
+    const desgloseDelMes = (mes) => {
+      const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
+      const tipoCuenta = (t) => accountTipoById.get(t.account_id)
+      const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
+      const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t))
+      const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t) && !esAlquilerOExpensas(t))
+      const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t) && !esDebitoAutomatico(t))
+      const suscripciones = txs.filter(t => t.tipo === 'gasto' && esSuscripcion(t) && tipoCuenta(t) !== 'credito')
+      const efectivo = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'efectivo' && !esSuscripcion(t))
+      const ingresos = txs.filter(t => t.tipo === 'ingreso')
+      const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
+      const todos = [...pagos, ...alquiler, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
+      const totalPagado = sum(todos)
+      const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda !== 'USD' ? Number(t.monto) : 0), 0)
+      const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
+      const totalIngresos = sum(ingresos)
+      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
+    }
 
-  const actual = desgloseDelMes(selectedMonth)
+    const actual = desgloseDelMes(selectedMonth)
 
-  const pagosPorCuenta = new Map()
-  actual.pagos.forEach(p => {
-    const list = pagosPorCuenta.get(p.account_id) || []
-    list.push(p)
-    pagosPorCuenta.set(p.account_id, list)
-  })
-
-  // Cuotas comprometidas a futuro: para cada compra en cuotas, lo que falta
-  // facturar de acá en adelante. Agrupar por t.nombre/t.detalle "tal cual" no
-  // sirve — esos campos traen pegado el sufijo de cuota del banco (ej.
-  // "Compra 3/12"), que cambia en cada fila de la misma compra real, así que
-  // cada cuota ya facturada terminaba contándose como una "compra" aparte
-  // (confirmado: ver diagnóstico en PR #97). Se agrupa por nombre sin el
-  // sufijo + cuotas_total + cuenta + mes de inicio de la compra (mismo
-  // criterio que ya usa el widget "Cuotas pendientes" de Dashboard.js), y solo
-  // se toma la cuota de mayor número por grupo (la más reciente facturada).
-  const stripCuotaSuffix = (n) => (n || '')
-    .replace(/\s*\(1\/3\)\s*$/, '')
-    .replace(/\s+\d+\/\d+\s*$/, '')
-    .trim()
-  const mesInicioCompra = (t) => {
-    if (!t.fecha) return ''
-    const f = new Date(t.fecha + 'T12:00:00')
-    const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  }
-  const cuotasComprometidas = () => {
-    // Alquiler/expensas puede quedar cargado con cuotas_total/cuota_numero
-    // (ej. para trackear los meses de un contrato), pero no es una compra
-    // financiada con fecha de fin real — es un gasto fijo recurrente que no
-    // corresponde proyectar acá (además de que ni siquiera está garantizado
-    // que se vaya a pagar cada mes).
-    const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1 && !esAlquilerOExpensas(t))
-    const groupKeyCuota = (t) => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
-    const maxCuotaPorGrupo = {}
-    conCuotas.forEach(t => {
-      const key = groupKeyCuota(t)
-      const cn = t.cuota_numero || 0
-      if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
+    const pagosPorCuenta = new Map()
+    actual.pagos.forEach(p => {
+      const list = pagosPorCuenta.get(p.account_id) || []
+      list.push(p)
+      pagosPorCuenta.set(p.account_id, list)
     })
-    // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales con
-    // el mismo número de cuota — hay que sumarlas para recuperar el monto
-    // total de esa cuota, no quedarnos con una sola parte.
-    const latestByPurchase = {}
-    conCuotas.forEach(t => {
-      const key = groupKeyCuota(t)
-      if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
-      if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
-      latestByPurchase[key].monto += Number(t.monto)
-    })
-    let total = 0, compras = 0
-    Object.values(latestByPurchase).forEach(t => {
-      const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-      if (remaining <= 0) return
-      total += aArs(t) * remaining
-      compras++
-    })
-    return { total, compras }
-  }
-  const cuotas = cuotasComprometidas()
 
-  const historial = getLast6Months().map(m => ({
-    mes: m,
-    label: mesLabel(m).slice(0, 3),
-    total: Math.round(desgloseDelMes(m).totalPagado),
-  }))
+    // Cuotas comprometidas a futuro: para cada compra en cuotas, lo que falta
+    // facturar de acá en adelante. Agrupar por t.nombre/t.detalle "tal cual" no
+    // sirve — esos campos traen pegado el sufijo de cuota del banco (ej.
+    // "Compra 3/12"), que cambia en cada fila de la misma compra real, así que
+    // cada cuota ya facturada terminaba contándose como una "compra" aparte
+    // (confirmado: ver diagnóstico en PR #97). Se agrupa por nombre sin el
+    // sufijo + cuotas_total + cuenta + mes de inicio de la compra (mismo
+    // criterio que ya usa el widget "Cuotas pendientes" de Dashboard.js), y solo
+    // se toma la cuota de mayor número por grupo (la más reciente facturada).
+    const stripCuotaSuffix = (n) => (n || '')
+      .replace(/\s*\(1\/3\)\s*$/, '')
+      .replace(/\s+\d+\/\d+\s*$/, '')
+      .trim()
+    const mesInicioCompra = (t) => {
+      if (!t.fecha) return ''
+      const f = new Date(t.fecha + 'T12:00:00')
+      const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }
+    const cuotasComprometidas = () => {
+      // Alquiler/expensas puede quedar cargado con cuotas_total/cuota_numero
+      // (ej. para trackear los meses de un contrato), pero no es una compra
+      // financiada con fecha de fin real — es un gasto fijo recurrente que no
+      // corresponde proyectar acá (además de que ni siquiera está garantizado
+      // que se vaya a pagar cada mes).
+      const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1 && !esAlquilerOExpensas(t))
+      const groupKeyCuota = (t) => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
+      const maxCuotaPorGrupo = {}
+      conCuotas.forEach(t => {
+        const key = groupKeyCuota(t)
+        const cn = t.cuota_numero || 0
+        if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
+      })
+      // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales con
+      // el mismo número de cuota — hay que sumarlas para recuperar el monto
+      // total de esa cuota, no quedarnos con una sola parte.
+      const latestByPurchase = {}
+      conCuotas.forEach(t => {
+        const key = groupKeyCuota(t)
+        if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
+        if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
+        latestByPurchase[key].monto += Number(t.monto)
+      })
+      let total = 0, compras = 0
+      Object.values(latestByPurchase).forEach(t => {
+        const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
+        if (remaining <= 0) return
+        total += aArs(t) * remaining
+        compras++
+      })
+      return { total, compras }
+    }
+    const cuotas = cuotasComprometidas()
+
+    const historial = getLast6Months().map(m => ({
+      mes: m,
+      label: mesLabel(m).slice(0, 3),
+      total: Math.round(desgloseDelMes(m).totalPagado),
+    }))
+
+    return { actual, pagosPorCuenta, cuotas, historial }
+  }, [transactions, accountTipoById, selectedMonth, aArs])
 
   const p = darkMode ? '#8C7B8C' : '#5C4F5C'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'

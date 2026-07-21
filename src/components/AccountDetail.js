@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
@@ -117,7 +117,7 @@ export const totalesDeLista = (txs, tcMap, tipoCambioActual, { signed = true } =
 // Pie de tabla reutilizable con el total en vivo de lo que se ve — mobile-first,
 // nunca más de 2 líneas (ver tarea 3). signed=false para listas de un solo signo
 // (ej. gastos de un hijo), donde no tiene sentido mostrar el total en negativo.
-export function TotalesFooter({ txs, tcMap, tipoCambio, darkMode, colSpan, signed = true }) {
+function TotalesFooterImpl({ txs, tcMap, tipoCambio, darkMode, colSpan, signed = true }) {
   const { ars, usd, unificado } = totalesDeLista(txs, tcMap, tipoCambio, { signed })
   if (Math.round(ars) === 0 && Math.round(usd * 100) === 0) return null
   const hayAmbas = Math.round(ars) !== 0 && Math.round(usd * 100) !== 0
@@ -140,8 +140,10 @@ export function TotalesFooter({ txs, tcMap, tipoCambio, darkMode, colSpan, signe
     </tfoot>
   )
 }
+export const TotalesFooter = React.memo(TotalesFooterImpl)
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 // El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
 // cuando falta, se aproxima restándole al vencimiento la brecha típica entre el cierre
@@ -184,7 +186,7 @@ export const getLast6Months = () => {
 }
 
 // Bubble chart component
-export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig, subcatMap, defaultIcon = '❓' }) {
+function BubbleChartImpl({ data, legendData, childRows, darkMode, tipoCambio, isMobile, extraConfig, subcatMap, defaultIcon = '❓' }) {
   const containerRef = useRef(null)
   const [bubbles, setBubbles] = useState([])
   const [hoveredIdx, setHoveredIdx] = useState(null)
@@ -254,7 +256,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
   }, [data])
 
   // Compute radial sub-bubbles when a category is selected
-  const subBubbles = (() => {
+  const subBubbles = useMemo(() => {
     if (!selectedBubble || !subcatMap?.[selectedBubble.name]) return []
     const subcats = subcatMap[selectedBubble.name].filter(s => s.value > 0)
     if (subcats.length === 0) return []
@@ -273,7 +275,7 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
         pct: selectedBubble.value > 0 ? Math.round((s.value / selectedBubble.value) * 100) : 0,
       }
     })
-  })()
+  }, [selectedBubble, subcatMap, isMobile])
 
   const parentCfg = selectedBubble
     ? ((extraConfig?.[selectedBubble.name]) || CATEGORY_CONFIG[selectedBubble.name] || { color: '#C4B8C4' })
@@ -554,6 +556,11 @@ export function BubbleChart({ data, legendData, childRows, darkMode, tipoCambio,
     </div>
   )
 }
+// React.memo: BubbleChart es un SVG a mano bastante pesado (fuerza de repulsión,
+// muchas formas) — con esto un re-render de AccountDetail/Dashboard/HijoDetail por
+// algo ajeno (hover, scroll) no lo vuelve a renderizar mientras sus props (todas
+// ahora memoizadas en el que lo llama) sigan siendo las mismas.
+export const BubbleChart = React.memo(BubbleChartImpl)
 
 export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
   const [transactions, setTransactions] = useState([])
@@ -806,7 +813,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setLoading(false)
   }
 
-  const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+  const mesesDisponibles = useMemo(() =>
+    [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+  , [transactions])
 
   const toggleMes = (m) => {
     setSelectedMeses(prev =>
@@ -932,7 +941,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return sortDir === 'asc' ? ' ↑' : ' ↓'
   }
 
-  const sortTx = (list) => {
+  const sortTx = useCallback((list) => {
     return [...list].sort((a, b) => {
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
@@ -950,7 +959,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (valA > valB) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }
+  }, [sortKey, sortDir])
 
   // Vista de cuenta de ingresos: todas las txs son tipo ingreso
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
@@ -960,9 +969,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     total: Number(s.total_resumen) || 0
   }))
 
-  const mesTxs = selectedMeses.length > 0
+  const mesTxs = useMemo(() => selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
     : []
+  , [transactions, selectedMeses])
 
   const getTC = (mes) => {
     const mesActual = new Date().toISOString().slice(0, 7)
@@ -973,14 +983,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
   const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
-  const getTCEUR = (mes) => {
+  const getTCEUR = useCallback((mes) => {
     const mesActual = new Date().toISOString().slice(0, 7)
     if (!mes || mes === mesActual) return parseFloat(tipoCambioEUR) || 0
     if (tcMapEUR?.[mes]) return Number(tcMapEUR[mes])
     return parseFloat(tipoCambioEUR) || 0
-  }
+  }, [tipoCambioEUR, tcMapEUR])
   const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
 
+  const getChildName = useCallback((t) => t.children?.nombre || (t.child_id ? children.find(c => c.id === t.child_id)?.nombre : null) || (t.tag || null), [children])
+
+  // Bloque de agregaciones para gráficos/cards (bubble chart, totales por moneda,
+  // comparativa vs mes anterior, etc.) — memoizado como un todo porque son cálculos
+  // encadenados sobre mesTxs/transactions que antes se recalculaban completos en
+  // CADA render (hover, scroll, abrir/cerrar dropdowns, etc.), no solo cuando
+  // cambiaban los datos. Ningún cálculo interno se modificó: se movió tal cual
+  // adentro del useMemo y se devuelve lo que se usa más abajo en el render.
+  const chartsMemo = useMemo(() => {
   // "Total por mes" de ingresos: incluye USD/EUR convertidos (antes solo sumaba
   // ARS) — USD con el TC del mes de cada movimiento (según el tipo de dólar
   // elegido), nunca el TC de hoy para algo viejo.
@@ -1032,7 +1051,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // Datos para legend: categorías sin hijos + child rows separadas
   // Usa child_id (modelo nuevo) con fallback a tag (modelo viejo)
-  const getChildName = (t) => t.children?.nombre || (t.child_id ? children.find(c => c.id === t.child_id)?.nombre : null) || (t.tag || null)
   const gastosConHijo = mesTxs.filter(t => t.tipo === 'gasto' && getChildName(t))
   const childNames = [...new Set(gastosConHijo.map(t => getChildName(t)))]
   const netBubbleData = childNames.length > 0
@@ -1165,8 +1183,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const diffIngPct = puedeComparar && mesAnterior && totalIngAnterior > 0 ? Math.round(((totalIngSeleccionado - totalIngAnterior) / totalIngAnterior) * 100) : null
   const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
-  const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-  const matchSearch = (t) => {
+    return {
+      ingresosBarData, chartData, fullChartData, childNames, personaBubbleData, mergedExtraConfig,
+      ingresoExtraConfig, getFullChartColor, subcatDataMap, catTopList, resolveIcon, resolveColor,
+      totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
+      mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
+    }
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getChildName, getTCEUR])
+
+  const {
+    ingresosBarData, chartData, fullChartData, childNames, personaBubbleData, mergedExtraConfig,
+    ingresoExtraConfig, getFullChartColor, subcatDataMap, catTopList, resolveIcon, resolveColor,
+    totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
+    mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
+  } = chartsMemo
+
+  const matchSearch = useCallback((t) => {
     if (!searchQuery) return true
     const q = norm(searchQuery)
     return (
@@ -1184,8 +1216,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       norm(formatFecha(t.fecha)).includes(q) ||
       String(t.monto || '').includes(q)
     )
-  }
+  }, [searchQuery])
 
+  // Pipeline de la tabla de movimientos (filtro por mes/cuenta/búsqueda, split
+  // sin-identificar/identificadas, agrupado de gastos divididos en 3) — memoizado
+  // como un todo porque filtra/ordena hasta 1000+ transacciones y antes se
+  // recalculaba completo en cada render, aunque el cambio fuera ajeno (ej. hover
+  // en el gráfico). Ningún cálculo interno se modificó.
+  const tablaMemo = useMemo(() => {
   const txFiltradas = (selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)))
     : transactions
@@ -1248,6 +1286,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const enEdicion = grupo.txs.some(t => t.id === editingTx)
     filasTabla.push({ tipo: 'grupo', grupo, expandido: enEdicion || expandedSplits.has(grupo.key) })
   })
+
+    return { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla }
+  }, [transactions, selectedMeses, filtroCuenta, matchSearch, sortTx, editingTx, expandedSplits])
+
+  const { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla } = tablaMemo
 
   const renderTxRow = (tx) => (
     <tr key={tx.id} style={styles.tr}>
@@ -1584,12 +1627,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
 
-  if (loading) return (
-    <div style={styles.loading}>Cargando datos...</div>
-  )
-
   // Contar transacciones por período de cada extracto, ordenados por mes descendente
-  const stmtsConTx = [...statements]
+  const stmtsConTx = useMemo(() => [...statements]
     .sort((a, b) => {
       const pa = a.periodo || a.fecha_hasta?.slice(0, 7) || ''
       const pb = b.periodo || b.fecha_hasta?.slice(0, 7) || ''
@@ -1600,12 +1639,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const count = transactions.filter(t => mes && t.fecha?.startsWith(mes)).length
       return { ...s, txCount: count }
     })
+  , [statements, transactions])
 
   // En "Resumen General" (todas las cuentas sin soloAPagar) ya no se muestra acá: vive en
   // su propia pestaña de primer nivel. Sigue disponible dentro de cada cuenta individual.
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
   const hoyISO = new Date().toISOString().slice(0, 10)
   const mesActual = hoyISO.slice(0, 7)
+
+  // Cascada bottom-up de "A pagar": statements, estado de cada uno, atribución de
+  // pagos, "Te falta pagar", desglose por categoría/hijo. Memoizada como un todo
+  // (nivel más arriba, sin tocar ni un cálculo interno) porque antes recorría
+  // transactions/statements completos en CADA render de la app, incluyendo
+  // interacciones que no tienen nada que ver (hover, scroll, abrir un dropdown de
+  // mes en otra pestaña, etc.).
+  const apagarMemo = useMemo(() => {
   // Una tarjeta de crédito real arrastra sola el saldo no pagado al resumen siguiente
   // (el banco ya lo suma ahí) — por eso un resumen VIEJO (ya reemplazado por uno más
   // nuevo de la misma cuenta) se sigue ocultando apenas vence, sin excepción: lo que
@@ -1901,13 +1949,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }
     return acc
   }, {})).sort((a, b) => b.unificado - a.unificado)
-  const handleApagarSort = (key) => {
-    if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
-  }
-  const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
-  const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
-  const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
   // Igual que en categoriasResumen: el total de la categoría es solo el
   // "resto" (sin hijos), para no duplicar lo que ya muestra su pastilla.
   const totalesConResto = (map, hijoMap) => {
@@ -2001,6 +2042,33 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // mes" calculado por separado con el que pueda desalinearse.
   const categoriasBrutoSubtotalArs = categoriasResumenGeneral.reduce((s, [, t]) => s + t, 0)
     + hijosTotalesGeneral.reduce((s, [, t]) => s + t, 0)
+
+    return {
+      totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
+      statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
+      ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
+      subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
+      hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
+      itemsPorStatement, categoriasResumen, diasRestantesDe,
+    }
+  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, apagarSortKey, apagarSortDir, catGeneralSeleccionada, getChildName])
+
+  const {
+    totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
+    statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
+    ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
+    subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
+    hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
+    itemsPorStatement, categoriasResumen, diasRestantesDe,
+  } = apagarMemo
+
+  const handleApagarSort = (key) => {
+    if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
+  }
+  const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
+  const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
+  const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
 
   // Una tarjeta de "A pagar": fecha siempre en formato relativo (la
   // absoluta queda de tooltip), y con un estilo rojo destacado cuando ya
@@ -2142,6 +2210,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       </div>
     )
   }
+
+  // Todos los hooks (useMemo/useCallback) de arriba deben ejecutarse siempre, en el
+  // mismo orden, en cada render — por eso este return temprano quedó acá abajo, justo
+  // antes del JSX, en vez de más arriba como estaba antes de memoizar.
+  if (loading) return (
+    <div style={styles.loading}>Cargando datos...</div>
+  )
 
   return (
     <div>

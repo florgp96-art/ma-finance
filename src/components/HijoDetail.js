@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento } from './AccountDetail'
@@ -89,55 +89,64 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     setLoading(false)
   }
 
-  const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
-
   const toggleMes = (m) =>
     setSelectedMeses(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
-
-  const filteredTx = selectedMeses.length > 0
-    ? transactions.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
-    : transactions
 
   const tc = parseFloat(tipoCambio) || 1
   const tcEUR = parseFloat(tipoCambioEUR) || 0
 
-  const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
-  const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
-  const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
+  // Filtro por mes, totales, datos del bubble chart y evolución mensual — memoizados
+  // como un todo porque monthlyData por sí solo filtra transactions 3 veces POR CADA
+  // uno de los últimos 6 meses (18 barridos) y antes se recalculaba todo esto en cada
+  // render, incluso uno ajeno (editar una fila, cambiar de orden). Ningún cálculo
+  // interno se modificó.
+  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, bubbleData, monthlyData } = useMemo(() => {
+    const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
 
-  // Bubble chart data agrupado por categoría — USD convertido al TC del mes de
-  // cada movimiento (según el tipo de dólar elegido), nunca el TC de hoy para
-  // algo viejo.
-  const catMap = {}
-  filteredTx.forEach(t => {
-    const cat = t.categories?.nombre || 'A Identificar'
-    if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
-    catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
-    if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
-    else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
-    else catMap[cat].originalUSD += t.monto
-  })
-  const bubbleData = Object.entries(catMap)
-    .map(([name, val]) => ({ name, ...val }))
-    .sort((a, b) => b.value - a.value)
+    const filteredTx = selectedMeses.length > 0
+      ? transactions.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
+      : transactions
 
-  const getTCEURForMonth = (ym) => {
-    const mesActual = new Date().toISOString().slice(0, 7)
-    if (ym === mesActual) return tcEUR
-    if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
-    return tcEUR
-  }
+    const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
+    const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
+    const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
 
-  // Evolución mensual (últimos 6 meses) — USD convertido al TC del mes de cada
-  // movimiento, nunca el TC de hoy para meses pasados.
-  const last6 = getLast6Months()
-  const monthlyData = last6.map(ym => {
-    const txs = transactions.filter(t => t.fecha?.startsWith(ym))
-    const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
-    const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc), 0)
-    const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
-    return { mes: mesLabel(ym), total: Math.round(ars + usd + eur * getTCEURForMonth(ym)) }
-  })
+    // Bubble chart data agrupado por categoría — USD convertido al TC del mes de
+    // cada movimiento (según el tipo de dólar elegido), nunca el TC de hoy para
+    // algo viejo.
+    const catMap = {}
+    filteredTx.forEach(t => {
+      const cat = t.categories?.nombre || 'A Identificar'
+      if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
+      catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
+      if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
+      else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
+      else catMap[cat].originalUSD += t.monto
+    })
+    const bubbleData = Object.entries(catMap)
+      .map(([name, val]) => ({ name, ...val }))
+      .sort((a, b) => b.value - a.value)
+
+    const getTCEURForMonth = (ym) => {
+      const mesActual = new Date().toISOString().slice(0, 7)
+      if (ym === mesActual) return tcEUR
+      if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
+      return tcEUR
+    }
+
+    // Evolución mensual (últimos 6 meses) — USD convertido al TC del mes de cada
+    // movimiento, nunca el TC de hoy para meses pasados.
+    const last6 = getLast6Months()
+    const monthlyData = last6.map(ym => {
+      const txs = transactions.filter(t => t.fecha?.startsWith(ym))
+      const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
+      const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc), 0)
+      const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
+      return { mes: mesLabel(ym), total: Math.round(ars + usd + eur * getTCEURForMonth(ym)) }
+    })
+
+    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, bubbleData, monthlyData }
+  }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR])
 
   const startEdit = (tx) => {
     setEditingTx(tx.id)
@@ -179,7 +188,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     else { setSortKey(key); setSortDir(key === 'fecha' ? 'desc' : 'asc') }
   }
   const sortIcon = (key) => sortKey !== key ? ' ↕' : (sortDir === 'asc' ? ' ↑' : ' ↓')
-  const sortedTx = [...filteredTx].sort((a, b) => {
+  const sortedTx = useMemo(() => [...filteredTx].sort((a, b) => {
     let valA, valB
     if (sortKey === 'fecha') { valA = a.fecha || ''; valB = b.fecha || '' }
     else if (sortKey === 'descripcion') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
@@ -188,7 +197,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     if (valA < valB) return sortDir === 'asc' ? -1 : 1
     if (valA > valB) return sortDir === 'asc' ? 1 : -1
     return 0
-  })
+  }), [filteredTx, sortKey, sortDir])
 
   const s = getStyles(darkMode)
 

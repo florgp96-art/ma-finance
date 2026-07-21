@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
@@ -181,6 +181,15 @@ export default function Dashboard() {
     try { const s = localStorage.getItem('tc_manual_ma'); return s ? JSON.parse(s) : { valor: null, enabled: false } } catch { return { valor: null, enabled: false } }
   })
   const tipoCambioEfectivo = (tcManual?.enabled && tcManual?.valor) ? String(tcManual.valor) : tipoCambio
+  // tcMap/tcMapEUR: promedio por mes de cada tipo de dólar/euro, para convertir
+  // movimientos históricos en USD/EUR con el TC de su propio mes (ver tcDeMovimiento
+  // en AccountDetail.js), en vez del TC de hoy. Antes se reconstruían con
+  // Object.fromEntries(exchangeRates.filter(...).map(...)) en varios puntos del
+  // render (incluso una vez POR TRANSACCIÓN dentro de un reduce) — memoizados acá una
+  // sola vez, misma lógica, para que solo se recalculen cuando cambian las
+  // cotizaciones cargadas o el tipo de dólar elegido.
+  const tcMap = useMemo(() => Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor])), [exchangeRates, tcTipo])
+  const tcMapEUR = useMemo(() => Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor])), [exchangeRates])
   const guardarTipoCambioManual = (valor) => {
     setTcManual(valor)
     try { localStorage.setItem('tc_manual_ma', JSON.stringify(valor)) } catch {}
@@ -614,14 +623,26 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
     if (data && data.length > 0) {
       setSelectedAccount(prev => prev === null ? 'all' : prev)
     }
-  }
+  }, [])
+
+  // Handlers pasados como props a AccountDetail — antes eran arrow functions
+  // inline en el JSX, recreadas en cada render.
+  const handleNavigateToHijo = useCallback((nombre) => {
+    setSelectedHijoNombre(nombre)
+    setDashboardTab('hijos')
+  }, [])
+  const handleAddIngreso = useCallback(() => {
+    setTipoMovimiento('ingreso')
+    setEfectivo(prev => ({ ...prev, cuenta: '' }))
+    setShowMovimiento(true)
+  }, [])
 
 
   const fetchExchangeRates = async () => {
@@ -2135,26 +2156,154 @@ export default function Dashboard() {
   const isMobile = windowWidth < 640
   const styles = getStyles(darkMode, isMobile)
 
-  // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC)
-  const miniChartDataComputed = (() => {
-    const tcMap = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
-    const tcMapEuroMini = Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))
+  // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC) —
+  // memoizado: usa el tcMap/tcMapEUR de arriba en vez de reconstruirlos acá adentro,
+  // y solo recalcula cuando cambian sus propias dependencias, no en cada render.
+  const miniChartDataComputed = useMemo(() => {
     const mesActual = new Date().toISOString().slice(0, 7)
     return miniChartMeses.map(ym => {
       const tc = ym === mesActual
         ? (parseFloat(tipoCambio) || 1)
         : (tcMap[ym] ? Number(tcMap[ym]) : parseFloat(tipoCambio) || 1)
       const txsMes = miniChartTxs.filter(t => t.fecha?.startsWith(ym))
-      const tcEuroMes = ym === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEuroMini[ym] ? Number(tcMapEuroMini[ym]) : (parseFloat(tipoCambioEUR) || 0))
+      const tcEuroMes = ym === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEUR[ym] ? Number(tcMapEUR[ym]) : (parseFloat(tipoCambioEUR) || 0))
       const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * tcEuroMes : t.monto), 0)
       const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
       return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
     })
-  })()
+  }, [miniChartMeses, miniChartTxs, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR])
   const isTablet = windowWidth >= 640 && windowWidth < 960
   const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
+
+  // Cuotas pendientes: proyección de cuotas restantes de compras financiadas, por mes,
+  // próximos 6 períodos. Memoizado a nivel del componente (no adentro de sideWidgets,
+  // que es una función plana invocada condicionalmente — un hook ahí violaría las
+  // Rules of Hooks) porque antes se recalculaba entero (agrupar, desduplicar sufijos,
+  // proyectar) en cada render en el que se mostrara el widget.
+  const cuotasPendientesMemo = useMemo(() => {
+    // Alquiler/Expensas no son compras financiadas aunque hayan quedado
+    // cargadas con cuotas — son un gasto fijo recurrente, no algo con
+    // fecha de fin, así que no cuentan para esta proyección.
+    const conCuotas = accountTransactions.filter(t =>
+      t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha &&
+      !(t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
+    )
+    if (conCuotas.length === 0) return []
+
+    // Sacar primero la marca de "dividir en 3" (Vitto/Amelia/yo) y recién
+    // después el sufijo de cuota propio del banco ("Compra 4/12"): si la
+    // marca queda pegada al final, el "4/12" ya no está al final del
+    // string y no se reconoce como sufijo, así que cada cuota de una
+    // misma compra dividida quedaba con un nombre distinto ("Compra 4/12
+    // (1/3)", "Compra 3/12 (1/3)", ...) y se contaban como compras
+    // separadas, cada una proyectando sus cuotas restantes por separado.
+    const stripCuotaSuffix = n => (n || '')
+      .replace(/\s*\(1\/3\)\s*$/, '')
+      .replace(/\s+\d+\/\d+\s*$/, '')
+      .trim()
+    // El mes en que arrancó la compra (cuota 1) identifica la compra de
+    // forma estable entre sus cuotas, a diferencia del monto: si el monto
+    // varía cuota a cuota (ej. en dólares, con el tipo de cambio de cada
+    // mes), usar Math.round(monto) partía la misma compra en varias
+    // entradas, cada una proyectando sus propias cuotas restantes por
+    // separado — duplicando el total de los meses futuros.
+    const mesInicioCompra = t => {
+      const f = new Date(t.fecha + 'T12:00:00')
+      const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }
+    const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
+    // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales
+    // con el mismo número de cuota — hay que sumarlas para recuperar el
+    // monto total de esa cuota, no quedarnos con una sola parte.
+    const maxCuotaPorGrupo = {}
+    conCuotas.forEach(t => {
+      const key = groupKey(t)
+      const cn = t.cuota_numero || 0
+      if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
+    })
+    const latestByPurchase = {}
+    conCuotas.forEach(t => {
+      const key = groupKey(t)
+      if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
+      if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
+      latestByPurchase[key].monto += Number(t.monto)
+    })
+
+    const today = new Date()
+    const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
+    const tc = parseFloat(tipoCambio) || 0
+    const byPeriod = {}
+
+    Object.values(latestByPurchase).forEach(t => {
+      const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
+      if (remaining <= 0) return
+      const baseDate = new Date(t.fecha + 'T12:00:00')
+      for (let i = 1; i <= remaining; i++) {
+        const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
+        const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+        if (period < todayPeriod) continue
+        if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
+        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
+        byPeriod[period].total_ars += arsEquiv
+        byPeriod[period].items.push({
+          nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
+          monto: t.monto,
+          moneda: t.moneda || 'ARS',
+          cuotaNum: (t.cuota_numero || 1) + i,
+          cuotasTotal: t.cuotas_total,
+          cuenta: t.accounts?.nombre || ''
+        })
+      }
+    })
+
+    return Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
+  }, [accountTransactions, tipoCambio])
+
+  // Evolución por categoría (sidebar): opciones de categoría/ingreso/hijo con datos +
+  // serie de 6 meses de la selección activa. Memoizado a nivel del componente por la
+  // misma razón que cuotasPendientesMemo (sideWidgets no puede llamar hooks). Antes
+  // reconstruía un mapa de TC de euro POR CADA TRANSACCIÓN dentro del reduce, en cada
+  // render — ahora usa el tcMapEUR ya memoizado más arriba.
+  const evolucionCategoriaMemo = useMemo(() => {
+    const categoriasConTx = [...new Set(
+      accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
+        .map(t => t.categories.nombre)
+    )].sort()
+    const ingresosConTx = [...new Set(
+      accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
+        .map(t => t.tag)
+    )].sort()
+    const getHijoName = (t) => t.children?.nombre || t.tag || null
+    const hijosConTx = [...new Set(
+      accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
+        .map(t => getHijoName(t))
+    )].sort()
+    const esHijo = sidebarCatEvol.startsWith('hijo:')
+    const esIngreso = sidebarCatEvol.startsWith('ingreso:')
+    const filtroValor = (esHijo || esIngreso) ? sidebarCatEvol.split(':').slice(1).join(':') : sidebarCatEvol
+    const evolData = getLast6Months().map(m => {
+      const tc = tcMap[m] ? Number(tcMap[m]) : (parseFloat(tipoCambio) || 1)
+      const total = accountTransactions
+        .filter(t => {
+          if (!t.fecha?.startsWith(m)) return false
+          if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
+          if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
+          return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
+        })
+        .reduce((s, t) => {
+          const monto = Number(t.monto)
+          const mes = t.fecha?.slice(0,7)
+          const mA = new Date().toISOString().slice(0,7)
+          const tcEuroEvol = mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapEUR[mes] ? Number(tcMapEUR[mes]) : (parseFloat(tipoCambioEUR)||0))
+          return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
+        }, 0)
+      return { mes: mesLabel(m), total }
+    })
+    return { categoriasConTx, ingresosConTx, hijosConTx, esHijo, esIngreso, filtroValor, evolData }
+  }, [accountTransactions, sidebarCatEvol, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR])
 
   const sideWidgets = () => (
     <>
@@ -2188,83 +2337,7 @@ export default function Dashboard() {
             )}
             {/* Widget: Cuotas pendientes */}
             {(() => {
-              // Alquiler/Expensas no son compras financiadas aunque hayan quedado
-              // cargadas con cuotas — son un gasto fijo recurrente, no algo con
-              // fecha de fin, así que no cuentan para esta proyección.
-              const conCuotas = accountTransactions.filter(t =>
-                t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha &&
-                !(t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
-              )
-              if (conCuotas.length === 0) return null
-
-              // Sacar primero la marca de "dividir en 3" (Vitto/Amelia/yo) y recién
-              // después el sufijo de cuota propio del banco ("Compra 4/12"): si la
-              // marca queda pegada al final, el "4/12" ya no está al final del
-              // string y no se reconoce como sufijo, así que cada cuota de una
-              // misma compra dividida quedaba con un nombre distinto ("Compra 4/12
-              // (1/3)", "Compra 3/12 (1/3)", ...) y se contaban como compras
-              // separadas, cada una proyectando sus cuotas restantes por separado.
-              const stripCuotaSuffix = n => (n || '')
-                .replace(/\s*\(1\/3\)\s*$/, '')
-                .replace(/\s+\d+\/\d+\s*$/, '')
-                .trim()
-              // El mes en que arrancó la compra (cuota 1) identifica la compra de
-              // forma estable entre sus cuotas, a diferencia del monto: si el monto
-              // varía cuota a cuota (ej. en dólares, con el tipo de cambio de cada
-              // mes), usar Math.round(monto) partía la misma compra en varias
-              // entradas, cada una proyectando sus propias cuotas restantes por
-              // separado — duplicando el total de los meses futuros.
-              const mesInicioCompra = t => {
-                const f = new Date(t.fecha + 'T12:00:00')
-                const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-              }
-              const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
-              // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales
-              // con el mismo número de cuota — hay que sumarlas para recuperar el
-              // monto total de esa cuota, no quedarnos con una sola parte.
-              const maxCuotaPorGrupo = {}
-              conCuotas.forEach(t => {
-                const key = groupKey(t)
-                const cn = t.cuota_numero || 0
-                if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
-              })
-              const latestByPurchase = {}
-              conCuotas.forEach(t => {
-                const key = groupKey(t)
-                if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
-                if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
-                latestByPurchase[key].monto += Number(t.monto)
-              })
-
-              const today = new Date()
-              const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
-              const tc = parseFloat(tipoCambio) || 0
-              const byPeriod = {}
-
-              Object.values(latestByPurchase).forEach(t => {
-                const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-                if (remaining <= 0) return
-                const baseDate = new Date(t.fecha + 'T12:00:00')
-                for (let i = 1; i <= remaining; i++) {
-                  const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
-                  const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-                  if (period < todayPeriod) continue
-                  if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
-                  const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
-                  byPeriod[period].total_ars += arsEquiv
-                  byPeriod[period].items.push({
-                    nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
-                    monto: t.monto,
-                    moneda: t.moneda || 'ARS',
-                    cuotaNum: (t.cuota_numero || 1) + i,
-                    cuotasTotal: t.cuotas_total,
-                    cuenta: t.accounts?.nombre || ''
-                  })
-                }
-              })
-
-              const periods = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
+              const periods = cuotasPendientesMemo
               if (periods.length === 0) return null
 
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
@@ -2301,40 +2374,7 @@ export default function Dashboard() {
             })()}
 
             {(() => {
-              const tcMapEvol = Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))
-              const getTCEvol = (mes) => tcMapEvol[mes] ? Number(tcMapEvol[mes]) : (parseFloat(tipoCambio) || 1)
-              const categoriasConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
-                  .map(t => t.categories.nombre)
-              )].sort()
-              const ingresosConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
-                  .map(t => t.tag)
-              )].sort()
-              const getHijoName = (t) => t.children?.nombre || t.tag || null
-              const hijosConTx = [...new Set(
-                accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
-                  .map(t => getHijoName(t))
-              )].sort()
-              const esHijo = sidebarCatEvol.startsWith('hijo:')
-              const esIngreso = sidebarCatEvol.startsWith('ingreso:')
-              const filtroValor = (esHijo || esIngreso) ? sidebarCatEvol.split(':').slice(1).join(':') : sidebarCatEvol
-              const evolData = getLast6Months().map(m => {
-                const tc = getTCEvol(m)
-                const total = accountTransactions
-                  .filter(t => {
-                    if (!t.fecha?.startsWith(m)) return false
-                    if (esIngreso) return t.tipo === 'ingreso' && t.tag === filtroValor
-                    if (esHijo) return t.tipo === 'gasto' && getHijoName(t) === filtroValor
-                    return t.tipo === 'gasto' && t.categories?.nombre === sidebarCatEvol
-                  })
-                  .reduce((s, t) => {
-                    const monto = Number(t.monto)
-                    const tcEuroEvol = (() => { const mes = t.fecha?.slice(0,7); const mA = new Date().toISOString().slice(0,7); const tcMapE = Object.fromEntries(exchangeRates.filter(r=>r.tipo==='euro').map(r=>[r.periodo,r.valor])); return mes === mA ? (parseFloat(tipoCambioEUR)||0) : (tcMapE[mes] ? Number(tcMapE[mes]) : (parseFloat(tipoCambioEUR)||0)) })()
-                    return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuroEvol > 0 ? monto * tcEuroEvol : t.moneda === 'ARS' ? monto : 0)
-                  }, 0)
-                return { mes: mesLabel(m), total }
-              })
+              const { categoriasConTx, ingresosConTx, hijosConTx, filtroValor, evolData } = evolucionCategoriaMemo
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
@@ -2998,7 +3038,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -3006,7 +3046,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={(nombre) => { setSelectedHijoNombre(nombre); setDashboardTab('hijos') }} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={handleNavigateToHijo} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
@@ -3047,9 +3087,9 @@ export default function Dashboard() {
                       hijoId={childrenDB.find(c => c.nombre === (selectedHijoNombre || childrenDB[0].nombre))?.id}
                       darkMode={darkMode}
                       tipoCambio={tipoCambio}
-                      tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))}
+                      tcMap={tcMap}
                       tipoCambioEUR={tipoCambioEUR}
-                      tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))}
+                      tcMapEUR={tcMapEUR}
                       refreshKey={refreshKey}
                       initialPeriod={sharedPeriod}
                     />
@@ -3144,7 +3184,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))} tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? () => { setTipoMovimiento('ingreso'); setEfectivo(prev => ({ ...prev, cuenta: '' })); setShowMovimiento(true) } : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
             ) : (
               <div style={styles.emptyState}>
