@@ -2277,9 +2277,12 @@ export default function Dashboard() {
       accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre && t.subcategories?.nombre)
         .map(t => [`${t.categories.nombre}::${t.subcategories.nombre}`, { categoria: t.categories.nombre, subcategoria: t.subcategories.nombre }])
     ).values()].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.subcategoria.localeCompare(b.subcategoria))
+    // Los ingresos se etiquetan igual que en "Ingresos de este mes": tag si
+    // existe, si no la subcategoría/categoría — la mayoría no tiene tag propio.
+    const getIngresoName = (t) => t.tag || t.subcategories?.nombre || t.categories?.nombre || null
     const ingresosConTx = [...new Set(
-      accountTransactions.filter(t => t.tipo === 'ingreso' && t.tag)
-        .map(t => t.tag)
+      accountTransactions.filter(t => t.tipo === 'ingreso' && getIngresoName(t))
+        .map(t => getIngresoName(t))
     )].sort()
     const getHijoName = (t) => t.children?.nombre || t.tag || null
     const hijosConTx = [...new Set(
@@ -2288,7 +2291,7 @@ export default function Dashboard() {
     )].sort()
 
     const matchesKey = (t, key) => {
-      if (key.startsWith('ingreso:')) return t.tipo === 'ingreso' && t.tag === key.slice(8)
+      if (key.startsWith('ingreso:')) return t.tipo === 'ingreso' && getIngresoName(t) === key.slice(8)
       if (key.startsWith('hijo:')) return t.tipo === 'gasto' && getHijoName(t) === key.slice(5)
       if (key.startsWith('sub:')) {
         const [cat, sub] = key.slice(4).split('::')
@@ -2344,7 +2347,7 @@ export default function Dashboard() {
     <>
             {miniChartDataComputed.length > 0 && (
               <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
-                <h3 style={styles.savingsPanelTitle}>Resumen general<br/>últimos 6 meses</h3>
+                <h3 style={styles.savingsPanelTitle}>Gastos<br/>últimos 6 meses</h3>
                 {(() => {
                   const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
                   return (
