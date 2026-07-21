@@ -2406,10 +2406,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <p style={styles.summaryLabel}>Balance</p>
                     {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
                   </>}
-                  {!hayIngresos && <>{divider}
-                    <p style={styles.summaryLabel}>Final equiv. en USD</p>
-                    <p style={{ ...styles.summaryValue, fontSize: '18px' }}>U$S {formatMonto(egresosEquivUSD)}</p>
-                  </>}
                 </>}
               </div>
             )}
