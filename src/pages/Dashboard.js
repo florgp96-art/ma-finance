@@ -3092,6 +3092,7 @@ export default function Dashboard() {
                       tcMapEUR={tcMapEUR}
                       refreshKey={refreshKey}
                       initialPeriod={sharedPeriod}
+                      customIcons={customIcons}
                     />
                   </div>
                 )}
