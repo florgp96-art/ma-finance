@@ -2445,7 +2445,7 @@ export default function Dashboard() {
                   {/* Chips de selección múltiple — categorías/subcategorías/hijos (gastos)
                       o tags (ingresos), mezclados libremente, pensados para tocar con el
                       dedo en mobile en vez de un dropdown de un solo valor. */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px', maxHeight: '150px', overflowY: 'auto', overflowX: 'hidden' }}>
                     {evolucionTipo === 'gasto' && categoriasConTx.map(c => chip(`cat:${c}`, c, resolveCategoryIcon(c, { customIcons })))}
                     {evolucionTipo === 'gasto' && subcatsConTx.map(({ categoria, subcategoria }) => chip(`sub:${categoria}::${subcategoria}`, `${categoria} › ${subcategoria}`, '·'))}
                     {evolucionTipo === 'gasto' && hijosConTx.map(h => chip(`hijo:${h}`, h, customIcons?.[h] || '👧'))}
