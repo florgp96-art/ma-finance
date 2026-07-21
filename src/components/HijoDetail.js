@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull, TotalesFooter } from './AccountDetail'
+import { BubbleChart, CATEGORY_CONFIG, mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod }) {
+export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -105,12 +105,14 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
   const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
 
-  // Bubble chart data agrupado por categoría
+  // Bubble chart data agrupado por categoría — USD convertido al TC del mes de
+  // cada movimiento (según el tipo de dólar elegido), nunca el TC de hoy para
+  // algo viejo.
   const catMap = {}
   filteredTx.forEach(t => {
     const cat = t.categories?.nombre || 'A Identificar'
     if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
-    catMap[cat].value += t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
+    catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
     if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
     else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
     else catMap[cat].originalUSD += t.monto
@@ -126,14 +128,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     return tcEUR
   }
 
-  // Evolución mensual (últimos 6 meses)
+  // Evolución mensual (últimos 6 meses) — USD convertido al TC del mes de cada
+  // movimiento, nunca el TC de hoy para meses pasados.
   const last6 = getLast6Months()
   const monthlyData = last6.map(ym => {
     const txs = transactions.filter(t => t.fecha?.startsWith(ym))
     const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
-    const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
+    const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc), 0)
     const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
-    return { mes: mesLabel(ym), total: Math.round(ars + usd * tc + eur * getTCEURForMonth(ym)) }
+    return { mes: mesLabel(ym), total: Math.round(ars + usd + eur * getTCEURForMonth(ym)) }
   })
 
   const startEdit = (tx) => {
@@ -406,7 +409,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                   )
                 })}
               </tbody>
-              <TotalesFooter txs={sortedTx} tc={tc} darkMode={darkMode} colSpan={7} signed={false} />
+              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={7} signed={false} />
             </table>
           </div>
         )}

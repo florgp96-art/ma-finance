@@ -3077,6 +3077,7 @@ export default function Dashboard() {
                       hijoId={childrenDB.find(c => c.nombre === (selectedHijoNombre || childrenDB[0].nombre))?.id}
                       darkMode={darkMode}
                       tipoCambio={tipoCambio}
+                      tcMap={Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor]))}
                       tipoCambioEUR={tipoCambioEUR}
                       tcMapEUR={Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor]))}
                       refreshKey={refreshKey}
