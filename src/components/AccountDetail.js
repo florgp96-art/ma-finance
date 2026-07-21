@@ -817,6 +817,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
   , [transactions])
 
+  // Al entrar a la pestaña (o cambiar de cuenta), arrancar con el mes actual ya
+  // seleccionado — o el más reciente con datos, si el actual no tiene movimientos —
+  // en vez de mostrar el selector vacío y obligar a un click extra cada vez. Es un
+  // respaldo del default que ya arma fetchData/fetchAllData: si por lo que sea
+  // selectedMeses queda vacío una vez que hay datos, lo completa acá. Se dispara una
+  // sola vez por cuenta/refresh (el ref se resetea junto con el efecto que dispara el
+  // fetch) para no pelearse con "Deseleccionar todos", que también deja selectedMeses
+  // en [].
+  const autoSelectedMonthRef = useRef(false)
+  useEffect(() => { autoSelectedMonthRef.current = false }, [account, allAccounts, refreshKey])
+  useEffect(() => {
+    if (autoSelectedMonthRef.current) return
+    if (selectedMeses.length > 0 || mesesDisponibles.length === 0) return
+    autoSelectedMonthRef.current = true
+    const mesActual = new Date().toISOString().slice(0, 7)
+    setSelectedMeses([mesesDisponibles.includes(mesActual) ? mesActual : mesesDisponibles[0]])
+  }, [mesesDisponibles, selectedMeses])
+
   const toggleMes = (m) => {
     setSelectedMeses(prev =>
       prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
