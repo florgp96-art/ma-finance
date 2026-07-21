@@ -1707,6 +1707,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         // Cuánto se pagó de este mismo resumen, para mostrar "Pagado $X".
         _pagosPosterioresArs: st.totalPagosArs,
         _pagosPosterioresUsd: st.totalPagosUsd,
+        // Saldo a favor en esa moneda dentro de ESTE mismo resumen (ej. lo que ya
+        // informa el PDF del banco, o un pago que superó lo debido en esa moneda
+        // puntual) — el resumen sigue visible porque todavía debe en la otra
+        // moneda, así que este dato no puede vivir solo en "Ciclo actual".
+        _excedenteArs: st.excedenteArs,
+        _excedenteUsd: st.excedenteUsd,
       }
     })
   // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
@@ -1992,14 +1998,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
             )}
-            {/* Excedente informativo: lo que sobró de pagar de más el resumen anterior
-                (ya saldado, por eso desapareció su propia tarjeta) — dato de este ciclo,
-                nunca se resta de nada ni se arrastra a ningún otro período. */}
+            {/* Excedente informativo en esa moneda: puede ser saldo a favor que ya
+                informa el propio resumen del banco, o un pago que superó lo debido en
+                esa moneda puntual — nunca se resta de nada ni se arrastra a otro
+                período. En un resumen real todavía visible (debe en la otra moneda) se
+                muestra como "A favor"; en "Ciclo actual" (resumen anterior ya saldado
+                por completo) se aclara que es de ese resumen anterior. */}
             {s._excedenteArs > 0 && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>Sobrepago del resumen anterior: $ {formatMonto(s._excedenteArs)}</p>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
+                {s._virtual ? 'Sobrepago del resumen anterior' : 'A favor'}: $ {formatMonto(s._excedenteArs)}{!s._virtual ? ' (según resumen)' : ''}
+              </p>
             )}
             {s._excedenteUsd > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>Sobrepago del resumen anterior: U$S {formatMontoFull(s._excedenteUsd)}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
+                {s._virtual ? 'Sobrepago del resumen anterior' : 'A favor'}: U$S {formatMontoFull(s._excedenteUsd)}{!s._virtual ? ' (según resumen)' : ''}
+              </p>
             )}
             {diasRestantes !== null && (
               <p
