@@ -202,12 +202,23 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     return { actual, pagosPorCuenta, cuotas, historial }
   }, [transactions, accountTipoById, selectedMonth, aArs])
 
-  const p = darkMode ? '#8C7B8C' : '#5C4F5C'
+  // Color de línea del historial con buen contraste en los dos modos — en dark, el
+  // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
+  // que se usa una versión más clara del mismo tono.
+  const chartLine = darkMode ? '#C4B4DC' : '#5C4F5C'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
   const muted = darkMode ? '#9A8A9A' : '#6e6e73'
   const border = darkMode ? '#3A333A' : '#E2DDE0'
   const panel = darkMode ? '#2A272A' : '#F0EDEC'
   const cardBg = darkMode ? '#1C1A1C' : 'white'
+  // Formato compacto para el eje Y del historial (ej. "$2,1M", "$450k") — solo
+  // presentación, no toca ningún cálculo.
+  const formatMontoCompacto = (v) => {
+    const abs = Math.abs(v)
+    if (abs >= 1_000_000) return `$${(v / 1_000_000).toLocaleString('es-AR', { maximumFractionDigits: 1 })}M`
+    if (abs >= 1_000) return `$${(v / 1_000).toLocaleString('es-AR', { maximumFractionDigits: 0 })}k`
+    return `$${Math.round(v)}`
+  }
 
   const seccion = { backgroundColor: panel, border: `1px solid ${border}`, borderRadius: '14px', padding: '18px 20px', marginBottom: '20px' }
   const label = { fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }
@@ -338,18 +349,20 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
       {/* Historial 6 meses */}
       <div style={seccion}>
-        <p style={label}>Historial · últimos 6 meses</p>
-        <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={historial} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <p style={label}>Total pagado por mes · ARS (USD convertidos al TC vigente) · últimos 6 meses</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={border} vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 12, fill: muted }} axisLine={{ stroke: border }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: muted }} axisLine={false} tickLine={false} width={0} />
+            <XAxis dataKey="label" tick={{ fontSize: 12, fill: txt }} axisLine={{ stroke: border }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: txt }} axisLine={false} tickLine={false} width={52} tickFormatter={formatMontoCompacto} />
             <Tooltip
-              formatter={(value) => [`$ ${formatMonto(value)}`, 'Total pagado']}
+              formatter={(value) => [`$ ${formatMonto(value)} (ARS, USD convertidos)`, 'Total pagado']}
               labelFormatter={(l, payload) => payload?.[0] ? mesLabel(payload[0].payload.mes) : l}
               contentStyle={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '8px', fontSize: '12px' }}
+              labelStyle={{ color: txt, fontWeight: '600' }}
+              itemStyle={{ color: chartLine }}
             />
-            <Line type="monotone" dataKey="total" stroke={p} strokeWidth={2} dot={{ r: 3, fill: p }} />
+            <Line type="monotone" dataKey="total" stroke={chartLine} strokeWidth={2.5} dot={{ r: 4, fill: chartLine, strokeWidth: 0 }} activeDot={{ r: 6 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
