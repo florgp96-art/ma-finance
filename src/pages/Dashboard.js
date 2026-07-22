@@ -2726,7 +2726,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '1440px', margin: isMobile ? undefined : '0 auto', boxSizing: 'border-box' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && (
@@ -3027,7 +3027,7 @@ export default function Dashboard() {
                           fontSize: isMobile ? '11.5px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
                           color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
                           background: dashboardTab === tab.key ? '#5C4F5C' : 'transparent',
-                          outline: 'none', whiteSpace: 'nowrap', flex: '0 0 auto',
+                          outline: 'none', whiteSpace: 'nowrap', flex: isMobile ? '0 0 auto' : '1', textAlign: 'center',
                           transition: 'background-color 0.2s ease, color 0.2s ease'
                         }}
                       >
