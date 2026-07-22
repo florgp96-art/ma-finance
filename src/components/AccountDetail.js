@@ -80,6 +80,33 @@ export const resolveCategoryIcon = (nombre, { isIncome = false, customIcons, def
   || defaultIcon
   || (isIncome ? '💰' : '❓')
 
+// Desglosa el reparto de una transacción (guardado en t.reparto, ver D1/D2/D3)
+// en la parte de cada participante + la parte implícita de "vos" (monto total
+// menos la suma de las partes de los demás — nunca se guarda una fila aparte
+// por participante). Devuelve null si la transacción no está repartida.
+// El porcentaje se toma de t.reparto si está (reglas nuevas), o se deriva del
+// monto para reparto viejo que no lo guardó (compatibilidad con D1).
+export const desglosarReparto = (t) => {
+  const participantes = t?.reparto?.participantes
+  if (!participantes || participantes.length === 0) return null
+  const monto = Number(t.monto) || 0
+  const otros = participantes.map(p => {
+    const pMonto = Number(p.monto) || 0
+    return {
+      nombre: p.nombre,
+      monto: pMonto,
+      porcentaje: p.porcentaje != null ? Number(p.porcentaje) : (monto > 0 ? Math.round((pMonto / monto) * 1000) / 10 : 0),
+    }
+  })
+  const montoOtros = otros.reduce((s, p) => s + p.monto, 0)
+  const yo = {
+    nombre: 'Vos',
+    monto: Math.round((monto - montoOtros) * 100) / 100,
+    porcentaje: Math.round((100 - otros.reduce((s, p) => s + p.porcentaje, 0)) * 10) / 10,
+  }
+  return { yo, otros, monto }
+}
+
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export const formatMonto = (monto) =>
@@ -608,6 +635,75 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
   }
 
+  // Acción manual "Dividir gasto" (D3 Parte 2): reemplaza el viejo botón fijo
+  // "Dividir en 3 (Vitto/Amelia/vos)" — cualquier gasto puntual se puede
+  // repartir entre "vos" y los hijos que existan, en las proporciones que se
+  // quiera. Guarda metadata en la misma fila (nunca duplica transacciones).
+  const [repartoModalTx, setRepartoModalTx] = useState(null)
+  const [repartoModalSeleccion, setRepartoModalSeleccion] = useState([])
+
+  const opcionesParticipantesReparto = [
+    { key: 'yo', tipo: 'yo', childId: null, nombre: 'Vos' },
+    ...children.map(c => ({ key: c.id, tipo: 'hijo', childId: c.id, nombre: c.nombre })),
+  ]
+
+  const abrirModalReparto = (tx) => {
+    const actual = desglosarReparto(tx)
+    if (actual) {
+      const otrosSeleccion = actual.otros.map(p => {
+        const child = children.find(c => c.nombre === p.nombre)
+        return { key: child?.id || `hijo-${p.nombre}`, tipo: 'hijo', childId: child?.id || null, nombre: p.nombre, porcentaje: p.porcentaje }
+      })
+      setRepartoModalSeleccion([{ key: 'yo', tipo: 'yo', childId: null, nombre: 'Vos', porcentaje: actual.yo.porcentaje }, ...otrosSeleccion])
+    } else {
+      setRepartoModalSeleccion([])
+    }
+    setRepartoModalTx(tx)
+  }
+
+  const toggleParticipanteReparto = (opcion) => {
+    setRepartoModalSeleccion(prev => {
+      const existe = prev.some(p => p.key === opcion.key)
+      const next = existe ? prev.filter(p => p.key !== opcion.key) : [...prev, { ...opcion, porcentaje: 0 }]
+      if (next.length === 0) return next
+      const parte = Math.floor((100 / next.length) * 100) / 100
+      return next.map((p, i) => ({ ...p, porcentaje: i === next.length - 1 ? Math.round((100 - parte * (next.length - 1)) * 100) / 100 : parte }))
+    })
+  }
+
+  const editarPorcentajeModalReparto = (key, valor) => {
+    setRepartoModalSeleccion(prev => prev.map(p => p.key === key ? { ...p, porcentaje: valor } : p))
+  }
+
+  const sumaPorcentajesModalReparto = repartoModalSeleccion.reduce((s, p) => s + (parseFloat(p.porcentaje) || 0), 0)
+  const sumaModalRepartoValida = repartoModalSeleccion.length > 0 && Math.abs(sumaPorcentajesModalReparto - 100) < 0.01
+
+  const guardarReparto = async () => {
+    if (!repartoModalTx) return
+    if (!sumaModalRepartoValida) return
+    const monto = Number(repartoModalTx.monto) || 0
+    const otros = repartoModalSeleccion.filter(p => p.tipo !== 'yo')
+    const reparto = otros.length === 0 ? null : {
+      tipo: 'manual',
+      participantes: otros.map(p => {
+        const porcentaje = parseFloat(p.porcentaje) || 0
+        return { tipo: p.tipo, ...(p.childId ? { child_id: p.childId } : {}), nombre: p.nombre, porcentaje, monto: Math.round(monto * porcentaje / 100 * 100) / 100 }
+      }),
+    }
+    const { error } = await supabase.from('transactions').update({ reparto }).eq('id', repartoModalTx.id)
+    if (error) { window.alert('No se pudo guardar el reparto: ' + error.message + '\nProbá de nuevo.'); setRepartoModalTx(null); return }
+    setTransactions(prev => prev.map(t => t.id === repartoModalTx.id ? { ...t, reparto } : t))
+    setRepartoModalTx(null)
+  }
+
+  const quitarReparto = async () => {
+    if (!repartoModalTx) return
+    const { error } = await supabase.from('transactions').update({ reparto: null }).eq('id', repartoModalTx.id)
+    if (error) { window.alert('No se pudo quitar el reparto: ' + error.message + '\nProbá de nuevo.'); setRepartoModalTx(null); return }
+    setTransactions(prev => prev.map(t => t.id === repartoModalTx.id ? { ...t, reparto: null } : t))
+    setRepartoModalTx(null)
+  }
+
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -984,6 +1080,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 👧 {tx.children?.nombre || tx.tag}
               </span>
             )}
+            {(() => {
+              const reparto = desglosarReparto(tx)
+              if (!reparto || esVistaIngresos || tx.tipo === 'ingreso') return null
+              return (
+                <span
+                  style={{ fontSize: '11px', color: '#5C8AA8', backgroundColor: darkMode ? '#1A2D3A' : '#E8F4F8', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px', marginLeft: '4px' }}
+                  title={`Dividido: vos ${reparto.yo.porcentaje}% · ${reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}`}
+                >
+                  {isMobile ? '🔀 dividido' : `🔀 Dividido: vos ${reparto.yo.porcentaje}% · ${reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}`}
+                </span>
+              )
+            })()}
           </td>
           <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
             {(esVistaIngresos || tx.tipo === 'ingreso') ? (
@@ -1026,6 +1134,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <td style={styles.td}>
           <div style={{display:'flex', gap:'4px'}}>
             <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
+            {tx.tipo === 'gasto' && !esVistaIngresos && (
+              <button style={styles.editBtn} title="Dividir gasto" onClick={() => abrirModalReparto(tx)}>🔀</button>
+            )}
             <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
           </div>
         </td>
@@ -2757,6 +2868,63 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )}
 
       </>)}
+
+      {repartoModalTx && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
+            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Participantes</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
+              {opcionesParticipantesReparto.map(op => {
+                const activo = repartoModalSeleccion.some(sel => sel.key === op.key)
+                return (
+                  <button key={op.key} type="button" onClick={() => toggleParticipanteReparto(op)}
+                    style={{ padding: '6px 14px', borderRadius: '20px', border: `1.5px solid ${activo ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: activo ? '#5C4F5C' : 'transparent', color: activo ? 'white' : (darkMode ? '#F0EDEC' : '#1d1d1f'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400' }}>
+                    {op.tipo === 'yo' ? '🙋 Vos' : `👧 ${op.nombre}`}
+                  </button>
+                )
+              })}
+              {opcionesParticipantesReparto.length === 1 && (
+                <span style={{ fontSize: '12px', color: '#aaa', alignSelf: 'center' }}>Cargá hijos/as en Configuración para poder repartir con ellos.</span>
+              )}
+            </div>
+            {repartoModalSeleccion.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                {repartoModalSeleccion.map(sel => (
+                  <div key={sel.key} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ flex: 1, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{sel.nombre}</span>
+                    <input type="number" min="0" max="100" step="1" value={sel.porcentaje}
+                      onChange={e => editarPorcentajeModalReparto(sel.key, e.target.value)}
+                      style={{ width: '70px', padding: '6px 8px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }} />
+                    <span style={{ fontSize: '13px', color: '#6e6e73' }}>%</span>
+                  </div>
+                ))}
+                <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: sumaModalRepartoValida ? '#3a7d44' : '#c0392b' }}>
+                  Suma: {Math.round(sumaPorcentajesModalReparto * 100) / 100}% {sumaModalRepartoValida ? '✓' : '(tiene que dar 100%)'}
+                </p>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', marginTop: '20px', flexWrap: 'wrap' }}>
+              <div>
+                {desglosarReparto(repartoModalTx) && (
+                  <button type="button" onClick={quitarReparto} style={{ padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #c0392b', color: '#c0392b', background: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif' }}>
+                    Quitar reparto
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={() => setRepartoModalTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                  Cancelar
+                </button>
+                <button type="button" onClick={guardarReparto} disabled={!sumaModalRepartoValida} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: sumaModalRepartoValida ? '#5C4F5C' : '#bbb', color: 'white', cursor: sumaModalRepartoValida ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                  Guardar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

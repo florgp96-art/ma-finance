@@ -10,9 +10,11 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   childrenDB,
   customIcons,
   userAliases,
+  repartoRules,
   fetchCategorias,
   fetchChildren,
   fetchUserAliases,
+  fetchRepartoRules,
   saveCustomIcon,
   showToast,
   onRefresh,
@@ -60,20 +62,12 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Reglas de reparto: gastos de una categoría/subcategoría (opcionalmente
   // filtrados por texto) que se dividen entre "yo" y los hijos elegidos, en
-  // las proporciones que defina el usuario. Reemplaza el hack hardcodeado de
-  // Vitto/Amelia — los participantes salen siempre de la tabla children.
-  const [repartoRules, setRepartoRules] = useState([])
+  // las proporciones que defina el usuario. Generalizado — los participantes
+  // salen siempre de la tabla children. repartoRules/fetchRepartoRules vienen
+  // por prop porque Dashboard.js también las necesita, para aplicarlas solas
+  // a cada transacción nueva que matchee en la ingesta.
   const [newReparto, setNewReparto] = useState({ categoria: '', subcategoria: '', textoMatch: '' })
   const [repartoSeleccion, setRepartoSeleccion] = useState([])
-
-  const fetchRepartoRules = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('reparto_rules')
-      .select('*, categories(nombre), subcategories(nombre)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-    setRepartoRules(data || [])
-  }
 
   const opcionesParticipantes = [
     { key: 'yo', tipo: 'yo', childId: null, nombre: 'Yo' },
@@ -761,7 +755,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
             {reglasTab === 'reparto' && (<>
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '0 0 12px 0' }}>
-              Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras (ej. "Comida → vos 50%, Amelia 25%, Vitto 25%"). Por ahora estas reglas quedan guardadas y las podés previsualizar acá — todavía no se aplican solas a los gastos nuevos.
+              Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras (ej. "Comida → vos 50%, Amelia 25%, Vitto 25%"). Se aplican solas a cada gasto nuevo que matchee, sin importar cómo lo cargues — para dividir un gasto puntual ya cargado, usá el botón 🔀 en su fila.
             </p>
             <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '16px' }}>
               {(repartoRules || []).length === 0 ? (
