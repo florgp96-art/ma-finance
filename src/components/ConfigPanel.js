@@ -207,20 +207,32 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setNewCatNombre('')
     setNewCatTipo('gasto')
     fetchCategorias()
+    onRefresh?.()
   }
 
+  // Renombrar no reasigna nada: transactions.category_id sigue apuntando al
+  // mismo id, así que sus movimientos quedan asociados sin cambios. Pero
+  // AccountDetail (tabla, donut, chips) trae su propio join categorías/
+  // subcategorías con cada transacción y solo lo vuelve a pedir cuando cambia
+  // refreshKey — fetchCategorias() de acá arriba solo actualiza la copia de
+  // Dashboard (los selectores de esta pantalla), por eso el nombre no se veía
+  // actualizado en el resto de la app hasta recargar. onRefresh() dispara ese
+  // refetch — el mismo camino que ya usa saveCustomIcon indirectamente al
+  // actualizar customIcons (por eso el ícono sí se veía al instante).
   const handleSaveEditCat = async (cat) => {
     if (!editingCatNombre.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id).eq('user_id', user.id)
     setEditingCat(null)
     fetchCategorias()
+    onRefresh?.()
   }
 
   const handleChangeCatTipo = async (cat, tipo) => {
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('categories').update({ tipo }).eq('id', cat.id).eq('user_id', user.id)
     fetchCategorias()
+    onRefresh?.()
   }
 
   const handleAddSubcat = async (e) => {
@@ -231,6 +243,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setNewSubcatNombre('')
     setNewSubcatCatId(null)
     fetchCategorias()
+    onRefresh?.()
   }
 
   const handleDeleteCategoria = async (cat) => {
@@ -244,6 +257,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     await supabase.from('subcategories').delete().eq('category_id', cat.id).eq('user_id', user.id)
     await supabase.from('categories').delete().eq('id', cat.id).eq('user_id', user.id)
     fetchCategorias()
+    onRefresh?.()
   }
 
   const handleDeleteSubcat = async (subcat) => {
@@ -256,6 +270,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     }
     await supabase.from('subcategories').delete().eq('id', subcat.id).eq('user_id', user.id)
     fetchCategorias()
+    onRefresh?.()
   }
 
   const handleCambiarClave = async (e) => {

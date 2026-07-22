@@ -371,6 +371,39 @@ export function InfoTooltip({ text, darkMode }) {
   )
 }
 
+// Ancho real del contenedor de una tabla de movimientos (ResizeObserver, no
+// el ancho de la ventana): el mismo componente se renderiza a veces con
+// sidebar de cuentas + widgets al lado y a veces solo, así que dos tablas en
+// la misma ventana pueden tener espacio disponible bien distinto. Devuelve
+// [ref, width] — poner el ref en el contenedor de la tabla.
+export const useContainerWidth = (fallback = 900) => {
+  const ref = useRef(null)
+  const [width, setWidth] = useState(fallback)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const obs = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect?.width
+      if (w) setWidth(w)
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  return [ref, width]
+}
+
+// Columnas progresivas de una tabla de movimientos, de las que siempre se ven
+// (fecha/nombre/monto) a las que se van agregando con más espacio, en este
+// orden de prioridad: categoría → cuenta → subcategoría → cuotas. Nunca
+// scroll horizontal ni columnas comprimidas hasta partir texto — si no
+// entra, se oculta y se ve solo en la fila expandida.
+export const columnasVisibles = (width) => ({
+  categoria: width >= 460,
+  cuenta: width >= 580,
+  subcategoria: width >= 700,
+  cuotas: width >= 820,
+})
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
@@ -421,6 +454,10 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [statements, setStatements] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingTx, setEditingTx] = useState(null)
+  const [filaExpandida, setFilaExpandida] = useState(null)
+  const [tablaRef, tablaWidth] = useContainerWidth()
+  const colVisible = columnasVisibles(tablaWidth)
+  const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuotas ? 1 : 0)
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
@@ -1190,94 +1227,127 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla } = tablaMemo
 
-  const renderTxRow = (tx) => (
-    <tr
-      key={tx.id}
-      style={{...styles.tr, cursor: editingTx === tx.id ? undefined : 'pointer'}}
-      onClick={() => { if (editingTx !== tx.id) startEdit(tx) }}
-    >
-      {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
-      <td style={{...styles.td, whiteSpace: 'nowrap'}}>
-        {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
-      </td>
-      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-        {editingTx === tx.id ? (
-          <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
-              <option key={a.id} value={a.id}>{a.nombre}</option>
-            ))}
-          </select>
-        ) : (
-          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-        )}
-      </td>
-      {editingTx === tx.id ? ((esVistaIngresos || tx.tipo === 'ingreso') ? renderEditCellsIngreso() : renderEditCells()) : (
-        <>
-          <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
-            <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
-              {tx.nombre || tx.detalle}
-            </div>
-            {(tx.children?.nombre || tx.tag) && !isMobile && !esVistaIngresos && tx.tipo !== 'ingreso' && (
-              <span style={{ fontSize: '11px', color: '#8C7B8C', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px' }}>
-                👧 {tx.children?.nombre || tx.tag}
-              </span>
+  // Fila de movimiento con columnas progresivas (fecha/nombre/monto siempre
+  // visibles; categoría → cuenta → subcategoría → cuotas se agregan con más
+  // ancho disponible, ver colVisible) y expandible: al clickear, una fila de
+  // detalle debajo muestra todos los campos ocultos más las acciones. Nunca
+  // scroll horizontal ni columnas comprimidas hasta partir el texto — lo que
+  // no entra se oculta, no se aprieta. La edición (cualquier ancho) usa el
+  // mismo formulario apilado que antes era solo para mobile — un ancho de
+  // columna angosto nunca alcanza para inputs de todos los campos a la vez.
+  const renderTxRow = (tx) => {
+    if (editingTx === tx.id) {
+      return (
+        <tr key={tx.id} style={styles.tr}>
+          {renderEditStackMobile(tx, numColsTabla)}
+        </tr>
+      )
+    }
+    const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
+    const reparto = !esIngresoTx ? desglosarReparto(tx) : null
+    const expandido = filaExpandida === tx.id
+    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 2px' }
+    return (
+      <React.Fragment key={tx.id}>
+        <tr
+          style={{ ...styles.tr, cursor: 'pointer' }}
+          onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
+        >
+          <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(tx.fecha)}</td>
+          <td style={ellipsisCell}>
+            {tx.nombre || tx.detalle}
+            {(tx.children?.nombre || tx.tag) && !esIngresoTx && (
+              <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {tx.children?.nombre || tx.tag}</span>
             )}
-            {(() => {
-              const reparto = desglosarReparto(tx)
-              if (!reparto || esVistaIngresos || tx.tipo === 'ingreso') return null
-              return (
-                <span
-                  style={{ fontSize: '11px', color: '#5C8AA8', backgroundColor: darkMode ? '#1A2D3A' : '#E8F4F8', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px', marginLeft: '4px' }}
-                  title={`Dividido: vos ${reparto.yo.porcentaje}% · ${reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}`}
-                >
-                  {isMobile ? '🔀 dividido' : `🔀 Dividido: vos ${reparto.yo.porcentaje}% · ${reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}`}
+            {reparto && (
+              <span style={{ fontSize: '11px', color: '#5C8AA8', marginLeft: '6px' }}>🔀</span>
+            )}
+          </td>
+          {colVisible.categoria && (
+            <td style={ellipsisCell}>
+              {esIngresoTx ? (
+                <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                  {tx.tag || '—'}
                 </span>
-              )
-            })()}
+              ) : (
+                <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                  {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
+                </span>
+              )}
+            </td>
+          )}
+          {colVisible.cuenta && (
+            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
+          )}
+          {colVisible.subcategoria && (
+            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{esIngresoTx ? '' : (tx.subcategories?.nombre || '—')}</span></td>
+          )}
+          {colVisible.cuotas && (
+            <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{esIngresoTx ? '—' : (tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—')}</td>
+          )}
+          <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal',
+            color: darkMode ? '#F0EDEC' : '#2d2d2d'}}
+            title={tcTooltipDe(tx, tcMap, tipoCambio)}>
+            {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </td>
-          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-            {(esVistaIngresos || tx.tipo === 'ingreso') ? (
-              <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                {tx.tag || '—'}
-              </span>
-            ) : (
-              <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
-              </span>
-            )}
-          </td>
-          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-            <span style={{fontSize:'12px', color:'#888'}}>
-              {esVistaIngresos ? '' : (tx.subcategories?.nombre || '—')}
-            </span>
-          </td>
-        </>
-      )}
-      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-        {tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}
-      </td>
-      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-        <span style={{
-          fontSize: '11px', fontWeight: '500',
-          color: tx.moneda === 'USD' ? '#5588aa' : '#666',
-          backgroundColor: tx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
-          padding: '2px 6px', borderRadius: '8px'
-        }}>
-          {tx.moneda || 'ARS'}
-        </span>
-      </td>
-      <td style={{...styles.td, textAlign:'right', fontWeight:'600',
-        whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
-        color: darkMode ? '#F0EDEC' : '#2d2d2d'}}
-        title={tcTooltipDe(tx, tcMap, tipoCambio)}>
-        {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-      </td>
-      {editingTx === tx.id ? renderEditActions(tx) : (
-        <td style={styles.td}></td>
-      )}
-      </>)}
-    </tr>
-  )
+          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+        </tr>
+        {expandido && (
+          <tr style={styles.tr}>
+            <td colSpan={numColsTabla} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
+                <div>
+                  <p style={detailLabel}>Cuenta</p>
+                  <p style={{ margin: 0, fontSize: '13px' }}>{tx.accounts?.nombre || '—'}</p>
+                </div>
+                {!esIngresoTx && (
+                  <div>
+                    <p style={detailLabel}>Categoría</p>
+                    <p style={{ margin: 0, fontSize: '13px' }}>{resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}</p>
+                  </div>
+                )}
+                {esIngresoTx && (
+                  <div>
+                    <p style={detailLabel}>Categoría</p>
+                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.tag || '—'}</p>
+                  </div>
+                )}
+                {!esIngresoTx && (
+                  <div>
+                    <p style={detailLabel}>Subcategoría</p>
+                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.subcategories?.nombre || '—'}</p>
+                  </div>
+                )}
+                {!esIngresoTx && (
+                  <div>
+                    <p style={detailLabel}>Cuotas</p>
+                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}</p>
+                  </div>
+                )}
+                <div>
+                  <p style={detailLabel}>Moneda</p>
+                  <p style={{ margin: 0, fontSize: '13px' }}>{tx.moneda || 'ARS'}</p>
+                </div>
+                {reparto && (
+                  <div style={{ width: '100%' }}>
+                    <p style={detailLabel}>Reparto</p>
+                    <p style={{ margin: 0, fontSize: '13px' }}>Dividido: vos {reparto.yo.porcentaje}% · {reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}</p>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                {tx.tipo === 'gasto' && !esVistaIngresos && (
+                  <button style={styles.editBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
+                )}
+                <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    )
+  }
 
   const toggleGrupoExpandido = (key, abrir) => setExpandedSplits(prev => {
     const next = new Set(prev)
@@ -1291,7 +1361,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return (
         <React.Fragment key={grupo.key}>
           <tr style={{ ...styles.tr, opacity: 0.85 }}>
-            <td colSpan={isMobile ? 4 : 9} style={{ ...styles.td, paddingTop: '6px', paddingBottom: '6px' }}>
+            <td colSpan={numColsTabla} style={{ ...styles.td, paddingTop: '6px', paddingBottom: '6px' }}>
               <button
                 onClick={() => toggleGrupoExpandido(grupo.key, false)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: darkMode ? '#8C7B8C' : '#5C4F5C', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, fontFamily: '"Montserrat", sans-serif' }}
@@ -1305,53 +1375,35 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )
     }
     return (
-      <tr key={grupo.key} style={styles.tr}>
-        <td style={{...styles.td, whiteSpace: 'nowrap'}}>
-          {isMobile ? formatFechaCorta(repTx.fecha) : formatFecha(repTx.fecha)}
-        </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-          <span style={{fontSize:'12px', color:'#888'}}>{repTx.accounts?.nombre || '—'}</span>
-        </td>
-        <td style={{...styles.td, overflow: isMobile ? 'hidden' : undefined, textOverflow: isMobile ? 'ellipsis' : undefined, whiteSpace: isMobile ? 'nowrap' : undefined}}>
-          <div style={isMobile ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : {}}>
-            {repTx.nombre || repTx.detalle}
-          </div>
-          <button
-            onClick={() => toggleGrupoExpandido(grupo.key, true)}
-            style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', padding: '1px 7px', borderRadius: '8px', display: 'inline-block', marginTop: '3px', border: 'none', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}
-          >
-            🔀 Dividido en {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
-          </button>
-        </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-          <span style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-            {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
+      <tr key={grupo.key} style={{ ...styles.tr, cursor: 'pointer' }} onClick={() => toggleGrupoExpandido(grupo.key, true)}>
+        <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(repTx.fecha)}</td>
+        <td style={ellipsisCell}>
+          {repTx.nombre || repTx.detalle}
+          <span style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', marginLeft: '6px' }}>
+            🔀 {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
           </span>
         </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-          <span style={{fontSize:'12px', color:'#888'}}>{repTx.subcategories?.nombre || '—'}</span>
-        </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-          {repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}
-        </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-          <span style={{
-            fontSize: '11px', fontWeight: '500',
-            color: repTx.moneda === 'USD' ? '#5588aa' : '#666',
-            backgroundColor: repTx.moneda === 'USD' ? '#ddeef8' : '#f0f2f8',
-            padding: '2px 6px', borderRadius: '8px'
-          }}>
-            {repTx.moneda || 'ARS'}
-          </span>
-        </td>
-        <td style={{...styles.td, textAlign:'right', fontWeight:'600',
-          whiteSpace: isMobile ? 'normal' : 'nowrap', wordBreak: isMobile ? 'break-all' : undefined,
+        {colVisible.categoria && (
+          <td style={ellipsisCell}>
+            <span style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+              {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
+            </span>
+          </td>
+        )}
+        {colVisible.cuenta && (
+          <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{repTx.accounts?.nombre || '—'}</span></td>
+        )}
+        {colVisible.subcategoria && (
+          <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{repTx.subcategories?.nombre || '—'}</span></td>
+        )}
+        {colVisible.cuotas && (
+          <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}</td>
+        )}
+        <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal',
           color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
           -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
         </td>
-        <td style={styles.td}>
-          <button style={styles.editBtn} title="Ver detalle" onClick={() => toggleGrupoExpandido(grupo.key, true)}>▾</button>
-        </td>
+        <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>▸</td>
       </tr>
     )
   }
@@ -1408,11 +1460,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // en la tabla (quedaban selects ocultos —subcategoría— y el botón de
   // confirmar recortado fuera de la pantalla), así que se reemplaza la fila
   // entera por una sola celda a lo ancho con el formulario completo.
-  const renderEditStackMobile = (tx) => {
+  const renderEditStackMobile = (tx, colSpan = 9) => {
     const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
     const selStyle = { ...styles.editSelect, width: '100%', boxSizing: 'border-box' }
     return (
-      <td colSpan={9} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+      <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 2px' }}>
           <span style={{ fontSize: '12px', color: '#8e8e93' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
@@ -1461,76 +1513,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     )
   }
 
-  const renderEditCells = () => (
-    <>
-      <td style={styles.td}>
-        <input style={styles.editInput} value={editNombre}
-          onChange={e => setEditNombre(e.target.value)} />
-        {children.length > 0 && (
-          <select style={{ ...styles.editSelect, marginTop: '4px', fontSize: '11px' }}
-            value={editTag} onChange={e => setEditTag(e.target.value)}>
-            <option value="">👧 Sin hijo/a</option>
-            {children.map(c => (
-              <option key={c.nombre} value={c.nombre}>{c.nombre}</option>
-            ))}
-          </select>
-        )}
-      </td>
-      <td style={styles.td}>
-        <select style={styles.editSelect} value={editCategoria}
-          onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }}>
-          {categories.map(c => (
-            <option key={c.id} value={c.nombre}>{c.nombre}</option>
-          ))}
-        </select>
-      </td>
-      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-        <select style={styles.editSelect} value={editSubcategoria}
-          onChange={e => setEditSubcategoria(e.target.value)}>
-          <option value="">— Sin subcategoría</option>
-          {filteredSubcats().map(s => (
-            <option key={s.id} value={s.nombre}>{s.nombre}</option>
-          ))}
-        </select>
-      </td>
-    </>
-  )
-
-  const renderEditCellsIngreso = () => {
-    const { allOpts, valueIsCustom } = getIngresoTagOpts()
-    return (
-      <>
-        <td style={styles.td}>
-          <input style={styles.editInput} value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Descripción" />
-        </td>
-        <td style={styles.td}>
-          <select style={styles.editSelect} value={valueIsCustom ? '__custom__' : (editTag || '')} onChange={e => {
-            if (e.target.value === '__custom__') return
-            setEditTag(e.target.value)
-          }}>
-            <option value="">— Sin categoría —</option>
-            {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            {valueIsCustom && <option value="__custom__">{editTag}</option>}
-          </select>
-        </td>
-        <td style={{...styles.td, display: isMobile ? 'none' : undefined}} />
-      </>
-    )
-  }
-
-  const renderEditActions = (tx) => (
-    <td style={styles.td}>
-      <div style={{display:'flex', gap:'4px', flexWrap: 'wrap'}}>
-        <button style={styles.saveEditBtn} onClick={() => handleSaveEdit(tx)}>✓</button>
-        {tx.tipo === 'gasto' && !esVistaIngresos && (
-          <button style={styles.editBtn} title="Dividir gasto" onClick={() => abrirModalReparto(tx)}>🔀</button>
-        )}
-        <button style={{...styles.editBtn, color: '#c0392b'}} title="Eliminar" onClick={() => handleDeleteTx(tx)}>🗑️</button>
-        <button style={styles.cancelEditBtn} onClick={() => setEditingTx(null)}>✕</button>
-      </div>
-    </td>
-  )
-
   const thSortable = (label, key, hidden = false, width = undefined, align = undefined) => (
     <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {}), ...(width ? { width } : {}), ...(align ? { textAlign: align } : {})}} onClick={() => handleSort(key)}>
       {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
@@ -1539,6 +1521,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
+  const ellipsisCell = { ...styles.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', wordBreak: 'normal' }
 
   // Contar transacciones de cada extracto, ordenados por mes descendente — por
   // vínculo real (statement_id, el mismo campo que liga reconciliarSueltas y que ya
@@ -2857,56 +2840,51 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={styles.tableSection}>
           <h3 style={styles.chartTitle}>❓ Sin identificar ({sinIdentificar.length})</h3>
           <p style={styles.tableHint}>{esVistaIngresos ? 'Asignale una categoría a estos ingresos' : 'Editá el nombre, categoría y subcategoría de estos gastos'}</p>
-          <div style={{ overflowX: 'auto', width: '100%' }}>
-          <table style={styles.table}>
+          <div style={{ width: '100%' }}>
+          <table style={{...styles.table, tableLayout: 'fixed'}}>
+            <colgroup>
+              <col style={{ width: '62px' }} />
+              {colVisible.cuenta && <col style={{ width: '140px' }} />}
+              {colVisible.subcategoria && <col style={{ width: '96px' }} />}
+              <col />
+              <col style={{ width: '112px' }} />
+              <col style={{ width: '104px' }} />
+              <col style={{ width: '96px' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={{...styles.th, width: isMobile ? '13%' : '8%'}}>Fecha</th>
-                <th style={{...styles.th, width: '18%', display: isMobile ? 'none' : undefined}}>Detalle original</th>
-                <th style={{...styles.th, width: '10%', display: isMobile ? 'none' : undefined}}>Cuenta</th>
-                <th style={{...styles.th, width: isMobile ? '34%' : '20%'}}>Nombre</th>
-                <th style={{...styles.th, width: isMobile ? '20%' : '12%'}}>Categoría</th>
-                <th style={{...styles.th, width: '10%', display: isMobile ? 'none' : undefined}}>Subcategoría</th>
-                <th style={{...styles.th, width: isMobile ? '18%' : '10%'}}>Monto</th>
-                <th style={{...styles.th, width: isMobile ? '15%' : '12%'}}></th>
+                <th style={styles.th}>Fecha</th>
+                {colVisible.cuenta && <th style={styles.th}>Detalle original</th>}
+                {colVisible.subcategoria && <th style={styles.th}>Cuenta</th>}
+                <th style={styles.th}>Nombre</th>
+                <th style={styles.th}>Categoría</th>
+                <th style={styles.th}>Monto</th>
+                <th style={styles.th}></th>
               </tr>
             </thead>
             <tbody>
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
-                  {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
-                  <td style={styles.td}>{formatFecha(tx.fecha)}</td>
-                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={styles.detalle}>{tx.detalle}</span></td>
-                  <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                    {editingTx === tx.id ? (
-                      <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                        {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
-                          <option key={a.id} value={a.id}>{a.nombre}</option>
-                        ))}
-                      </select>
-                    ) : (
+                  {editingTx === tx.id ? renderEditStackMobile(tx, 5 + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
+                  <td style={{...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
+                  {colVisible.cuenta && <td style={ellipsisCell}><span style={styles.detalle}>{tx.detalle}</span></td>}
+                  {colVisible.subcategoria && (
+                    <td style={ellipsisCell}>
                       <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                    )}
-                  </td>
-                  {editingTx === tx.id ? (tx.tipo === 'ingreso' ? renderEditCellsIngreso() : renderEditCells()) : (
-                    <>
-                      <td style={styles.td}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
-                      <td style={styles.td}><span style={{color:'#aaa'}}>—</span></td>
-                      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}><span style={{color:'#aaa'}}>—</span></td>
-                    </>
-                  )}
-                  <td style={{...styles.td, textAlign:'right', fontWeight:'600'}}>
-                    {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-                  </td>
-                  {editingTx === tx.id ? renderEditActions(tx) : (
-                    <td style={styles.td}>
-                      <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
-                        <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                        <button style={{...styles.editBtn, color:'#6e6e73'}} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
-                        <button style={{...styles.editBtn, color:'#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
-                      </div>
                     </td>
                   )}
+                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
+                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>
+                  <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
+                    {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                  </td>
+                  <td style={styles.td}>
+                    <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
+                      <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                      <button style={{...styles.editBtn, color:'#6e6e73'}} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
+                      <button style={{...styles.editBtn, color:'#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                    </div>
+                  </td>
                   </>)}
                 </tr>
               ))}
@@ -2925,25 +2903,34 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </button>
           )}
         </div>
-        <div style={{ overflowX: 'auto', width: '100%' }}>
-        <table style={styles.table}>
+        <div ref={tablaRef} style={{ width: '100%' }}>
+        <table style={{...styles.table, tableLayout: 'fixed'}}>
+          <colgroup>
+            <col style={{ width: '62px' }} />
+            <col />
+            {colVisible.categoria && <col style={{ width: '112px' }} />}
+            {colVisible.cuenta && <col style={{ width: '96px' }} />}
+            {colVisible.subcategoria && <col style={{ width: '112px' }} />}
+            {colVisible.cuotas && <col style={{ width: '54px' }} />}
+            <col style={{ width: '108px' }} />
+            <col style={{ width: '28px' }} />
+          </colgroup>
           <thead>
             <tr>
-              {thSortable('Fecha', 'fecha', false, isMobile ? '19%' : '9%')}
-              {thSortable('Cuenta', 'cuenta', isMobile, isMobile ? undefined : '11%')}
-              {thSortable('Nombre', 'nombre', false, isMobile ? '43%' : '20%')}
-              {thSortable('Categoría', 'categoria', isMobile, isMobile ? undefined : '12%')}
-              {thSortable('Subcategoría', 'subcategoria', isMobile, isMobile ? undefined : '12%')}
-              {thSortable('Cuotas', 'cuotas', isMobile, isMobile ? undefined : '8%')}
-              {thSortable('Moneda', 'moneda', isMobile, isMobile ? undefined : '8%')}
-              {thSortable('Monto', 'monto', false, isMobile ? '25%' : '11%', 'right')}
-              <th style={{...styles.th, width: isMobile ? '13%' : '9%'}}></th>
+              {thSortable('Fecha', 'fecha')}
+              {thSortable('Nombre', 'nombre')}
+              {colVisible.categoria && thSortable('Categoría', 'categoria')}
+              {colVisible.cuenta && thSortable('Cuenta', 'cuenta')}
+              {colVisible.subcategoria && thSortable('Subcategoría', 'subcategoria')}
+              {colVisible.cuotas && thSortable('Cuotas', 'cuotas')}
+              {thSortable('Monto', 'monto', false, undefined, 'right')}
+              <th style={styles.th}></th>
             </tr>
           </thead>
           <tbody>
             {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
-          <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={9} />
+          <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} />
         </table>
         </div>
       </div>
@@ -2958,57 +2945,52 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             {showNeutros ? '▾' : '▸'} Movimientos neutros ({txNeutras.length}) — pagos, transferencias, inversiones
           </button>
           {showNeutros && (
-            <div style={{ marginTop: '10px', overflowX: 'auto' }}>
-              <table style={styles.table}>
+            <div style={{ marginTop: '10px' }}>
+              <table style={{...styles.table, tableLayout: 'fixed'}}>
+                <colgroup>
+                  <col style={{ width: '62px' }} />
+                  <col />
+                  {colVisible.categoria && <col style={{ width: '112px' }} />}
+                  {colVisible.subcategoria && <col style={{ width: '112px' }} />}
+                  {colVisible.cuenta && <col style={{ width: '96px' }} />}
+                  <col style={{ width: '96px' }} />
+                  <col style={{ width: '64px' }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={{...styles.th, width: isMobile ? '15%' : '10%'}}>Fecha</th>
-                    <th style={{...styles.th, width: isMobile ? '45%' : '25%'}}>Nombre</th>
-                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Categoría</th>
-                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Subcategoría</th>
-                    <th style={{...styles.th, width: '15%', display: isMobile ? 'none' : undefined}}>Cuenta</th>
-                    <th style={{...styles.th, width: isMobile ? '22%' : '12%'}}>Monto</th>
-                    <th style={{...styles.th, width: isMobile ? '18%' : '8%'}}></th>
+                    <th style={styles.th}>Fecha</th>
+                    <th style={styles.th}>Nombre</th>
+                    {colVisible.categoria && <th style={styles.th}>Categoría</th>}
+                    {colVisible.subcategoria && <th style={styles.th}>Subcategoría</th>}
+                    {colVisible.cuenta && <th style={styles.th}>Cuenta</th>}
+                    <th style={styles.th}>Monto</th>
+                    <th style={styles.th}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {txNeutras.map(tx => (
                     <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
-                      {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
-                      <td style={{...styles.td, whiteSpace:'nowrap'}}>{formatFechaCorta(tx.fecha)}</td>
-                      {editingTx === tx.id ? renderEditCells() : (
-                        <>
-                          <td style={styles.td}>{tx.nombre || tx.detalle}</td>
-                          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                            <span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span>
-                          </td>
-                          <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                            <span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span>
-                          </td>
-                        </>
+                      {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)) : (<>
+                      <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
+                      <td style={ellipsisCell}>{tx.nombre || tx.detalle}</td>
+                      {colVisible.categoria && (
+                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
                       )}
-                      <td style={{...styles.td, display: isMobile ? 'none' : undefined}}>
-                        {editingTx === tx.id ? (
-                          <select style={styles.editSelect} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-                            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
-                              <option key={a.id} value={a.id}>{a.nombre}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                        )}
-                      </td>
-                      <td style={{...styles.td, textAlign:'right', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
-                        {tx.moneda === 'USD' ? 'U$S' : '$'} {formatMontoFull(tx.monto)}
-                      </td>
-                      {editingTx === tx.id ? renderEditActions(tx) : (
-                        <td style={styles.td}>
-                          <div style={{display:'flex', gap:'4px'}}>
-                            <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                            <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
-                          </div>
-                        </td>
+                      {colVisible.subcategoria && (
+                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span></td>
                       )}
+                      {colVisible.cuenta && (
+                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
+                      )}
+                      <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
+                        {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                      </td>
+                      <td style={styles.td}>
+                        <div style={{display:'flex', gap:'4px'}}>
+                          <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                          <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                        </div>
+                      </td>
                       </>)}
                     </tr>
                   ))}
