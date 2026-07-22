@@ -1247,6 +1247,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
     const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 2px' }
+    const detailValue = { margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }
     return (
       <React.Fragment key={tx.id}>
         <tr
@@ -1298,40 +1299,40 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                 <div>
                   <p style={detailLabel}>Cuenta</p>
-                  <p style={{ margin: 0, fontSize: '13px' }}>{tx.accounts?.nombre || '—'}</p>
+                  <p style={detailValue}>{tx.accounts?.nombre || '—'}</p>
                 </div>
                 {!esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Categoría</p>
-                    <p style={{ margin: 0, fontSize: '13px' }}>{resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}</p>
+                    <p style={detailValue}>{resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}</p>
                   </div>
                 )}
                 {esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Categoría</p>
-                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.tag || '—'}</p>
+                    <p style={detailValue}>{tx.tag || '—'}</p>
                   </div>
                 )}
                 {!esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Subcategoría</p>
-                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.subcategories?.nombre || '—'}</p>
+                    <p style={detailValue}>{tx.subcategories?.nombre || '—'}</p>
                   </div>
                 )}
                 {!esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Cuotas</p>
-                    <p style={{ margin: 0, fontSize: '13px' }}>{tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}</p>
+                    <p style={detailValue}>{tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—'}</p>
                   </div>
                 )}
                 <div>
                   <p style={detailLabel}>Moneda</p>
-                  <p style={{ margin: 0, fontSize: '13px' }}>{tx.moneda || 'ARS'}</p>
+                  <p style={detailValue}>{tx.moneda || 'ARS'}</p>
                 </div>
                 {reparto && (
                   <div style={{ width: '100%' }}>
                     <p style={detailLabel}>Reparto</p>
-                    <p style={{ margin: 0, fontSize: '13px' }}>Dividido: vos {reparto.yo.porcentaje}% · {reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}</p>
+                    <p style={detailValue}>Dividido: vos {reparto.yo.porcentaje}% · {reparto.otros.map(p => `${p.nombre} ${p.porcentaje}%`).join(' · ')}</p>
                   </div>
                 )}
               </div>
