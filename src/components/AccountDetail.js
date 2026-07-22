@@ -146,6 +146,17 @@ export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
   return parseFloat(tipoCambioActual) || 0
 }
 
+// Mismo criterio que tcDeMovimiento, para EUR: el euro no tiene fx_rate propio
+// congelado por movimiento (solo el dólar se guarda al cargar), así que cae
+// directo del promedio del mes al TC vigente, sin ese paso intermedio.
+export const tcEURDeMovimiento = (t, tcMapEUR, tipoCambioEURActual) => {
+  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesTx = t.fecha?.slice(0, 7)
+  if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioEURActual) || 0
+  if (tcMapEUR && tcMapEUR[mesTx]) return Number(tcMapEUR[mesTx])
+  return parseFloat(tipoCambioEURActual) || 0
+}
+
 // Texto de tooltip con el TC usado para el equivalente en ARS de un movimiento en USD.
 export const tcTooltipDe = (tx, tcMap, tipoCambioActual) => {
   if (tx.moneda !== 'USD') return undefined
@@ -154,35 +165,44 @@ export const tcTooltipDe = (tx, tcMap, tipoCambioActual) => {
   return `U$S ${formatMonto(Math.abs(Number(tx.monto)))} · TC $ ${formatMontoFull(tc)} = $ ${formatMonto(Math.abs(Number(tx.monto)) * tc)}`
 }
 
-// Totales ARS / USD / unificado en ARS de una lista de movimientos — pensado para
-// reflejar EXACTAMENTE las filas visibles después de aplicar los filtros activos
-// (búsqueda, rango de fechas, categoría, etc.) en cualquier tabla de movimientos.
-// El unificado convierte cada USD con tcDeMovimiento (promedio del mes/tipo elegido,
-// nunca el TC de hoy para algo viejo).
-export const totalesDeLista = (txs, tcMap, tipoCambioActual, { signed = true } = {}) => {
-  let ars = 0, usd = 0, unificado = 0
+// Totales ARS / USD / EUR / unificado en ARS de una lista de movimientos — pensado
+// para reflejar EXACTAMENTE las filas visibles después de aplicar los filtros
+// activos (búsqueda, rango de fechas, categoría, etc.) en cualquier tabla de
+// movimientos. El unificado convierte cada USD/EUR con tcDeMovimiento/
+// tcEURDeMovimiento (promedio del mes/tipo elegido, nunca el TC de hoy para algo
+// viejo). Ningún movimiento se descarta en silencio: si no hay TC resoluble para
+// convertirlo, queda afuera del unificado pero se avisa por consola (dev).
+export const totalesDeLista = (txs, tcMap, tipoCambioActual, tcMapEUR, tipoCambioEURActual, { signed = true } = {}) => {
+  let ars = 0, usd = 0, eur = 0, unificado = 0
   ;(txs || []).forEach(t => {
     const monto = Number(t.monto) || 0
     const signo = !signed ? 1 : (t.tipo === 'ingreso' ? 1 : -1)
     if (t.moneda === 'USD') {
       const tc = tcDeMovimiento(t, tcMap, tipoCambioActual)
       usd += signo * monto
-      unificado += signo * monto * tc
+      if (tc > 0) unificado += signo * monto * tc
+      else if (monto !== 0 && process.env.NODE_ENV !== 'production') console.warn('totalesDeLista: sin TC para convertir movimiento USD', t.id, t.fecha)
+    } else if (t.moneda === 'EUR') {
+      const tcE = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEURActual)
+      eur += signo * monto
+      if (tcE > 0) unificado += signo * monto * tcE
+      else if (monto !== 0 && process.env.NODE_ENV !== 'production') console.warn('totalesDeLista: sin TC para convertir movimiento EUR', t.id, t.fecha)
     } else if (t.moneda === 'ARS') {
       ars += signo * monto
       unificado += signo * monto
     }
   })
-  return { ars, usd, unificado }
+  return { ars, usd, eur, unificado }
 }
 
 // Pie de tabla reutilizable con el total en vivo de lo que se ve — mobile-first,
 // nunca más de 2 líneas (ver tarea 3). signed=false para listas de un solo signo
 // (ej. gastos de un hijo), donde no tiene sentido mostrar el total en negativo.
-function TotalesFooterImpl({ txs, tcMap, tipoCambio, darkMode, colSpan, signed = true }) {
-  const { ars, usd, unificado } = totalesDeLista(txs, tcMap, tipoCambio, { signed })
-  if (Math.round(ars) === 0 && Math.round(usd * 100) === 0) return null
-  const hayAmbas = Math.round(ars) !== 0 && Math.round(usd * 100) !== 0
+function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, darkMode, colSpan, signed = true }) {
+  const { ars, usd, eur, unificado } = totalesDeLista(txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, { signed })
+  if (Math.round(ars) === 0 && Math.round(usd * 100) === 0 && Math.round(eur * 100) === 0) return null
+  const monedasConMonto = [ars, usd, eur].filter(v => Math.round(v * 100) !== 0).length
+  const hayMultiples = monedasConMonto > 1
   return (
     <tfoot>
       <tr>
@@ -195,7 +215,8 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, darkMode, colSpan, signed =
             <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', textTransform: 'uppercase', fontSize: '10px', letterSpacing: '0.04em' }}>Total</span>
             {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
             {Math.round(usd * 100) !== 0 && <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(usd)}</span>}
-            {hayAmbas && <span style={{ color: darkMode ? '#9A8A9A' : '#8e8e93', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
+            {Math.round(eur * 100) !== 0 && <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(eur)}</span>}
+            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#8e8e93', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
           </div>
         </td>
       </tr>
@@ -929,15 +950,30 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const mesAnterior = idxMesSeleccionado >= 0 && idxMesSeleccionado < mesesDisponibles.length - 1
     ? mesesDisponibles[idxMesSeleccionado + 1]
     : null
-  const txMesSeleccionado = mesSeleccionado ? transactions.filter(t => t.fecha?.startsWith(mesSeleccionado) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
-  const txMesAnterior = mesAnterior ? transactions.filter(t => t.fecha?.startsWith(mesAnterior) && t.tipo === 'gasto' && t.moneda === 'ARS') : []
-  const totalSeleccionado = txMesSeleccionado.reduce((s, t) => s + Number(t.monto), 0)
-  const totalAnteriorMonto = txMesAnterior.reduce((s, t) => s + Number(t.monto), 0)
+  // Antes estas comparativas ("vs mes anterior") solo miraban moneda === 'ARS' y
+  // descartaban en silencio cualquier gasto/ingreso en USD o EUR. Ahora se
+  // convierten con el TC propio de cada movimiento, igual que el resto de la app.
+  const totalDelMesConvertido = (mes) => (mes ? transactions.filter(t => t.fecha?.startsWith(mes) && t.tipo === 'gasto') : [])
+    .reduce((s, t) => {
+      const monto = Number(t.monto) || 0
+      if (t.moneda === 'USD') { const tcTx = tcDeMovimiento(t, tcMap, tipoCambio); return tcTx > 0 ? s + monto * tcTx : s }
+      if (t.moneda === 'EUR') { const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR); return tcTx > 0 ? s + monto * tcTx : s }
+      return s + monto
+    }, 0)
+  const totalSeleccionado = totalDelMesConvertido(mesSeleccionado)
+  const totalAnteriorMonto = totalDelMesConvertido(mesAnterior)
   const diffPct = puedeComparar && totalAnteriorMonto > 0 ? Math.round(((totalSeleccionado - totalAnteriorMonto) / totalAnteriorMonto) * 100) : null
   const diffMonto = totalSeleccionado - totalAnteriorMonto
   // Comparativa de ingresos vs mes anterior
-  const totalIngSeleccionado = mesSeleccionado ? transactions.filter(t => t.fecha?.startsWith(mesSeleccionado) && t.tipo === 'ingreso' && t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0) : 0
-  const totalIngAnterior = mesAnterior ? transactions.filter(t => t.fecha?.startsWith(mesAnterior) && t.tipo === 'ingreso' && t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0) : 0
+  const totalIngDelMesConvertido = (mes) => (mes ? transactions.filter(t => t.fecha?.startsWith(mes) && t.tipo === 'ingreso') : [])
+    .reduce((s, t) => {
+      const monto = Number(t.monto) || 0
+      if (t.moneda === 'USD') { const tcTx = tcDeMovimiento(t, tcMap, tipoCambio); return tcTx > 0 ? s + monto * tcTx : s }
+      if (t.moneda === 'EUR') { const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR); return tcTx > 0 ? s + monto * tcTx : s }
+      return s + monto
+    }, 0)
+  const totalIngSeleccionado = totalIngDelMesConvertido(mesSeleccionado)
+  const totalIngAnterior = totalIngDelMesConvertido(mesAnterior)
   const diffIngPct = puedeComparar && mesAnterior && totalIngAnterior > 0 ? Math.round(((totalIngSeleccionado - totalIngAnterior) / totalIngAnterior) * 100) : null
   const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
@@ -948,7 +984,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getChildName, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getChildName, getTCEUR])
 
   const {
     ingresosBarData, displayChartData, childNames,
@@ -1704,14 +1740,32 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const primerDiaMesActual = `${mesActual}-01`
   const accountTipoById = new Map((accounts || []).map(a => [a.id, a.tipo]))
   const gastosFijosDelMes = allAccounts ? transactions.filter(t => {
-    if (t.tipo !== 'gasto' || t.moneda === 'USD') return false
+    if (t.tipo !== 'gasto') return false
     if (!t.fecha || t.fecha < primerDiaMesActual || t.fecha > hoyISO) return false
     const accTipo = accountTipoById.get(t.account_id)
     if (accTipo === 'credito') return false
     const esAlquilerOExpensas = t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
     return accTipo === 'debito' || esAlquilerOExpensas
   }) : []
-  const totalGastosFijosMes = gastosFijosDelMes.reduce((sum, t) => sum + Number(t.monto), 0)
+  // Antes se excluían directamente los movimientos en USD (dejaban de aportar a
+  // la barra de "pagado este mes") — un alquiler pagado en dólares desde una
+  // cuenta débito desaparecía sin avisar. Ahora se convierten como el resto de
+  // la app, con el mismo TC del movimiento (fx_rate) y aviso por consola si no
+  // hay TC resoluble, en vez de sumar 0 en silencio.
+  const totalGastosFijosMes = gastosFijosDelMes.reduce((sum, t) => {
+    const monto = Number(t.monto) || 0
+    if (t.moneda === 'USD') {
+      const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+      if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('gastosFijosDelMes: sin TC para convertir movimiento USD', t.id, t.fecha); return sum }
+      return sum + monto * tcTx
+    }
+    if (t.moneda === 'EUR') {
+      const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+      if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('gastosFijosDelMes: sin TC para convertir movimiento EUR', t.id, t.fecha); return sum }
+      return sum + monto * tcTx
+    }
+    return sum + monto
+  }, 0)
   const totalBrutoBarra = totalBrutoAPagarGeneral + totalGastosFijosMes
   const montoPagadoBarra = montoPagadoGeneral + totalGastosFijosMes
   const pctPagadoBarra = totalBrutoBarra > 0 ? Math.min(100, Math.round((montoPagadoBarra / totalBrutoBarra) * 100)) : 0
@@ -1831,7 +1885,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen, diasRestantesDe,
     }
-  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, apagarSortKey, apagarSortDir, catGeneralSeleccionada, getChildName])
+  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, getChildName])
 
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
@@ -1983,7 +2037,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </tr>
                 ))}
               </tbody>
-              <TotalesFooter txs={items} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={4} />
+              <TotalesFooter txs={items} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={4} />
             </table>
           </div>
         )}
@@ -2350,7 +2404,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         // Unificado con el TC del mes de cada movimiento (tcMap, ya según el tipo de
         // dólar elegido) — no el TC de hoy — para que el equivalente de ingresos
         // históricos en USD no cambie retroactivamente al actualizar el TC.
-        const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcMap, tipoCambio, { signed: false }).unificado + totalIngresosEUR * tcEUR
+        const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, { signed: false }).unificado
         const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
@@ -2794,7 +2848,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tbody>
             {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
-          <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={9} />
+          <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={9} />
         </table>
         </div>
       </div>

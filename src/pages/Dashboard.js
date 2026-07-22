@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -252,6 +252,8 @@ export default function Dashboard() {
       const now = new Date()
       const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
       const resultados = {}
+      const tc = parseFloat(tipoCambioEfectivo) || 0
+      const tcE = parseFloat(tipoCambioEUR) || 0
       await Promise.all(childrenDB.map(async c => {
         const { data } = await supabase.from('transactions')
           .select('monto, moneda, fecha')
@@ -259,15 +261,22 @@ export default function Dashboard() {
           .gt('monto', 0)
           .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
           .gte('fecha', `${mesActual}-01`)
-        resultados[c.nombre] = (data || [])
-          .filter(t => t.moneda === 'ARS')
-          .reduce((s, t) => s + Number(t.monto), 0)
+        // Antes solo sumaba ARS y descartaba en silencio los gastos de un hijo
+        // en USD/EUR. Son siempre movimientos del mes actual (ver gte de arriba),
+        // así que alcanza con el TC vigente — sin TC configurado, se avisa por
+        // consola en vez de sumar 0 sin decir nada.
+        resultados[c.nombre] = (data || []).reduce((s, t) => {
+          const monto = Number(t.monto) || 0
+          if (t.moneda === 'USD') { if (tc <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC USD para', c.nombre, t.fecha); return s }; return s + monto * tc }
+          if (t.moneda === 'EUR') { if (tcE <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC EUR para', c.nombre, t.fecha); return s }; return s + monto * tcE }
+          return s + monto
+        }, 0)
       }))
       if (!cancelled) setHijosResumenMes(resultados)
     }
     fetchResumenHijos()
     return () => { cancelled = true }
-  }, [dashboardTab, childrenDB, refreshKey])
+  }, [dashboardTab, childrenDB, refreshKey, tipoCambioEfectivo, tipoCambioEUR])
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
@@ -2238,17 +2247,31 @@ export default function Dashboard() {
       return resolveCategoryIcon(key.slice(4), { customIcons })
     }
 
-    const mesActual = new Date().toISOString().slice(0, 7)
+    // Cada movimiento se convierte con el TC de SU propio mes (tcDeMovimiento/
+    // tcEURDeMovimiento: promedio del mes, o el fx_rate congelado del movimiento
+    // para USD, nunca el TC de hoy para algo viejo) — antes usaba un TC único por
+    // fila de mes con fallback a "1"/"0" que podía silenciar USD/EUR sin avisar.
     const evolData = getLast6Months().map(m => {
-      const tc = tcMap[m] ? Number(tcMap[m]) : (parseFloat(tipoCambio) || 1)
-      const tcEuro = m === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEUR[m] ? Number(tcMapEUR[m]) : (parseFloat(tipoCambioEUR) || 0))
       const row = { mes: mesLabel(m) }
       sidebarCatEvol.forEach(key => {
         const total = accountTransactions
           .filter(t => t.fecha?.startsWith(m) && matchesKey(t, key))
           .reduce((s, t) => {
-            const monto = Number(t.monto)
-            return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuro > 0 ? monto * tcEuro : t.moneda === 'ARS' ? monto : 0)
+            const monto = Number(t.monto) || 0
+            if (t.moneda === 'ARS') return s + monto
+            if (t.moneda === 'USD') {
+              const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+              if (tcTx > 0) return s + monto * tcTx
+              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento USD', t.id, t.fecha)
+              return s
+            }
+            if (t.moneda === 'EUR') {
+              const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+              if (tcTx > 0) return s + monto * tcTx
+              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento EUR', t.id, t.fecha)
+              return s
+            }
+            return s
           }, 0)
         row[key] = Math.round(total)
       })
@@ -3033,7 +3056,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'caja' && (
-                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} customIcons={customIcons} />
+                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} />
                 )}
 
                 {dashboardTab === 'apagar' && (

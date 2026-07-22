@@ -536,7 +536,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                   )
                 })}
               </tbody>
-              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={7} signed={false} />
+              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={7} signed={false} />
             </table>
           </div>
         )}
