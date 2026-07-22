@@ -354,7 +354,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
       {/* Historial 6 meses */}
       <div style={seccion}>
-        <p style={label}>Total pagado por mes · ARS (USD convertidos al TC vigente) · últimos 6 meses</p>
+        <p style={label}>Total pagado por mes · ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses</p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={border} vertical={false} />

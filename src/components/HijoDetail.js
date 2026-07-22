@@ -360,10 +360,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
           : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
           : selectedMeses.length === 0 ? 'todos los meses'
           : `${selectedMeses.length} meses`
-        const monedaLabel = (totalUSD > 0 || totalEUR > 0) ? 'ARS (USD/EUR convertidos)' : 'ARS'
+        const monedaLabel = (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)' : 'ARS'
         return (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Gastos por categoría · {monedaLabel} · {periodoLabel}</h3>
+          <h3
+            style={{ ...s.cardTitle, display: 'inline-block', cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
+            title={`${monedaLabel} · ${periodoLabel}`}
+          >
+            Gastos por categoría
+          </h3>
           <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
             {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
@@ -422,7 +427,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       {/* Evolución mensual */}
       {monthlyData.some(m => m.total > 0) && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Evolución mensual de gastos · ARS (USD/EUR convertidos) · últimos 6 meses</h3>
+          <h3 style={s.cardTitle}>Evolución mensual de gastos · ARS (monedas extranjeras convertidas) · últimos 6 meses</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />

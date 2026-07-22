@@ -2527,7 +2527,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
       {esVistaIngresos && ingresosBarData.length > 0 && (
         <div style={styles.chartSection}>
-          <h3 style={styles.chartTitle}>📊 Ingresos por mes · ARS (USD/EUR convertidos) · histórico</h3>
+          <h3 style={styles.chartTitle}>📊 Ingresos por mes · ARS (monedas extranjeras convertidas) · histórico</h3>
           <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-6px 0 12px', fontStyle: 'italic' }}>
             Incluye ingresos en U$S/€ convertidos a pesos al TC de cada movimiento.
           </p>
@@ -2573,13 +2573,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const periodoLabelChart = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
               : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
               : `${selectedMeses.length} meses`
-            const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (USD/EUR convertidos)'
-              : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (USD/EUR convertidos)'
+            const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
+              : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
             return (
             <div style={styles.bubbleSection}>
-              <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 4px' }}>
-                {esVistaIngresos ? 'Ingresos por categoría' : bubbleGroupBy === 'persona' ? 'Gastos por persona' : 'Gastos por categoría'} · {monedaLabelChart} · {periodoLabelChart}
+              <h3
+                style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 4px', display: 'inline-block', cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
+                title={`${monedaLabelChart} · ${periodoLabelChart}`}
+              >
+                {esVistaIngresos ? 'Ingresos por categoría' : bubbleGroupBy === 'persona' ? 'Gastos por persona' : 'Gastos por categoría'}
               </h3>
               <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
                 {esVistaIngresos ? 'Gráficos de ingresos' : 'Gráficos de gastos'}

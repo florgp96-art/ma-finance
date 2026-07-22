@@ -287,6 +287,7 @@ export default function Dashboard() {
   // de opciones distintos.
   const [sidebarCatEvol, setSidebarCatEvol] = useState([])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
+  const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
   const dolarCardRef = useRef(null)
   const configPanelRef = useRef(null)
   const [dolarCardH, setDolarCardH] = useState(null)
@@ -2268,27 +2269,33 @@ export default function Dashboard() {
   // por mes según el tipo de dólar elegido) es el mismo criterio que ya usa el resto
   // de la app para convertir USD/EUR de meses pasados — no se tocó esa lógica.
   const evolucionCategoriaMemo = useMemo(() => {
+    // Las opciones para elegir se limitan a lo que tuvo movimientos DENTRO de
+    // los últimos 6 meses graficados — una subcategoría con historial viejo
+    // pero nada reciente no debe aparecer para elegir (ocuparía lugar sin
+    // aportar nada: su línea sería plana en cero en todo el gráfico).
+    const ultimos6 = getLast6Months()
+    const txsUltimos6 = accountTransactions.filter(t => t.fecha && ultimos6.some(m => t.fecha.startsWith(m)))
     const categoriasConTx = [...new Set(
-      accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
+      txsUltimos6.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
         .map(t => t.categories.nombre)
     )].sort()
     // Subcategorías con datos, como pares [categoría, subcategoría] — dos categorías
     // distintas pueden tener una subcategoría con el mismo nombre, así que la clave
     // de selección necesita la categoría para no confundirlas.
     const subcatsConTx = [...new Map(
-      accountTransactions.filter(t => t.tipo === 'gasto' && t.categories?.nombre && t.subcategories?.nombre)
+      txsUltimos6.filter(t => t.tipo === 'gasto' && t.categories?.nombre && t.subcategories?.nombre)
         .map(t => [`${t.categories.nombre}::${t.subcategories.nombre}`, { categoria: t.categories.nombre, subcategoria: t.subcategories.nombre }])
     ).values()].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.subcategoria.localeCompare(b.subcategoria))
     // Los ingresos se etiquetan igual que en "Ingresos de este mes": tag si
     // existe, si no la subcategoría/categoría — la mayoría no tiene tag propio.
     const getIngresoName = (t) => t.tag || t.subcategories?.nombre || t.categories?.nombre || null
     const ingresosConTx = [...new Set(
-      accountTransactions.filter(t => t.tipo === 'ingreso' && getIngresoName(t))
+      txsUltimos6.filter(t => t.tipo === 'ingreso' && getIngresoName(t))
         .map(t => getIngresoName(t))
     )].sort()
     const getHijoName = (t) => t.children?.nombre || t.tag || null
     const hijosConTx = [...new Set(
-      accountTransactions.filter(t => t.tipo === 'gasto' && getHijoName(t))
+      txsUltimos6.filter(t => t.tipo === 'gasto' && getHijoName(t))
         .map(t => getHijoName(t))
     )].sort()
 
@@ -2421,23 +2428,17 @@ export default function Dashboard() {
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
               const toggleClave = (key) => setSidebarCatEvol(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
-              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol([]) } }
-              const chip = (key, label, icon) => {
-                const activo = sidebarCatEvol.includes(key)
-                const color = resolveCategoryColor(key.includes('::') ? key.split('::')[1] : label, { isIncome: evolucionTipo === 'ingreso' })
-                return (
-                  <button key={key} onClick={() => toggleClave(key)}
-                    style={{ padding: '5px 11px', borderRadius: '16px', border: `1.5px solid ${activo ? color : borderClr}`, backgroundColor: activo ? color : 'transparent', color: activo ? '#2d2d2d' : txtClr, fontSize: '11px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400', outline: 'none', whiteSpace: 'nowrap' }}>
-                    {icon} {label}
-                  </button>
-                )
-              }
-              const sinOpciones = evolucionTipo === 'gasto'
-                ? categoriasConTx.length === 0 && hijosConTx.length === 0
-                : ingresosConTx.length === 0
+              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol([]); setEvolDropdownOpen(false) } }
+              const opciones = evolucionTipo === 'gasto'
+                ? [
+                    ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
+                    ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
+                    ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
+                  ]
+                : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))
               return (
                 <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'} · ARS (USD/EUR convertidos) · últimos 6 meses</h3>
+                  <h3 style={styles.savingsPanelTitle}>📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'} · ARS (monedas extranjeras convertidas) · últimos 6 meses</h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
                       <button key={opt.v} onClick={() => cambiarTipo(opt.v)}
@@ -2446,15 +2447,41 @@ export default function Dashboard() {
                       </button>
                     ))}
                   </div>
-                  {/* Chips de selección múltiple — categorías/subcategorías/hijos (gastos)
-                      o tags (ingresos), mezclados libremente, pensados para tocar con el
-                      dedo en mobile en vez de un dropdown de un solo valor. */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px', maxHeight: '150px', overflowY: 'auto', overflowX: 'hidden' }}>
-                    {evolucionTipo === 'gasto' && categoriasConTx.map(c => chip(`cat:${c}`, c, resolveCategoryIcon(c, { customIcons })))}
-                    {evolucionTipo === 'gasto' && subcatsConTx.map(({ categoria, subcategoria }) => chip(`sub:${categoria}::${subcategoria}`, `${categoria} › ${subcategoria}`, '·'))}
-                    {evolucionTipo === 'gasto' && hijosConTx.map(h => chip(`hijo:${h}`, h, customIcons?.[h] || '👧'))}
-                    {evolucionTipo === 'ingreso' && ingresosConTx.map(t => chip(`ingreso:${t}`, t, resolveCategoryIcon(t, { customIcons, isIncome: true })))}
-                    {sinOpciones && <p style={{ color: '#8e8e93', fontSize: '12px', margin: 0 }}>Sin datos para elegir todavía.</p>}
+                  {/* Dropdown de selección múltiple — categorías/subcategorías/hijos (gastos)
+                      o tags (ingresos), mezclados libremente. Antes era una grilla de chips
+                      siempre visible (mucho texto, había que scrollear); ahora un desplegable
+                      compacto, como el selector de meses del resto de la app. */}
+                  <div style={{ position: 'relative', marginBottom: '14px' }}>
+                    <button type="button" onClick={() => setEvolDropdownOpen(o => !o)}
+                      style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
+                        border: `1.5px solid ${sidebarCatEvol.length > 0 ? '#5C4F5C' : borderClr}`,
+                        backgroundColor: sidebarCatEvol.length > 0 ? '#5C4F5C' : 'transparent',
+                        color: sidebarCatEvol.length > 0 ? 'white' : txtClr,
+                        fontSize: '12px', fontFamily: '"Montserrat", sans-serif', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sidebarCatEvol.length === 0 ? 'Elegí qué ver' : sidebarCatEvol.length === 1 ? seleccion[0]?.label : `${sidebarCatEvol.length} elegidos`}
+                      </span>
+                      <span>▾</span>
+                    </button>
+                    {evolDropdownOpen && (
+                      <div onMouseLeave={() => setEvolDropdownOpen(false)}
+                        style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
+                        {opciones.length === 0 ? (
+                          <p style={{ color: '#8e8e93', fontSize: '12px', margin: 0, padding: '10px 14px' }}>Sin datos para elegir todavía.</p>
+                        ) : opciones.map(op => {
+                          const activo = sidebarCatEvol.includes(op.key)
+                          return (
+                            <button key={op.key} type="button" onClick={() => toggleClave(op.key)}
+                              style={{ width: '100%', textAlign: 'left', padding: '7px 12px', background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}>
+                              <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : borderClr}`, background: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
+                                {activo ? '✓' : ''}
+                              </span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.icon} {op.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                   {seleccion.length > 0 ? (
                     <>
@@ -2483,7 +2510,7 @@ export default function Dashboard() {
                       </div>
                     </>
                   ) : (
-                    !sinOpciones && <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Elegí una o más categorías, subcategorías, hijos o ingresos para ver su evolución.</p>
+                    opciones.length > 0 && <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Elegí una o más categorías, subcategorías, hijos o ingresos para ver su evolución.</p>
                   )}
                 </div>
               )
