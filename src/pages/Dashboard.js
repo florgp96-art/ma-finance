@@ -2345,7 +2345,14 @@ export default function Dashboard() {
                 : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))
               return (
                 <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'} · ARS (monedas extranjeras convertidas) · últimos 6 meses</h3>
+                  <h3 style={styles.savingsPanelTitle}>
+                    <span
+                      style={{ cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
+                      title="ARS (monedas extranjeras convertidas) · últimos 6 meses"
+                    >
+                      📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'}
+                    </span>
+                  </h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
                       <button key={opt.v} onClick={() => cambiarTipo(opt.v)}
@@ -2371,7 +2378,7 @@ export default function Dashboard() {
                       <span>▾</span>
                     </button>
                     {evolDropdownOpen && (
-                      <div onMouseLeave={() => setEvolDropdownOpen(false)}
+                      <div onMouseLeave={() => setEvolDropdownOpen(false)} className="hide-scroll"
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
                         {opciones.length === 0 ? (
                           <p style={{ color: '#8e8e93', fontSize: '12px', margin: 0, padding: '10px 14px' }}>Sin datos para elegir todavía.</p>
