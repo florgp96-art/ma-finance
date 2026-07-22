@@ -2352,10 +2352,12 @@ export default function Dashboard() {
                 <h3 style={styles.savingsPanelTitle}>Gastos<br/>últimos 6 meses</h3>
                 {(() => {
                   const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
+                  const abrev = v => Math.abs(v) >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`
                   return (
                     <ResponsiveContainer width="100%" height={130}>
                       <BarChart data={miniChartDataComputed} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                         <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={abrev} tick={{ fontSize: 9, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} width={34} />
                         <Tooltip
                           formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
                           contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
@@ -2363,7 +2365,7 @@ export default function Dashboard() {
                           itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
                         />
-                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
+                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(miniAvg)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                           {miniChartDataComputed.map((_, i) => (
                             <Cell key={i} fill={i === miniChartDataComputed.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
