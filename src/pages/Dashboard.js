@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallba
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
+import { aplicarReglasReparto } from '../lib/repartoRules'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -273,6 +274,9 @@ export default function Dashboard() {
 
   // Aliases
   const [userAliases, setUserAliases] = useState([])
+  // Reglas de reparto (D2/D3) — se aplican solas a cada transacción nueva que
+  // matchee, en cada punto de ingesta (ver aplicarReglasReparto).
+  const [repartoRules, setRepartoRules] = useState([])
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
   const [accountTransactions, setAccountTransactions] = useState([])
@@ -364,7 +368,7 @@ export default function Dashboard() {
   }, [dolarRates])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
+    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchRepartoRules(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
@@ -495,6 +499,15 @@ export default function Dashboard() {
     setUserAliases(data || [])
   }
 
+  const fetchRepartoRules = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('reparto_rules')
+      .select('*, categories(nombre), subcategories(nombre)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    setRepartoRules(data || [])
+  }
+
   const fetchCustomIcons = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -606,7 +619,7 @@ export default function Dashboard() {
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
-    await supabase.from('transactions').insert([movimientoNuevo])
+    await supabase.from('transactions').insert(aplicarReglasReparto([movimientoNuevo], repartoRules))
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -1012,9 +1025,10 @@ export default function Dashboard() {
         }
       })
 
-      await supabase.from('transactions').insert(toInsert)
+      const toInsertConReparto = aplicarReglasReparto(toInsert, repartoRules)
+      await supabase.from('transactions').insert(toInsertConReparto)
       const omitidas = exactDupes.length
-      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
+      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1058,9 +1072,10 @@ export default function Dashboard() {
         }
       })
 
-      await supabase.from('transactions').insert(toInsert)
+      const toInsertConReparto = aplicarReglasReparto(toInsert, repartoRules)
+      await supabase.from('transactions').insert(toInsertConReparto)
       const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
-      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
+      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null); setExcelDupReview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1949,7 +1964,7 @@ export default function Dashboard() {
 
       const insertedIds = []
       if (txEgresos.length > 0) {
-        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado')
+        const { data: ins, error: errEg } = await supabase.from('transactions').insert(aplicarReglasReparto(txEgresos, repartoRules)).select('id, detalle, estado')
         if (errEg) {
           showToast(`Error egresos: ${errEg.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (egresos): ${errEg.message}` })
@@ -2078,7 +2093,7 @@ export default function Dashboard() {
         return
       }
 
-      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
+      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(aplicarReglasReparto(transacciones, repartoRules)).select('id, detalle, estado')
       if (errTxTarjeta) {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
@@ -4146,9 +4161,11 @@ export default function Dashboard() {
         childrenDB={childrenDB}
         customIcons={customIcons}
         userAliases={userAliases}
+        repartoRules={repartoRules}
         fetchCategorias={fetchCategorias}
         fetchChildren={fetchChildren}
         fetchUserAliases={fetchUserAliases}
+        fetchRepartoRules={fetchRepartoRules}
         saveCustomIcon={saveCustomIcon}
         showToast={showToast}
         onRefresh={() => setRefreshKey(k => k + 1)}

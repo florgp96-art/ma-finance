@@ -224,6 +224,32 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     return 0
   }), [filteredTx, sortKey, sortDir])
 
+  // Reporte por persona (D3 Parte 4): exporta exactamente lo que se ve en la
+  // tabla de abajo — ya incluye tanto los gastos con child_id/tag directo como
+  // la porción derivada de gastos repartidos, para el período elegido.
+  const handleExportCSV = () => {
+    const escapeCSV = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const header = ['Fecha', 'Nombre', 'Categoría', 'Subcategoría', 'Cuenta', 'Monto', 'Moneda']
+    const filas = sortedTx.map(t => [
+      t.fecha || '',
+      t.nombre || t.detalle || '',
+      t.categories?.nombre || '',
+      t.subcategories?.nombre || '',
+      t.accounts?.nombre || '',
+      t.monto,
+      t.moneda || 'ARS',
+    ])
+    const csv = [header, ...filas].map(fila => fila.map(escapeCSV).join(',')).join('\r\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const periodo = selectedMeses.length === 1 ? selectedMeses[0] : selectedMeses.length === 0 ? 'todos' : `${selectedMeses.length}-meses`
+    a.href = url
+    a.download = `gastos-${hijoNombre}-${periodo}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const s = getStyles(darkMode)
 
   if (loading) return (
@@ -296,7 +322,12 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       </div>
 
       {/* Totales */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {sortedTx.length > 0 && (
+          <button onClick={handleExportCSV} style={{ padding: '9px 16px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#5C4F5C', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '500' }}>
+            ⬇️ Exportar CSV
+          </button>
+        )}
         {totalARS > 0 && (
           <div style={s.statCard}>
             <p style={s.statLabel}>Total ARS</p>
