@@ -561,15 +561,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
                             <div>
                               <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Subcategoría</p>
-                              <p style={{ margin: 0, fontSize: '13px' }}>{t.subcategories?.nombre || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.subcategories?.nombre || '—'}</p>
                             </div>
                             <div>
                               <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Forma de pago</p>
-                              <p style={{ margin: 0, fontSize: '13px' }}>{t.accounts?.nombre || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
                               <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Moneda</p>
-                              <p style={{ margin: 0, fontSize: '13px' }}>{t.moneda || 'ARS'}</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
                           <button onClick={() => startEdit(t)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✏️ Editar</button>
