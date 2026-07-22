@@ -1053,7 +1053,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla } = tablaMemo
 
   const renderTxRow = (tx) => (
-    <tr key={tx.id} style={styles.tr}>
+    <tr
+      key={tx.id}
+      style={{...styles.tr, cursor: editingTx === tx.id ? undefined : 'pointer'}}
+      onClick={() => { if (editingTx !== tx.id) startEdit(tx) }}
+    >
       {editingTx === tx.id && isMobile ? renderEditStackMobile(tx) : (<>
       <td style={{...styles.td, whiteSpace: 'nowrap'}}>
         {isMobile ? formatFechaCorta(tx.fecha) : formatFecha(tx.fecha)}
@@ -1131,15 +1135,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
       </td>
       {editingTx === tx.id ? renderEditActions(tx) : (
-        <td style={styles.td}>
-          <div style={{display:'flex', gap:'4px'}}>
-            <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️</button>
-            {tx.tipo === 'gasto' && !esVistaIngresos && (
-              <button style={styles.editBtn} title="Dividir gasto" onClick={() => abrirModalReparto(tx)}>🔀</button>
-            )}
-            <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️</button>
-          </div>
-        </td>
+        <td style={styles.td}></td>
       )}
       </>)}
     </tr>
@@ -1386,15 +1382,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   const renderEditActions = (tx) => (
     <td style={styles.td}>
-      <div style={{display:'flex', gap:'4px'}}>
+      <div style={{display:'flex', gap:'4px', flexWrap: 'wrap'}}>
         <button style={styles.saveEditBtn} onClick={() => handleSaveEdit(tx)}>✓</button>
+        {tx.tipo === 'gasto' && !esVistaIngresos && (
+          <button style={styles.editBtn} title="Dividir gasto" onClick={() => abrirModalReparto(tx)}>🔀</button>
+        )}
+        <button style={{...styles.editBtn, color: '#c0392b'}} title="Eliminar" onClick={() => handleDeleteTx(tx)}>🗑️</button>
         <button style={styles.cancelEditBtn} onClick={() => setEditingTx(null)}>✕</button>
       </div>
     </td>
   )
 
-  const thSortable = (label, key, hidden = false, width = undefined) => (
-    <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {}), ...(width ? { width } : {})}} onClick={() => handleSort(key)}>
+  const thSortable = (label, key, hidden = false, width = undefined, align = undefined) => (
+    <th style={{...styles.thSortable, ...(hidden ? { display: 'none' } : {}), ...(width ? { width } : {}), ...(align ? { textAlign: align } : {})}} onClick={() => handleSort(key)}>
       {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
     </th>
   )
@@ -2787,7 +2787,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {thSortable('Subcategoría', 'subcategoria', isMobile, isMobile ? undefined : '12%')}
               {thSortable('Cuotas', 'cuotas', isMobile, isMobile ? undefined : '8%')}
               {thSortable('Moneda', 'moneda', isMobile, isMobile ? undefined : '8%')}
-              {thSortable('Monto', 'monto', false, isMobile ? '25%' : '11%')}
+              {thSortable('Monto', 'monto', false, isMobile ? '25%' : '11%', 'right')}
               <th style={{...styles.th, width: isMobile ? '13%' : '9%'}}></th>
             </tr>
           </thead>

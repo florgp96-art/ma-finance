@@ -1085,99 +1085,6 @@ export default function Dashboard() {
     setLoadingExcel(false)
   }
 
-  const handleReclasificar = async () => {
-    showToast('Buscando transacciones...')
-    const { data: { session } } = await supabase.auth.getSession()
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: pendientes } = await supabase.from('transactions')
-      .select('*').eq('user_id', user.id).eq('tipo', 'gasto').eq('estado', 'a_identificar')
-      .gt('monto', 0).order('fecha', { ascending: false }).limit(500)
-    if (!pendientes || pendientes.length === 0) { showToast('No hay gastos para clasificar.'); return }
-    showToast(`Reclasificando ${pendientes.length} gastos con IA...`)
-    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`)
-    const { data: children } = await supabase.from('children').select('*').eq('user_id', user.id)
-    const { data: aliases } = await supabase.from('user_aliases').select('*').eq('user_id', user.id)
-    const { data: rulesRaw } = await supabase.from('user_rules')
-      .select('texto_original, categories(nombre), subcategories(nombre)')
-      .eq('user_id', user.id)
-      .not('texto_original', 'like', 'contexto_%')
-      .not('texto_original', 'like', '\\_\\_%')
-    const rules = (rulesRaw || [])
-      .map(r => ({ texto_original: r.texto_original, categoria: r.categories?.nombre || null, subcategoria: r.subcategories?.nombre || null }))
-      .filter(r => r.categoria)
-    const rows = pendientes.map(t => ({ id: t.id, notas: t.notas || '', descripcion: t.detalle || t.nombre || '', monto: t.monto, moneda: t.moneda || 'ARS' }))
-    try {
-      const catIdsForSub = (cats || []).map(c => c.id)
-      const { data: subcats } = catIdsForSub.length > 0
-        ? await supabase.from('subcategories').select('*').in('category_id', catIdsForSub)
-        : { data: [] }
-      const res = await fetch('/api/classifyRows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ rows, categories: cats, subcategories: subcats || [], children: children || [], aliases: aliases || [] })
-      })
-      const resData = await res.json()
-      if (!res.ok) {
-        showToast(`Error del clasificador: ${resData.error || res.status}`, 'error')
-        return
-      }
-      const { classifications } = resData
-      if (!classifications || classifications.length === 0) {
-        showToast('El clasificador no devolvió resultados.', 'error')
-        return
-      }
-      // Mapa de consistencia: mismo detalle → misma clasificación
-      const clByDesc = {}
-      const updates = pendientes.map((tx, i) => {
-        const cl = classifications[i]
-        if (!cl) return null
-        const desc = (tx.detalle || tx.nombre || '').toUpperCase()
-        const descNorm = desc.toLowerCase().trim()
-        // Reglas aprendidas (identificaste esta transacción a mano antes): prioridad máxima
-        const ruleMatch = rules.find(r => {
-          const rNorm = (r.texto_original || '').toLowerCase().trim()
-          return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
-        })
-        if (ruleMatch) {
-          cl.categoria = ruleMatch.categoria
-          cl.subcategoria = ruleMatch.subcategoria
-        } else {
-          // Aliases: segunda prioridad
-          const aliasMatch = (aliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
-          if (aliasMatch) {
-            const [aliasCat, aliasSubcat] = aliasMatch.valor.split(' > ').map(v => v.trim())
-            cl.categoria = aliasCat
-            cl.subcategoria = aliasSubcat || null
-          }
-        }
-        // Personal nunca tiene subcategoria
-        if ((cl.categoria || '').toLowerCase() === 'personal') cl.subcategoria = null
-        // Consistencia: misma descripción → misma clasificación
-        if (clByDesc[desc]) {
-          cl.categoria = clByDesc[desc].categoria
-          cl.subcategoria = clByDesc[desc].subcategoria
-        } else {
-          clByDesc[desc] = { categoria: cl.categoria, subcategoria: cl.subcategoria }
-        }
-        const catObj = cats?.find(c => c.nombre.toLowerCase() === (cl.categoria || '').toLowerCase())
-        const subcatObj = subcats?.find(s => s.nombre.toLowerCase() === (cl.subcategoria || '').toLowerCase() && s.category_id === catObj?.id)
-        return supabase.from('transactions').update({
-          nombre: cl.nombre || tx.detalle,
-          category_id: catObj?.id || null,
-          subcategory_id: subcatObj?.id || null,
-          estado: catObj ? 'identificado' : 'a_identificar',
-        }).eq('id', tx.id)
-      }).filter(Boolean)
-      await Promise.all(updates)
-      const updated = updates.length
-      showToast(`${updated} transacciones reclasificadas.`)
-      setRefreshKey(k => k + 1)
-      fetchAccounts()
-    } catch (e) {
-      showToast('Error al reclasificar: ' + e.message, 'error')
-    }
-  }
-
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -2779,9 +2686,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openTipoCambio()}>💱 TIPO DE CAMBIO</button>
                       </div>
                     )}
                   </div>
@@ -2984,9 +2889,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={handleReclasificar}>🤖 RE-CLASIFICAR CON IA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openTipoCambio()}>💱 TIPO DE CAMBIO</button>
                     </div>
                   )}
                 </>
