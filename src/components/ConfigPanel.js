@@ -126,10 +126,11 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // Divide retroactivamente (una sola vez, sin duplicar en reintentos) los
   // gastos ya cargados de Comida y de Casa (Alquiler/Expensas/Luz/Gas/
-  // Internet/Teléfono) desde FECHA_DIVISION_3_DESDE en 3 partes iguales:
-  // Vitto, Amelia y "yo" (la transacción original, sin tag, se achica a un
-  // tercio). Los gastos nuevos ya se dividen solos desde donde se cargan
-  // (ver dividirTresVias en src/lib/divisionTresVias.js).
+  // Internet/Teléfono) desde FECHA_DIVISION_3_DESDE: la fila queda con el
+  // monto total y un campo "reparto" con la parte de Vitto y de Amelia (el
+  // resto, implícito, es de la cuenta dueña). Mismo modelo de una sola fila
+  // que usan los gastos nuevos, que ya se dividen solos desde donde se
+  // cargan (ver dividirTresVias en src/lib/divisionTresVias.js).
   const handleDividirTresViasRetro = async () => {
     if (!window.confirm(`Esto va a dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y de Casa (${CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el ${FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar. ¿Continuar?`)) return
     setDividiendoTresVias(true)
@@ -155,10 +156,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
         .gte('fecha', FECHA_DIVISION_3_DESDE).in('category_id', idsCategorias)
       if (error) { showToast('Error buscando movimientos: ' + error.message, 'error'); return }
-      // El filtro por marca "(1/3)" se hace en JS (no en la query) para no
-      // pisarse con el manejo de NULL de Postgres en nombre IS NULL.
       const aDividir = (candidatas || []).filter(t =>
-        !(t.nombre || '').includes('(1/3)') && aplicaDivisionTresVias(t, comidaId, casaId, subServiciosIds)
+        !t.reparto && aplicaDivisionTresVias(t, comidaId, casaId, subServiciosIds)
       )
       if (aDividir.length === 0) {
         showToast('No hay movimientos nuevos para dividir.')
@@ -170,17 +169,18 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         if (monto <= 0) continue
         const parteVitto = Math.round((monto / 3) * 100) / 100
         const parteAmelia = Math.round((monto / 3) * 100) / 100
-        const parteYo = Math.round((monto - parteVitto - parteAmelia) * 100) / 100
-        const nombreBase = t.nombre || t.detalle || ''
         const { error: errUpd } = await supabase.from('transactions')
-          .update({ monto: parteYo, nombre: `${nombreBase} (1/3)` })
+          .update({
+            reparto: {
+              tipo: 'tercios',
+              participantes: [
+                { nombre: 'Vitto', monto: parteVitto },
+                { nombre: 'Amelia', monto: parteAmelia },
+              ],
+            },
+          })
           .eq('id', t.id).eq('user_id', user.id)
         if (errUpd) continue
-        const { id, ...resto } = t
-        await supabase.from('transactions').insert([
-          { ...resto, monto: parteVitto, tag: 'Vitto', nombre: `${nombreBase} (1/3)` },
-          { ...resto, monto: parteAmelia, tag: 'Amelia', nombre: `${nombreBase} (1/3)` },
-        ])
         procesados++
       }
       showToast(`${procesados} gastos divididos en 3 (Vitto / Amelia / vos).`)
