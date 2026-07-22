@@ -165,6 +165,99 @@ export const tcTooltipDe = (tx, tcMap, tipoCambioActual) => {
   return `U$S ${formatMonto(Math.abs(Number(tx.monto)))} · TC $ ${formatMontoFull(tc)} = $ ${formatMonto(Math.abs(Number(tx.monto)) * tc)}`
 }
 
+// Un nombre de reparto puede venir escrito a mano (reglas, modal manual) y no
+// coincidir en mayúsculas/minúsculas con el nombre real del hijo en la base —
+// se normaliza contra la lista de hijos para que sea siempre la misma entrada
+// en cualquier agregación, en vez de duplicarse por un "amelia" vs "Amelia".
+const normalizarNombrePersona = (nombre, children) => {
+  if (!nombre) return nombre
+  const match = (children || []).find(c => (c.nombre || '').toLowerCase() === nombre.toLowerCase())
+  return match ? match.nombre : nombre
+}
+
+// Descompone UN gasto en sus porciones — una por cada persona con reparto o
+// asignación directa (child_id/tag), y el resto (la parte de "vos", o el
+// gasto entero si no hay reparto ni asignación) a su categoría/subcategoría —
+// cada monto ya convertido a ARS con el TC propio del movimiento
+// (tcDeMovimiento/tcEURDeMovimiento, nunca el TC de hoy para algo viejo).
+// Es la ÚNICA función que debe alimentar cualquier vista de composición de
+// gastos (donut, barras, "Categorías Top", evolución, agrupado por persona):
+// así es imposible que dos vistas den números distintos para el mismo dato.
+// La asignación directa (child_id/tag) tiene prioridad sobre el reparto si
+// una transacción tuviera las dos cosas a la vez — mismo criterio que ya usa
+// HijoDetail al traer los movimientos de un hijo.
+export const derivarPorcionesGasto = (t, { tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, children } = {}) => {
+  if (!t || t.tipo !== 'gasto') return []
+  const montoTotal = Number(t.monto) || 0
+  if (montoTotal <= 0) return []
+  const aArs = (monto) => {
+    if (!t.moneda || t.moneda === 'ARS') return monto
+    if (t.moneda === 'USD') { const tc = tcDeMovimiento(t, tcMap, tipoCambio); return tc > 0 ? monto * tc : 0 }
+    if (t.moneda === 'EUR') { const tc = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR); return tc > 0 ? monto * tc : 0 }
+    return monto
+  }
+  const categoria = t.categories?.nombre || 'A Identificar'
+  const subcategoria = t.subcategories?.nombre || null
+  const childDirecto = t.children?.nombre || t.tag || null
+  if (childDirecto) {
+    return [{ tipo: 'persona', nombre: normalizarNombrePersona(childDirecto, children), monto: aArs(montoTotal) }]
+  }
+  const reparto = desglosarReparto(t)
+  if (reparto) {
+    const partes = reparto.otros
+      .filter(p => p.monto > 0)
+      .map(p => ({ tipo: 'persona', nombre: normalizarNombrePersona(p.nombre, children), monto: aArs(p.monto) }))
+    if (reparto.yo.monto > 0) partes.push({ tipo: 'yo', categoria, subcategoria, monto: aArs(reparto.yo.monto) })
+    return partes
+  }
+  return [{ tipo: 'yo', categoria, subcategoria, monto: aArs(montoTotal) }]
+}
+
+// Agrega una lista de gastos por categoría, con los hijos como entradas
+// propias (su reparto/asignación sale de la categoría real, no se duplica) —
+// alimenta el donut, las barras y "Categorías Top" por igual.
+export const agregarGastosPorCategoria = (txs, tcParams) => {
+  const acc = {}
+  ;(txs || []).forEach(t => {
+    derivarPorcionesGasto(t, tcParams).forEach(parte => {
+      const esPersona = parte.tipo === 'persona'
+      const nombre = esPersona ? parte.nombre : parte.categoria
+      if (!acc[nombre]) acc[nombre] = { name: nombre, value: 0, tipo: esPersona ? 'persona' : 'categoria' }
+      acc[nombre].value += parte.monto
+    })
+  })
+  return Object.values(acc).sort((a, b) => b.value - a.value)
+}
+
+// Agrega por subcategoría DENTRO de una categoría — no incluye a los hijos
+// (su parte ya salió de la categoría en agregarGastosPorCategoria).
+export const agregarGastosPorSubcategoria = (txs, categoriaNombre, tcParams) => {
+  const acc = {}
+  ;(txs || []).forEach(t => {
+    derivarPorcionesGasto(t, tcParams).forEach(parte => {
+      if (parte.tipo !== 'yo' || parte.categoria !== categoriaNombre) return
+      const nombre = parte.subcategoria || 'Sin subcategoría'
+      acc[nombre] = (acc[nombre] || 0) + parte.monto
+    })
+  })
+  return Object.entries(acc).sort((a, b) => b[1] - a[1])
+}
+
+// Agrega por persona: cada hijo con TODAS sus porciones (reparto o asignación
+// directa), sin importar de qué categoría vengan, más una entrada "Personal"
+// con el resto (la parte de "vos" y los gastos sin reparto ni asignación).
+export const agregarGastosPorPersona = (txs, tcParams) => {
+  const acc = {}
+  ;(txs || []).forEach(t => {
+    derivarPorcionesGasto(t, tcParams).forEach(parte => {
+      const nombre = parte.tipo === 'persona' ? parte.nombre : 'Personal'
+      if (!acc[nombre]) acc[nombre] = { name: nombre, value: 0 }
+      acc[nombre].value += parte.monto
+    })
+  })
+  return Object.values(acc).sort((a, b) => b.value - a.value)
+}
+
 // Totales ARS / USD / EUR / unificado en ARS de una lista de movimientos — pensado
 // para reflejar EXACTAMENTE las filas visibles después de aplicar los filtros
 // activos (búsqueda, rango de fechas, categoría, etc.) en cualquier tabla de
@@ -870,66 +963,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
   })()
 
-  const buildBubbleData = (txList, tc) => {
-    const tcNum = parseFloat(tc) || 0
-    return Object.values(
-      txList.reduce((acc, t) => {
-        const cat = t.categories?.nombre || 'A Identificar'
-        const monto = Number(t.monto)
-        const moneda = t.moneda || 'ARS'
-        if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
-        if (moneda === 'USD') {
-          // TC del mes de este movimiento (según el tipo de dólar elegido) —
-          // nunca el TC de hoy para algo viejo. tc (el período seleccionado) es
-          // el fallback si tcDeMovimiento no tiene nada mejor para ofrecer.
-          const tcTx = tcDeMovimiento(t, tcMap, tipoCambio) || tcNum
-          acc[cat].originalUSD += monto
-          if (tcTx > 0) acc[cat].value += monto * tcTx
-        } else if (moneda === 'EUR') {
-          acc[cat].originalEUR += monto
-          if (tcEUR > 0) acc[cat].value += monto * tcEUR
-        } else {
-          acc[cat].value += monto
-          acc[cat].originalARS += monto
-        }
-        return acc
-      }, {})
-    ).sort((a, b) => b.value - a.value)
-  }
-
+  // Único punto de entrada para descomponer gastos en categoría vs. persona
+  // (reparto/asignación directa) — ver derivarPorcionesGasto/agregarGastosPor*.
+  const tcParamsGasto = { tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, children }
   const gastosParaGrafico = mesTxs.filter(t => t.tipo === 'gasto')
-  const bubbleData = buildBubbleData(gastosParaGrafico, tcEfectivo)
 
-  // Datos para legend: categorías sin hijos + child rows separadas
-  // Usa child_id (modelo nuevo) con fallback a tag (modelo viejo)
-  const gastosConHijo = mesTxs.filter(t => t.tipo === 'gasto' && getChildName(t))
-  const childNames = [...new Set(gastosConHijo.map(t => getChildName(t)))]
-  const netBubbleData = childNames.length > 0
-    ? buildBubbleData(mesTxs.filter(t => t.tipo === 'gasto' && !getChildName(t)), tcEfectivo)
-    : null
-  const childTotals = childNames.map(name => {
-    const txs = mesTxs.filter(t => getChildName(t) === name && t.tipo === 'gasto')
-    return {
-      name,
-      value: txs.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)), 0),
-      originalARS: txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + Number(t.monto), 0),
-      originalUSD: txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + Number(t.monto), 0),
-      originalEUR: txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + Number(t.monto), 0),
-    }
-  }).sort((a, b) => b.value - a.value)
+  // Único dataset para Donut y Barras agrupadas por categoría: cada gasto se
+  // descompone en sus porciones — los hijos son entradas propias con TODO lo
+  // suyo (reparto o asignación directa), y cada categoría muestra solo lo que
+  // no les corresponde a ellos, sin duplicar nada.
+  const categoriaBubbleData = agregarGastosPorCategoria(gastosParaGrafico, tcParamsGasto)
+  // Hijos con plata atribuida este período (reparto o asignación directa) —
+  // decide si se muestra el toggle "Agrupar: Categoría/Persona".
+  const childNames = categoriaBubbleData.filter(e => e.tipo === 'persona').map(e => e.name)
 
-  // Modo "Persona": agrupa todo el gasto por persona (null child = "Personal")
-  const personaBubbleData = Object.values(
-    mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
-      const persona = getChildName(t) || 'Personal'
-      if (!acc[persona]) acc[persona] = { name: persona, value: 0, originalARS: 0, originalUSD: 0 }
-      const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
-      acc[persona].value += monto
-      if (t.moneda === 'ARS') acc[persona].originalARS += Number(t.monto)
-      else acc[persona].originalUSD += Number(t.monto)
-      return acc
-    }, {})
-  ).sort((a, b) => b.value - a.value)
+  // Modo "Persona": cada hijo con TODAS sus porciones (reparto o asignación
+  // directa), sin importar de qué categoría vengan, más "Personal" con el
+  // resto (la parte de "vos" y lo que no tiene reparto ni asignación).
+  const personaBubbleData = agregarGastosPorPersona(gastosParaGrafico, tcParamsGasto)
 
   const totalARS = mesTxs.filter(t => t.moneda === 'ARS' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
   const totalUSD = mesTxs.filter(t => t.moneda === 'USD' && t.tipo === 'gasto').reduce((s, t) => s + Number(t.monto), 0)
@@ -957,14 +1008,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // que togglear entre ellas nunca puede mostrar ítems/montos distintos — solo cambia
   // cómo se dibuja el mismo dato. Incluye a los hijos como entradas propias (aparte de
   // "categoría") cuando se agrupa por categoría; agrupado por persona, es una entrada
-  // por persona (incluyendo "Personal" = sin hijo asociado).
+  // por persona (incluyendo "Personal" = lo no atribuido a ningún hijo).
   const displayChartData = esVistaIngresos
     ? ingresoBubbleData
     : bubbleGroupBy === 'persona'
       ? personaBubbleData
-      : childTotals.length > 0
-        ? [...(netBubbleData || bubbleData), ...childTotals].sort((a, b) => b.value - a.value)
-        : (netBubbleData || bubbleData)
+      : categoriaBubbleData
   // resolveIcon/resolveColor: para categorías/subcategorías de GASTO (usado en chips de
   // transacciones, tarjetas de statement, etc., no solo en el gráfico). resolveIconIngreso/
   // resolveColorIngreso: mismo criterio para categorías de INGRESO. Ambos pares llaman al
@@ -989,13 +1038,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const getChartColor = (name) => esVistaIngresos ? resolveColorIngreso(name) : resolveColor(name)
   const effectiveChartType = chartType
 
-  const catTotals = mesTxs.filter(t => t.tipo === 'gasto').reduce((acc, t) => {
-    const cat = t.categories?.nombre || 'A Identificar'
-    const monto = t.moneda === 'USD' ? Number(t.monto) * tcEfectivo : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
-    acc[cat] = (acc[cat] || 0) + monto
-    return acc
-  }, {})
-  const catTopList = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).slice(0, 3)
+  // "Categorías Top": mismas porciones que el donut/barras (categoriaBubbleData),
+  // sin las entradas de hijos — así nunca puede dar un número distinto al del
+  // donut para la misma categoría.
+  const catTopList = categoriaBubbleData
+    .filter(e => e.tipo === 'categoria')
+    .slice(0, 3)
+    .map(e => [e.name, e.value])
 
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
@@ -1037,7 +1086,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getChildName, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getTCEUR])
 
   const {
     ingresosBarData, displayChartData, childNames,
@@ -2730,12 +2779,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                     </PieChart>
                   </ResponsiveContainer>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', paddingTop: isMobile ? '4px' : '20px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
                     {displayChartData.map((entry, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                         <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                        <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getChartIcon(entry.name)} {entry.name}</span>
-                        <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', textAlign: 'right' }}>$ {formatMonto(entry.value)}</span>
+                        <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                        <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -3044,7 +3093,10 @@ const getStyles = (dark, mobile) => {
   const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
   return {
     loading: { padding: '24px', color: muted, fontSize: '14px' },
-    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
+    // auto-fit (no auto-fill): las columnas vacías colapsan a 0 en vez de
+    // reservar su ancho — en desktop ancho, las cards que sí hay se reparten
+    // todo el espacio disponible en vez de dejar un hueco a la derecha.
+    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
     summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
     summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', textTransform: 'uppercase', letterSpacing: '0.08em' },
     summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },

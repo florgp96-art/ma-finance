@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, InfoTooltip } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -2152,22 +2152,30 @@ export default function Dashboard() {
   // por mes según el tipo de dólar elegido) es el mismo criterio que ya usa el resto
   // de la app para convertir USD/EUR de meses pasados — no se tocó esa lógica.
   const evolucionCategoriaMemo = useMemo(() => {
+    const tcParamsGasto = { tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, children: childrenDB }
     // Las opciones para elegir se limitan a lo que tuvo movimientos DENTRO de
     // los últimos 6 meses graficados — una subcategoría con historial viejo
     // pero nada reciente no debe aparecer para elegir (ocuparía lugar sin
     // aportar nada: su línea sería plana en cero en todo el gráfico).
     const ultimos6 = getLast6Months()
     const txsUltimos6 = accountTransactions.filter(t => t.fecha && ultimos6.some(m => t.fecha.startsWith(m)))
+    // Mismo criterio que el donut/barras (derivarPorcionesGasto): los hijos
+    // cuentan con su reparto/asignación directa, las categorías solo con lo
+    // que no es de ningún hijo — así las opciones para elegir coinciden con
+    // lo que el gráfico va a mostrar.
+    const partesGastoUltimos6 = txsUltimos6
+      .filter(t => t.tipo === 'gasto')
+      .flatMap(t => derivarPorcionesGasto(t, tcParamsGasto))
     const categoriasConTx = [...new Set(
-      txsUltimos6.filter(t => t.tipo === 'gasto' && t.categories?.nombre)
-        .map(t => t.categories.nombre)
+      partesGastoUltimos6.filter(p => p.tipo === 'yo').map(p => p.categoria)
     )].sort()
     // Subcategorías con datos, como pares [categoría, subcategoría] — dos categorías
     // distintas pueden tener una subcategoría con el mismo nombre, así que la clave
     // de selección necesita la categoría para no confundirlas.
     const subcatsConTx = [...new Map(
-      txsUltimos6.filter(t => t.tipo === 'gasto' && t.categories?.nombre && t.subcategories?.nombre)
-        .map(t => [`${t.categories.nombre}::${t.subcategories.nombre}`, { categoria: t.categories.nombre, subcategoria: t.subcategories.nombre }])
+      partesGastoUltimos6
+        .filter(p => p.tipo === 'yo' && p.subcategoria)
+        .map(p => [`${p.categoria}::${p.subcategoria}`, { categoria: p.categoria, subcategoria: p.subcategoria }])
     ).values()].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.subcategoria.localeCompare(b.subcategoria))
     // Los ingresos se etiquetan igual que en "Ingresos de este mes": tag si
     // existe, si no la subcategoría/categoría — la mayoría no tiene tag propio.
@@ -2176,25 +2184,39 @@ export default function Dashboard() {
       txsUltimos6.filter(t => t.tipo === 'ingreso' && getIngresoName(t))
         .map(t => getIngresoName(t))
     )].sort()
-    const getHijoName = (t) => t.children?.nombre || t.tag || null
     const hijosConTx = [...new Set(
-      txsUltimos6.filter(t => t.tipo === 'gasto' && getHijoName(t))
-        .map(t => getHijoName(t))
+      partesGastoUltimos6.filter(p => p.tipo === 'persona').map(p => p.nombre)
     )].sort()
 
-    // "total" es una clave especial, siempre disponible: el total de gastos o
-    // ingresos del mes (según el toggle), sin filtrar por categoría — reemplaza
-    // al viejo mini-gráfico de barras separado. Es la selección por defecto, así
-    // el gráfico nunca arranca vacío ni pide elegir algo para mostrar datos.
-    const matchesKey = (t, key) => {
-      if (key === 'total') return t.tipo === evolucionTipo
-      if (key.startsWith('ingreso:')) return t.tipo === 'ingreso' && getIngresoName(t) === key.slice(8)
-      if (key.startsWith('hijo:')) return t.tipo === 'gasto' && getHijoName(t) === key.slice(5)
+    // Con qué porción de derivarPorcionesGasto matchea cada clave del selector
+    // (categoría/subcategoría → la parte "yo" de esa categoría, sin lo de los
+    // hijos; hijo → su parte, venga de reparto o de asignación directa).
+    const parteCoincideConKey = (parte, key) => {
+      if (key.startsWith('hijo:')) return parte.tipo === 'persona' && parte.nombre === key.slice(5)
       if (key.startsWith('sub:')) {
         const [cat, sub] = key.slice(4).split('::')
-        return t.tipo === 'gasto' && t.categories?.nombre === cat && t.subcategories?.nombre === sub
+        return parte.tipo === 'yo' && parte.categoria === cat && parte.subcategoria === sub
       }
-      return t.tipo === 'gasto' && t.categories?.nombre === key.slice(4)
+      return parte.tipo === 'yo' && parte.categoria === key.slice(4)
+    }
+    // "total" e "ingreso:X" no tienen reparto (el reparto es solo de gastos) —
+    // se convierten enteras con el TC del movimiento, igual que antes.
+    const convertirMontoDelMovimiento = (t) => {
+      const monto = Number(t.monto) || 0
+      if (t.moneda === 'ARS') return monto
+      if (t.moneda === 'USD') {
+        const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+        if (tcTx > 0) return monto * tcTx
+        if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento USD', t.id, t.fecha)
+        return 0
+      }
+      if (t.moneda === 'EUR') {
+        const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+        if (tcTx > 0) return monto * tcTx
+        if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento EUR', t.id, t.fecha)
+        return 0
+      }
+      return 0
     }
     const labelDeKey = (key) => {
       if (key === 'total') return 'Total'
@@ -2225,30 +2247,25 @@ export default function Dashboard() {
 
     // Cada movimiento se convierte con el TC de SU propio mes (tcDeMovimiento/
     // tcEURDeMovimiento: promedio del mes, o el fx_rate congelado del movimiento
-    // para USD, nunca el TC de hoy para algo viejo) — antes usaba un TC único por
-    // fila de mes con fallback a "1"/"0" que podía silenciar USD/EUR sin avisar.
+    // para USD, nunca el TC de hoy para algo viejo). Las claves de gasto
+    // (cat:/sub:/hijo:) se calculan a partir de las porciones de
+    // derivarPorcionesGasto — mismo criterio que el donut/barras — para que un
+    // gasto dividido con un hijo aporte su parte al hijo y no a la categoría.
     const evolData = getLast6Months().map(m => {
       const row = { mes: mesLabel(m) }
+      const txsDelMes = accountTransactions.filter(t => t.fecha?.startsWith(m))
       sidebarCatEvol.forEach(key => {
-        const total = accountTransactions
-          .filter(t => t.fecha?.startsWith(m) && matchesKey(t, key))
-          .reduce((s, t) => {
-            const monto = Number(t.monto) || 0
-            if (t.moneda === 'ARS') return s + monto
-            if (t.moneda === 'USD') {
-              const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
-              if (tcTx > 0) return s + monto * tcTx
-              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento USD', t.id, t.fecha)
-              return s
-            }
-            if (t.moneda === 'EUR') {
-              const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
-              if (tcTx > 0) return s + monto * tcTx
-              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento EUR', t.id, t.fecha)
-              return s
-            }
-            return s
-          }, 0)
+        let total = 0
+        if (key === 'total') {
+          total = txsDelMes.filter(t => t.tipo === evolucionTipo).reduce((s, t) => s + convertirMontoDelMovimiento(t), 0)
+        } else if (key.startsWith('ingreso:')) {
+          const nombre = key.slice(8)
+          total = txsDelMes.filter(t => t.tipo === 'ingreso' && getIngresoName(t) === nombre).reduce((s, t) => s + convertirMontoDelMovimiento(t), 0)
+        } else {
+          total = txsDelMes.filter(t => t.tipo === 'gasto').reduce((s, t) =>
+            s + derivarPorcionesGasto(t, tcParamsGasto).filter(p => parteCoincideConKey(p, key)).reduce((s2, p) => s2 + p.monto, 0)
+          , 0)
+        }
         row[key] = Math.round(total)
       })
       return row
@@ -2256,7 +2273,7 @@ export default function Dashboard() {
     const seleccion = sidebarCatEvol.map(key => ({ key, label: labelDeKey(key), color: colorDeKey(key), icon: iconDeKey(key) }))
 
     return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion }
-  }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, customIcons])
+  }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, childrenDB, customIcons])
 
   const sideWidgets = () => (
     <>
@@ -2709,7 +2726,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '1440px', margin: isMobile ? undefined : '0 auto', boxSizing: 'border-box' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && (
@@ -3010,7 +3027,7 @@ export default function Dashboard() {
                           fontSize: isMobile ? '11.5px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
                           color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
                           background: dashboardTab === tab.key ? '#5C4F5C' : 'transparent',
-                          outline: 'none', whiteSpace: 'nowrap', flex: '0 0 auto',
+                          outline: 'none', whiteSpace: 'nowrap', flex: isMobile ? '0 0 auto' : '1', textAlign: 'center',
                           transition: 'background-color 0.2s ease, color 0.2s ease'
                         }}
                       >
