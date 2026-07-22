@@ -64,19 +64,25 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
   const fetchAll = async () => {
     setLoading(true)
-    const accountIds = accounts.map(a => a.id)
-    const [txs, stmtRes] = await Promise.all([
-      fetchAllPages(() =>
-        supabase.from('transactions')
-          .select('*, categories(nombre), subcategories(nombre)')
-          .in('account_id', accountIds)
-          .order('fecha', { ascending: false })
-      ),
-      supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
-    ])
-    setTransactions(txs)
-    setStatements(stmtRes.data || [])
-    setLoading(false)
+    try {
+      const accountIds = accounts.map(a => a.id)
+      const [txs, stmtRes] = await Promise.all([
+        fetchAllPages(() =>
+          supabase.from('transactions')
+            .select('*, categories(nombre), subcategories(nombre)')
+            .in('account_id', accountIds)
+            .order('fecha', { ascending: false })
+        ),
+        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
+      ])
+      setTransactions(txs)
+      setStatements(stmtRes.data || [])
+    } finally {
+      // Si alguna de las dos consultas falla, "Cargando datos..." no debe quedar
+      // pegado para siempre — mejor mostrar la pantalla (vacía o parcial) que un
+      // spinner infinito sin forma de salir sin recargar la página.
+      setLoading(false)
+    }
   }
 
   const accountTipoById = useMemo(() => new Map((accounts || []).map(a => [a.id, a.tipo])), [accounts])
