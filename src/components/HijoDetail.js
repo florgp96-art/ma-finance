@@ -68,8 +68,18 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       txQuery = txQuery.ilike('tag', hijoNombre)
     }
 
-    const [txRes, catRes] = await Promise.all([
+    // Gastos repartidos (ej. división en 3 de Comida/Casa): la fila completa le
+    // pertenece a la cuenta, pero una parte de "reparto" es de este hijo — se
+    // traen aparte y se les pisa el monto por la parte que le corresponde a él.
+    const repartoQuery = supabase.from('transactions')
+      .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
+      .eq('user_id', user.id)
+      .not('reparto', 'is', null)
+      .gt('monto', 0)
+
+    const [txRes, repartoRes, catRes] = await Promise.all([
       txQuery,
+      repartoQuery,
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('nombre'),
     ])
     const cats = catRes.data || []
@@ -79,7 +89,16 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       : { data: [] }
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
-    const txs = txRes.data || []
+    const directTxs = txRes.data || []
+    const repartidas = (repartoRes.data || [])
+      .map(t => {
+        const participante = t.reparto?.participantes?.find(p => (p.nombre || '').toLowerCase() === hijoNombre.toLowerCase())
+        return participante ? { ...t, monto: Number(participante.monto) } : null
+      })
+      .filter(Boolean)
+    const yaIncluidos = new Set(directTxs.map(t => t.id))
+    const txs = [...directTxs, ...repartidas.filter(t => !yaIncluidos.has(t.id))]
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
     setTransactions(txs)
     if (txs.length > 0) {
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
