@@ -4120,7 +4120,7 @@ export default function Dashboard() {
         fetchRepartoRules={fetchRepartoRules}
         saveCustomIcon={saveCustomIcon}
         showToast={showToast}
-        onRefresh={() => setRefreshKey(k => k + 1)}
+        onRefresh={() => { setRefreshKey(k => k + 1); fetchCustomIcons() }}
         tcManual={tcManual}
         onSaveTC={guardarTipoCambioManual}
       />
