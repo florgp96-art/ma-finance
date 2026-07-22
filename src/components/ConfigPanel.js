@@ -1,7 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso } from './AccountDetail'
-import { FECHA_DIVISION_3_DESDE, CASA_SUBCATS_DIVISION_3, aplicaDivisionTresVias } from '../lib/divisionTresVias'
+import { FECHA_DIVISION_3_DESDE, CASA_SUBCATS_DIVISION_3, aplicaDivisionTresVias, USER_ID_DIVISION_3 } from '../lib/divisionTresVias'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -28,6 +28,14 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [showCambiarClave, setShowCambiarClave] = useState(false)
   const [showTipoCambio, setShowTipoCambio] = useState(false)
   const [dividiendoTresVias, setDividiendoTresVias] = useState(false)
+  // La división en 3 (Vitto/Amelia) es un hack de una sola cuenta, no una
+  // feature general — se oculta para cualquier otro usuario (ver divisionTresVias.js).
+  const [esCuentaDivisionTresVias, setEsCuentaDivisionTresVias] = useState(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user?.id === USER_ID_DIVISION_3) setEsCuentaDivisionTresVias(true)
+    })
+  }, [])
 
   // Tipo de cambio manual
   const [tcInput, setTcInput] = useState('')
@@ -127,7 +135,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setDividiendoTresVias(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user || user.id !== USER_ID_DIVISION_3) return
       for (const nombre of ['Vitto', 'Amelia']) {
         if (!(childrenDB || []).some(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
           await supabase.from('children').insert({ user_id: user.id, nombre })
@@ -435,14 +443,16 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               />
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
             </form>
-            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
-              <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 10px' }}>
-                Dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y Casa ({CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el {FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar.
-              </p>
-              <button type="button" style={{ ...s.saveBtn, width: '100%' }} onClick={handleDividirTresViasRetro} disabled={dividiendoTresVias}>
-                {dividiendoTresVias ? 'Dividiendo…' : '🔀 Dividir en 3 (Vitto/Amelia/vos)'}
-              </button>
-            </div>
+            {esCuentaDivisionTresVias && (
+              <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
+                <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 10px' }}>
+                  Dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y Casa ({CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el {FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar.
+                </p>
+                <button type="button" style={{ ...s.saveBtn, width: '100%' }} onClick={handleDividirTresViasRetro} disabled={dividiendoTresVias}>
+                  {dividiendoTresVias ? 'Dividiendo…' : '🔀 Dividir en 3 (Vitto/Amelia/vos)'}
+                </button>
+              </div>
+            )}
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
               <button style={s.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
             </div>

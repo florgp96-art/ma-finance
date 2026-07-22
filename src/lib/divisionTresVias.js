@@ -7,12 +7,19 @@
 export const FECHA_DIVISION_3_DESDE = '2026-02-01'
 export const CASA_SUBCATS_DIVISION_3 = ['Alquiler', 'Expensas', 'Luz', 'Gas', 'Internet', 'Teléfono']
 
+// Esta división es un hack personal de una sola cuenta (los hijos hardcodeados
+// son Vitto y Amelia), no una feature general de la app — la app es multiusuario
+// y cualquier otra cuenta con una categoría "Comida" pisaría este mismo código.
+// Gateado por user_id hasta que exista el reparto configurable por cliente.
+export const USER_ID_DIVISION_3 = '66029aec-97f5-40df-8779-54d9e6957fb2'
+
 export const aplicaDivisionTresVias = (t, comidaId, casaId, subServiciosIds) => {
   if (t.tipo !== 'gasto' || !t.fecha || t.fecha < FECHA_DIVISION_3_DESDE) return false
   return (comidaId && t.category_id === comidaId) || (casaId && t.category_id === casaId && subServiciosIds.has(t.subcategory_id))
 }
 
-export const dividirTresVias = (txs, categorias, subcategorias) => {
+export const dividirTresVias = (txs, categorias, subcategorias, userId) => {
+  if (userId !== USER_ID_DIVISION_3) return txs || []
   const comidaId = categorias?.find(c => c.nombre === 'Comida')?.id
   const casaId = categorias?.find(c => c.nombre === 'Casa')?.id
   const subServiciosIds = new Set(

@@ -607,7 +607,7 @@ export default function Dashboard() {
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
-    await supabase.from('transactions').insert(dividirTresVias([movimientoNuevo], categoriasDB, subcategoriasDB))
+    await supabase.from('transactions').insert(dividirTresVias([movimientoNuevo], categoriasDB, subcategoriasDB, user.id))
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -1013,7 +1013,7 @@ export default function Dashboard() {
         }
       })
 
-      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias)
+      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias, user.id)
       await supabase.from('transactions').insert(toInsertFinal)
       const omitidas = exactDupes.length
       showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
@@ -1060,7 +1060,7 @@ export default function Dashboard() {
         }
       })
 
-      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias)
+      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias, user.id)
       await supabase.from('transactions').insert(toInsertFinal)
       const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
       showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
@@ -1951,7 +1951,7 @@ export default function Dashboard() {
       })
 
       const insertedIds = []
-      const txEgresosFinal = dividirTresVias(txEgresos, categorias, subcategorias)
+      const txEgresosFinal = dividirTresVias(txEgresos, categorias, subcategorias, user.id)
       if (txEgresosFinal.length > 0) {
         const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresosFinal).select('id, detalle, estado')
         if (errEg) {
@@ -2082,7 +2082,7 @@ export default function Dashboard() {
         return
       }
 
-      const transaccionesFinal = dividirTresVias(transacciones, categorias, subcategorias)
+      const transaccionesFinal = dividirTresVias(transacciones, categorias, subcategorias, user.id)
       const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transaccionesFinal).select('id, detalle, estado')
       if (errTxTarjeta) {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
