@@ -2348,9 +2348,9 @@ export default function Dashboard() {
                   <h3 style={styles.savingsPanelTitle}>
                     <span
                       style={{ cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
-                      title="ARS (monedas extranjeras convertidas) · últimos 6 meses"
+                      title="ARS (monedas extranjeras convertidas)"
                     >
-                      📈 Evolución de {evolucionTipo === 'ingreso' ? 'ingresos' : 'gastos'}
+                      📈 Evolución · últimos 6 meses
                     </span>
                   </h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
