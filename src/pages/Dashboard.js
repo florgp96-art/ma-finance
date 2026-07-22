@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, InfoTooltip } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -2331,13 +2331,9 @@ export default function Dashboard() {
               const promedioTotal = soloTotal && evolData.length > 0 ? Math.round(evolData.reduce((s, d) => s + (d.total || 0), 0) / evolData.length) : 0
               return (
                 <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>
-                    <span
-                      style={{ cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
-                      title="ARS (monedas extranjeras convertidas)"
-                    >
-                      📈 Evolución · últimos 6 meses
-                    </span>
+                  <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    📈 Evolución · últimos 6 meses
+                    <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas)" />
                   </h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (

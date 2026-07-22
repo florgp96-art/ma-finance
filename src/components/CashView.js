@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip } from './AccountDetail'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -364,14 +364,17 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
       {/* Historial 6 meses */}
       <div style={seccion}>
-        <p style={label}>Total pagado por mes · ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses</p>
+        <p style={{ ...label, display: 'flex', alignItems: 'center' }}>
+          Total pagado por mes
+          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses" />
+        </p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={border} vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 12, fill: txt }} axisLine={{ stroke: border }} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: txt }} axisLine={false} tickLine={false} width={52} tickFormatter={formatMontoCompacto} />
             <Tooltip
-              formatter={(value) => [`$ ${formatMonto(value)} (ARS, USD convertidos)`, 'Total pagado']}
+              formatter={(value) => [`$ ${formatMonto(value)} (ARS, monedas extranjeras convertidas)`, 'Total pagado']}
               labelFormatter={(l, payload) => payload?.[0] ? mesLabel(payload[0].payload.mes) : l}
               contentStyle={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '8px', fontSize: '12px' }}
               labelStyle={{ color: txt, fontWeight: '600' }}

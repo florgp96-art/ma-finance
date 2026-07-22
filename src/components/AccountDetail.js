@@ -225,6 +225,59 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
 }
 export const TotalesFooter = React.memo(TotalesFooterImpl)
 
+// Ícono ⓘ discreto junto a un título de gráfico: abre el detalle (moneda, TC,
+// qué incluye/excluye) con TAP en mobile y con hover en desktop (no con :hover
+// de CSS, que en touch no existe) — se cierra tocando afuera. Reemplaza el
+// patrón anterior de title= nativo, que en mobile no se podía abrir.
+export function InfoTooltip({ text, darkMode }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const hoverCapaz = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: hover)').matches
+  useEffect(() => {
+    if (!open) return
+    const cerrarSiAfuera = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+    }
+  }, [open])
+  return (
+    <span
+      ref={ref}
+      style={{ position: 'relative', display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}
+      onMouseEnter={hoverCapaz ? () => setOpen(true) : undefined}
+      onMouseLeave={hoverCapaz ? () => setOpen(false) : undefined}
+    >
+      <button
+        type="button"
+        aria-label="Más información"
+        onClick={(e) => { e.stopPropagation(); if (!hoverCapaz) setOpen(o => !o) }}
+        style={{
+          width: '15px', height: '15px', borderRadius: '50%', padding: 0, boxSizing: 'border-box',
+          border: `1px solid ${darkMode ? '#6A5A6A' : '#bbb'}`, background: 'none',
+          color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '10px', lineHeight: '13px',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'help', fontFamily: 'Georgia, serif', fontStyle: 'italic',
+          textTransform: 'none', letterSpacing: 'normal', fontWeight: '400',
+        }}
+      >i</button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '20px', left: 0, zIndex: 60, minWidth: '200px', maxWidth: '260px',
+          padding: '8px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '400',
+          textTransform: 'none', letterSpacing: 'normal', lineHeight: '1.4', textAlign: 'left',
+          backgroundColor: darkMode ? '#2A232A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
+          border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        }}>
+          {text}
+        </div>
+      )}
+    </span>
+  )
+}
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
@@ -2581,10 +2634,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
       {esVistaIngresos && ingresosBarData.length > 0 && (
         <div style={styles.chartSection}>
-          <h3 style={styles.chartTitle}>📊 Ingresos por mes · ARS (monedas extranjeras convertidas) · histórico</h3>
-          <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-6px 0 12px', fontStyle: 'italic' }}>
-            Incluye ingresos en U$S/€ convertidos a pesos al TC de cada movimiento.
-          </p>
+          <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
+            📊 Ingresos por mes
+            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS — los ingresos en USD/€ están convertidos a pesos al TC de cada movimiento." />
+          </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ingresosBarData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
@@ -2597,7 +2650,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )}
       {!esVistaIngresos && barData.length > 0 && !allAccounts && (
         <div style={styles.chartSection}>
-          <h3 style={styles.chartTitle}>📊 Total facturado por resumen · ARS · histórico</h3>
+          <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
+            📊 Total facturado por resumen
+            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS." />
+          </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
@@ -2632,20 +2688,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               : 'ARS'
             return (
             <div style={styles.bubbleSection}>
-              <h3
-                style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 4px', display: 'inline-block', cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
-                title={`${monedaLabelChart} · ${periodoLabelChart}`}
-              >
+              <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
                 {esVistaIngresos ? 'Ingresos por categoría' : bubbleGroupBy === 'persona' ? 'Gastos por persona' : 'Gastos por categoría'}
+                <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
               </h3>
-              <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px 0' }}>
-                {esVistaIngresos ? 'Gráficos de ingresos' : 'Gráficos de gastos'}
-              </p>
-              {esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
-                <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-6px 0 12px', fontStyle: 'italic' }}>
-                  Los ingresos en U$S{totalIngresosEUR > 0 ? '/€' : ''} están convertidos a pesos al TC de cada movimiento.
-                </p>
-              )}
               {/* Selector de tipo de gráfico — solo Donut y Barras, mismo dataset
                   (displayChartData) para las dos: togglear entre ellas nunca cambia
                   qué se ve, solo cómo se dibuja. */}
