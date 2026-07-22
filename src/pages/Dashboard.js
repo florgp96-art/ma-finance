@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -285,6 +285,11 @@ export default function Dashboard() {
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
   const [accountTransactions, setAccountTransactions] = useState([])
+  // Igual que accountTransactions: lo reporta la instancia de AccountDetail que esté
+  // montada (resumen/a pagar/cuenta individual) vía onStatementsLoaded, para que el
+  // widget de Vencimientos pueda incluir tarjetas de crédito reusando calcularStatementsPendientes
+  // (misma función que usa la pestaña "A pagar") sin volver a pedirle nada a Supabase.
+  const [dashboardStatements, setDashboardStatements] = useState([])
   // Selección múltiple y libre de categorías/subcategorías/hijos (gasto) o tags
   // (ingreso) para el gráfico de evolución — array de claves 'cat:X' | 'sub:X::Y' |
   // 'hijo:X' | 'ingreso:X'. evolucionTipo decide qué "mundo" (gasto o ingreso) se
@@ -2605,13 +2610,29 @@ export default function Dashboard() {
           const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
           const cardBg = darkMode ? '#1C1A1C' : '#F7F5F8'
           const cardBorder = darkMode ? '#3A333A' : '#E2DDE0'
-          const vencList = [...servicios].sort((a, b) => {
-            const aPagado = vencPagados.has(a.id) ? 1 : 0
-            const bPagado = vencPagados.has(b.id) ? 1 : 0
-            if (aPagado !== bPagado) return aPagado - bPagado
-            return (a.dia || 0) - (b.dia || 0)
+          // "Vencimientos" junta servicios (chequeo manual, día del mes) y tarjetas de
+          // crédito con saldo pendiente (fecha real, misma fuente que "A pagar":
+          // calcularStatementsPendientes — nunca se recalcula el pendiente acá aparte).
+          const hoyDia = new Date().getDate()
+          const serviciosVenc = servicios.map(s => ({
+            id: s.id, tipo: 'servicio', nombre: s.nombre, dia: s.dia,
+            pagado: vencPagados.has(s.id),
+            diasRestantes: typeof s.dia === 'number' ? s.dia - hoyDia : null,
+          }))
+          const tarjetasVenc = calcularStatementsPendientes({ accounts, statements: dashboardStatements, transactions: accountTransactions })
+            .statementsRealesConUsd.map(s => ({
+              id: `tarjeta-${s.id}`, tipo: 'tarjeta',
+              nombre: (accounts || []).find(a => a.id === s.account_id)?.nombre || 'Tarjeta',
+              pagado: false,
+              diasRestantes: diasRestantesDe(s),
+            }))
+          const vencList = [...serviciosVenc, ...tarjetasVenc].sort((a, b) => {
+            if (a.pagado !== b.pagado) return a.pagado ? 1 : -1
+            const da = a.diasRestantes ?? Infinity
+            const db = b.diasRestantes ?? Infinity
+            return da - db
           })
-          const pendientes = vencList.filter(v => !vencPagados.has(v.id))
+          const pendientes = vencList.filter(v => !v.pagado)
 
           const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
           const eurCard = (
@@ -2656,22 +2677,36 @@ export default function Dashboard() {
             <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${dolarCardH || 0}px` }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', textTransform: 'uppercase', textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
-                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin servicios</p>
+                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
               ) : (
                 <>
                   <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
                     {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                   </p>
                   {vencList.map(v => {
-                    const pagado = vencPagados.has(v.id)
+                    if (v.tipo === 'tarjeta') {
+                      const color = v.diasRestantes <= 3 ? '#e74c3c' : v.diasRestantes <= 7 ? '#e07b39' : '#4a9e7a'
+                      const texto = v.diasRestantes < 0
+                        ? `Venció hace ${Math.abs(v.diasRestantes)} día${Math.abs(v.diasRestantes) === 1 ? '' : 's'}`
+                        : v.diasRestantes === 0 ? '¡Vence hoy!' : v.diasRestantes === 1 ? 'Vence mañana' : `Vence en ${v.diasRestantes} días`
+                      return (
+                        <div key={v.id} onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>💳 {v.nombre}</p>
+                            <p style={{ fontSize: '10px', color, margin: 0, fontWeight: 600 }}>{texto}</p>
+                          </div>
+                        </div>
+                      )
+                    }
                     return (
                       <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: pagado ? 0.55 : 1 }}>
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: v.pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: v.pagado ? 0.55 : 1 }}>
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.nombre}</p>
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: v.pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
                           <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
                         </div>
-                        <input type="checkbox" checked={pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+                        <input type="checkbox" checked={v.pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
                       </div>
                     )
                   })}
@@ -3042,7 +3077,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -3050,7 +3085,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={handleNavigateToHijo} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={handleNavigateToHijo} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
@@ -3189,7 +3224,7 @@ export default function Dashboard() {
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
             ) : (
               <div style={styles.emptyState}>

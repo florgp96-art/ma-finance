@@ -432,6 +432,90 @@ export const cierreDe = (s) => {
   return venc ? restarDiasISO(venc, DIAS_CIERRE_A_VENCIMIENTO) : null
 }
 
+// Cuántos días faltan (negativo = ya venció) para el vencimiento de un
+// resumen. null si no tiene fecha de vencimiento (ej. "Ciclo actual").
+export const diasRestantesDe = (s) => {
+  if (!s.fecha_vencimiento) return null
+  const fecha = new Date(s.fecha_vencimiento + 'T00:00:00')
+  return Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24))
+}
+
+// Resúmenes REALES de tarjeta de crédito que todavía tienen saldo pendiente
+// (el mismo criterio que "A pagar": solo el último resumen de cada cuenta, y
+// solo mientras le quede algo por pagar en alguna moneda — ver esVisible más
+// abajo). Única fuente de "cuánto debo y cuándo vence" para tarjetas: la
+// consumen tanto la pestaña "A pagar" como el widget de Vencimientos, así
+// nunca pueden desalinearse entre sí.
+export const calcularStatementsPendientes = ({ accounts, statements, transactions }) => {
+  const cuentasCreditoAPagar = (accounts || []).filter(a => a.tipo === 'credito')
+  const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
+  const statementsPorCuenta = new Map()
+  cuentasCreditoAPagar.forEach(a => {
+    const propios = (statements || [])
+      .filter(st => st.account_id === a.id && st.fecha_vencimiento && cierreDe(st))
+      .sort((s1, s2) => cierreDe(s1).localeCompare(cierreDe(s2)))
+    statementsPorCuenta.set(a.id, propios)
+  })
+  const esUltimoDeCuenta = (s) => {
+    const propios = statementsPorCuenta.get(s.account_id) || []
+    return propios.length > 0 && propios[propios.length - 1].id === s.id
+  }
+  const totalUsdLinkedDe = (s) => {
+    if (s.total_dolares !== null && s.total_dolares !== undefined) return Number(s.total_dolares)
+    const usdItems = (transactions || []).filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
+    return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+  }
+  const calcularEstadoStatement = (s, cierreSiguiente) => {
+    const cierre = cierreDe(s)
+    const enVentana = (t) => {
+      const fecha = normFecha(t.fecha)
+      return fecha > cierre && (!cierreSiguiente || fecha <= cierreSiguiente)
+    }
+    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
+    const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
+    const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
+    const pendienteUsdSinClamp = totalUsdLinkedDe(s) - totalPagosUsd
+    return {
+      pendienteArs: Math.max(0, pendienteArsSinClamp),
+      excedenteArs: Math.max(0, -pendienteArsSinClamp),
+      pendienteUsd: Math.max(0, pendienteUsdSinClamp),
+      excedenteUsd: Math.max(0, -pendienteUsdSinClamp),
+      totalPagosArs, totalPagosUsd,
+    }
+  }
+  const estadosStatement = new Map()
+  cuentasCreditoAPagar.forEach(a => {
+    const propios = statementsPorCuenta.get(a.id) || []
+    propios.forEach((s, i) => {
+      const cierreSiguiente = i < propios.length - 1 ? cierreDe(propios[i + 1]) : null
+      estadosStatement.set(s.id, calcularEstadoStatement(s, cierreSiguiente))
+    })
+  })
+  const esVisible = (s) => {
+    if (!esUltimoDeCuenta(s)) return false
+    const st = estadosStatement.get(s.id)
+    if (!st) return false
+    return Math.round(st.pendienteArs) > 0 || Math.round(st.pendienteUsd * 100) > 0
+  }
+  const statementsRealesConUsd = (statements || [])
+    .filter(s => cuentaCreditoIds.has(s.account_id) && esVisible(s))
+    .map(s => {
+      const st = estadosStatement.get(s.id)
+      return {
+        ...s,
+        total_resumen: st.pendienteArs,
+        total_usd: st.pendienteUsd,
+        _pagosPosterioresArs: st.totalPagosArs,
+        _pagosPosterioresUsd: st.totalPagosUsd,
+        _excedenteArs: st.excedenteArs,
+        _excedenteUsd: st.excedenteUsd,
+      }
+    })
+  return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd }
+}
+
 export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
   return `${MESES[parseInt(month) - 1]} ${year}`
@@ -447,7 +531,7 @@ export const getLast6Months = () => {
   return months
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -506,6 +590,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Notificar al padre cuando cambia el período seleccionado
   useEffect(() => { onPeriodChange?.(selectedMeses) }, [selectedMeses, onPeriodChange])
   useEffect(() => { onTransactionsLoaded?.(transactions) }, [transactions, onTransactionsLoaded])
+  // Igual que onTransactionsLoaded: reporta los statements recién fetcheados hacia
+  // arriba, para que Dashboard.js pueda calcular vencimientos de tarjeta sin volver a
+  // pedirlos ni recalcular su propia versión de "A pagar".
+  useEffect(() => { onStatementsLoaded?.(statements) }, [statements, onStatementsLoaded])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   const [stmtCollapsed, setStmtCollapsed] = useState(false)
   const [chartType, setChartType] = useState(() => {
@@ -1573,86 +1661,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // un pago en USD hecho antes del cierre ya está neteado ahí y no hay que restarlo de
   // nuevo. Solo si el resumen es viejo y no tiene ese total guardado, se recalcula
   // sumando los ítems vinculados (sin contar pagos, que antes no se restaban).
-  const totalUsdLinkedDe = (s) => {
-    if (s.total_dolares !== null && s.total_dolares !== undefined) return Number(s.total_dolares)
-    const usdItems = transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
-    return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
-  }
-  const cuentasCreditoAPagar = mostrarTabAPagar
-    ? (allAccounts ? (accounts || []).filter(a => a.tipo === 'credito') : (account?.tipo === 'credito' ? [account] : []))
-    : []
   // "A pagar" es solo para tarjetas de crédito — los resúmenes de cuentas de
   // banco/ingresos (que nunca tienen vencimiento real) quedaban afuera antes solo por
   // efecto colateral del filtro de fecha; ahora que ese filtro no es lo único que decide
   // si se muestra un resumen, hay que excluirlos por tipo de cuenta explícitamente.
-  const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
-  // Resúmenes reales de cada cuenta, ordenados cronológicamente por cierre — es la
-  // "cadena" completa de statements, no solo el último. La usamos tanto para atribuir
-  // pagos a la ventana que le corresponde a cada uno (regla B) como para saber cuál es
-  // el más reciente (el único que se sigue mostrando solo, ver esUltimoDeCuenta).
-  const statementsPorCuenta = new Map()
-  cuentasCreditoAPagar.forEach(a => {
-    const propios = statements
-      .filter(st => st.account_id === a.id && st.fecha_vencimiento && cierreDe(st))
-      .sort((s1, s2) => cierreDe(s1).localeCompare(cierreDe(s2)))
-    statementsPorCuenta.set(a.id, propios)
-  })
-  const esUltimoDeCuenta = (s) => {
-    const propios = statementsPorCuenta.get(s.account_id) || []
-    return propios.length > 0 && propios[propios.length - 1].id === s.id
-  }
-  // Atribución de pagos (regla B): un pago/reintegro pertenece al statement X si su
-  // fecha cae después del cierre de X y hasta el cierre del statement siguiente de la
-  // misma cuenta inclusive (o hasta hoy, si X es el último). Si lo atribuido supera el
-  // total del statement, el sobrante es "excedente" — informativo, nunca se resta de
-  // otro statement ni se arrastra: si X está saldado (pendiente 0), sus pagos quedan
-  // retenidos ahí y no se derraman a "Ciclo actual".
-  const calcularEstadoStatement = (s, cierreSiguiente) => {
-    const cierre = cierreDe(s)
-    const enVentana = (t) => {
-      const fecha = normFecha(t.fecha)
-      return fecha > cierre && (!cierreSiguiente || fecha <= cierreSiguiente)
-    }
-    const pagosArs = transactions.filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
-    const pagosUsd = transactions.filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
-    const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
-    const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
-    const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
-    const pendienteUsdSinClamp = totalUsdLinkedDe(s) - totalPagosUsd
-    return {
-      pendienteArs: Math.max(0, pendienteArsSinClamp),
-      excedenteArs: Math.max(0, -pendienteArsSinClamp),
-      pendienteUsd: Math.max(0, pendienteUsdSinClamp),
-      excedenteUsd: Math.max(0, -pendienteUsdSinClamp),
-      totalPagosArs, totalPagosUsd,
-    }
-  }
-  const estadosStatement = new Map()
-  cuentasCreditoAPagar.forEach(a => {
-    const propios = statementsPorCuenta.get(a.id) || []
-    propios.forEach((s, i) => {
-      const cierreSiguiente = i < propios.length - 1 ? cierreDe(propios[i + 1]) : null
-      estadosStatement.set(s.id, calcularEstadoStatement(s, cierreSiguiente))
-    })
-  })
-  // Un resumen real solo se sigue mostrando solo si (a) es el más reciente de la cuenta
-  // — el banco ya arrastra el saldo no pagado de uno viejo al que le sigue, mostrarlo
-  // aparte duplicaría esa deuda — y (b) todavía le queda algo pendiente en alguna
-  // moneda. Al llegar a $0 desaparece sin más: nada de "sobrepago" fantasma en su
-  // propia tarjeta (ese excedente, si lo hay, es informativo y vive en "Ciclo actual").
-  const esVisible = (s) => {
-    if (!esUltimoDeCuenta(s)) return false
-    const st = estadosStatement.get(s.id)
-    if (!st) return false
-    return Math.round(st.pendienteArs) > 0 || Math.round(st.pendienteUsd * 100) > 0
-  }
+  // El cálculo en sí vive en calcularStatementsPendientes (arriba, exportado): es la
+  // MISMA función que usa el widget de Vencimientos en Dashboard.js, así nunca pueden
+  // desalinearse entre sí.
+  const { cuentasCreditoAPagar, statementsPorCuenta, estadosStatement, statementsRealesConUsd } = mostrarTabAPagar
+    ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions })
+    : { cuentasCreditoAPagar: [], statementsPorCuenta: new Map(), estadosStatement: new Map(), statementsRealesConUsd: [] }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
   // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
-  const statementIdsConTarjetaPropia = new Set(
-    statements.filter(s => cuentaCreditoIds.has(s.account_id) && esVisible(s)).map(s => s.id)
-  )
+  const statementIdsConTarjetaPropia = new Set(statementsRealesConUsd.map(s => s.id))
   // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
   // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
   // real de la tarjeta — por eso para cuotas se compara por mes exacto contra el mes del
@@ -1702,40 +1725,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
     }
   }).filter(Boolean)
-  // Los resúmenes reales solo guardan el total en pesos del PDF — el total en USD se
-  // calcula acá sumando las transacciones en dólares que quedaron dentro de ese resumen
-  // (incluye el ajuste de saldo a favor/en contra que ya informó el banco en el PDF, ver
-  // Dashboard.js: se carga una vez al importar y nunca se recalcula acá, solo se le
-  // restan los pagos posteriores como a cualquier otro monto del resumen).
-  // El total en pesos que se muestra es el pendiente (nunca negativo: ver esVisible),
-  // sigue apareciendo mientras falte pagar algo, sin importar si ya venció, y
-  // desaparece recién cuando queda saldado.
-  const statementsRealesConUsd = statements
-    .filter(s => cuentaCreditoIds.has(s.account_id) && esVisible(s))
-    .map(s => {
-      const st = estadosStatement.get(s.id)
-      return {
-        ...s,
-        total_resumen: st.pendienteArs,
-        total_usd: st.pendienteUsd,
-        // Cuánto se pagó de este mismo resumen, para mostrar "Pagado $X".
-        _pagosPosterioresArs: st.totalPagosArs,
-        _pagosPosterioresUsd: st.totalPagosUsd,
-        // Saldo a favor en esa moneda dentro de ESTE mismo resumen (ej. lo que ya
-        // informa el PDF del banco, o un pago que superó lo debido en esa moneda
-        // puntual) — el resumen sigue visible porque todavía debe en la otra
-        // moneda, así que este dato no puede vivir solo en "Ciclo actual".
-        _excedenteArs: st.excedenteArs,
-        _excedenteUsd: st.excedenteUsd,
-      }
-    })
-  // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
-  // resumen. null si no tiene fecha de vencimiento (ej. "Ciclo actual").
-  const diasRestantesDe = (s) => {
-    if (!s.fecha_vencimiento) return null
-    const fecha = new Date(s.fecha_vencimiento + 'T00:00:00')
-    return Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24))
-  }
+  // statementsRealesConUsd (total pendiente ya neteado de pagos, USD incluido) sale
+  // directo de calcularStatementsPendientes, arriba — ver ese comentario para el
+  // detalle de cómo se calcula el total en pesos/USD y los pagos posteriores.
   // Jerarquía por urgencia: vencidas primero (de la más vieja a la más
   // reciente), después las que todavía no vencieron por fecha de
   // vencimiento ascendente, y por último las que ni siquiera tienen fecha
@@ -1969,7 +1961,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
       subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
       hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
-      itemsPorStatement, categoriasResumen, diasRestantesDe,
+      itemsPorStatement, categoriasResumen,
     }
   }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, getChildName])
 
@@ -1979,7 +1971,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
     subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
     hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
-    itemsPorStatement, categoriasResumen, diasRestantesDe,
+    itemsPorStatement, categoriasResumen,
   } = apagarMemo
 
   const handleApagarSort = (key) => {
