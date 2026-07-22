@@ -1,7 +1,6 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso } from './AccountDetail'
-import { FECHA_DIVISION_3_DESDE, CASA_SUBCATS_DIVISION_3, aplicaDivisionTresVias, USER_ID_DIVISION_3 } from '../lib/divisionTresVias'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -27,15 +26,6 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [showAliases, setShowAliases] = useState(false)
   const [showCambiarClave, setShowCambiarClave] = useState(false)
   const [showTipoCambio, setShowTipoCambio] = useState(false)
-  const [dividiendoTresVias, setDividiendoTresVias] = useState(false)
-  // La división en 3 (Vitto/Amelia) es un hack de una sola cuenta, no una
-  // feature general — se oculta para cualquier otro usuario (ver divisionTresVias.js).
-  const [esCuentaDivisionTresVias, setEsCuentaDivisionTresVias] = useState(false)
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.id === USER_ID_DIVISION_3) setEsCuentaDivisionTresVias(true)
-    })
-  }, [])
 
   // Tipo de cambio manual
   const [tcInput, setTcInput] = useState('')
@@ -65,6 +55,97 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const [newAlias, setNewAlias] = useState({ alias: '', tipo: 'categoria', valor: '', subcategoria: '', descripcion: '', porcentaje: '50' })
   const [pendingRulesCount, setPendingRulesCount] = useState(0)
   const [checkingPending, setCheckingPending] = useState(false)
+  // Tabs del modal de Reglas: clasificación (existente) vs reparto (nuevo)
+  const [reglasTab, setReglasTab] = useState('clasificacion')
+
+  // Reglas de reparto: gastos de una categoría/subcategoría (opcionalmente
+  // filtrados por texto) que se dividen entre "yo" y los hijos elegidos, en
+  // las proporciones que defina el usuario. Reemplaza el hack hardcodeado de
+  // Vitto/Amelia — los participantes salen siempre de la tabla children.
+  const [repartoRules, setRepartoRules] = useState([])
+  const [newReparto, setNewReparto] = useState({ categoria: '', subcategoria: '', textoMatch: '' })
+  const [repartoSeleccion, setRepartoSeleccion] = useState([])
+
+  const fetchRepartoRules = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data } = await supabase.from('reparto_rules')
+      .select('*, categories(nombre), subcategories(nombre)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    setRepartoRules(data || [])
+  }
+
+  const opcionesParticipantes = [
+    { key: 'yo', tipo: 'yo', childId: null, nombre: 'Yo' },
+    ...(childrenDB || []).map(c => ({ key: c.id, tipo: 'hijo', childId: c.id, nombre: c.nombre })),
+  ]
+
+  // Alterna un participante adentro/afuera de la selección y recalcula partes
+  // iguales entre los que quedan — el último absorbe el resto del redondeo
+  // para que la suma dé siempre exactamente 100.
+  const toggleParticipante = (opcion) => {
+    setRepartoSeleccion(prev => {
+      const existe = prev.some(p => p.key === opcion.key)
+      const next = existe ? prev.filter(p => p.key !== opcion.key) : [...prev, { ...opcion, porcentaje: 0 }]
+      if (next.length === 0) return next
+      const parte = Math.floor((100 / next.length) * 100) / 100
+      return next.map((p, i) => ({ ...p, porcentaje: i === next.length - 1 ? Math.round((100 - parte * (next.length - 1)) * 100) / 100 : parte }))
+    })
+  }
+
+  const editarPorcentajeReparto = (key, valor) => {
+    setRepartoSeleccion(prev => prev.map(p => p.key === key ? { ...p, porcentaje: valor } : p))
+  }
+
+  const sumaPorcentajesReparto = repartoSeleccion.reduce((s, p) => s + (parseFloat(p.porcentaje) || 0), 0)
+  const sumaRepartoValida = repartoSeleccion.length > 0 && Math.abs(sumaPorcentajesReparto - 100) < 0.01
+
+  const handleAddReparto = async (e) => {
+    e.preventDefault()
+    if (!newReparto.categoria) { showToast('Elegí una categoría.', 'error'); return }
+    if (!sumaRepartoValida) { showToast('Elegí participantes y hacé que los porcentajes sumen 100%.', 'error'); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    const catObj = categoriasDB.find(c => c.nombre === newReparto.categoria)
+    const subcatObj = newReparto.subcategoria
+      ? subcategoriasDB.find(s => s.nombre === newReparto.subcategoria && s.category_id === catObj?.id)
+      : null
+    const participantes = repartoSeleccion.map(p => ({
+      tipo: p.tipo,
+      ...(p.childId ? { child_id: p.childId } : {}),
+      nombre: p.nombre,
+      porcentaje: parseFloat(p.porcentaje) || 0,
+    }))
+    const { error } = await supabase.from('reparto_rules').insert({
+      user_id: user.id,
+      category_id: catObj?.id,
+      subcategory_id: subcatObj?.id || null,
+      texto_match: newReparto.textoMatch.trim() || null,
+      participantes,
+    })
+    if (error) { showToast('Error al guardar la regla: ' + error.message, 'error'); return }
+    showToast('Regla de reparto creada.')
+    setNewReparto({ categoria: '', subcategoria: '', textoMatch: '' })
+    setRepartoSeleccion([])
+    fetchRepartoRules()
+  }
+
+  const handleDeleteReparto = async (id) => {
+    if (!window.confirm('¿Eliminar esta regla de reparto?')) return
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('reparto_rules').delete().eq('id', id).eq('user_id', user.id)
+    fetchRepartoRules()
+  }
+
+  // Frase legible del efecto de una regla ya guardada, ej.:
+  // Gastos de "Comida" → repartir: vos 50%, Amelia 25%, Vitto 25%
+  const describirReparto = (r) => {
+    const catNombre = r.categories?.nombre || '?'
+    const subcatNombre = r.subcategories?.nombre
+    const criterio = subcatNombre ? `${catNombre} › ${subcatNombre}` : catNombre
+    const textoParte = r.texto_match ? ` que contengan "${r.texto_match}"` : ''
+    const partes = (r.participantes || []).map(p => `${p.tipo === 'yo' ? 'vos' : p.nombre} ${p.porcentaje}%`).join(', ')
+    return `Gastos de "${criterio}"${textoParte} → repartir: ${partes}`
+  }
 
   // ESC cierra el modal de categorías
   useEffect(() => {
@@ -100,7 +181,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   useImperativeHandle(ref, () => ({
     openHijos: () => { fetchChildren(); setShowHijos(true) },
     openCategorias: () => { setCatTab('categorias'); setShowCategorias(true) },
-    openAliases: () => { fetchUserAliases(); setShowAliases(true) },
+    openAliases: () => { fetchUserAliases(); fetchRepartoRules(); setShowAliases(true) },
     openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
     openIconos: () => { setCatTab('iconos'); setShowCategorias(true) },
     openTipoCambio: () => { setTcInput(tcManual?.valor != null ? String(tcManual.valor) : ''); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
@@ -122,73 +203,6 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('children').delete().eq('id', id).eq('user_id', user.id)
     fetchChildren()
-  }
-
-  // Divide retroactivamente (una sola vez, sin duplicar en reintentos) los
-  // gastos ya cargados de Comida y de Casa (Alquiler/Expensas/Luz/Gas/
-  // Internet/Teléfono) desde FECHA_DIVISION_3_DESDE: la fila queda con el
-  // monto total y un campo "reparto" con la parte de Vitto y de Amelia (el
-  // resto, implícito, es de la cuenta dueña). Mismo modelo de una sola fila
-  // que usan los gastos nuevos, que ya se dividen solos desde donde se
-  // cargan (ver dividirTresVias en src/lib/divisionTresVias.js).
-  const handleDividirTresViasRetro = async () => {
-    if (!window.confirm(`Esto va a dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y de Casa (${CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el ${FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar. ¿Continuar?`)) return
-    setDividiendoTresVias(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user || user.id !== USER_ID_DIVISION_3) return
-      for (const nombre of ['Vitto', 'Amelia']) {
-        if (!(childrenDB || []).some(c => c.nombre.toLowerCase() === nombre.toLowerCase())) {
-          await supabase.from('children').insert({ user_id: user.id, nombre })
-        }
-      }
-      const comidaId = categoriasDB?.find(c => c.nombre === 'Comida')?.id
-      const casaId = categoriasDB?.find(c => c.nombre === 'Casa')?.id
-      const subServiciosIds = new Set(
-        (subcategoriasDB || []).filter(s => s.category_id === casaId && CASA_SUBCATS_DIVISION_3.includes(s.nombre)).map(s => s.id)
-      )
-      const idsCategorias = [comidaId, casaId].filter(Boolean)
-      if (idsCategorias.length === 0) {
-        showToast('No encontré las categorías "Comida" o "Casa".', 'error')
-        return
-      }
-      const { data: candidatas, error } = await supabase.from('transactions')
-        .select('*').eq('user_id', user.id).eq('tipo', 'gasto')
-        .gte('fecha', FECHA_DIVISION_3_DESDE).in('category_id', idsCategorias)
-      if (error) { showToast('Error buscando movimientos: ' + error.message, 'error'); return }
-      const aDividir = (candidatas || []).filter(t =>
-        !t.reparto && aplicaDivisionTresVias(t, comidaId, casaId, subServiciosIds)
-      )
-      if (aDividir.length === 0) {
-        showToast('No hay movimientos nuevos para dividir.')
-        return
-      }
-      let procesados = 0
-      for (const t of aDividir) {
-        const monto = Number(t.monto) || 0
-        if (monto <= 0) continue
-        const parteVitto = Math.round((monto / 3) * 100) / 100
-        const parteAmelia = Math.round((monto / 3) * 100) / 100
-        const { error: errUpd } = await supabase.from('transactions')
-          .update({
-            reparto: {
-              tipo: 'tercios',
-              participantes: [
-                { nombre: 'Vitto', monto: parteVitto },
-                { nombre: 'Amelia', monto: parteAmelia },
-              ],
-            },
-          })
-          .eq('id', t.id).eq('user_id', user.id)
-        if (errUpd) continue
-        procesados++
-      }
-      showToast(`${procesados} gastos divididos en 3 (Vitto / Amelia / vos).`)
-      fetchChildren?.()
-      onRefresh?.()
-    } finally {
-      setDividiendoTresVias(false)
-    }
   }
 
   const handleAddCategoria = async (e) => {
@@ -443,16 +457,6 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               />
               <button type="submit" style={{ ...s.saveBtn, flex: 'none', padding: '12px 20px' }}>+</button>
             </form>
-            {esCuentaDivisionTresVias && (
-              <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
-                <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 10px' }}>
-                  Dividir en 3 (Vitto / Amelia / vos) los gastos de Comida y Casa ({CASA_SUBCATS_DIVISION_3.join(', ')}) ya cargados desde el {FECHA_DIVISION_3_DESDE}. Se puede ejecutar más de una vez sin duplicar.
-                </p>
-                <button type="button" style={{ ...s.saveBtn, width: '100%' }} onClick={handleDividirTresViasRetro} disabled={dividiendoTresVias}>
-                  {dividiendoTresVias ? 'Dividiendo…' : '🔀 Dividir en 3 (Vitto/Amelia/vos)'}
-                </button>
-              </div>
-            )}
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
               <button style={s.cancelBtn} onClick={() => setShowHijos(false)}>Cerrar</button>
             </div>
@@ -625,13 +629,22 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         </div>
       )}
 
-      {/* Modal: Reglas de clasificación */}
+      {/* Modal: Reglas (clasificación + reparto) */}
       {showAliases && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: '580px' }}>
-            <h3 style={s.modalTitle}>📋 Reglas de clasificación</h3>
-            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 12px 0' }}>
-              Enseñale a la IA cómo clasificar tus gastos. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
+          <div style={{ ...s.modal, maxWidth: '620px' }}>
+            <h3 style={s.modalTitle}>📋 Reglas</h3>
+            <div style={{ display: 'flex', gap: '8px', margin: '-8px 0 16px 0' }}>
+              {[{ k: 'clasificacion', label: '🏷️ Clasificación' }, { k: 'reparto', label: '🧮 Reparto' }].map(t => (
+                <button key={t.k} type="button" onClick={() => setReglasTab(t.k)}
+                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: reglasTab === t.k ? '600' : '400', border: reglasTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: reglasTab === t.k ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: txt }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {reglasTab === 'clasificacion' && (<>
+            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '0 0 12px 0' }}>
+              Enseñale a la IA cómo clasificar tus gastos por una palabra clave del comercio/descripción. Estas reglas se aplican siempre, sin importar cómo cargues los datos.
             </p>
             {checkingPending ? (
               <p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 14px 0' }}>Revisando movimientos pendientes...</p>
@@ -744,7 +757,92 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               )}
               <button type="submit" style={{ ...s.saveBtn, padding: '11px 18px', marginTop: isMobile ? '0' : '20px' }}>+</button>
             </form>
-            <div style={{ textAlign: 'right' }}>
+            </>)}
+
+            {reglasTab === 'reparto' && (<>
+            <p style={{ fontSize: '13px', color: '#6e6e73', margin: '0 0 12px 0' }}>
+              Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras (ej. "Comida → vos 50%, Amelia 25%, Vitto 25%"). Por ahora estas reglas quedan guardadas y las podés previsualizar acá — todavía no se aplican solas a los gastos nuevos.
+            </p>
+            <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '16px' }}>
+              {(repartoRules || []).length === 0 ? (
+                <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas de reparto. Agregá la primera abajo.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {repartoRules.map(r => (
+                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
+                      <span style={{ fontSize: '13px', color: txt }}>{describirReparto(r)}</span>
+                      <button style={s.actionBtn} onClick={() => handleDeleteReparto(r.id)}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <form onSubmit={handleAddReparto} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={s.label}>Categoría</label>
+                  <select style={s.input} value={newReparto.categoria} onChange={e => setNewReparto({ ...newReparto, categoria: e.target.value, subcategoria: '' })}>
+                    <option value="">— Elegir —</option>
+                    {categoriasDB.filter(c => (c.tipo || 'gasto') === 'gasto').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={s.label}>Subcategoría (opcional)</label>
+                  <select style={s.input} value={newReparto.subcategoria} disabled={!newReparto.categoria} onChange={e => setNewReparto({ ...newReparto, subcategoria: e.target.value })}>
+                    <option value="">— Toda la categoría —</option>
+                    {subcategoriasDB
+                      .filter(sc => sc.category_id === categoriasDB.find(c => c.nombre === newReparto.categoria)?.id)
+                      .map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={s.label}>Texto del comercio/descripción (opcional)</label>
+                <input style={s.input} placeholder="ej. PEDIDOSYA — dejalo vacío para toda la categoría" value={newReparto.textoMatch} onChange={e => setNewReparto({ ...newReparto, textoMatch: e.target.value })} />
+              </div>
+              <div>
+                <label style={s.label}>Participantes</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoSeleccion.length > 0 ? '10px' : 0 }}>
+                  {opcionesParticipantes.map(op => {
+                    const activo = repartoSeleccion.some(sel => sel.key === op.key)
+                    return (
+                      <button key={op.key} type="button" onClick={() => toggleParticipante(op)}
+                        style={{ padding: '6px 14px', borderRadius: '20px', border: `1.5px solid ${activo ? p : border}`, backgroundColor: activo ? p : 'transparent', color: activo ? 'white' : txt, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400' }}>
+                        {op.tipo === 'yo' ? '🙋 Yo' : `👧 ${op.nombre}`}
+                      </button>
+                    )
+                  })}
+                  {opcionesParticipantes.length === 1 && (
+                    <span style={{ fontSize: '12px', color: '#aaa', alignSelf: 'center' }}>Cargá hijos/as primero en "Mis hijos" para poder repartir con ellos.</span>
+                  )}
+                </div>
+                {repartoSeleccion.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {repartoSeleccion.map(sel => (
+                      <div key={sel.key} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ flex: 1, fontSize: '13px', color: txt }}>{sel.tipo === 'yo' ? 'Yo' : sel.nombre}</span>
+                        <input type="number" min="0" max="100" step="1" value={sel.porcentaje}
+                          onChange={e => editarPorcentajeReparto(sel.key, e.target.value)}
+                          style={{ ...s.input, width: '70px', padding: '6px 8px' }} />
+                        <span style={{ fontSize: '13px', color: '#6e6e73' }}>%</span>
+                      </div>
+                    ))}
+                    <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: sumaRepartoValida ? '#3a7d44' : '#c0392b' }}>
+                      Suma: {Math.round(sumaPorcentajesReparto * 100) / 100}% {sumaRepartoValida ? '✓' : '(tiene que dar 100%)'}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {repartoSeleccion.length > 0 && sumaRepartoValida && (
+                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93' }}>
+                  Vista previa para un gasto de $10.000: {repartoSeleccion.map(sel => `${sel.tipo === 'yo' ? 'vos' : sel.nombre} $${Math.round(10000 * (parseFloat(sel.porcentaje) || 0) / 100).toLocaleString('es-AR')}`).join(', ')}
+                </p>
+              )}
+              <button type="submit" style={s.saveBtn}>Crear regla de reparto</button>
+            </form>
+            </>)}
+
+            <div style={{ textAlign: 'right', marginTop: '20px' }}>
               <button style={s.cancelBtn} onClick={() => setShowAliases(false)}>Cerrar</button>
             </div>
           </div>

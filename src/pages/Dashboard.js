@@ -2,7 +2,6 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallba
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
-import { dividirTresVias } from '../lib/divisionTresVias'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -607,7 +606,7 @@ export default function Dashboard() {
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
-    await supabase.from('transactions').insert(dividirTresVias([movimientoNuevo], categoriasDB, subcategoriasDB, user.id))
+    await supabase.from('transactions').insert([movimientoNuevo])
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -1013,10 +1012,9 @@ export default function Dashboard() {
         }
       })
 
-      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias, user.id)
-      await supabase.from('transactions').insert(toInsertFinal)
+      await supabase.from('transactions').insert(toInsert)
       const omitidas = exactDupes.length
-      showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
+      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1060,10 +1058,9 @@ export default function Dashboard() {
         }
       })
 
-      const toInsertFinal = dividirTresVias(toInsert, categorias, subcategorias, user.id)
-      await supabase.from('transactions').insert(toInsertFinal)
+      await supabase.from('transactions').insert(toInsert)
       const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
-      showToast(`${toInsertFinal.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
+      showToast(`${toInsert.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null); setExcelDupReview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1951,9 +1948,8 @@ export default function Dashboard() {
       })
 
       const insertedIds = []
-      const txEgresosFinal = dividirTresVias(txEgresos, categorias, subcategorias, user.id)
-      if (txEgresosFinal.length > 0) {
-        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresosFinal).select('id, detalle, estado')
+      if (txEgresos.length > 0) {
+        const { data: ins, error: errEg } = await supabase.from('transactions').insert(txEgresos).select('id, detalle, estado')
         if (errEg) {
           showToast(`Error egresos: ${errEg.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (egresos): ${errEg.message}` })
@@ -2082,8 +2078,7 @@ export default function Dashboard() {
         return
       }
 
-      const transaccionesFinal = dividirTresVias(transacciones, categorias, subcategorias, user.id)
-      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transaccionesFinal).select('id, detalle, estado')
+      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(transacciones).select('id, detalle, estado')
       if (errTxTarjeta) {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
@@ -2188,15 +2183,7 @@ export default function Dashboard() {
     )
     if (conCuotas.length === 0) return []
 
-    // Sacar primero la marca de "dividir en 3" (Vitto/Amelia/yo) y recién
-    // después el sufijo de cuota propio del banco ("Compra 4/12"): si la
-    // marca queda pegada al final, el "4/12" ya no está al final del
-    // string y no se reconoce como sufijo, así que cada cuota de una
-    // misma compra dividida quedaba con un nombre distinto ("Compra 4/12
-    // (1/3)", "Compra 3/12 (1/3)", ...) y se contaban como compras
-    // separadas, cada una proyectando sus cuotas restantes por separado.
     const stripCuotaSuffix = n => (n || '')
-      .replace(/\s*\(1\/3\)\s*$/, '')
       .replace(/\s+\d+\/\d+\s*$/, '')
       .trim()
     // El mes en que arrancó la compra (cuota 1) identifica la compra de
@@ -2211,9 +2198,9 @@ export default function Dashboard() {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     }
     const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
-    // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales
-    // con el mismo número de cuota — hay que sumarlas para recuperar el
-    // monto total de esa cuota, no quedarnos con una sola parte.
+    // Una compra dividida (regla de tipo "split") queda como varias filas
+    // reales con el mismo número de cuota — hay que sumarlas para recuperar
+    // el monto total de esa cuota, no quedarnos con una sola parte.
     const maxCuotaPorGrupo = {}
     conCuotas.forEach(t => {
       const key = groupKey(t)
