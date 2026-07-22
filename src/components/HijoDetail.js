@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -363,11 +363,9 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
         const monedaLabel = (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)' : 'ARS'
         return (
         <div style={s.card}>
-          <h3
-            style={{ ...s.cardTitle, display: 'inline-block', cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
-            title={`${monedaLabel} · ${periodoLabel}`}
-          >
+          <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
             Gastos por categoría
+            <InfoTooltip darkMode={darkMode} text={`${monedaLabel} · ${periodoLabel}`} />
           </h3>
           <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
@@ -427,7 +425,10 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       {/* Evolución mensual */}
       {monthlyData.some(m => m.total > 0) && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Evolución mensual de gastos · ARS (monedas extranjeras convertidas) · últimos 6 meses</h3>
+          <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
+            Evolución mensual de gastos
+            <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas) · últimos 6 meses" />
+          </h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
@@ -536,7 +537,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                   )
                 })}
               </tbody>
-              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} darkMode={darkMode} colSpan={7} signed={false} />
+              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={7} signed={false} />
             </table>
           </div>
         )}

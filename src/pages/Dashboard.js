@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, InfoTooltip } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -104,10 +104,6 @@ export default function Dashboard() {
 
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
-  // eslint-disable-next-line no-unused-vars
-  const [_miniChartUnused, _setMiniChart] = useState([])
-  const [miniChartMeses, setMiniChartMeses] = useState([])
-  const [miniChartTxs, setMiniChartTxs] = useState([])
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
   const [newServicio, setNewServicio] = useState({ nombre: '', link: '', vencimiento: '' })
   const [showAddServicio, setShowAddServicio] = useState(false)
@@ -252,6 +248,8 @@ export default function Dashboard() {
       const now = new Date()
       const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
       const resultados = {}
+      const tc = parseFloat(tipoCambioEfectivo) || 0
+      const tcE = parseFloat(tipoCambioEUR) || 0
       await Promise.all(childrenDB.map(async c => {
         const { data } = await supabase.from('transactions')
           .select('monto, moneda, fecha')
@@ -259,15 +257,22 @@ export default function Dashboard() {
           .gt('monto', 0)
           .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
           .gte('fecha', `${mesActual}-01`)
-        resultados[c.nombre] = (data || [])
-          .filter(t => t.moneda === 'ARS')
-          .reduce((s, t) => s + Number(t.monto), 0)
+        // Antes solo sumaba ARS y descartaba en silencio los gastos de un hijo
+        // en USD/EUR. Son siempre movimientos del mes actual (ver gte de arriba),
+        // así que alcanza con el TC vigente — sin TC configurado, se avisa por
+        // consola en vez de sumar 0 sin decir nada.
+        resultados[c.nombre] = (data || []).reduce((s, t) => {
+          const monto = Number(t.monto) || 0
+          if (t.moneda === 'USD') { if (tc <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC USD para', c.nombre, t.fecha); return s }; return s + monto * tc }
+          if (t.moneda === 'EUR') { if (tcE <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC EUR para', c.nombre, t.fecha); return s }; return s + monto * tcE }
+          return s + monto
+        }, 0)
       }))
       if (!cancelled) setHijosResumenMes(resultados)
     }
     fetchResumenHijos()
     return () => { cancelled = true }
-  }, [dashboardTab, childrenDB, refreshKey])
+  }, [dashboardTab, childrenDB, refreshKey, tipoCambioEfectivo, tipoCambioEUR])
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
@@ -285,7 +290,7 @@ export default function Dashboard() {
   // 'hijo:X' | 'ingreso:X'. evolucionTipo decide qué "mundo" (gasto o ingreso) se
   // ofrece para elegir; cambiar el switch limpia la selección porque son conjuntos
   // de opciones distintos.
-  const [sidebarCatEvol, setSidebarCatEvol] = useState([])
+  const [sidebarCatEvol, setSidebarCatEvol] = useState(['total'])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
   const dolarCardRef = useRef(null)
@@ -352,7 +357,7 @@ export default function Dashboard() {
     })
   }, [])
 
-  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol([]) }, [selectedAccount])
+  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol(['total']) }, [selectedAccount])
   useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro])
   useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro])
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
@@ -427,19 +432,6 @@ export default function Dashboard() {
         const tcManualDB = readPref('tc_manual')
         if (tcManualDB) setTcManual(tcManualDB)
         prefsLoaded.current = true
-
-        // Mini chart: últimos 6 meses — guardamos txs crudas para recalcular con TC live
-        const now = new Date()
-        const meses = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        })
-        const desde = meses[0] + '-01'
-        const { data: txs } = await supabase.from('transactions')
-          .select('fecha, monto, moneda').eq('user_id', user.id).eq('tipo', 'gasto')
-          .gte('fecha', desde).gt('monto', 0)
-        setMiniChartMeses(meses)
-        setMiniChartTxs(txs || [])
       }
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2070,22 +2062,6 @@ export default function Dashboard() {
   const isMobile = windowWidth < 640
   const styles = getStyles(darkMode, isMobile)
 
-  // Mini chart: TC histórico por mes (mismo modelo que AccountDetail.getTC) —
-  // memoizado: usa el tcMap/tcMapEUR de arriba en vez de reconstruirlos acá adentro,
-  // y solo recalcula cuando cambian sus propias dependencias, no en cada render.
-  const miniChartDataComputed = useMemo(() => {
-    const mesActual = new Date().toISOString().slice(0, 7)
-    return miniChartMeses.map(ym => {
-      const tc = ym === mesActual
-        ? (parseFloat(tipoCambio) || 1)
-        : (tcMap[ym] ? Number(tcMap[ym]) : parseFloat(tipoCambio) || 1)
-      const txsMes = miniChartTxs.filter(t => t.fecha?.startsWith(ym))
-      const tcEuroMes = ym === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEUR[ym] ? Number(tcMapEUR[ym]) : (parseFloat(tipoCambioEUR) || 0))
-      const total = txsMes.reduce((s, t) => s + (t.moneda === 'USD' ? t.monto * tc : t.moneda === 'EUR' ? t.monto * tcEuroMes : t.monto), 0)
-      const label = new Date(ym + '-15').toLocaleString('es-AR', { month: 'short' })
-      return { mes: label.charAt(0).toUpperCase() + label.slice(1), total: Math.round(total) }
-    })
-  }, [miniChartMeses, miniChartTxs, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR])
   const isTablet = windowWidth >= 640 && windowWidth < 960
   const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
@@ -2206,7 +2182,12 @@ export default function Dashboard() {
         .map(t => getHijoName(t))
     )].sort()
 
+    // "total" es una clave especial, siempre disponible: el total de gastos o
+    // ingresos del mes (según el toggle), sin filtrar por categoría — reemplaza
+    // al viejo mini-gráfico de barras separado. Es la selección por defecto, así
+    // el gráfico nunca arranca vacío ni pide elegir algo para mostrar datos.
     const matchesKey = (t, key) => {
+      if (key === 'total') return t.tipo === evolucionTipo
       if (key.startsWith('ingreso:')) return t.tipo === 'ingreso' && getIngresoName(t) === key.slice(8)
       if (key.startsWith('hijo:')) return t.tipo === 'gasto' && getHijoName(t) === key.slice(5)
       if (key.startsWith('sub:')) {
@@ -2216,6 +2197,7 @@ export default function Dashboard() {
       return t.tipo === 'gasto' && t.categories?.nombre === key.slice(4)
     }
     const labelDeKey = (key) => {
+      if (key === 'total') return 'Total'
       if (key.startsWith('ingreso:')) return key.slice(8)
       if (key.startsWith('hijo:')) return key.slice(5)
       if (key.startsWith('sub:')) { const [cat, sub] = key.slice(4).split('::'); return `${cat} › ${sub}` }
@@ -2224,31 +2206,48 @@ export default function Dashboard() {
     // Color/ícono consistentes con el resto de la app: subcategorías toman el color
     // determinístico de su propio nombre (distinto del de la categoría padre),
     // hijos el determinístico de su nombre, categorías/ingresos el resolver
-    // compartido (mapeo manual o determinístico).
+    // compartido (mapeo manual o determinístico). "total" usa un color neutro fijo,
+    // el mismo que tenía el viejo gráfico de barras.
     const colorDeKey = (key) => {
+      if (key === 'total') return '#5C4F5C'
       if (key.startsWith('ingreso:')) return resolveCategoryColor(key.slice(8), { isIncome: true })
       if (key.startsWith('sub:')) { const [, sub] = key.slice(4).split('::'); return resolveCategoryColor(sub) }
       if (key.startsWith('hijo:')) return resolveCategoryColor(key.slice(5))
       return resolveCategoryColor(key.slice(4))
     }
     const iconDeKey = (key) => {
+      if (key === 'total') return '📊'
       if (key.startsWith('ingreso:')) return resolveCategoryIcon(key.slice(8), { customIcons, isIncome: true })
       if (key.startsWith('hijo:')) return customIcons?.[key.slice(5)] || '👧'
       if (key.startsWith('sub:')) return '·'
       return resolveCategoryIcon(key.slice(4), { customIcons })
     }
 
-    const mesActual = new Date().toISOString().slice(0, 7)
+    // Cada movimiento se convierte con el TC de SU propio mes (tcDeMovimiento/
+    // tcEURDeMovimiento: promedio del mes, o el fx_rate congelado del movimiento
+    // para USD, nunca el TC de hoy para algo viejo) — antes usaba un TC único por
+    // fila de mes con fallback a "1"/"0" que podía silenciar USD/EUR sin avisar.
     const evolData = getLast6Months().map(m => {
-      const tc = tcMap[m] ? Number(tcMap[m]) : (parseFloat(tipoCambio) || 1)
-      const tcEuro = m === mesActual ? (parseFloat(tipoCambioEUR) || 0) : (tcMapEUR[m] ? Number(tcMapEUR[m]) : (parseFloat(tipoCambioEUR) || 0))
       const row = { mes: mesLabel(m) }
       sidebarCatEvol.forEach(key => {
         const total = accountTransactions
           .filter(t => t.fecha?.startsWith(m) && matchesKey(t, key))
           .reduce((s, t) => {
-            const monto = Number(t.monto)
-            return s + (t.moneda === 'USD' && tc > 0 ? monto * tc : t.moneda === 'EUR' && tcEuro > 0 ? monto * tcEuro : t.moneda === 'ARS' ? monto : 0)
+            const monto = Number(t.monto) || 0
+            if (t.moneda === 'ARS') return s + monto
+            if (t.moneda === 'USD') {
+              const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+              if (tcTx > 0) return s + monto * tcTx
+              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento USD', t.id, t.fecha)
+              return s
+            }
+            if (t.moneda === 'EUR') {
+              const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+              if (tcTx > 0) return s + monto * tcTx
+              if (process.env.NODE_ENV !== 'production') console.warn('evolucionCategoriaMemo: sin TC para convertir movimiento EUR', t.id, t.fecha)
+              return s
+            }
+            return s
           }, 0)
         row[key] = Math.round(total)
       })
@@ -2257,40 +2256,10 @@ export default function Dashboard() {
     const seleccion = sidebarCatEvol.map(key => ({ key, label: labelDeKey(key), color: colorDeKey(key), icon: iconDeKey(key) }))
 
     return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion }
-  }, [accountTransactions, sidebarCatEvol, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, customIcons])
+  }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, customIcons])
 
   const sideWidgets = () => (
     <>
-            {miniChartDataComputed.length > 0 && (
-              <div style={{ backgroundColor: styles.savingsPanel.backgroundColor, borderRadius: '16px', padding: '20px 16px', boxShadow: styles.savingsPanel.boxShadow }}>
-                <h3 style={styles.savingsPanelTitle}>Gastos<br/>últimos 6 meses</h3>
-                {(() => {
-                  const miniAvg = miniChartDataComputed.length > 0 ? Math.round(miniChartDataComputed.reduce((s, d) => s + d.total, 0) / miniChartDataComputed.length) : 0
-                  const abrev = v => Math.abs(v) >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`
-                  return (
-                    <ResponsiveContainer width="100%" height={130}>
-                      <BarChart data={miniChartDataComputed} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
-                        <YAxis tickFormatter={abrev} tick={{ fontSize: 9, fill: darkMode ? '#9A8A9A' : '#888', fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} width={34} />
-                        <Tooltip
-                          formatter={v => [`$ ${v.toLocaleString('es-AR')}`, 'Egresos']}
-                          contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: darkMode ? '#3A333A' : '#fff', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}
-                          labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: '600' }}
-                          itemStyle={{ color: darkMode ? '#C8B8C8' : '#555' }}
-                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-                        />
-                        <ReferenceLine y={miniAvg} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(miniAvg)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-                          {miniChartDataComputed.map((_, i) => (
-                            <Cell key={i} fill={i === miniChartDataComputed.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )
-                })()}
-              </div>
-            )}
             {/* Widget: Cuotas pendientes */}
             {(() => {
               const periods = cuotasPendientesMemo
@@ -2334,24 +2303,37 @@ export default function Dashboard() {
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
-              const toggleClave = (key) => setSidebarCatEvol(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
-              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol([]); setEvolDropdownOpen(false) } }
-              const opciones = evolucionTipo === 'gasto'
-                ? [
-                    ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
-                    ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
-                    ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
-                  ]
-                : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))
+              // La selección nunca queda vacía: si lo único elegido es lo que se
+              // está por sacar, el click no hace nada — siempre hay algo para
+              // mostrar (el default es "Total", igual que el viejo gráfico de
+              // barras separado, ahora fusionado acá).
+              const toggleClave = (key) => setSidebarCatEvol(prev => {
+                if (prev.includes(key)) return prev.length > 1 ? prev.filter(k => k !== key) : prev
+                return [...prev, key]
+              })
+              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol(['total']); setEvolDropdownOpen(false) } }
+              const opciones = [
+                { key: 'total', label: 'Total', icon: '📊' },
+                ...(evolucionTipo === 'gasto'
+                  ? [
+                      ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
+                      ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
+                      ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
+                    ]
+                  : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))),
+              ]
+              // Con solo "Total" elegido, barras (se lee mejor un total por mes) con
+              // línea de promedio — es lo que mostraba el viejo mini-gráfico. En
+              // cuanto se agrega o se cambia a otra(s) serie(s), pasa a líneas, una
+              // por serie, con el color consistente de cada categoría/subcategoría/hijo.
+              const soloTotal = seleccion.length === 1 && seleccion[0].key === 'total'
+              const abrev = v => Math.abs(v) >= 1000000 ? `$${(v / 1000000).toFixed(1)}M` : Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`
+              const promedioTotal = soloTotal && evolData.length > 0 ? Math.round(evolData.reduce((s, d) => s + (d.total || 0), 0) / evolData.length) : 0
               return (
                 <div style={styles.savingsPanel}>
-                  <h3 style={styles.savingsPanelTitle}>
-                    <span
-                      style={{ cursor: 'help', textDecoration: 'underline', textDecorationStyle: 'dotted', textDecorationColor: darkMode ? '#6A5A6A' : '#bbb', textUnderlineOffset: '3px' }}
-                      title="ARS (monedas extranjeras convertidas)"
-                    >
-                      📈 Evolución · últimos 6 meses
-                    </span>
+                  <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    📈 Evolución · últimos 6 meses
+                    <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas)" />
                   </h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
@@ -2361,28 +2343,25 @@ export default function Dashboard() {
                       </button>
                     ))}
                   </div>
-                  {/* Dropdown de selección múltiple — categorías/subcategorías/hijos (gastos)
-                      o tags (ingresos), mezclados libremente. Antes era una grilla de chips
-                      siempre visible (mucho texto, había que scrollear); ahora un desplegable
-                      compacto, como el selector de meses del resto de la app. */}
+                  {/* Dropdown de selección múltiple — "Total" (default) más
+                      categorías/subcategorías/hijos (gastos) o tags (ingresos),
+                      mezclados libremente. */}
                   <div style={{ position: 'relative', marginBottom: '14px' }}>
                     <button type="button" onClick={() => setEvolDropdownOpen(o => !o)}
                       style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
-                        border: `1.5px solid ${sidebarCatEvol.length > 0 ? '#5C4F5C' : borderClr}`,
-                        backgroundColor: sidebarCatEvol.length > 0 ? '#5C4F5C' : 'transparent',
-                        color: sidebarCatEvol.length > 0 ? 'white' : txtClr,
+                        border: `1.5px solid ${!soloTotal ? '#5C4F5C' : borderClr}`,
+                        backgroundColor: !soloTotal ? '#5C4F5C' : 'transparent',
+                        color: !soloTotal ? 'white' : txtClr,
                         fontSize: '12px', fontFamily: '"Montserrat", sans-serif', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {sidebarCatEvol.length === 0 ? 'Elegí qué ver' : sidebarCatEvol.length === 1 ? seleccion[0]?.label : `${sidebarCatEvol.length} elegidos`}
+                        {sidebarCatEvol.length === 1 ? seleccion[0]?.label : `${sidebarCatEvol.length} elegidos`}
                       </span>
                       <span>▾</span>
                     </button>
                     {evolDropdownOpen && (
                       <div onMouseLeave={() => setEvolDropdownOpen(false)} className="hide-scroll"
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
-                        {opciones.length === 0 ? (
-                          <p style={{ color: '#8e8e93', fontSize: '12px', margin: 0, padding: '10px 14px' }}>Sin datos para elegir todavía.</p>
-                        ) : opciones.map(op => {
+                        {opciones.map(op => {
                           const activo = sidebarCatEvol.includes(op.key)
                           return (
                             <button key={op.key} type="button" onClick={() => toggleClave(op.key)}
@@ -2397,7 +2376,26 @@ export default function Dashboard() {
                       </div>
                     )}
                   </div>
-                  {seleccion.length > 0 ? (
+                  {soloTotal ? (
+                    <ResponsiveContainer width="100%" height={190}>
+                      <BarChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={abrev} tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} width={40} />
+                        <Tooltip
+                          formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
+                          contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
+                          labelStyle={{ color: txtClr, fontWeight: '600' }}
+                          cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+                        />
+                        <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {evolData.map((_, i) => (
+                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
                     <>
                       <ResponsiveContainer width="100%" height={190}>
                         <LineChart data={evolData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
@@ -2423,8 +2421,6 @@ export default function Dashboard() {
                         ))}
                       </div>
                     </>
-                  ) : (
-                    opciones.length > 0 && <p style={{ color: '#aaa', fontSize: '12px', margin: 0 }}>Elegí una o más categorías, subcategorías, hijos o ingresos para ver su evolución.</p>
                   )}
                 </div>
               )
@@ -3033,7 +3029,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'caja' && (
-                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} customIcons={customIcons} />
+                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} />
                 )}
 
                 {dashboardTab === 'apagar' && (

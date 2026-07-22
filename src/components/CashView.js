@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip } from './AccountDetail'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -41,7 +41,7 @@ const statementDelPago = (pago, statements) => {
   return null
 }
 
-export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, tcManual }) {
+export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [loading, setLoading] = useState(true)
@@ -88,7 +88,10 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   const accountTipoById = useMemo(() => new Map((accounts || []).map(a => [a.id, a.tipo])), [accounts])
   const accountNombreById = new Map((accounts || []).map(a => [a.id, a.nombre]))
   const tc = parseFloat(tipoCambio) || 0
-  const aArs = useCallback((t) => t.moneda === 'USD' ? Number(t.monto) * tc : Number(t.monto), [tc])
+  const tcE = parseFloat(tipoCambioEUR) || 0
+  // Antes un movimiento en EUR se sumaba tal cual (como si fuera ARS 1 a 1) en
+  // vez de convertirse — ahora usa el TC vigente de euro, igual que el dólar.
+  const aArs = useCallback((t) => t.moneda === 'USD' ? Number(t.monto) * tc : t.moneda === 'EUR' ? Number(t.monto) * tcE : Number(t.monto), [tc, tcE])
 
   const mesesDisponibles = useMemo(() => [...new Set([
     ...transactions.map(t => normFecha(t.fecha).slice(0, 7)).filter(Boolean),
@@ -130,10 +133,11 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
       const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
       const todos = [...pagos, ...alquiler, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
       const totalPagado = sum(todos)
-      const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda !== 'USD' ? Number(t.monto) : 0), 0)
+      const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda === 'ARS' ? Number(t.monto) : 0), 0)
       const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
+      const totalPagadoEur = todos.reduce((s, t) => s + (t.moneda === 'EUR' ? Number(t.monto) : 0), 0)
       const totalIngresos = sum(ingresos)
-      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalIngresos, balance: totalIngresos - totalPagado }
+      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, balance: totalIngresos - totalPagado }
     }
 
     const actual = desgloseDelMes(selectedMonth)
@@ -289,15 +293,21 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
             <p style={{ margin: '0 0 2px', fontSize: '11px', fontWeight: '700', color: muted }}>USD</p>
             <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: actual.totalPagadoUsd > 0 ? txt : muted }}>U$S {formatMontoFull(actual.totalPagadoUsd)}</p>
           </div>
+          {actual.totalPagadoEur > 0 && (
+            <div>
+              <p style={{ margin: '0 0 2px', fontSize: '11px', fontWeight: '700', color: muted }}>EUR</p>
+              <p style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: txt }}>€ {formatMontoFull(actual.totalPagadoEur)}</p>
+            </div>
+          )}
         </div>
         <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
           <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total unificado</p>
           <p style={{ margin: '4px 0 0', fontSize: '36px', fontWeight: '800', color: txt }}>$ {formatMonto(actual.totalPagado)}</p>
-          {actual.totalPagadoUsd > 0 && (
+          {(actual.totalPagadoUsd > 0 || actual.totalPagadoEur > 0) && (
             <p style={{ margin: '6px 0 0', fontSize: '12px', color: muted }}>
-              {tc > 0
-                ? `USD convertidos a $ ${formatMontoFull(tc)} (TC ${tcManual?.enabled ? 'manual' : 'automático'})`
-                : 'Hay montos en USD pero no hay un tipo de cambio configurado — no se están sumando al total unificado.'}
+              {(tc > 0 || actual.totalPagadoEur === 0) && (tcE > 0 || actual.totalPagadoUsd === 0)
+                ? `Monedas extranjeras convertidas al TC vigente (${tcManual?.enabled ? 'manual' : 'automático'})`
+                : 'Hay montos en moneda extranjera pero falta un tipo de cambio configurado — no se están sumando al total unificado.'}
             </p>
           )}
         </div>
@@ -354,14 +364,17 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
 
       {/* Historial 6 meses */}
       <div style={seccion}>
-        <p style={label}>Total pagado por mes · ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses</p>
+        <p style={{ ...label, display: 'flex', alignItems: 'center' }}>
+          Total pagado por mes
+          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses" />
+        </p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={border} vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 12, fill: txt }} axisLine={{ stroke: border }} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: txt }} axisLine={false} tickLine={false} width={52} tickFormatter={formatMontoCompacto} />
             <Tooltip
-              formatter={(value) => [`$ ${formatMonto(value)} (ARS, USD convertidos)`, 'Total pagado']}
+              formatter={(value) => [`$ ${formatMonto(value)} (ARS, monedas extranjeras convertidas)`, 'Total pagado']}
               labelFormatter={(l, payload) => payload?.[0] ? mesLabel(payload[0].payload.mes) : l}
               contentStyle={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '8px', fontSize: '12px' }}
               labelStyle={{ color: txt, fontWeight: '600' }}
