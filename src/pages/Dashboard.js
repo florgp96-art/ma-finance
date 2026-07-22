@@ -2832,7 +2832,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '1440px', margin: isMobile ? undefined : '0 auto', boxSizing: 'border-box' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '1800px', margin: isMobile ? undefined : '0 auto', width: isMobile ? undefined : '100%', boxSizing: 'border-box' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && (
@@ -3026,8 +3026,20 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {(isTablet || (!isMobile && selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar' || dashboardTab === 'caja'))) && sideWidgets()}
+          {/* En tablet no hay lugar para una tercera columna — los widgets van
+              apilados bajo la lista de cuentas, en la misma columna izquierda.
+              En desktop completo tienen su propia columna a la derecha (ver
+              más abajo), siempre visible sin importar la pestaña/cuenta activa. */}
+          {isTablet && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
+
+          {/* Widgets — mobile: apilados ARRIBA del contenido de la pestaña (sidebar
+              → Cuotas → Evolución → Ahorros → contenido), no debajo. */}
+          {isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px' }}>
+            {sideWidgets()}
+          </div>
+          )}
 
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
@@ -3234,17 +3246,11 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Widgets — desktop: tercera columna fija a la derecha (se oculta en Resumen/A pagar
-              de Todas las cuentas para darle más ancho a la tabla) */}
-          {!isMobile && !isTablet && !(selectedAccount === 'all' && (dashboardTab === 'resumen' || dashboardTab === 'apagar' || dashboardTab === 'caja')) && (
-          <div style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
-            {sideWidgets()}
-          </div>
-          )}
-
-          {/* Widgets — mobile: full-width debajo del contenido principal */}
-          {isMobile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px 24px' }}>
+          {/* Widgets — desktop: tercera columna fija a la derecha, siempre visible
+              (antes se ocultaba en Resumen/A pagar de Todas las cuentas, y en
+              tablet no hay lugar — ver más arriba, quedan bajo el sidebar). */}
+          {!isMobile && !isTablet && (
+          <div style={{ width: '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '24px', alignSelf: 'flex-start' }}>
             {sideWidgets()}
           </div>
           )}
