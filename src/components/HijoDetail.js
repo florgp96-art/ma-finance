@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -28,6 +28,10 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
   const [editingTx, setEditingTx] = useState(null)
+  const [filaExpandida, setFilaExpandida] = useState(null)
+  const [tablaRef, tablaWidth] = useContainerWidth()
+  const colVisible = columnasVisibles(tablaWidth)
+  const numColsTabla = 4 + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
@@ -460,22 +464,30 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
             No hay gastos en el período seleccionado.
           </p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div ref={tablaRef} style={{ width: '100%' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '58px' }} />
+                <col />
+                <col style={{ width: '112px' }} />
+                {colVisible.subcategoria && <col style={{ width: '104px' }} />}
+                {colVisible.cuenta && <col style={{ width: '96px' }} />}
+                <col style={{ width: '96px' }} />
+                <col style={{ width: '28px' }} />
+              </colgroup>
               <thead>
                 <tr>
                   {[
-                    { h: 'Fecha', w: isMobile ? '14%' : '8%', key: 'fecha' },
-                    { h: 'Descripción', w: isMobile ? '32%' : '24%', key: 'descripcion' },
-                    { h: 'Categoría', w: isMobile ? '20%' : '14%', key: 'categoria' },
-                    { h: 'Subcategoría', w: '13%', hideMobile: true },
-                    { h: 'Forma de pago', w: '13%', hideMobile: true },
-                    { h: 'Monto', w: isMobile ? '20%' : '16%', key: 'monto' },
-                    { h: '', w: isMobile ? '14%' : '12%' },
-                  ].map(({ h, w, hideMobile, key }) => (
-                    <th key={h || 'acciones'} onClick={key ? () => handleSort(key) : undefined} style={{
-                      textAlign: 'left', padding: '8px 10px', width: w,
-                      display: hideMobile && isMobile ? 'none' : undefined,
+                    { h: 'Fecha', key: 'fecha' },
+                    { h: 'Descripción', key: 'descripcion' },
+                    { h: 'Categoría', key: 'categoria' },
+                    ...(colVisible.subcategoria ? [{ h: 'Subcategoría' }] : []),
+                    ...(colVisible.cuenta ? [{ h: 'Forma de pago' }] : []),
+                    { h: 'Monto', key: 'monto' },
+                    { h: '' },
+                  ].map(({ h, key }, i) => (
+                    <th key={h || `acciones-${i}`} onClick={key ? () => handleSort(key) : undefined} style={{
+                      textAlign: 'left', padding: '8px 10px',
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
                       color: '#6e6e73', fontWeight: '400', fontSize: '11px',
                       textTransform: 'uppercase', letterSpacing: '0.04em',
@@ -488,56 +500,87 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
               <tbody>
                 {sortedTx.map((t, i) => {
                   const isEditing = editingTx === t.id
-                  return (
-                    <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{t.fecha}</td>
-                      <td style={{ padding: '9px 10px', maxWidth: '200px' }}>
-                        {isEditing
-                          ? <input value={editNombre} onChange={e => setEditNombre(e.target.value)} style={{ width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }} />
-                          : <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{t.nombre || t.detalle || '—'}</span>
-                        }
-                      </td>
-                      <td style={{ padding: '9px 10px' }}>
-                        {isEditing
-                          ? <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: darkMode ? 'dark' : 'light' }}>
+                  const expandido = filaExpandida === t.id
+                  const ellipsisTd = { padding: '9px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                  if (isEditing) {
+                    return (
+                      <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
+                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '360px' }}>
+                            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }} />
+                            <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
                               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
-                          : t.categories?.nombre
-                            ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
-                            : <span style={{ color: '#aaa' }}>—</span>
-                        }
-                      </td>
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px', display: isMobile ? 'none' : undefined }}>
-                        {isEditing
-                          ? <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', appearance: 'none', WebkitAppearance: 'none', colorScheme: darkMode ? 'dark' : 'light' }}>
-                              <option value="">—</option>
+                            <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
+                              <option value="">— Sin subcategoría</option>
                               {subcatsParaEditar.map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
                             </select>
-                          : t.subcategories?.nombre || '—'
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => handleSaveEdit(t)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: '#5C4F5C', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif' }}>✓ Guardar</button>
+                              <button onClick={() => setEditingTx(null)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✕ Cancelar</button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
+                  return (
+                    <React.Fragment key={t.id || i}>
+                    <tr
+                      style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}`, cursor: 'pointer' }}
+                      onClick={() => setFilaExpandida(prev => prev === t.id ? null : t.id)}
+                    >
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{t.fecha}</td>
+                      <td style={ellipsisTd}>
+                        <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</span>
+                      </td>
+                      <td style={ellipsisTd}>
+                        {t.categories?.nombre
+                          ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
+                          : <span style={{ color: '#aaa' }}>—</span>
                         }
                       </td>
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', fontSize: '12px', display: isMobile ? 'none' : undefined }}>
-                        {t.accounts?.nombre || '—'}
-                      </td>
+                      {colVisible.subcategoria && (
+                        <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.subcategories?.nombre || '—'}</td>
+                      )}
+                      {colVisible.cuenta && (
+                        <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.accounts?.nombre || '—'}</td>
+                      )}
                       <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                         {t.moneda === 'USD'
                           ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
-                          : `$ ${formatMonto(t.monto)}`}
+                          : t.moneda === 'EUR'
+                            ? <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(t.monto)}</span>
+                            : `$ ${formatMonto(t.monto)}`}
                       </td>
-                      <td style={{ padding: '9px 10px', whiteSpace: 'nowrap' }}>
-                        {isEditing
-                          ? <>
-                              <button onClick={() => handleSaveEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 4px' }}>✅</button>
-                              <button onClick={() => setEditingTx(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px 4px' }}>✕</button>
-                            </>
-                          : <button onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.5, padding: '2px 4px' }}>✏️</button>
-                        }
-                      </td>
+                      <td style={{ padding: '9px 4px', textAlign: 'center', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
                     </tr>
+                    {expandido && (
+                      <tr style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
+                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
+                            <div>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Subcategoría</p>
+                              <p style={{ margin: 0, fontSize: '13px' }}>{t.subcategories?.nombre || '—'}</p>
+                            </div>
+                            <div>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Forma de pago</p>
+                              <p style={{ margin: 0, fontSize: '13px' }}>{t.accounts?.nombre || '—'}</p>
+                            </div>
+                            <div>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Moneda</p>
+                              <p style={{ margin: 0, fontSize: '13px' }}>{t.moneda || 'ARS'}</p>
+                            </div>
+                          </div>
+                          <button onClick={() => startEdit(t)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✏️ Editar</button>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   )
                 })}
               </tbody>
-              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={7} signed={false} />
+              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} signed={false} />
             </table>
           </div>
         )}
