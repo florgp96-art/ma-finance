@@ -2016,7 +2016,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 <span>Total</span>
                 <span>
                   {(() => {
