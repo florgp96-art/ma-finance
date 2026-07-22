@@ -149,7 +149,6 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     // criterio que ya usa el widget "Cuotas pendientes" de Dashboard.js), y solo
     // se toma la cuota de mayor número por grupo (la más reciente facturada).
     const stripCuotaSuffix = (n) => (n || '')
-      .replace(/\s*\(1\/3\)\s*$/, '')
       .replace(/\s+\d+\/\d+\s*$/, '')
       .trim()
     const mesInicioCompra = (t) => {
@@ -172,9 +171,9 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
         const cn = t.cuota_numero || 0
         if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
       })
-      // Una compra dividida en 3 (Vitto/Amelia/yo) queda como 3 filas reales con
-      // el mismo número de cuota — hay que sumarlas para recuperar el monto
-      // total de esa cuota, no quedarnos con una sola parte.
+      // Una compra dividida (regla de tipo "split") queda como varias filas
+      // reales con el mismo número de cuota — hay que sumarlas para recuperar
+      // el monto total de esa cuota, no quedarnos con una sola parte.
       const latestByPurchase = {}
       conCuotas.forEach(t => {
         const key = groupKeyCuota(t)

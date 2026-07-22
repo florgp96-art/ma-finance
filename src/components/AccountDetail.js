@@ -900,9 +900,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     .sort((a, b) => (a.nombre || a.detalle || '').toLowerCase().localeCompare((b.nombre || b.detalle || '').toLowerCase(), 'es'))
   const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
 
-  // Los gastos divididos con hijos (división en 3, o alias de tipo "split") se guardan
-  // como 2-3 transacciones reales separadas, para que totales, gráficos y "a pagar" por
-  // hijo funcionen sin lógica especial en ningún otro lado (ver src/lib/divisionTresVias.js).
+  // Los gastos divididos con hijos por alias de tipo "split" se guardan como 2
+  // transacciones reales separadas, para que totales, gráficos y "a pagar" por
+  // hijo funcionen sin lógica especial en ningún otro lado.
   // Acá solo agrupamos esas filas para la VISTA de la tabla: mismo día/cuenta/nombre/
   // categoría/subcategoría/moneda, con exactamente una fila por "clase" de tag (sin tag =
   // "yo", o un hijo), ordenadas por monto para desambiguar cuando el mismo día hay más de
