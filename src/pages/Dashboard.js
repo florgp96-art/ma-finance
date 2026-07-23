@@ -3078,14 +3078,6 @@ export default function Dashboard() {
           {isTablet && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
-          {/* Widgets — mobile: apilados ARRIBA del contenido de la pestaña (sidebar
-              → Cuotas → Evolución → Ahorros → contenido), no debajo. */}
-          {isMobile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px' }}>
-            {sideWidgets()}
-          </div>
-          )}
-
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
@@ -3290,6 +3282,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Widgets — mobile: apilados DESPUÉS del contenido de la pestaña (sidebar
+              → contenido → Cuotas → Evolución → Ahorros): lo importante (el
+              contenido) tiene que verse apenas se entra, sin scrollear tres
+              bloques a pantalla completa antes de llegar a él. */}
+          {isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px' }}>
+            {sideWidgets()}
+          </div>
+          )}
 
           {/* Widgets — desktop: tercera columna fija a la derecha, siempre visible
               (antes se ocultaba en Resumen/A pagar de Todas las cuentas, y en
