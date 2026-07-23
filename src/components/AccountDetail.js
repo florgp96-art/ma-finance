@@ -418,6 +418,21 @@ export const columnasVisibles = (width) => ({
   cuotas: width >= 820,
 })
 
+// Reparte en px el espacio "de texto" de una tabla de movimientos (nombre +
+// categoría/cuenta/subcategoría cuando están visibles) según un peso relativo —
+// nombre pesa más que las demás pero, a diferencia de un <col /> sin width (que
+// antes se llevaba TODO el sobrante y dejaba un hueco enorme en pantallas
+// anchas), queda topeado por su peso. 'disponible' es el ancho de la tabla
+// (tablaWidth, medido con useContainerWidth) menos las columnas de ancho fijo
+// de ESA tabla (fecha/monto/cuotas/expandir — su contenido no depende del ancho
+// de pantalla, así que no van a %). 'pesos' es { claveDeColVisible: peso }; una
+// clave sin colVisible[clave] === false se toma como siempre visible.
+export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
+  const pesoTotal = Object.entries(pesos).reduce((s, [k, p]) => s + (colVisible[k] === false ? 0 : p), 0)
+  const pxPorPeso = pesoTotal > 0 ? Math.max(0, disponible) / pesoTotal : 0
+  return Object.fromEntries(Object.entries(pesos).map(([k, p]) => [k, colVisible[k] === false ? 0 : Math.round(p * pxPorPeso)]))
+}
+
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
@@ -556,6 +571,29 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [tablaRef, tablaWidth] = useContainerWidth()
   const colVisible = columnasVisibles(tablaWidth)
   const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuotas ? 1 : 0)
+  // Anchos fijos (px) de las columnas cuyo contenido no depende del ancho de
+  // pantalla ("23/07", "6/6", "$ 45.678", una flechita o un par de íconos) —
+  // el resto del ancho medido de la tabla se reparte por peso entre nombre y
+  // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
+  // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
+  const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28, ACCIONES2_PX = 68, ACCIONES3_PX = 90
+  const anchosTextoPral = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
+    colVisible, { nombre: 1.5, categoria: 1, cuenta: 1, subcategoria: 1.5 }
+  )
+  const anchosTextoNeutros = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - MONTO_PX - ACCIONES2_PX,
+    colVisible, { nombre: 1.5, categoria: 1, subcategoria: 1.4, cuenta: 1 }
+  )
+  // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
+  // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
+  // colVisible.categoria en vez de reservarle un ancho fijo siempre, para dejarle
+  // más lugar a nombre/cuenta/subcategoría en pantallas angostas.
+  const SINID_CATEGORIA_PX = 56
+  const anchosTextoSinId = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - (colVisible.categoria ? SINID_CATEGORIA_PX : 0) - MONTO_PX - ACCIONES3_PX,
+    colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
+  )
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
@@ -1357,7 +1395,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
         >
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(tx.fecha)}</td>
-          <td style={ellipsisCell}>
+          <td style={ellipsisCell} title={tx.nombre || tx.detalle}>
             {tx.nombre || tx.detalle}
             {(tx.children?.nombre || tx.tag) && !esIngresoTx && (
               <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {tx.children?.nombre || tx.tag}</span>
@@ -1399,6 +1437,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tr style={styles.tr}>
             <td colSpan={numColsTabla} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
+                <div style={{ flexBasis: '100%' }}>
+                  <p style={detailLabel}>Nombre</p>
+                  <p style={detailValue}>{tx.nombre || tx.detalle || '—'}</p>
+                </div>
                 <div>
                   <p style={detailLabel}>Cuenta</p>
                   <p style={detailValue}>{tx.accounts?.nombre || '—'}</p>
@@ -1480,7 +1522,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return (
       <tr key={grupo.key} style={{ ...styles.tr, cursor: 'pointer' }} onClick={() => toggleGrupoExpandido(grupo.key, true)}>
         <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(repTx.fecha)}</td>
-        <td style={ellipsisCell}>
+        <td style={ellipsisCell} title={repTx.nombre || repTx.detalle}>
           {repTx.nombre || repTx.detalle}
           <span style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', marginLeft: '6px' }}>
             🔀 {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
@@ -2850,13 +2892,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ width: '100%' }}>
           <table style={{...styles.table, tableLayout: 'fixed'}}>
             <colgroup>
-              <col style={{ width: '62px' }} />
-              {colVisible.cuenta && <col style={{ width: '140px' }} />}
-              {colVisible.subcategoria && <col style={{ width: '96px' }} />}
-              <col />
-              <col style={{ width: '112px' }} />
-              <col style={{ width: '104px' }} />
-              <col style={{ width: '96px' }} />
+              <col style={{ width: `${FECHA_PX}px` }} />
+              {colVisible.cuenta && <col style={{ width: `${anchosTextoSinId.cuenta}px` }} />}
+              {colVisible.subcategoria && <col style={{ width: `${anchosTextoSinId.subcategoria}px` }} />}
+              <col style={{ width: `${anchosTextoSinId.nombre}px` }} />
+              {colVisible.categoria && <col style={{ width: `${SINID_CATEGORIA_PX}px` }} />}
+              <col style={{ width: `${MONTO_PX}px` }} />
+              <col style={{ width: `${ACCIONES3_PX}px` }} />
             </colgroup>
             <thead>
               <tr>
@@ -2864,7 +2906,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 {colVisible.cuenta && <th style={styles.th}>Detalle original</th>}
                 {colVisible.subcategoria && <th style={styles.th}>Cuenta</th>}
                 <th style={styles.th}>Nombre</th>
-                <th style={styles.th}>Categoría</th>
+                {colVisible.categoria && <th style={styles.th}>Categoría</th>}
                 <th style={styles.th}>Monto</th>
                 <th style={styles.th}></th>
               </tr>
@@ -2872,16 +2914,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <tbody>
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
-                  {editingTx === tx.id ? renderEditStackMobile(tx, 5 + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
+                  {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
                   <td style={{...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                  {colVisible.cuenta && <td style={ellipsisCell}><span style={styles.detalle}>{tx.detalle}</span></td>}
+                  {colVisible.cuenta && <td style={ellipsisCell} title={tx.detalle}><span style={styles.detalle}>{tx.detalle}</span></td>}
                   {colVisible.subcategoria && (
                     <td style={ellipsisCell}>
                       <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
                     </td>
                   )}
-                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
-                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>
+                  <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
+                  {colVisible.categoria && <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>}
                   <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
                     {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                   </td>
@@ -2913,14 +2955,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div ref={tablaRef} style={{ width: '100%' }}>
         <table style={{...styles.table, tableLayout: 'fixed'}}>
           <colgroup>
-            <col style={{ width: '62px' }} />
-            <col />
-            {colVisible.categoria && <col style={{ width: '112px' }} />}
-            {colVisible.cuenta && <col style={{ width: '96px' }} />}
-            {colVisible.subcategoria && <col style={{ width: '112px' }} />}
-            {colVisible.cuotas && <col style={{ width: '54px' }} />}
-            <col style={{ width: '108px' }} />
-            <col style={{ width: '28px' }} />
+            <col style={{ width: `${FECHA_PX}px` }} />
+            <col style={{ width: `${anchosTextoPral.nombre}px` }} />
+            {colVisible.categoria && <col style={{ width: `${anchosTextoPral.categoria}px` }} />}
+            {colVisible.cuenta && <col style={{ width: `${anchosTextoPral.cuenta}px` }} />}
+            {colVisible.subcategoria && <col style={{ width: `${anchosTextoPral.subcategoria}px` }} />}
+            {colVisible.cuotas && <col style={{ width: `${CUOTAS_PX}px` }} />}
+            <col style={{ width: `${MONTO_PX}px` }} />
+            <col style={{ width: `${EXPAND_PX}px` }} />
           </colgroup>
           <thead>
             <tr>
@@ -2955,13 +2997,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ marginTop: '10px' }}>
               <table style={{...styles.table, tableLayout: 'fixed'}}>
                 <colgroup>
-                  <col style={{ width: '62px' }} />
-                  <col />
-                  {colVisible.categoria && <col style={{ width: '112px' }} />}
-                  {colVisible.subcategoria && <col style={{ width: '112px' }} />}
-                  {colVisible.cuenta && <col style={{ width: '96px' }} />}
-                  <col style={{ width: '96px' }} />
-                  <col style={{ width: '64px' }} />
+                  <col style={{ width: `${FECHA_PX}px` }} />
+                  <col style={{ width: `${anchosTextoNeutros.nombre}px` }} />
+                  {colVisible.categoria && <col style={{ width: `${anchosTextoNeutros.categoria}px` }} />}
+                  {colVisible.subcategoria && <col style={{ width: `${anchosTextoNeutros.subcategoria}px` }} />}
+                  {colVisible.cuenta && <col style={{ width: `${anchosTextoNeutros.cuenta}px` }} />}
+                  <col style={{ width: `${MONTO_PX}px` }} />
+                  <col style={{ width: `${ACCIONES2_PX}px` }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -2979,7 +3021,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
                       {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)) : (<>
                       <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                      <td style={ellipsisCell}>{tx.nombre || tx.detalle}</td>
+                      <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
                       {colVisible.categoria && (
                         <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
                       )}
