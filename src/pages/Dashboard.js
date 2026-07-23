@@ -298,9 +298,27 @@ export default function Dashboard() {
   const [sidebarCatEvol, setSidebarCatEvol] = useState(['total'])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
-  const dolarCardRef = useRef(null)
+  const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
-  const [dolarCardH, setDolarCardH] = useState(null)
+  const [monedasCardH, setMonedasCardH] = useState(null)
+  // Desplegable único "Monedas extranjeras" (Dólar + Euro) del header: mismo patrón
+  // tap/click + cierre afuera que InfoTooltip (AccountDetail.js), más Escape porque
+  // acá el contenido es interactivo (selector de tipo de dólar), no solo texto.
+  const [monedasOpen, setMonedasOpen] = useState(false)
+  const monedasRef = useRef(null)
+  useEffect(() => {
+    if (!monedasOpen) return
+    const cerrarSiAfuera = (e) => { if (monedasRef.current && !monedasRef.current.contains(e.target)) setMonedasOpen(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setMonedasOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+  }, [monedasOpen])
 
   // Preferencias sincronizadas entre dispositivos (metas del mes, ahorro,
   // cuentas de ahorro): se guardan en user_rules como __pref__{clave} con un
@@ -443,7 +461,7 @@ export default function Dashboard() {
   }, [navigate])
 
   useLayoutEffect(() => {
-    const measure = () => { if (dolarCardRef.current) setDolarCardH(dolarCardRef.current.offsetHeight) }
+    const measure = () => { if (monedasCardRef.current) setMonedasCardH(monedasCardRef.current.offsetHeight) }
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
@@ -2635,46 +2653,93 @@ export default function Dashboard() {
           const pendientes = vencList.filter(v => !v.pagado)
 
           const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
-          const eurCard = (
-            <div style={{ width: isMobile ? '100px' : '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
-              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Euro</p>
-              {eurValor ? (
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>€1 =</p>
-                  <p style={{ margin: 0, fontSize: isMobile ? '15px' : '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}</p>
-                  {dolarRates.eur && <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
+          const fmtMonto = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v))
+          const manualActivo = tcManual?.enabled && tcManual?.valor
+          // Rótulo "MONEDAS EXTRANJERAS": mayúsculas parejas con letter-spacing (NO
+          // small-caps) — estilo ya usado en botones/rótulos tipo sidebarBtnPrimary,
+          // distinto del small-caps que llevan los sub-rótulos "Dólar"/"Euro" de adentro.
+          const monedasTituloStyle = { fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 }
+          const monedasResumen = rateActivo && eurValor
+            ? `USD $${fmtMonto(rateActivo)} · EUR $${fmtMonto(eurValor)}`
+            : rateActivo ? `USD $${fmtMonto(rateActivo)}`
+            : eurValor ? `EUR $${fmtMonto(eurValor)}`
+            : 'Cargando...'
+
+          // Panel del desplegable: selector de tipo de dólar (+ indicador de TC manual
+          // si está activo) y cotización de euro — mismo contenido para las 3 variantes
+          // de trigger (mobile/tablet/desktop), solo cambia cómo se ve cerrado.
+          const monedasPanel = (
+            <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '210px' }}>
+              <div>
+                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, fontWeight: 700 }}>Dólar</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '6px 0' }}>
+                  {['blue','mep','oficial','tarjeta'].map(t => (
+                    <button key={t} type="button" onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
+                      style={{ flex: '1 1 42%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#5C4F5C' : cardBorder}`, backgroundColor: tcTipo === t ? '#5C4F5C' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
+                      {tiposLabel[t]}
+                    </button>
+                  ))}
+                  {manualActivo && (
+                    <div title="Tipo de cambio manual activo (se configura en Configuración) — se usa para los totales del período actual en vez de la cotización elegida arriba"
+                      style={{ flex: '1 1 100%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', fontFamily: '"Montserrat", sans-serif', border: '1px solid #8C7B8C', backgroundColor: darkMode ? '#3A2E42' : '#EDE3F2', color: '#8C7B8C', textAlign: 'center', textTransform: 'uppercase', cursor: 'default' }}>
+                      🔒 Manual: $ {fmtMonto(Number(tcManual.valor))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>Cargando...</p>
-              )}
+                {rateActivo ? (
+                  <div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>U$S 1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(rateActivo)}</strong></p>
+                    {rateVivo && <p style={{ margin: '2px 0 0', fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>Cargando...</p>
+                )}
+              </div>
+              <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: '10px' }}>
+                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, fontWeight: 700 }}>Euro</p>
+                {eurValor ? (
+                  <div style={{ marginTop: '6px' }}>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
+                    {dolarRates.eur && <p style={{ margin: '2px 0 0', fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
+                  </div>
+                ) : (
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#8e8e93' }}>Cargando...</p>
+                )}
+              </div>
             </div>
           )
 
-          const usdCard = (
-            <div ref={dolarCardRef} style={{ width: '140px', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', alignSelf: 'flex-start' }}>
-              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Dólar</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                {['blue','mep','oficial','tarjeta'].map(t => (
-                  <button key={t} onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                    style={{ flex: '1 1 42%', padding: '4px 2px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#5C4F5C' : cardBorder}`, backgroundColor: tcTipo === t ? '#5C4F5C' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
-                    {tiposLabel[t]}
-                  </button>
-                ))}
-              </div>
-              {rateActivo ? (
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontSize: '10px', color: '#8e8e93' }}>U$S 1 =</p>
-                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(rateActivo)}</p>
-                  {rateVivo && <p style={{ margin: 0, fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
+          const monedasTrigger = (variante) => (
+            <button type="button" ref={variante === 'desktop' ? monedasCardRef : undefined}
+              onClick={() => setMonedasOpen(o => !o)} aria-haspopup="true" aria-expanded={monedasOpen}
+              style={variante === 'desktop' ? {
+                width: '210px', textAlign: 'left', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '5px', alignSelf: 'flex-start', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif',
+              } : variante === 'tablet' ? {
+                borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: '120px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', textAlign: 'center',
+              } : {
+                borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', textAlign: 'left',
+              }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                <span style={{ ...monedasTituloStyle, fontSize: variante === 'desktop' ? '10px' : '9px' }}>💱 {variante === 'desktop' ? 'Monedas extranjeras' : 'Monedas'}</span>
+                <span style={{ fontSize: '9px', opacity: 0.6, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{monedasOpen ? '▴' : '▾'}</span>
+              </span>
+              <span style={{ fontSize: variante === 'desktop' ? '13px' : '11px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{monedasResumen}</span>
+            </button>
+          )
+
+          const monedasWidget = (variante) => (
+            <div ref={monedasRef} style={{ position: 'relative' }}>
+              {monedasTrigger(variante)}
+              {monedasOpen && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)' }}>
+                  {monedasPanel}
                 </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93', textAlign: 'center' }}>Cargando...</p>
               )}
             </div>
           )
 
           const vencCard = (
-            <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${dolarCardH || 0}px` }}>
+            <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${monedasCardH || 0}px` }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
                 <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
@@ -2726,14 +2791,6 @@ export default function Dashboard() {
             </div>
           )
 
-          const tcChip = (label, val, unit) => val ? (
-            <div style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px' }}>
-              <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, letterSpacing: '0.05em' }}>{label}</p>
-              <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>{unit} =</p>
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {new Intl.NumberFormat('es-AR').format(Math.round(val))}</p>
-            </div>
-          ) : null
-
           return (
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
               {/* Izquierda */}
@@ -2742,22 +2799,9 @@ export default function Dashboard() {
                   <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
                   {(rateActivo || eurValor || vencList.length > 0) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                      {(rateActivo || eurValor) && (
-                        <div style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
-                          {rateActivo && (
-                            <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                              <span style={{ fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, marginRight: '4px' }}>USD</span>
-                              $ {new Intl.NumberFormat('es-AR').format(Math.round(rateActivo))}
-                            </p>
-                          )}
-                          {eurValor && (
-                            <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>
-                              <span style={{ fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, marginRight: '4px' }}>EUR</span>
-                              $ {new Intl.NumberFormat('es-AR').format(Math.round(eurValor))}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      {/* Vencimientos va ANTES: el desplegable de Monedas abre hacia
+                          abajo y, si quedara arriba, taparía este chip mientras está
+                          abierto (position: absolute no empuja el resto del layout). */}
                       {vencList.length > 0 && (
                         <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                           style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '4px 10px', cursor: 'pointer' }}>
@@ -2767,15 +2811,16 @@ export default function Dashboard() {
                           </p>
                         </div>
                       )}
+                      {(rateActivo || eurValor) && monedasWidget('mobile')}
                     </div>
                   )}
                 </div>
               ) : isTablet ? (
                 // maxWidth + wrap: que los chips pasen a segunda fila antes de
-                // pisar el logo, que está centrado con posición absoluta detrás
+                // pisar el logo, que está centrado con posición absoluta detrás.
+                // Vencimientos va primero por el mismo motivo que en mobile: que el
+                // desplegable de Monedas, al abrirse, no lo tape.
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
-                  {tcChip('Dólar', rateActivo, 'U$S 1')}
-                  {tcChip('Euro', eurValor, '€1')}
                   <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
                     <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, letterSpacing: '0.05em' }}>Vencimientos</p>
@@ -2783,12 +2828,12 @@ export default function Dashboard() {
                       {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                     </p>
                   </div>
+                  {(rateActivo || eurValor) && monedasWidget('tablet')}
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: '8px', zIndex: 1, alignItems: 'flex-start' }}>
-                  {usdCard}
-                  {eurCard}
                   {vencCard}
+                  {monedasWidget('desktop')}
                 </div>
               )}
               {/* Centro: logo */}
