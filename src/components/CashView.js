@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, smallCapsLabel } from './AccountDetail'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -230,7 +230,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
   }
 
   const seccion = { backgroundColor: panel, border: `1px solid ${border}`, borderRadius: '14px', padding: '18px 20px', marginBottom: '20px' }
-  const label = { fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }
+  const label = { fontSize: '11px', fontWeight: '700', color: muted, ...smallCapsLabel, letterSpacing: '0.06em', margin: '0 0 10px' }
 
   // Cada ítem del desglose: colapsado por defecto mostrando solo ícono + nombre
   // + total; al abrirlo lista cada pago individual (fecha y monto). renderDetalle
@@ -301,7 +301,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           )}
         </div>
         <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
-          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total unificado</p>
+          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, ...smallCapsLabel, letterSpacing: '0.06em' }}>Total unificado</p>
           <p style={{ margin: '4px 0 0', fontSize: '36px', fontWeight: '800', color: txt }}>$ {formatMonto(actual.totalPagado)}</p>
           {(actual.totalPagadoUsd > 0 || actual.totalPagadoEur > 0) && (
             <p style={{ margin: '6px 0 0', fontSize: '12px', color: muted }}>
