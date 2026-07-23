@@ -2435,6 +2435,7 @@ export default function Dashboard() {
                           formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
                           contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
                           labelStyle={{ color: txtClr, fontWeight: '600' }}
+                          itemStyle={{ color: txtClr }}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
                         />
                         <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
@@ -2456,6 +2457,7 @@ export default function Dashboard() {
                             labelFormatter={(l) => l}
                             contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
                             labelStyle={{ color: txtClr, fontWeight: '600' }}
+                            itemStyle={{ color: txtClr }}
                           />
                           {seleccion.map(s => (
                             <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2.5, fill: s.color }} />
