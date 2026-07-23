@@ -110,11 +110,13 @@ export const desglosarReparto = (t) => {
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 // Estilo compartido para rótulos/etiquetas (tabs de navegación, títulos de widget,
-// encabezados de sección): versalitas en vez de mayúsculas, para un aspecto más
-// prolijo y uniforme sin perder la tipografía normal. El texto fuente debe ir en
-// mayúscula/minúscula normal (no en uppercase), si no font-variant no tiene efecto.
-// Nunca en montos, nombres propios, datos del usuario o texto de párrafo.
-export const smallCapsLabel = { fontVariant: 'small-caps', fontFeatureSettings: '"smcp"' }
+// encabezados de sección): mayúsculas parejas (todas las letras a la misma
+// altura) con letter-spacing leve para que respiren. Antes usaba font-variant:
+// small-caps, pero eso deja la PRIMERA letra más grande que el resto ("Rᴇsúᴍᴇɴ" en
+// vez de "RESUMEN") — no es el efecto buscado. Nunca en montos, nombres propios
+// (categorías, hijos, comercios, cuentas), datos ingresados por el usuario, ni
+// texto de párrafo.
+export const rotuloLabel = { textTransform: 'uppercase', letterSpacing: '0.05em' }
 
 export const formatMonto = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
@@ -312,7 +314,7 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
             color: darkMode ? '#F0EDEC' : '#1d1d1f',
             display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline'
           }}>
-            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, fontSize: '10px', letterSpacing: '0.04em' }}>Total</span>
+            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
             {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
             {Math.round(usd * 100) !== 0 && <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(usd)}</span>}
             {Math.round(eur * 100) !== 0 && <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(eur)}</span>}
@@ -1386,7 +1388,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
-    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em', margin: '0 0 2px' }
+    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }
     const detailValue = { margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }
     return (
       <React.Fragment key={tx.id}>
@@ -2203,7 +2205,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ marginBottom: '32px' }}>
           <h3 style={{ ...styles.chartTitle, margin: '0 0 16px' }}>📌 A pagar</h3>
           <div style={{ textAlign: 'center', padding: '20px 16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, marginBottom: '20px' }}>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Te falta pagar</p>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Te falta pagar</p>
             <p style={{ margin: 0, fontWeight: '700', fontSize: '32px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</p>
             {totalAPagarGeneralUsd > 0 && (
               <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2232,7 +2234,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               número: no hay otra cuenta que concilie. */}
           {allAccounts && statementsFacturados.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>¿Qué compone lo que falta pagar?</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>¿Qué compone lo que falta pagar?</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsFacturados.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
@@ -2270,7 +2272,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               cuando el banco cierra ese resumen. */}
           {allAccounts && statementsSinResumen.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>🕐 Próximos vencimientos</p>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>🕐 Próximos vencimientos</p>
               <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsSinResumen.map(s => {
@@ -2299,7 +2301,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {/* Ingresos de este mes: informativo, no resta de "Te falta pagar". */}
           {allAccounts && ingresosPorCategoriaMes.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Ingresos de este mes</p>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Ingresos de este mes</p>
               <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Informativo — no resta de "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {ingresosPorCategoriaMes.map(c => (
@@ -2330,7 +2332,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               no cambia con cada pago parcial. */}
           {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Gastos del mes por categoría</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
               {categoriasResumenGeneral.map(([cat, total]) => total > 0 && (
                 <React.Fragment key={cat}>
                   <div
@@ -2360,7 +2362,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
               {categoriasResumenGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>💵 En USD</p>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {categoriasResumenGeneralUsd.map(([cat, total]) => total > 0 && (
                     <React.Fragment key={`usd-${cat}`}>
                       <div
@@ -2392,7 +2394,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               bruto — cada fila lleva directo a la solapa de ese hijo. */}
           {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Gasto del mes por hijo</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gasto del mes por hijo</p>
               {hijosTotalesGeneral.map(([hijo, total]) => (
                 <div key={hijo}
                   onClick={() => onNavigateToHijo?.(hijo)}
@@ -2407,7 +2409,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               ))}
               {hijosTotalesGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>💵 En USD</p>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {hijosTotalesGeneralUsd.map(([hijo, total]) => (
                     <div key={`usd-${hijo}`}
                       onClick={() => onNavigateToHijo?.(hijo)}
@@ -2428,7 +2430,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {statementsVencidas.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', ...smallCapsLabel, letterSpacing: '0.04em' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', ...rotuloLabel }}>
                     ⚠️ Acción inmediata
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2443,7 +2445,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
               {statementsSinResumen.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.04em' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
                     🕐 Próximos vencimientos (todavía no facturado)
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3057,7 +3059,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
             <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
-            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em', margin: '0 0 8px' }}>Participantes</p>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
               {opcionesParticipantesReparto.map(op => {
                 const activo = repartoModalSeleccion.some(sel => sel.key === op.key)
@@ -3129,7 +3131,7 @@ const getStyles = (dark, mobile) => {
     // todo el espacio disponible en vez de dejar un hueco a la derecha.
     summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
     summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
-    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...smallCapsLabel, letterSpacing: '0.08em' },
+    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...rotuloLabel },
     summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
@@ -3167,7 +3169,7 @@ const getStyles = (dark, mobile) => {
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
     stmtHistory: { marginBottom: '24px' },
-    stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', letterSpacing: '0.06em', ...smallCapsLabel },
+    stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', ...rotuloLabel },
     stmtChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
     stmtChip: { display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: cardBg, borderRadius: '10px', padding: '8px 12px', border: `1px solid ${border}`, minWidth: '110px' },
     stmtChipPeriod: { fontSize: '13px', fontWeight: '500', color: txt },
