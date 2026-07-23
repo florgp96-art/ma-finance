@@ -384,10 +384,17 @@ export function InfoTooltip({ text, darkMode }) {
 // la misma ventana pueden tener espacio disponible bien distinto. Devuelve
 // [ref, width] — poner el ref en el contenedor de la tabla.
 export const useContainerWidth = (fallback = 900) => {
-  const ref = useRef(null)
+  // Callback ref (no useRef + effect con deps []) a propósito: el contenedor real
+  // recién existe cuando termina "Cargando datos..." — con un useRef normal, el
+  // efecto de montaje corre ANTES de eso (ref.current todavía null), se cancela
+  // sola, y como las deps nunca cambian nunca se vuelve a intentar: el ancho queda
+  // pegado en el fallback para siempre y la tabla termina mostrando de más
+  // columnas de las que entran. El callback ref se vuelve a disparar cuando React
+  // por fin adjunta el nodo real, así que el observer siempre llega a armarse.
+  const [el, setEl] = useState(null)
   const [width, setWidth] = useState(fallback)
+  const ref = useCallback((node) => setEl(node), [])
   useEffect(() => {
-    const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const obs = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect?.width
@@ -395,7 +402,7 @@ export const useContainerWidth = (fallback = 900) => {
     })
     obs.observe(el)
     return () => obs.disconnect()
-  }, [])
+  }, [el])
   return [ref, width]
 }
 
