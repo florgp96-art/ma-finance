@@ -635,7 +635,13 @@ export default function Dashboard() {
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
-    await supabase.from('transactions').insert(aplicarReglasReparto([movimientoNuevo], repartoRules))
+    const { data: movInsertado, error: errMov } = await supabase.from('transactions')
+      .insert(aplicarReglasReparto([movimientoNuevo], repartoRules)).select('id')
+    if (errMov || !movInsertado?.length) {
+      showToast(`No se pudo guardar el movimiento: ${errMov?.message || 'no se creó ninguna fila'}`, 'error')
+      setLoading(false)
+      return
+    }
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -643,6 +649,10 @@ export default function Dashboard() {
     if (tipoMovimiento === 'ingreso') {
       fetchAccounts()
       showToast('Ingreso registrado.')
+    } else if (tipoMovimiento === 'neutro') {
+      showToast('Movimiento registrado.')
+    } else {
+      showToast('Gasto registrado.')
     }
     setLoading(false)
   }
