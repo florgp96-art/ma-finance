@@ -2615,13 +2615,11 @@ export default function Dashboard() {
     </>
   )
 
-  return (
-    <>
-      <div style={{...styles.container, overflowX: 'hidden', width: '100%', boxSizing: 'border-box'}}>
-
-        {/* ===== HEADER: cards izq | logo centro | logout+darkmode der ===== */}
-        {(() => {
-          const rateVivo = dolarRates[tcTipo]
+  // Datos y widgets de "Monedas extranjeras" / "Vencimientos": se calculan acá
+  // (afuera del header) para poder usarlos TANTO en el header (desktop/tablet)
+  // COMO en el sidebar mobile (ver más abajo) sin duplicar la lógica — antes
+  // vivían adentro de un IIFE propio del header y el sidebar no podía tocarlos.
+  const rateVivo = dolarRates[tcTipo]
           const mesActual = new Date().toISOString().slice(0, 7)
           const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
           const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
@@ -2714,7 +2712,7 @@ export default function Dashboard() {
               } : variante === 'tablet' ? {
                 borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: '120px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', textAlign: 'center',
               } : {
-                borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', textAlign: 'left',
+                borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '8px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', textAlign: 'left', width: '100%', boxSizing: 'border-box',
               }}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                 <span style={{ ...monedasTituloStyle, fontSize: variante === 'desktop' ? '10px' : '9px' }}>💱 {variante === 'desktop' ? 'Monedas extranjeras' : 'Monedas'}</span>
@@ -2725,10 +2723,10 @@ export default function Dashboard() {
           )
 
           const monedasWidget = (variante) => (
-            <div ref={monedasRef} style={{ position: 'relative' }}>
+            <div ref={monedasRef} style={{ position: 'relative', width: variante === 'mobile-sidebar' ? '100%' : undefined }}>
               {monedasTrigger(variante)}
               {monedasOpen && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: variante === 'mobile-sidebar' ? 0 : undefined, zIndex: 200, borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)' }}>
                   {monedasPanel}
                 </div>
               )}
@@ -2788,29 +2786,33 @@ export default function Dashboard() {
             </div>
           )
 
-          return (
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
+  // Chip "Vencimientos" compacto para el sidebar mobile (mismo contenido/acción
+  // que el chip que antes vivía tapando el logo en el header) — el sidebar es
+  // un <div> normal, no necesita position:relative como el desplegable de arriba.
+  const vencChipSidebar = vencList.length > 0 && (
+    <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar'); setSidebarOpen(false) }}
+      style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '8px 10px', cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}>
+      <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
+        <span style={{ fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
+        {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+      </p>
+    </div>
+  )
+
+  return (
+    <>
+      <div style={{...styles.container, overflowX: 'hidden', width: '100%', boxSizing: 'border-box'}}>
+
+        {/* ===== HEADER: cards izq | logo centro | logout+darkmode der ===== */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
+                // Los chips de Vencimientos/Monedas ya no van acá: con el logo
+                // centrado atrás (position: absolute) terminaban tapándolo en
+                // pantallas angostas. Ahora viven arriba de "Resumen General" en
+                // el drawer del sidebar (ver más abajo), donde hay lugar de sobra.
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
                   <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
-                  {(rateActivo || eurValor || vencList.length > 0) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                      {/* Vencimientos va ANTES: el desplegable de Monedas abre hacia
-                          abajo y, si quedara arriba, taparía este chip mientras está
-                          abierto (position: absolute no empuja el resto del layout). */}
-                      {vencList.length > 0 && (
-                        <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
-                          style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '4px 10px', cursor: 'pointer' }}>
-                          <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
-                            <span style={{ fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
-                            {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                          </p>
-                        </div>
-                      )}
-                      {(rateActivo || eurValor) && monedasWidget('mobile')}
-                    </div>
-                  )}
                 </div>
               ) : isTablet ? (
                 // maxWidth + wrap: que los chips pasen a segunda fila antes de
@@ -2861,8 +2863,6 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-          )
-        })()}
 
         {/* Banner: rotar teléfono — solo mobile portrait */}
         {isPortraitMobile && (
@@ -2932,6 +2932,16 @@ export default function Dashboard() {
 
               return (
                 <>
+                  {/* Vencimientos + Monedas extranjeras: en mobile vivían en el header,
+                      tapando el logo (position: absolute) en pantallas angostas — ahora
+                      van acá arriba, antes de "Resumen General". */}
+                  {isMobile && (vencChipSidebar || rateActivo || eurValor) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                      {vencChipSidebar}
+                      {(rateActivo || eurValor) && monedasWidget('mobile-sidebar')}
+                    </div>
+                  )}
+
                   {dupes.length > 0 && (
                     <div style={{ background: '#e74c3c22', border: '1px solid #e74c3c66', borderRadius: '8px', padding: '8px 10px', marginBottom: '8px', fontSize: '12px', color: '#e74c3c' }}>
                       ⚠️ Cuentas duplicadas: {dupes.join(', ')}
