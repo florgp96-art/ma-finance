@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, smallCapsLabel } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -560,15 +560,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                         <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Subcategoría</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Subcategoría</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.subcategories?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Forma de pago</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Forma de pago</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Moneda</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
@@ -617,7 +617,7 @@ const getStyles = (dark) => ({
     fontSize: '11px',
     color: '#6e6e73',
     letterSpacing: '0.06em',
-    textTransform: 'uppercase',
+    ...smallCapsLabel,
   },
   statValue: {
     margin: '4px 0 0',

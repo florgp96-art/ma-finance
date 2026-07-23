@@ -1,6 +1,6 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
-import { CATEGORY_CONFIG, subcategoriasDeIngreso } from './AccountDetail'
+import { CATEGORY_CONFIG, subcategoriasDeIngreso, smallCapsLabel } from './AccountDetail'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -434,7 +434,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
-    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: '"Montserrat", sans-serif' },
+    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', ...smallCapsLabel, letterSpacing: '0.06em', fontFamily: '"Montserrat", sans-serif' },
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
