@@ -1,6 +1,6 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { supabase } from '../lib/supabase'
-import { CATEGORY_CONFIG, subcategoriasDeIngreso, smallCapsLabel } from './AccountDetail'
+import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountDetail'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -199,11 +199,33 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     fetchChildren()
   }
 
+  // Antes ninguna escritura de este panel miraba la respuesta de Supabase (ni
+  // error ni cantidad de filas) — un update/delete bloqueado (RLS, o un .eq('id',
+  // 'user_id', user.id) que no matchea ninguna fila porque la categoría es del
+  // sistema y no le pertenece al usuario) fallaba en silencio: la UI revertía sin
+  // explicación, como si nada se hubiera tocado. Ahora cada operación chequea el
+  // resultado real y muestra un error claro en vez de revertir callada. Devuelve
+  // true si hubo un fallo (para poder cortar el flujo con "if (...) return").
+  const reportarFalloEscritura = (accion, error, filasAfectadas) => {
+    if (error) {
+      showToast(`No se pudo ${accion}: ${error.message}`, 'error')
+      return true
+    }
+    if (filasAfectadas === 0) {
+      showToast(`No se pudo ${accion}: no se encontró una fila propia para modificar (¿será una categoría del sistema?).`, 'error')
+      return true
+    }
+    return false
+  }
+
   const handleAddCategoria = async (e) => {
     e.preventDefault()
     if (!newCatNombre.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('categories').insert({ user_id: user.id, nombre: newCatNombre.trim(), tipo: newCatTipo, orden: (categoriasDB?.length || 0) + 1 })
+    const { data, error } = await supabase.from('categories')
+      .insert({ user_id: user.id, nombre: newCatNombre.trim(), tipo: newCatTipo, orden: (categoriasDB?.length || 0) + 1 })
+      .select('id')
+    if (reportarFalloEscritura('crear la categoría', error, data?.length)) return
     setNewCatNombre('')
     setNewCatTipo('gasto')
     fetchCategorias()
@@ -222,7 +244,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleSaveEditCat = async (cat) => {
     if (!editingCatNombre.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('categories').update({ nombre: editingCatNombre.trim() }).eq('id', cat.id).eq('user_id', user.id)
+    const { data, error } = await supabase.from('categories')
+      .update({ nombre: editingCatNombre.trim() }).eq('id', cat.id).eq('user_id', user.id)
+      .select('id')
+    if (reportarFalloEscritura('renombrar la categoría', error, data?.length)) return
     setEditingCat(null)
     fetchCategorias()
     onRefresh?.()
@@ -230,7 +255,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleChangeCatTipo = async (cat, tipo) => {
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('categories').update({ tipo }).eq('id', cat.id).eq('user_id', user.id)
+    const { data, error } = await supabase.from('categories')
+      .update({ tipo }).eq('id', cat.id).eq('user_id', user.id)
+      .select('id')
+    if (reportarFalloEscritura('cambiar el tipo de la categoría', error, data?.length)) return
     fetchCategorias()
     onRefresh?.()
   }
@@ -239,7 +267,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     e.preventDefault()
     if (!newSubcatNombre.trim() || !newSubcatCatId) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('subcategories').insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId, user_id: user.id })
+    const { data, error } = await supabase.from('subcategories')
+      .insert({ nombre: newSubcatNombre.trim(), category_id: newSubcatCatId, user_id: user.id })
+      .select('id')
+    if (reportarFalloEscritura('crear la subcategoría', error, data?.length)) return
     setNewSubcatNombre('')
     setNewSubcatCatId(null)
     fetchCategorias()
@@ -254,8 +285,12 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
-    await supabase.from('subcategories').delete().eq('category_id', cat.id).eq('user_id', user.id)
-    await supabase.from('categories').delete().eq('id', cat.id).eq('user_id', user.id)
+    // Acá sí puede haber legítimamente 0 subcategorías (nada que borrar) — solo
+    // se chequea que no haya habido un error, no la cantidad de filas afectadas.
+    const { error: errSub } = await supabase.from('subcategories').delete().eq('category_id', cat.id).eq('user_id', user.id)
+    if (reportarFalloEscritura('eliminar las subcategorías', errSub)) return
+    const { data, error } = await supabase.from('categories').delete().eq('id', cat.id).eq('user_id', user.id).select('id')
+    if (reportarFalloEscritura('eliminar la categoría', error, data?.length)) return
     fetchCategorias()
     onRefresh?.()
   }
@@ -268,7 +303,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
     }
-    await supabase.from('subcategories').delete().eq('id', subcat.id).eq('user_id', user.id)
+    const { data, error } = await supabase.from('subcategories').delete().eq('id', subcat.id).eq('user_id', user.id).select('id')
+    if (reportarFalloEscritura('eliminar la subcategoría', error, data?.length)) return
     fetchCategorias()
     onRefresh?.()
   }
@@ -434,7 +470,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
-    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', ...smallCapsLabel, letterSpacing: '0.06em', fontFamily: '"Montserrat", sans-serif' },
+    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', ...rotuloLabel, fontFamily: '"Montserrat", sans-serif' },
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

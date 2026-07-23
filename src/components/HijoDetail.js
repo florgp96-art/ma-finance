@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, smallCapsLabel } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -32,6 +32,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const [tablaRef, tablaWidth] = useContainerWidth()
   const colVisible = columnasVisibles(tablaWidth)
   const numColsTabla = 4 + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
+  // Igual que en AccountDetail.js: fecha/categoría/monto/expandir tienen ancho fijo
+  // (no dependen del ancho de pantalla), el resto se reparte por peso entre
+  // descripción/subcategoría/cuenta — antes "descripción" no tenía ancho propio y
+  // se llevaba todo el sobrante.
+  const FECHA_PX = 58, CATEGORIA_PX = 88, MONTO_PX = 106, EXPAND_PX = 28
+  const anchosTexto = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - CATEGORIA_PX - MONTO_PX - EXPAND_PX,
+    colVisible, { descripcion: 1.7, subcategoria: 1, cuenta: 1 }
+  )
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
@@ -467,13 +476,13 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
           <div ref={tablaRef} style={{ width: '100%' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '58px' }} />
-                <col />
-                <col style={{ width: '112px' }} />
-                {colVisible.subcategoria && <col style={{ width: '104px' }} />}
-                {colVisible.cuenta && <col style={{ width: '96px' }} />}
-                <col style={{ width: '96px' }} />
-                <col style={{ width: '28px' }} />
+                <col style={{ width: `${FECHA_PX}px` }} />
+                <col style={{ width: `${anchosTexto.descripcion}px` }} />
+                <col style={{ width: `${CATEGORIA_PX}px` }} />
+                {colVisible.subcategoria && <col style={{ width: `${anchosTexto.subcategoria}px` }} />}
+                {colVisible.cuenta && <col style={{ width: `${anchosTexto.cuenta}px` }} />}
+                <col style={{ width: `${MONTO_PX}px` }} />
+                <col style={{ width: `${EXPAND_PX}px` }} />
               </colgroup>
               <thead>
                 <tr>
@@ -487,7 +496,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                     { h: '' },
                   ].map(({ h, key }, i) => (
                     <th key={h || `acciones-${i}`} onClick={key ? () => handleSort(key) : undefined} style={{
-                      textAlign: 'left', padding: '8px 10px',
+                      textAlign: key === 'monto' ? 'right' : 'left', padding: '8px 10px',
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
                       color: '#6e6e73', fontWeight: '400', fontSize: '11px',
                       textTransform: 'uppercase', letterSpacing: '0.04em',
@@ -531,7 +540,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       onClick={() => setFilaExpandida(prev => prev === t.id ? null : t.id)}
                     >
                       <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{t.fecha}</td>
-                      <td style={ellipsisTd}>
+                      <td style={ellipsisTd} title={t.nombre || t.detalle || ''}>
                         <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</span>
                       </td>
                       <td style={ellipsisTd}>
@@ -546,7 +555,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       {colVisible.cuenta && (
                         <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.accounts?.nombre || '—'}</td>
                       )}
-                      <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                      <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', textAlign: 'right', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                         {t.moneda === 'USD'
                           ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
                           : t.moneda === 'EUR'
@@ -559,16 +568,20 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       <tr style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
                         <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
+                            <div style={{ flexBasis: '100%' }}>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Nombre</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</p>
+                            </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Subcategoría</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Subcategoría</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.subcategories?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Forma de pago</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Forma de pago</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em' }}>Moneda</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
@@ -617,7 +630,7 @@ const getStyles = (dark) => ({
     fontSize: '11px',
     color: '#6e6e73',
     letterSpacing: '0.06em',
-    ...smallCapsLabel,
+    ...rotuloLabel,
   },
   statValue: {
     margin: '4px 0 0',

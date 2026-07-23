@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, smallCapsLabel } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -2318,7 +2318,7 @@ export default function Dashboard() {
                         <div
                           onClick={() => setCuotasPendientesExpandido(p => p === period ? null : period)}
                           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', cursor: 'pointer' }}>
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, ...smallCapsLabel, letterSpacing: '0.06em' }}>{expandido ? '▾' : '▸'} {mesLabel(period)}</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: txtClr, ...rotuloLabel }}>{expandido ? '▾' : '▸'} {mesLabel(period)}</span>
                           <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C' }}>$ {fmt(data.total_ars)}</span>
                         </div>
                         {expandido && (
@@ -2524,7 +2524,7 @@ export default function Dashboard() {
                   {cuentasAhorro.length > 0 && (
                     <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Total equiv.</span>
+                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Total equiv.</span>
                         <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmt(totalAhorro)}</span>
                       </div>
                       {['ARS','USD','EUR'].map(mon => {
@@ -2538,7 +2538,7 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em', margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>Proyección</p>
+                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>Proyección</p>
 
                   <div style={styles.savingsField}>
                     <label style={styles.savingsLabel}>Monto mensual</label>
@@ -2655,10 +2655,7 @@ export default function Dashboard() {
           const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
           const fmtMonto = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v))
           const manualActivo = tcManual?.enabled && tcManual?.valor
-          // Rótulo "MONEDAS EXTRANJERAS": mayúsculas parejas con letter-spacing (NO
-          // small-caps) — estilo ya usado en botones/rótulos tipo sidebarBtnPrimary,
-          // distinto del small-caps que llevan los sub-rótulos "Dólar"/"Euro" de adentro.
-          const monedasTituloStyle = { fontSize: '10px', color: '#8e8e93', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700 }
+          const monedasTituloStyle = { fontSize: '10px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }
           const monedasResumen = rateActivo && eurValor
             ? `USD $${fmtMonto(rateActivo)} · EUR $${fmtMonto(eurValor)}`
             : rateActivo ? `USD $${fmtMonto(rateActivo)}`
@@ -2671,7 +2668,7 @@ export default function Dashboard() {
           const monedasPanel = (
             <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '210px' }}>
               <div>
-                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, fontWeight: 700 }}>Dólar</p>
+                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Dólar</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '6px 0' }}>
                   {['blue','mep','oficial','tarjeta'].map(t => (
                     <button key={t} type="button" onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
@@ -2696,7 +2693,7 @@ export default function Dashboard() {
                 )}
               </div>
               <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: '10px' }}>
-                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, fontWeight: 700 }}>Euro</p>
+                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Euro</p>
                 {eurValor ? (
                   <div style={{ marginTop: '6px' }}>
                     <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
@@ -2740,7 +2737,7 @@ export default function Dashboard() {
 
           const vencCard = (
             <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${monedasCardH || 0}px` }}>
-              <p style={{ fontSize: '11px', color: '#8e8e93', letterSpacing: '0.06em', ...smallCapsLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+              <p style={{ fontSize: '11px', color: '#8e8e93', ...rotuloLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
                 <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
               ) : (
@@ -2806,7 +2803,7 @@ export default function Dashboard() {
                         <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                           style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '4px 10px', cursor: 'pointer' }}>
                           <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', whiteSpace: 'nowrap' }}>
-                            <span style={{ fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
+                            <span style={{ fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
                             {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                           </p>
                         </div>
@@ -2823,7 +2820,7 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
                   <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
-                    <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', ...smallCapsLabel, fontWeight: 700, letterSpacing: '0.05em' }}>Vencimientos</p>
+                    <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
                     <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
                       {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                     </p>
@@ -2975,12 +2972,12 @@ export default function Dashboard() {
                           {/* Header INGRESOS — izquierda, sin flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             onClick={handleClickIngresos}>
-                            <span style={{ ...styles.sidebarTitle, ...smallCapsLabel, ...(isIngresosSelected ? { color: darkMode ? '#8C7B8C' : '#5C4F5C', fontWeight: '600' } : {}) }}>Ingresos</span>
+                            <span style={{ ...styles.sidebarTitle, ...rotuloLabel, ...(isIngresosSelected ? { color: darkMode ? '#8C7B8C' : '#5C4F5C', fontWeight: '600' } : {}) }}>Ingresos</span>
                           </div>
                           {/* Header CUENTAS — derecha, con flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                             onClick={() => setCuentasOpen(o => !o)}>
-                            <span style={{ ...styles.sidebarTitle, ...smallCapsLabel }}>Cuentas</span>
+                            <span style={{ ...styles.sidebarTitle, ...rotuloLabel }}>Cuentas</span>
                             <span style={{ fontSize: '10px', opacity: 0.5, display: 'inline-block', transform: cuentasOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }}>▼</span>
                           </div>
                         </div>
@@ -3078,14 +3075,6 @@ export default function Dashboard() {
           {isTablet && sideWidgets()}
           </div>{/* cierra wrapper columna izquierda */}
 
-          {/* Widgets — mobile: apilados ARRIBA del contenido de la pestaña (sidebar
-              → Cuotas → Evolución → Ahorros → contenido), no debajo. */}
-          {isMobile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px' }}>
-            {sideWidgets()}
-          </div>
-          )}
-
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
             {selectedAccount === 'all' ? (
@@ -3120,7 +3109,7 @@ export default function Dashboard() {
                           color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
                           background: dashboardTab === tab.key ? '#5C4F5C' : 'transparent',
                           outline: 'none', whiteSpace: 'nowrap', flex: isMobile ? '0 0 auto' : '1', textAlign: 'center',
-                          transition: 'background-color 0.2s ease, color 0.2s ease', ...smallCapsLabel
+                          transition: 'background-color 0.2s ease, color 0.2s ease', ...rotuloLabel
                         }}
                       >
                         {tab.label}
@@ -3290,6 +3279,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Widgets — mobile: apilados DESPUÉS del contenido de la pestaña (sidebar
+              → contenido → Cuotas → Evolución → Ahorros): lo importante (el
+              contenido) tiene que verse apenas se entra, sin scrollear tres
+              bloques a pantalla completa antes de llegar a él. */}
+          {isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 12px' }}>
+            {sideWidgets()}
+          </div>
+          )}
 
           {/* Widgets — desktop: tercera columna fija a la derecha, siempre visible
               (antes se ocultaba en Resumen/A pagar de Todas las cuentas, y en
@@ -3823,12 +3822,12 @@ export default function Dashboard() {
                       <input type="checkbox" checked={checked} onChange={() => {}} style={{ marginTop: '2px', accentColor: '#5C4F5C', width: '16px', height: '16px', flexShrink: 0 }} />
                       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
-                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', ...smallCapsLabel, letterSpacing: '0.06em' }}>Ya existe</p>
+                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', ...rotuloLabel }}>Ya existe</p>
                           <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.existing.detalle || item.existing.nombre || '—'}</p>
                           <p style={{ fontSize: '11px', color: '#6e6e73', margin: 0 }}>{item.existing.fecha} · $ {Number(item.existing.monto).toLocaleString('es-AR')}</p>
                         </div>
                         <div>
-                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', ...smallCapsLabel, letterSpacing: '0.06em' }}>En el Excel</p>
+                          <p style={{ fontSize: '10px', color: '#6e6e73', margin: '0 0 4px 0', ...rotuloLabel }}>En el Excel</p>
                           <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.row.notas || item.row.descripcion || '—'}</p>
                           <p style={{ fontSize: '11px', color: '#6e6e73', margin: 0 }}>{item.row.fecha} · {item.row.moneda === 'USD' ? 'U$S' : '$'} {Number(item.row.monto).toLocaleString('es-AR')}</p>
                         </div>
@@ -3937,7 +3936,7 @@ export default function Dashboard() {
                     <thead>
                       <tr>
                         {['Fecha', 'Descripción', 'Tipo', 'Cuenta', 'Monto', 'Categoría', 'Subcategoría', ...(childrenDB.length > 0 ? ['Hijo'] : [])].map(h => (
-                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', ...smallCapsLabel, fontSize: '11px' }}>{h}</th>
+                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', ...rotuloLabel, fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -4256,7 +4255,7 @@ const getStyles = (dark, mobile = false) => {
     opcionDesc: { fontSize: '12px', color: muted },
     previewStats: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
     previewStat: { backgroundColor: cardBg, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '4px' },
-    previewStatLabel: { fontSize: '11px', color: muted, ...smallCapsLabel },
+    previewStatLabel: { fontSize: '11px', color: muted, ...rotuloLabel },
     previewStatValue: { fontSize: '15px', fontWeight: '500', color: txt },
     transactionsList: { maxHeight: '300px', overflowY: 'auto', marginBottom: '16px', paddingRight: '6px', scrollbarWidth: 'thin' },
     transactionItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 4px', borderBottom: `1px solid ${border}` },
@@ -4275,13 +4274,13 @@ const getStyles = (dark, mobile = false) => {
       padding: '20px 16px', boxShadow: shadow, display: 'flex', flexDirection: 'column',
       gap: '0px',
     },
-    savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', letterSpacing: '0.08em', ...smallCapsLabel, textAlign: 'center' },
+    savingsPanelTitle: { fontSize: '14px', fontWeight: '400', color: txt, margin: '0 0 16px 0', ...rotuloLabel, textAlign: 'center' },
     savingsField: { marginBottom: '12px' },
     savingsLabel: { display: 'block', fontSize: '12px', fontWeight: '400', color: muted, marginBottom: '4px' },
     savingsInput: { width: '100%', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: txt, backgroundColor: inputBg },
     savingsHint: { fontSize: '12px', color: muted, textAlign: 'center', marginTop: '8px', lineHeight: '1.5' },
     savingsResult: { marginTop: '16px', backgroundColor: cardBg, borderRadius: '12px', padding: '16px', textAlign: 'center' },
-    savingsResultLabel: { fontSize: '10px', fontWeight: '500', color: p, ...smallCapsLabel, letterSpacing: '0.08em', margin: '0 0 6px 0' },
+    savingsResultLabel: { fontSize: '10px', fontWeight: '500', color: p, ...rotuloLabel, margin: '0 0 6px 0' },
     savingsResultPhrase: { fontSize: '13px', color: muted, margin: '0 0 4px 0', fontWeight: '500' },
     savingsResultAmount: { fontSize: '22px', fontWeight: '800', color: txt, margin: '0 0 4px 0', letterSpacing: '-0.02em' },
     savingsResultNote: { fontSize: '11px', color: p, margin: 0, fontStyle: 'italic' },

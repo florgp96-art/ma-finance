@@ -110,11 +110,13 @@ export const desglosarReparto = (t) => {
 export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 // Estilo compartido para rótulos/etiquetas (tabs de navegación, títulos de widget,
-// encabezados de sección): versalitas en vez de mayúsculas, para un aspecto más
-// prolijo y uniforme sin perder la tipografía normal. El texto fuente debe ir en
-// mayúscula/minúscula normal (no en uppercase), si no font-variant no tiene efecto.
-// Nunca en montos, nombres propios, datos del usuario o texto de párrafo.
-export const smallCapsLabel = { fontVariant: 'small-caps', fontFeatureSettings: '"smcp"' }
+// encabezados de sección): mayúsculas parejas (todas las letras a la misma
+// altura) con letter-spacing leve para que respiren. Antes usaba font-variant:
+// small-caps, pero eso deja la PRIMERA letra más grande que el resto ("Rᴇsúᴍᴇɴ" en
+// vez de "RESUMEN") — no es el efecto buscado. Nunca en montos, nombres propios
+// (categorías, hijos, comercios, cuentas), datos ingresados por el usuario, ni
+// texto de párrafo.
+export const rotuloLabel = { textTransform: 'uppercase', letterSpacing: '0.05em' }
 
 export const formatMonto = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
@@ -312,7 +314,7 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
             color: darkMode ? '#F0EDEC' : '#1d1d1f',
             display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline'
           }}>
-            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, fontSize: '10px', letterSpacing: '0.04em' }}>Total</span>
+            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
             {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
             {Math.round(usd * 100) !== 0 && <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(usd)}</span>}
             {Math.round(eur * 100) !== 0 && <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(eur)}</span>}
@@ -417,6 +419,21 @@ export const columnasVisibles = (width) => ({
   subcategoria: width >= 700,
   cuotas: width >= 820,
 })
+
+// Reparte en px el espacio "de texto" de una tabla de movimientos (nombre +
+// categoría/cuenta/subcategoría cuando están visibles) según un peso relativo —
+// nombre pesa más que las demás pero, a diferencia de un <col /> sin width (que
+// antes se llevaba TODO el sobrante y dejaba un hueco enorme en pantallas
+// anchas), queda topeado por su peso. 'disponible' es el ancho de la tabla
+// (tablaWidth, medido con useContainerWidth) menos las columnas de ancho fijo
+// de ESA tabla (fecha/monto/cuotas/expandir — su contenido no depende del ancho
+// de pantalla, así que no van a %). 'pesos' es { claveDeColVisible: peso }; una
+// clave sin colVisible[clave] === false se toma como siempre visible.
+export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
+  const pesoTotal = Object.entries(pesos).reduce((s, [k, p]) => s + (colVisible[k] === false ? 0 : p), 0)
+  const pxPorPeso = pesoTotal > 0 ? Math.max(0, disponible) / pesoTotal : 0
+  return Object.fromEntries(Object.entries(pesos).map(([k, p]) => [k, colVisible[k] === false ? 0 : Math.round(p * pxPorPeso)]))
+}
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -556,6 +573,29 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [tablaRef, tablaWidth] = useContainerWidth()
   const colVisible = columnasVisibles(tablaWidth)
   const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuotas ? 1 : 0)
+  // Anchos fijos (px) de las columnas cuyo contenido no depende del ancho de
+  // pantalla ("23/07", "6/6", "$ 45.678", una flechita o un par de íconos) —
+  // el resto del ancho medido de la tabla se reparte por peso entre nombre y
+  // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
+  // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
+  const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28, ACCIONES2_PX = 68, ACCIONES3_PX = 90
+  const anchosTextoPral = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
+    colVisible, { nombre: 1.5, categoria: 1, cuenta: 1, subcategoria: 1.5 }
+  )
+  const anchosTextoNeutros = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - MONTO_PX - ACCIONES2_PX,
+    colVisible, { nombre: 1.5, categoria: 1, subcategoria: 1.4, cuenta: 1 }
+  )
+  // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
+  // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
+  // colVisible.categoria en vez de reservarle un ancho fijo siempre, para dejarle
+  // más lugar a nombre/cuenta/subcategoría en pantallas angostas.
+  const SINID_CATEGORIA_PX = 56
+  const anchosTextoSinId = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - (colVisible.categoria ? SINID_CATEGORIA_PX : 0) - MONTO_PX - ACCIONES3_PX,
+    colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
+  )
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
@@ -1348,7 +1388,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
-    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...smallCapsLabel, letterSpacing: '0.04em', margin: '0 0 2px' }
+    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }
     const detailValue = { margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }
     return (
       <React.Fragment key={tx.id}>
@@ -1357,7 +1397,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
         >
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(tx.fecha)}</td>
-          <td style={ellipsisCell}>
+          <td style={ellipsisCell} title={tx.nombre || tx.detalle}>
             {tx.nombre || tx.detalle}
             {(tx.children?.nombre || tx.tag) && !esIngresoTx && (
               <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {tx.children?.nombre || tx.tag}</span>
@@ -1399,6 +1439,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tr style={styles.tr}>
             <td colSpan={numColsTabla} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
+                <div style={{ flexBasis: '100%' }}>
+                  <p style={detailLabel}>Nombre</p>
+                  <p style={detailValue}>{tx.nombre || tx.detalle || '—'}</p>
+                </div>
                 <div>
                   <p style={detailLabel}>Cuenta</p>
                   <p style={detailValue}>{tx.accounts?.nombre || '—'}</p>
@@ -1480,7 +1524,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return (
       <tr key={grupo.key} style={{ ...styles.tr, cursor: 'pointer' }} onClick={() => toggleGrupoExpandido(grupo.key, true)}>
         <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(repTx.fecha)}</td>
-        <td style={ellipsisCell}>
+        <td style={ellipsisCell} title={repTx.nombre || repTx.detalle}>
           {repTx.nombre || repTx.detalle}
           <span style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', marginLeft: '6px' }}>
             🔀 {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
@@ -2161,7 +2205,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ marginBottom: '32px' }}>
           <h3 style={{ ...styles.chartTitle, margin: '0 0 16px' }}>📌 A pagar</h3>
           <div style={{ textAlign: 'center', padding: '20px 16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, marginBottom: '20px' }}>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Te falta pagar</p>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Te falta pagar</p>
             <p style={{ margin: 0, fontWeight: '700', fontSize: '32px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</p>
             {totalAPagarGeneralUsd > 0 && (
               <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2190,7 +2234,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               número: no hay otra cuenta que concilie. */}
           {allAccounts && statementsFacturados.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>¿Qué compone lo que falta pagar?</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>¿Qué compone lo que falta pagar?</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsFacturados.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
@@ -2228,7 +2272,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               cuando el banco cierra ese resumen. */}
           {allAccounts && statementsSinResumen.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>🕐 Próximos vencimientos</p>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>🕐 Próximos vencimientos</p>
               <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsSinResumen.map(s => {
@@ -2257,7 +2301,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {/* Ingresos de este mes: informativo, no resta de "Te falta pagar". */}
           {allAccounts && ingresosPorCategoriaMes.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Ingresos de este mes</p>
+              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Ingresos de este mes</p>
               <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Informativo — no resta de "Te falta pagar".</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {ingresosPorCategoriaMes.map(c => (
@@ -2288,7 +2332,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               no cambia con cada pago parcial. */}
           {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Gastos del mes por categoría</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
               {categoriasResumenGeneral.map(([cat, total]) => total > 0 && (
                 <React.Fragment key={cat}>
                   <div
@@ -2318,7 +2362,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
               {categoriasResumenGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>💵 En USD</p>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {categoriasResumenGeneralUsd.map(([cat, total]) => total > 0 && (
                     <React.Fragment key={`usd-${cat}`}>
                       <div
@@ -2350,7 +2394,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               bruto — cada fila lleva directo a la solapa de ese hijo. */}
           {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>Gasto del mes por hijo</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gasto del mes por hijo</p>
               {hijosTotalesGeneral.map(([hijo, total]) => (
                 <div key={hijo}
                   onClick={() => onNavigateToHijo?.(hijo)}
@@ -2365,7 +2409,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               ))}
               {hijosTotalesGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em' }}>💵 En USD</p>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {hijosTotalesGeneralUsd.map(([hijo, total]) => (
                     <div key={`usd-${hijo}`}
                       onClick={() => onNavigateToHijo?.(hijo)}
@@ -2386,7 +2430,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {statementsVencidas.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', ...smallCapsLabel, letterSpacing: '0.04em' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', ...rotuloLabel }}>
                     ⚠️ Acción inmediata
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2401,7 +2445,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
               {statementsSinResumen.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.04em' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
                     🕐 Próximos vencimientos (todavía no facturado)
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2850,13 +2894,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ width: '100%' }}>
           <table style={{...styles.table, tableLayout: 'fixed'}}>
             <colgroup>
-              <col style={{ width: '62px' }} />
-              {colVisible.cuenta && <col style={{ width: '140px' }} />}
-              {colVisible.subcategoria && <col style={{ width: '96px' }} />}
-              <col />
-              <col style={{ width: '112px' }} />
-              <col style={{ width: '104px' }} />
-              <col style={{ width: '96px' }} />
+              <col style={{ width: `${FECHA_PX}px` }} />
+              {colVisible.cuenta && <col style={{ width: `${anchosTextoSinId.cuenta}px` }} />}
+              {colVisible.subcategoria && <col style={{ width: `${anchosTextoSinId.subcategoria}px` }} />}
+              <col style={{ width: `${anchosTextoSinId.nombre}px` }} />
+              {colVisible.categoria && <col style={{ width: `${SINID_CATEGORIA_PX}px` }} />}
+              <col style={{ width: `${MONTO_PX}px` }} />
+              <col style={{ width: `${ACCIONES3_PX}px` }} />
             </colgroup>
             <thead>
               <tr>
@@ -2864,7 +2908,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 {colVisible.cuenta && <th style={styles.th}>Detalle original</th>}
                 {colVisible.subcategoria && <th style={styles.th}>Cuenta</th>}
                 <th style={styles.th}>Nombre</th>
-                <th style={styles.th}>Categoría</th>
+                {colVisible.categoria && <th style={styles.th}>Categoría</th>}
                 <th style={styles.th}>Monto</th>
                 <th style={styles.th}></th>
               </tr>
@@ -2872,16 +2916,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <tbody>
               {sinIdentificar.map(tx => (
                 <tr key={tx.id} style={styles.trUnknown}>
-                  {editingTx === tx.id ? renderEditStackMobile(tx, 5 + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
+                  {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
                   <td style={{...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                  {colVisible.cuenta && <td style={ellipsisCell}><span style={styles.detalle}>{tx.detalle}</span></td>}
+                  {colVisible.cuenta && <td style={ellipsisCell} title={tx.detalle}><span style={styles.detalle}>{tx.detalle}</span></td>}
                   {colVisible.subcategoria && (
                     <td style={ellipsisCell}>
                       <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
                     </td>
                   )}
-                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
-                  <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>
+                  <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
+                  {colVisible.categoria && <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>}
                   <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
                     {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                   </td>
@@ -2913,14 +2957,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div ref={tablaRef} style={{ width: '100%' }}>
         <table style={{...styles.table, tableLayout: 'fixed'}}>
           <colgroup>
-            <col style={{ width: '62px' }} />
-            <col />
-            {colVisible.categoria && <col style={{ width: '112px' }} />}
-            {colVisible.cuenta && <col style={{ width: '96px' }} />}
-            {colVisible.subcategoria && <col style={{ width: '112px' }} />}
-            {colVisible.cuotas && <col style={{ width: '54px' }} />}
-            <col style={{ width: '108px' }} />
-            <col style={{ width: '28px' }} />
+            <col style={{ width: `${FECHA_PX}px` }} />
+            <col style={{ width: `${anchosTextoPral.nombre}px` }} />
+            {colVisible.categoria && <col style={{ width: `${anchosTextoPral.categoria}px` }} />}
+            {colVisible.cuenta && <col style={{ width: `${anchosTextoPral.cuenta}px` }} />}
+            {colVisible.subcategoria && <col style={{ width: `${anchosTextoPral.subcategoria}px` }} />}
+            {colVisible.cuotas && <col style={{ width: `${CUOTAS_PX}px` }} />}
+            <col style={{ width: `${MONTO_PX}px` }} />
+            <col style={{ width: `${EXPAND_PX}px` }} />
           </colgroup>
           <thead>
             <tr>
@@ -2955,13 +2999,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ marginTop: '10px' }}>
               <table style={{...styles.table, tableLayout: 'fixed'}}>
                 <colgroup>
-                  <col style={{ width: '62px' }} />
-                  <col />
-                  {colVisible.categoria && <col style={{ width: '112px' }} />}
-                  {colVisible.subcategoria && <col style={{ width: '112px' }} />}
-                  {colVisible.cuenta && <col style={{ width: '96px' }} />}
-                  <col style={{ width: '96px' }} />
-                  <col style={{ width: '64px' }} />
+                  <col style={{ width: `${FECHA_PX}px` }} />
+                  <col style={{ width: `${anchosTextoNeutros.nombre}px` }} />
+                  {colVisible.categoria && <col style={{ width: `${anchosTextoNeutros.categoria}px` }} />}
+                  {colVisible.subcategoria && <col style={{ width: `${anchosTextoNeutros.subcategoria}px` }} />}
+                  {colVisible.cuenta && <col style={{ width: `${anchosTextoNeutros.cuenta}px` }} />}
+                  <col style={{ width: `${MONTO_PX}px` }} />
+                  <col style={{ width: `${ACCIONES2_PX}px` }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -2979,7 +3023,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
                       {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)) : (<>
                       <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                      <td style={ellipsisCell}>{tx.nombre || tx.detalle}</td>
+                      <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
                       {colVisible.categoria && (
                         <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
                       )}
@@ -3015,7 +3059,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
             <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
-            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...smallCapsLabel, letterSpacing: '0.06em', margin: '0 0 8px' }}>Participantes</p>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
               {opcionesParticipantesReparto.map(op => {
                 const activo = repartoModalSeleccion.some(sel => sel.key === op.key)
@@ -3087,7 +3131,7 @@ const getStyles = (dark, mobile) => {
     // todo el espacio disponible en vez de dejar un hueco a la derecha.
     summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
     summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
-    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...smallCapsLabel, letterSpacing: '0.08em' },
+    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...rotuloLabel },
     summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
@@ -3125,7 +3169,7 @@ const getStyles = (dark, mobile) => {
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
     stmtHistory: { marginBottom: '24px' },
-    stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', letterSpacing: '0.06em', ...smallCapsLabel },
+    stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', ...rotuloLabel },
     stmtChips: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
     stmtChip: { display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: cardBg, borderRadius: '10px', padding: '8px 12px', border: `1px solid ${border}`, minWidth: '110px' },
     stmtChipPeriod: { fontSize: '13px', fontWeight: '500', color: txt },
