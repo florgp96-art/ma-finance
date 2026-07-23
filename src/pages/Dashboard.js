@@ -635,7 +635,13 @@ export default function Dashboard() {
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
     }
-    await supabase.from('transactions').insert(aplicarReglasReparto([movimientoNuevo], repartoRules))
+    const { data: movInsertado, error: errMov } = await supabase.from('transactions')
+      .insert(aplicarReglasReparto([movimientoNuevo], repartoRules)).select('id')
+    if (errMov || !movInsertado?.length) {
+      showToast(`No se pudo guardar el movimiento: ${errMov?.message || 'no se creó ninguna fila'}`, 'error')
+      setLoading(false)
+      return
+    }
 
     setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
@@ -643,6 +649,10 @@ export default function Dashboard() {
     if (tipoMovimiento === 'ingreso') {
       fetchAccounts()
       showToast('Ingreso registrado.')
+    } else if (tipoMovimiento === 'neutro') {
+      showToast('Movimiento registrado.')
+    } else {
+      showToast('Gasto registrado.')
     }
     setLoading(false)
   }
@@ -2425,6 +2435,7 @@ export default function Dashboard() {
                           formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
                           contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
                           labelStyle={{ color: txtClr, fontWeight: '600' }}
+                          itemStyle={{ color: txtClr }}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
                         />
                         <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
@@ -2446,6 +2457,7 @@ export default function Dashboard() {
                             labelFormatter={(l) => l}
                             contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
                             labelStyle={{ color: txtClr, fontWeight: '600' }}
+                            itemStyle={{ color: txtClr }}
                           />
                           {seleccion.map(s => (
                             <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2.5, fill: s.color }} />
