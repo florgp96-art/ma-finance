@@ -588,7 +588,9 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
-                          <button onClick={() => startEdit(t)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✏️ Editar</button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => startEdit(t)} style={{ flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: 'transparent', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' }}>✏️ Editar</button>
+                          </div>
                         </td>
                       </tr>
                     )}

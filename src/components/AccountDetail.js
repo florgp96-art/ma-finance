@@ -1483,11 +1483,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 )}
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
-                {tx.tipo === 'gasto' && !esVistaIngresos && (
-                  <button style={styles.editBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
+                <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                {tx.tipo === 'gasto' && !esVistaIngresos && children.length > 0 && (
+                  <button style={styles.accionBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
                 )}
-                <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+                <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
               </div>
             </td>
           </tr>
@@ -3165,6 +3165,12 @@ const getStyles = (dark, mobile) => {
     editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
     editSelect: { width: '100%', padding: '4px 28px 4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, appearance: 'none', WebkitAppearance: 'none', colorScheme: dark ? 'dark' : 'light' },
     editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
+    // Botones de acción de la fila expandida (Editar/Dividir/Borrar), mismo
+    // lenguaje visual que el selector segmentado ARS/USD/EUR del simulador
+    // de Ahorros: grupo de botones con borde redondeado, buen padding,
+    // altura táctil cómoda (~44px) en vez de texto suelto con emojis.
+    accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
+    accionBtnDanger: { border: '1px solid #c0392b', color: '#c0392b' },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
