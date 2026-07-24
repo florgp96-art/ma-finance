@@ -627,6 +627,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
+  // "Gastos del mes por categoría" mezcla filas de categoría y de hijo en una
+  // sola lista — togglear una cierra la otra, para que solo haya un desglose
+  // abierto a la vez (mismo comportamiento que antes, con cajas separadas).
+  const toggleGastoGeneralRow = (tipo, nombre) => {
+    if (tipo === 'hijo') {
+      setHijoGeneralSeleccionado(h => h === nombre ? null : nombre)
+      setCatGeneralSeleccionada(null)
+    } else {
+      setCatGeneralSeleccionada(c => c === nombre ? null : nombre)
+      setHijoGeneralSeleccionado(null)
+    }
+  }
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -2038,13 +2050,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // mes" calculado por separado con el que pueda desalinearse.
   const categoriasBrutoSubtotalArs = categoriasResumenGeneral.reduce((s, [, t]) => s + t, 0)
     + hijosTotalesGeneral.reduce((s, [, t]) => s + t, 0)
+  const gastosCategoriaEHijoSubtotalArs = categoriasBrutoSubtotalArs
+  // "Gastos del mes por categoría" muestra los hijos como una fila más de la
+  // misma lista (antes vivían en una caja aparte "Gasto del mes por hijo") —
+  // se arma una sola lista mezclando ambas fuentes, ordenada de mayor a menor.
+  const mezclarCategoriasEHijos = (cats, hijos) => [
+    ...cats.filter(([, t]) => t > 0).map(([nombre, total]) => ({ tipo: 'categoria', nombre, total })),
+    ...hijos.map(([nombre, total]) => ({ tipo: 'hijo', nombre, total })),
+  ].sort((a, b) => b.total - a.total)
+  const gastosCategoriaEHijoGeneral = mezclarCategoriasEHijos(categoriasResumenGeneral, hijosTotalesGeneral)
+  const gastosCategoriaEHijoGeneralUsd = mezclarCategoriasEHijos(categoriasResumenGeneralUsd, hijosTotalesGeneralUsd)
 
     return {
       totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
       statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
-      ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
-      subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-      hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+      ingresosPorCategoriaMes,
+      subcatsCatGeneral, subcatsCatGeneralUsd,
+      catsPorHijoGeneral, catsPorHijoGeneralUsd,
+      gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
       statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen,
     }
@@ -2053,9 +2076,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
     statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
-    ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
-    subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-    hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+    ingresosPorCategoriaMes,
+    subcatsCatGeneral, subcatsCatGeneralUsd,
+    catsPorHijoGeneral, catsPorHijoGeneralUsd,
+    gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
     statementsVencidas, statementsNoVencidas,
     itemsPorStatement, categoriasResumen,
   } = apagarMemo
@@ -2356,23 +2380,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Categorías: composición del gasto del mes, siempre en bruto —
-              no cambia con cada pago parcial. */}
-          {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
+          {/* Categorías + hijos: composición del gasto del mes, siempre en bruto —
+              no cambia con cada pago parcial. Los hijos se muestran como una fila
+              más de la misma lista (no en una caja aparte): cada uno es, en la
+              práctica, otra "categoría" de gasto. Al abrir una fila de categoría
+              se ve el desglose por subcategoría; al abrir una fila de hijo, el
+              desglose por categoría de ese hijo. */}
+          {(gastosCategoriaEHijoGeneral.length > 0 || gastosCategoriaEHijoGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
-              {categoriasResumenGeneral.map(([cat, total]) => total > 0 && (
-                <React.Fragment key={cat}>
+              {gastosCategoriaEHijoGeneral.map(({ tipo, nombre, total }) => total > 0 && (
+                <React.Fragment key={`${tipo}-${nombre}`}>
                   <div
-                    onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                    onClick={() => toggleGastoGeneralRow(tipo, nombre)}
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
                     <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
-                      {resolveIcon(cat)} {cat}
+                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{(tipo === 'hijo' ? hijoGeneralSeleccionado : catGeneralSeleccionada) === nombre ? '▾' : '▸'}</span>
+                      {tipo === 'hijo' ? (customIcons?.[nombre] || '👧') : resolveIcon(nombre)} {nombre}
                     </span>
                     <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(total)}</span>
                   </div>
-                  {catGeneralSeleccionada === cat && subcatsCatGeneral.length > 0 && (
+                  {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {subcatsCatGeneral.map(([subcat, montoSub]) => (
                         <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2382,61 +2410,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       ))}
                     </div>
                   )}
-                </React.Fragment>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: '4px', fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                <span>Subtotal</span>
-                <span>$ {formatMonto(categoriasBrutoSubtotalArs)}</span>
-              </div>
-              {categoriasResumenGeneralUsd.length > 0 && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
-                  {categoriasResumenGeneralUsd.map(([cat, total]) => total > 0 && (
-                    <React.Fragment key={`usd-${cat}`}>
-                      <div
-                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
-                          {resolveIcon(cat)} {cat}
-                        </span>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
-                      </div>
-                      {catGeneralSeleccionada === cat && subcatsCatGeneralUsd.length > 0 && (
-                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
-                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                              <span>{subcat}</span>
-                              <span>U$S {formatMontoFull(montoSub)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {/* Hijos: composición del gasto del mes por hijo, siempre en
-              bruto — cada fila despliega su propio detalle por categoría,
-              mismo patrón que "Gastos del mes por categoría" de arriba (antes
-              llevaba directo a la solapa del hijo, inconsistente con esa). */}
-          {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gasto del mes por hijo</p>
-              {hijosTotalesGeneral.map(([hijo, total]) => (
-                <React.Fragment key={hijo}>
-                  <div
-                    onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
-                    <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
-                      {customIcons?.[hijo] || '👧'} {hijo}
-                    </span>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(total)}</span>
-                  </div>
-                  {hijoGeneralSeleccionado === hijo && catsPorHijoGeneral.length > 0 && (
+                  {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {catsPorHijoGeneral.map(([cat, montoCat]) => (
                         <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2448,21 +2422,35 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   )}
                 </React.Fragment>
               ))}
-              {hijosTotalesGeneralUsd.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: '4px', fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                <span>Subtotal</span>
+                <span>$ {formatMonto(gastosCategoriaEHijoSubtotalArs)}</span>
+              </div>
+              {gastosCategoriaEHijoGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                   <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
-                  {hijosTotalesGeneralUsd.map(([hijo, total]) => (
-                    <React.Fragment key={`usd-${hijo}`}>
+                  {gastosCategoriaEHijoGeneralUsd.map(({ tipo, nombre, total }) => total > 0 && (
+                    <React.Fragment key={`usd-${tipo}-${nombre}`}>
                       <div
-                        onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
+                        onClick={() => toggleGastoGeneralRow(tipo, nombre)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
                         <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
-                          {customIcons?.[hijo] || '👧'} {hijo}
+                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{(tipo === 'hijo' ? hijoGeneralSeleccionado : catGeneralSeleccionada) === nombre ? '▾' : '▸'}</span>
+                          {tipo === 'hijo' ? (customIcons?.[nombre] || '👧') : resolveIcon(nombre)} {nombre}
                         </span>
                         <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
                       </div>
-                      {hijoGeneralSeleccionado === hijo && catsPorHijoGeneralUsd.length > 0 && (
+                      {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneralUsd.length > 0 && (
+                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
+                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                              <span>{subcat}</span>
+                              <span>U$S {formatMontoFull(montoSub)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneralUsd.length > 0 && (
                         <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {catsPorHijoGeneralUsd.map(([cat, montoCat]) => (
                             <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
