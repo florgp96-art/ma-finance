@@ -270,6 +270,7 @@ export default function Dashboard() {
           .select('monto, moneda, fecha')
           .eq('user_id', user.id)
           .gt('monto', 0)
+          .neq('tipo', 'ingreso')
           .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
           .gte('fecha', `${mesActual}-01`)
         // Antes solo sumaba ARS y descartaba en silencio los gastos de un hijo
@@ -316,6 +317,26 @@ export default function Dashboard() {
   const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
   const [monedasCardH, setMonedasCardH] = useState(null)
+  // Desplegable de Vencimientos: mismo patrón tap/click + cierre afuera que
+  // "Monedas extranjeras" (ver abajo) — antes "ver más" agrandaba el card in-line
+  // (maxHeight: none), lo que empujaba hacia abajo todo el contenido de la página
+  // porque el header vive en el flujo normal del documento. Ahora abre un panel
+  // flotante (position: absolute) que no mueve nada debajo.
+  const vencCardRef = useRef(null)
+  useEffect(() => {
+    if (!vencExpanded) return
+    const cerrarSiAfuera = (e) => { if (vencCardRef.current && !vencCardRef.current.contains(e.target)) setVencExpanded(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setVencExpanded(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vencExpanded])
   // Desplegable único "Monedas extranjeras" (Dólar + Euro) del header: mismo patrón
   // tap/click + cierre afuera que InfoTooltip (AccountDetail.js), más Escape porque
   // acá el contenido es interactivo (selector de tipo de dólar), no solo texto.
@@ -640,8 +661,11 @@ export default function Dashboard() {
       category_id: catObj?.id || null,
       subcategory_id: subcatObj?.id || null,
       // Para ingreso conservamos el tag = subcategoría/categoría elegida: varias
-      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag.
+      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag —
+      // por eso el hijo de un ingreso (ej. cuota alimenticia que se cobra) va en
+      // child_id, no en tag (que ya está ocupado con la subcategoría).
       tag: tipoMovimiento === 'ingreso' ? (subcatObj?.nombre || catObj?.nombre || null) : (efectivo.hijo || null),
+      child_id: efectivo.hijo ? (childrenDB.find(c => c.nombre === efectivo.hijo)?.id || null) : null,
       estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
       cuotas_total: 1,
@@ -1910,9 +1934,42 @@ export default function Dashboard() {
         }
       })
 
+      // Evitar duplicar movimientos que ya estaban cargados (ej. al recargar el mismo
+      // extracto por error, o uno superpuesto) — mismo criterio que ya usa el import de
+      // tarjeta: mismo día, moneda, monto y detalle en la misma cuenta → se omite. Antes
+      // esto dependía por completo de que el usuario notara a mano las filas tachadas
+      // "ya cargada" en la previsualización y las desmarcara antes de confirmar; si no,
+      // quedaban duplicadas de verdad (incluidos los pagos de tarjeta tipo "neutro").
+      const cuentasDestinoBanco = [cuentaEgresos.id, ...(cuentaIngresos ? [cuentaIngresos.id] : [])]
+      const existentesBanco = await fetchAllTxPages(() =>
+        supabase.from('transactions').select('account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+      )
+      const normDetBanco = (s) => (s || '').toLowerCase().trim()
+      const esDupeBanco = (cand) => (existentesBanco || []).some(e =>
+        e.account_id === cand.account_id &&
+        e.fecha === cand.fecha &&
+        (e.moneda || 'ARS') === (cand.moneda || 'ARS') &&
+        Math.abs(Number(e.monto) - cand.monto) < 0.01 &&
+        normDetBanco(e.detalle) === normDetBanco(cand.detalle)
+      )
+      const txEgresosFiltrados = txEgresos.filter(t => !esDupeBanco(t))
+      const txIngresosFiltrados = txIngresos.filter(t => !esDupeBanco(t))
+      const omitidasBanco = (txEgresos.length - txEgresosFiltrados.length) + (txIngresos.length - txIngresosFiltrados.length)
+
+      // El extracto se creó con total_resumen: null (arriba) porque recién acá se
+      // sabe qué se terminó guardando de verdad. Para cuentas de banco esto quedaba
+      // SIEMPRE null — el gráfico "Total facturado por resumen" mostraba barras en
+      // $0 para todo extracto bancario (nunca calculaba nada desde las transacciones).
+      const totalFacturadoBanco = txEgresosFiltrados
+        .filter(t => t.tipo === 'gasto' && (t.moneda || 'ARS') === 'ARS')
+        .reduce((s, t) => s + Number(t.monto), 0)
+      if (totalFacturadoBanco > 0) {
+        await supabase.from('statements').update({ total_resumen: totalFacturadoBanco }).eq('id', stmtEgresos.id)
+      }
+
       const insertedIds = []
-      if (txEgresos.length > 0) {
-        const { data: ins, error: errEg } = await supabase.from('transactions').insert(aplicarReglasReparto(txEgresos, repartoRules)).select('id, detalle, estado')
+      if (txEgresosFiltrados.length > 0) {
+        const { data: ins, error: errEg } = await supabase.from('transactions').insert(aplicarReglasReparto(txEgresosFiltrados, repartoRules)).select('id, detalle, estado')
         if (errEg) {
           showToast(`Error egresos: ${errEg.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (egresos): ${errEg.message}` })
@@ -1922,8 +1979,8 @@ export default function Dashboard() {
         }
         if (ins) insertedIds.push(...ins)
       }
-      if (txIngresos.length > 0) {
-        const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresos).select('id, detalle, estado')
+      if (txIngresosFiltrados.length > 0) {
+        const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresosFiltrados).select('id, detalle, estado')
         if (errIn) {
           showToast(`Error ingresos: ${errIn.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (ingresos): ${errIn.message}` })
@@ -1931,10 +1988,15 @@ export default function Dashboard() {
         }
         if (ins) insertedIds.push(...ins)
       }
-      if (txEgresos.length === 0 && txIngresos.length === 0) {
-        showToast('No se detectaron transacciones para importar.', 'error')
+      if (txEgresosFiltrados.length === 0 && txIngresosFiltrados.length === 0) {
+        showToast(omitidasBanco > 0
+          ? `Todas las transacciones de este extracto ya estaban cargadas (${omitidasBanco} duplicadas omitidas).`
+          : 'No se detectaron transacciones para importar.', 'error')
         setLoading(false)
         return
+      }
+      if (omitidasBanco > 0) {
+        showToast(`${insertedIds.length} transacciones importadas. ${omitidasBanco} duplicadas exactas omitidas.`)
       }
 
       // Preparar paso identificar — deduplicar por detalle (una pregunta por nombre único)
@@ -2765,55 +2827,63 @@ export default function Dashboard() {
           // se igualaba sin piso al alto del widget de Monedas, y cuando ese widget
           // era más bajo (ej. un solo renglón de cotización) el texto se superponía.
           const vencCardMinH = 96
-          const vencCard = (
-            <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${Math.max(monedasCardH || 0, vencCardMinH)}px` }}>
-              <p style={{ fontSize: '11px', color: '#8e8e93', ...rotuloLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
-              {vencList.length === 0 ? (
-                <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
-              ) : (
-                <>
-                  <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
-                    {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                  </p>
-                  {vencList.map(v => {
-                    if (v.tipo === 'tarjeta') {
-                      const color = v.diasRestantes <= 3 ? '#e74c3c' : v.diasRestantes <= 7 ? '#e07b39' : '#4a9e7a'
-                      const texto = v.diasRestantes < 0
-                        ? `Venció hace ${Math.abs(v.diasRestantes)} día${Math.abs(v.diasRestantes) === 1 ? '' : 's'}`
-                        : v.diasRestantes === 0 ? '¡Vence hoy!' : v.diasRestantes === 1 ? 'Vence mañana' : `Vence en ${v.diasRestantes} días`
-                      return (
-                        <div key={v.id} onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
-                          <div style={{ minWidth: 0 }}>
-                            <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>💳 {v.nombre}</p>
-                            <p style={{ fontSize: '10px', color, margin: 0, fontWeight: 600 }}>{texto}</p>
-                          </div>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div key={v.id} onClick={() => toggleVencPagado(v.id)}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: v.pagado ? (darkMode ? '#1E2E1E' : '#edfbf0') : 'transparent', opacity: v.pagado ? 0.55 : 1 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, textDecoration: v.pagado ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
-                          <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
-                        </div>
-                        <input type="checkbox" checked={v.pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
-                      </div>
-                    )
-                  })}
-                </>
-              )}
-              {/* gradiente + botón VER MÁS dentro del card (no agrega altura extra) */}
-              {!vencExpanded && vencList.length > 2 && (
-                <div onClick={() => setVencExpanded(true)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '36px', background: `linear-gradient(transparent, ${cardBg})`, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px', cursor: 'pointer', borderRadius: '0 0 14px 14px' }}>
-                  <span style={{ fontSize: '10px', color: '#8e8e93', fontWeight: 600, fontFamily: '"Montserrat", sans-serif' }}>▾ ver más</span>
+          // Un solo ítem: tarjeta o servicio pendiente (los pagados ya no se
+          // muestran acá — no aportan nada útil en un widget de "qué falta pagar").
+          const renderVencItem = (v) => {
+            if (v.tipo === 'tarjeta') {
+              const color = v.diasRestantes <= 3 ? '#e74c3c' : v.diasRestantes <= 7 ? '#e07b39' : '#4a9e7a'
+              const texto = v.diasRestantes < 0
+                ? `Venció hace ${Math.abs(v.diasRestantes)} día${Math.abs(v.diasRestantes) === 1 ? '' : 's'}`
+                : v.diasRestantes === 0 ? '¡Vence hoy!' : v.diasRestantes === 1 ? 'Vence mañana' : `Vence en ${v.diasRestantes} días`
+              return (
+                <div key={v.id} onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>💳 {v.nombre}</p>
+                    <p style={{ fontSize: '10px', color, margin: 0, fontWeight: 600 }}>{texto}</p>
+                  </div>
                 </div>
-              )}
-              {vencExpanded && (
-                <button onClick={() => setVencExpanded(false)} style={{ background: 'none', border: 'none', fontSize: '10px', color: '#8e8e93', cursor: 'pointer', fontWeight: 600, fontFamily: '"Montserrat", sans-serif', padding: '2px 0', textAlign: 'center' }}>
-                  ▴ ver menos
-                </button>
+              )
+            }
+            return (
+              <div key={v.id} onClick={() => toggleVencPagado(v.id)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
+                  <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
+                </div>
+                <input type="checkbox" checked={v.pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+              </div>
+            )
+          }
+          const vencCard = (
+            <div ref={vencCardRef} style={{ width: '140px', position: 'relative' }}>
+              <div style={{ borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', position: 'relative', boxSizing: 'border-box', maxHeight: `${Math.max(monedasCardH || 0, vencCardMinH)}px` }}>
+                <p style={{ fontSize: '11px', color: '#8e8e93', ...rotuloLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
+                {vencList.length === 0 ? (
+                  <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
+                      {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                    </p>
+                    {pendientes.map(renderVencItem)}
+                  </>
+                )}
+                {/* gradiente + botón VER MÁS dentro del card (no agrega altura extra) */}
+                {pendientes.length > 2 && (
+                  <div onClick={() => setVencExpanded(o => !o)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '36px', background: `linear-gradient(transparent, ${cardBg})`, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px', cursor: 'pointer', borderRadius: '0 0 14px 14px' }}>
+                    <span style={{ fontSize: '10px', color: '#8e8e93', fontWeight: 600, fontFamily: '"Montserrat", sans-serif' }}>{vencExpanded ? '▴ ver menos' : '▾ ver todos'}</span>
+                  </div>
+                )}
+              </div>
+              {/* Panel flotante con la lista completa — no empuja el resto de la página
+                  porque está fuera del flujo normal (position: absolute), igual que el
+                  desplegable de "Monedas extranjeras" de al lado. */}
+              {vencExpanded && pendientes.length > 0 && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: '220px', maxHeight: '320px', overflowY: 'auto', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {pendientes.map(renderVencItem)}
+                </div>
               )}
             </div>
           )
@@ -2953,7 +3023,8 @@ export default function Dashboard() {
                 >
                   <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
                   <p style={styles.accountName}>{acc.nombre}</p>
-                  {hoveredAccount === acc.id && (
+                  {/* En mobile no hay "hover" — sin esto el lápiz de editar nunca se veía */}
+                  {(hoveredAccount === acc.id || isMobile) && (
                     <button style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
                       onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
                   )}
@@ -3134,7 +3205,7 @@ export default function Dashboard() {
                   >
                     {[
                       { key: 'resumen', label: '📊 Movimientos del mes' },
-                      { key: 'caja', label: '💵 Resúmenes mensuales' },
+                      { key: 'caja', label: '💵 Resumen mensual' },
                       { key: 'apagar', label: '📌 A pagar' },
                       ...(childrenDB.length > 0 ? [{ key: 'hijos', label: '👧 Hijos' }] : [])
                     ].map(tab => (
@@ -3180,6 +3251,7 @@ export default function Dashboard() {
                   <div>
                     {Object.keys(hijosResumenMes).length > 0 && (
                       <div style={{ fontSize: '13px', color: darkMode ? '#C0B0C0' : '#6e6e73', marginBottom: '14px', fontFamily: '"Montserrat", sans-serif' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', ...rotuloLabel }}>Gastos {mesLabel(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)}: </span>
                         {childrenDB.map((c, i) => (
                           <span key={c.id}>
                             {i > 0 && ' · '}
@@ -3311,7 +3383,18 @@ export default function Dashboard() {
               </div>
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
-                <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
+                  {/* Editar/borrar esta cuenta sin tener que ir al dashboard general — antes
+                      solo se podía desde el lápiz (visible solo al pasar el mouse) del
+                      listado de cuentas del sidebar, inaccesible en mobile. */}
+                  <button
+                    onClick={() => setEditAccount({ ...selectedAccount })}
+                    title="Editar o borrar esta cuenta"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.7, padding: '4px' }}>
+                    ✏️
+                  </button>
+                </div>
                 <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
             ) : (
@@ -4136,7 +4219,7 @@ export default function Dashboard() {
                   </select>
                 </div>
               </div>
-              {tipoMovimiento !== 'ingreso' && childrenDB.length > 0 && (
+              {childrenDB.length > 0 && (
                 <div style={styles.field}>
                   <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
@@ -4144,6 +4227,9 @@ export default function Dashboard() {
                     <option value="">— Ninguno —</option>
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
+                  {tipoMovimiento === 'ingreso' && (
+                    <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimenticia que cobrás, elegí acá a qué hijo/a corresponde.</p>
+                  )}
                 </div>
               )}
               {tipoMovimiento !== 'ingreso' && (

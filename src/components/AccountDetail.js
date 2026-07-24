@@ -502,8 +502,19 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
       const fecha = normFecha(t.fecha)
       return fecha > cierre && (!cierreSiguiente || fecha <= cierreSiguiente)
     }
-    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
-    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    // Un pago (tipo "neutro"/"ingreso") siempre resta del saldo pendiente de la
+    // ventana en la que cayó su fecha, tenga o no statement_id — total_resumen es
+    // el total que informa el banco tal cual, nunca se recalcula descontando nada
+    // por su cuenta, así que no hay riesgo de restar dos veces el mismo pago.
+    // Antes se exigía "!t.statement_id" (pago suelto, sin vincular a ningún
+    // resumen) para contarlo acá — pero el import de la tarjeta linkea TODAS las
+    // filas de su propio PDF al resumen nuevo, incluida cualquier línea de pago
+    // recibido que venga en ese mismo resumen. Esos pagos quedaban con
+    // statement_id seteado (al resumen que los contiene) y por eso se excluían
+    // acá, aunque sí se contaban en "Resumen mensual" (CashView, que no filtra
+    // por statement_id) — de ahí el desfasaje entre "A pagar" y "Resumen mensual".
+    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
     const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
     const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
     const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
@@ -597,10 +608,15 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
   )
   const [editNombre, setEditNombre] = useState('')
+  const [editMonto, setEditMonto] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
   const [editCuenta, setEditCuenta] = useState('')
+  const [editHijoIngreso, setEditHijoIngreso] = useState('')
+  const [editTipo, setEditTipo] = useState('gasto')
+  const [editBarMes, setEditBarMes] = useState(null)
+  const [editBarValor, setEditBarValor] = useState('')
   const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
@@ -627,6 +643,18 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
+  // "Gastos del mes por categoría" mezcla filas de categoría y de hijo en una
+  // sola lista — togglear una cierra la otra, para que solo haya un desglose
+  // abierto a la vez (mismo comportamiento que antes, con cajas separadas).
+  const toggleGastoGeneralRow = (tipo, nombre) => {
+    if (tipo === 'hijo') {
+      setHijoGeneralSeleccionado(h => h === nombre ? null : nombre)
+      setCatGeneralSeleccionada(null)
+    } else {
+      setCatGeneralSeleccionada(c => c === nombre ? null : nombre)
+      setHijoGeneralSeleccionado(null)
+    }
+  }
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -886,10 +914,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
-    const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
+    // Monto editable a mano (ej. corregir un reintegro mal leído del PDF, sin
+    // tener que borrar el movimiento y cargar uno nuevo) — siempre positivo, el
+    // tipo determina el signo en pantalla. Si el campo quedó vacío o inválido,
+    // no se toca el monto original.
+    const editMontoNum = parseFloat(String(editMonto).replace(',', '.'))
+    const montoCorregido = !isNaN(editMontoNum) && editMontoNum > 0 && Math.abs(editMontoNum - Math.abs(tx.monto)) > 0.001
+      ? editMontoNum
+      : (tx.monto < 0 ? Math.abs(tx.monto) : undefined)
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
-    if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
+    // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
+    // formulario de edición (editTipo), no infiriéndolo de tx.tipo — así una fila
+    // de gasto se puede pasar a ingreso (o al revés) sin el atajo viejo de elegir
+    // la categoría "Ingresos" desde la lista de gasto (confuso: mezclaba las
+    // categorías reales de ingreso ahí adentro). En la cuenta de Ingresos el tipo
+    // sigue fijo en ingreso, sin selector.
+    const esIngresoTx = esVistaIngresos || editTipo === 'ingreso'
+    if (esIngresoTx) {
       // El "tag" elegido acá tiene que ser siempre una subcategoría real de
       // "Ingresos" (ver subcategoriasDeIngreso) — se guarda category_id/subcategory_id
       // igual que hace el modal "Cargar movimiento", y se mantiene el tag en
@@ -898,7 +940,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ? subcategoriasDeIngreso(categories, subcategories).find(s => s.nombre === editTag)
         : null
       const catIngresos = categories.find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
-      const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange }
+      const childIngresoObj = children.find(c => c.nombre === editHijoIngreso)
+      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
       if (!editTag) {
         // Sin categoría elegida: limpiar el vínculo.
         upd.category_id = null
@@ -912,16 +955,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
       if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+      // Si se movió a otra cuenta y esta vista es de una cuenta puntual (no
+      // "todas las cuentas"), ya no pertenece acá — sacarla de la lista en vez
+      // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
+      setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+        ? prev.filter(t => t.id !== tx.id)
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
-    // Elegir la categoría "Ingresos" tiene que convertir la transacción en un ingreso
-    // de verdad (tipo), no solo cambiarle el color de la etiqueta — si no, el monto
-    // sigue mostrándose en negativo pese a decir "Ingresos".
-    const pasaAIngreso = catObj?.nombre === 'Ingresos'
+    // Si esta fila era un ingreso y se pasó a gasto con el selector de tipo,
+    // hay que volver el tipo a "gasto" explícitamente (antes esto pasaba solo
+    // al elegir la categoría "Ingresos" desde acá — ya no existe esa opción en
+    // esta lista, el tipo se elige aparte con el selector de arriba).
+    const vuelveAGasto = tx.tipo === 'ingreso' && editTipo !== 'ingreso'
 
     // Actualizar la transacción — monto siempre positivo (el tipo determina el signo en pantalla)
     const { error: errUpd } = await supabase.from('transactions').update({
@@ -930,7 +979,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado',
       tag: editTag || null,
-      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
+      ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
       ...accountChange,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
@@ -955,20 +1004,25 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })
     }
 
-    setTransactions(prev => prev.map(t => t.id === tx.id ? {
-      ...t,
-      nombre: editNombre,
-      tag: editTag || null,
-      category_id: catObj?.id || t.category_id,
-      subcategory_id: subcatObj?.id || null,
-      estado: 'identificado',
-      categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
-      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
-      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
-      ...accountChange,
-      ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
-      ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
-    } : t))
+    // Igual que en la rama de ingresos: si se movió a otra cuenta y esta vista
+    // es de una cuenta puntual, sacarla de la lista en vez de dejarla visible
+    // (con la cuenta ya cambiada) hasta que se refresque la página.
+    setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+      ? prev.filter(t => t.id !== tx.id)
+      : prev.map(t => t.id === tx.id ? {
+        ...t,
+        nombre: editNombre,
+        tag: editTag || null,
+        category_id: catObj?.id || t.category_id,
+        subcategory_id: subcatObj?.id || null,
+        estado: 'identificado',
+        categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
+        subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+        ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
+        ...accountChange,
+        ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
+        ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
+      } : t))
     setEditingTx(null)
   }
 
@@ -980,6 +1034,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditCuenta(tx.account_id || '')
     const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
     setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
+    // Hijo de un ingreso (ej. cuota alimenticia que se cobra): va en child_id,
+    // no en tag (que en un ingreso ya guarda la subcategoría elegida).
+    setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
+    setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
+    setEditMonto(String(Math.abs(Number(tx.monto)) || ''))
   }
 
   // Acción manual "Dividir gasto" (D3 Parte 2): reemplaza el viejo botón fijo
@@ -1088,10 +1147,45 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Vista de cuenta de ingresos: todas las txs son tipo ingreso
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
-  const barData = statements.map(s => ({
-    mes: s.periodo || s.fecha_hasta?.slice(0, 7),
-    total: Number(s.total_resumen) || 0
-  }))
+  // Agrupado por mes (no un renglón por statement): si el mismo mes tiene más de
+  // un resumen cargado (ej. se subió el mismo PDF dos veces por error), antes
+  // aparecía como dos barras separadas para el mismo mes en vez de una sola —
+  // acá se suman y se guardan los ids de origen para poder editar el total a
+  // mano (ver editarTotalFacturadoMes) sin depender de cuál duplicado se toque.
+  const barDataPorMes = useMemo(() => {
+    const map = new Map()
+    statements.forEach(s => {
+      const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
+      if (!mes) return
+      const prev = map.get(mes) || { mes, total: 0, statementIds: [] }
+      prev.total += Number(s.total_resumen) || 0
+      prev.statementIds.push(s.id)
+      map.set(mes, prev)
+    })
+    return [...map.values()].sort((a, b) => a.mes.localeCompare(b.mes))
+  }, [statements])
+  const barData = barDataPorMes
+
+  // Carga manual del total de un mes en "Total facturado por resumen" — si el
+  // cálculo automático no da lo esperado (ej. un mes con resúmenes duplicados,
+  // o un extracto que no se pudo leer bien), se puede pisar el valor a mano.
+  // Si hay más de un resumen cargado para ese mes, el valor nuevo se guarda
+  // en el primero y el resto se deja en 0, para que la barra sume justo lo
+  // tipeado y no se dupliquen los dos números.
+  const guardarTotalFacturadoMes = async (barMes) => {
+    const valor = parseFloat(editBarValor.replace(',', '.'))
+    if (isNaN(valor) || valor < 0) return
+    const [primero, ...resto] = barMes.statementIds
+    const updates = [
+      supabase.from('statements').update({ total_resumen: valor }).eq('id', primero),
+      ...resto.map(id => supabase.from('statements').update({ total_resumen: 0 }).eq('id', id)),
+    ]
+    await Promise.all(updates)
+    setStatements(prev => prev.map(s =>
+      s.id === primero ? { ...s, total_resumen: valor } : resto.includes(s.id) ? { ...s, total_resumen: 0 } : s
+    ))
+    setEditBarMes(null)
+  }
 
   const mesTxs = useMemo(() => selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
@@ -1609,7 +1703,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // confirmar recortado fuera de la pantalla), así que se reemplaza la fila
   // entera por una sola celda a lo ancho con el formulario completo.
   const renderEditStackMobile = (tx, colSpan = 9) => {
-    const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
+    const esIngresoTx = esVistaIngresos || editTipo === 'ingreso'
     const selStyle = { ...styles.editSelect, width: '100%', boxSizing: 'border-box' }
     return (
       <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
@@ -1617,28 +1711,60 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <span style={{ fontSize: '12px', color: '#8e8e93' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </span>
+          {/* Tipo (gasto/ingreso): reemplaza el atajo viejo de elegir la categoría
+              "Ingresos" desde la lista de gasto para reclasificar un movimiento —
+              confuso porque mezclaba las categorías reales de ingreso ahí adentro.
+              Fijo en Ingreso, sin selector, dentro de la cuenta de Ingresos. */}
+          {!esVistaIngresos && (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[{ v: 'gasto', label: '➖ Gasto' }, { v: 'ingreso', label: '➕ Ingreso' }].map(opt => (
+                <button key={opt.v} type="button" onClick={() => setEditTipo(opt.v)}
+                  style={{
+                    flex: 1, padding: '6px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+                    fontFamily: '"Montserrat", sans-serif', fontWeight: editTipo === opt.v ? '600' : '400',
+                    border: editTipo === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                    background: editTipo === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                    color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} value={editNombre}
             onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
+          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="number" step="0.01" min="0" value={editMonto}
+            onChange={e => setEditMonto(e.target.value)} placeholder="Monto" />
           <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
+            {(accounts || []).filter(a => esIngresoTx || a.tipo !== 'ingreso').map(a => (
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
             ))}
           </select>
           {esIngresoTx ? (() => {
             const { allOpts, valueIsCustom } = getIngresoTagOpts()
             return (
-              <select style={selStyle} value={valueIsCustom ? '__custom__' : (editTag || '')}
-                onChange={e => { if (e.target.value !== '__custom__') setEditTag(e.target.value) }}>
-                <option value="">— Sin categoría —</option>
-                {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                {valueIsCustom && <option value="__custom__">{editTag}</option>}
-              </select>
+              <>
+                <select style={selStyle} value={valueIsCustom ? '__custom__' : (editTag || '')}
+                  onChange={e => { if (e.target.value !== '__custom__') setEditTag(e.target.value) }}>
+                  <option value="">— Sin categoría —</option>
+                  {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  {valueIsCustom && <option value="__custom__">{editTag}</option>}
+                </select>
+                {children.length > 0 && (
+                  <select style={selStyle} value={editHijoIngreso} onChange={e => setEditHijoIngreso(e.target.value)}>
+                    <option value="">👧 Sin hijo/a (ej. cuota alimenticia)</option>
+                    {children.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                )}
+              </>
             )
           })() : (
             <>
               <select style={selStyle} value={editCategoria}
                 onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }}>
-                {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                {/* Categorías de ingreso (ej. "Ingresos") no van acá — para reclasificar
+                    un gasto como ingreso está el selector de tipo de arriba. */}
+                {categories.filter(c => (c.tipo || 'gasto') !== 'ingreso').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
               </select>
               <select style={selStyle} value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)}>
                 <option value="">— Sin subcategoría</option>
@@ -2028,13 +2154,24 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // mes" calculado por separado con el que pueda desalinearse.
   const categoriasBrutoSubtotalArs = categoriasResumenGeneral.reduce((s, [, t]) => s + t, 0)
     + hijosTotalesGeneral.reduce((s, [, t]) => s + t, 0)
+  const gastosCategoriaEHijoSubtotalArs = categoriasBrutoSubtotalArs
+  // "Gastos del mes por categoría" muestra los hijos como una fila más de la
+  // misma lista (antes vivían en una caja aparte "Gasto del mes por hijo") —
+  // se arma una sola lista mezclando ambas fuentes, ordenada de mayor a menor.
+  const mezclarCategoriasEHijos = (cats, hijos) => [
+    ...cats.filter(([, t]) => t > 0).map(([nombre, total]) => ({ tipo: 'categoria', nombre, total })),
+    ...hijos.map(([nombre, total]) => ({ tipo: 'hijo', nombre, total })),
+  ].sort((a, b) => b.total - a.total)
+  const gastosCategoriaEHijoGeneral = mezclarCategoriasEHijos(categoriasResumenGeneral, hijosTotalesGeneral)
+  const gastosCategoriaEHijoGeneralUsd = mezclarCategoriasEHijos(categoriasResumenGeneralUsd, hijosTotalesGeneralUsd)
 
     return {
       totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
       statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
-      ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
-      subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-      hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+      ingresosPorCategoriaMes,
+      subcatsCatGeneral, subcatsCatGeneralUsd,
+      catsPorHijoGeneral, catsPorHijoGeneralUsd,
+      gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
       statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen,
     }
@@ -2043,9 +2180,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
     statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
-    ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
-    subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-    hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+    ingresosPorCategoriaMes,
+    subcatsCatGeneral, subcatsCatGeneralUsd,
+    catsPorHijoGeneral, catsPorHijoGeneralUsd,
+    gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
     statementsVencidas, statementsNoVencidas,
     itemsPorStatement, categoriasResumen,
   } = apagarMemo
@@ -2330,7 +2468,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <span style={{ fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {c.ars > 0 ? `$ ${formatMonto(c.ars)}` : ''}
                       {c.ars > 0 && c.usd > 0 ? ' + ' : ''}
-                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} ($ ${formatMonto(c.unificado - c.ars)})` : ''}
+                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} (total ≈ $ ${formatMonto(c.unificado)})` : ''}
                     </span>
                   </div>
                 ))}
@@ -2346,23 +2484,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             </div>
           )}
-          {/* Categorías: composición del gasto del mes, siempre en bruto —
-              no cambia con cada pago parcial. */}
-          {(categoriasResumenGeneral.length > 0 || categoriasResumenGeneralUsd.length > 0) && (
+          {/* Categorías + hijos: composición del gasto del mes, siempre en bruto —
+              no cambia con cada pago parcial. Los hijos se muestran como una fila
+              más de la misma lista (no en una caja aparte): cada uno es, en la
+              práctica, otra "categoría" de gasto. Al abrir una fila de categoría
+              se ve el desglose por subcategoría; al abrir una fila de hijo, el
+              desglose por categoría de ese hijo. */}
+          {(gastosCategoriaEHijoGeneral.length > 0 || gastosCategoriaEHijoGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
-              {categoriasResumenGeneral.map(([cat, total]) => total > 0 && (
-                <React.Fragment key={cat}>
+              {gastosCategoriaEHijoGeneral.map(({ tipo, nombre, total }) => total > 0 && (
+                <React.Fragment key={`${tipo}-${nombre}`}>
                   <div
-                    onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
+                    onClick={() => toggleGastoGeneralRow(tipo, nombre)}
                     style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
                     <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
-                      {resolveIcon(cat)} {cat}
+                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{(tipo === 'hijo' ? hijoGeneralSeleccionado : catGeneralSeleccionada) === nombre ? '▾' : '▸'}</span>
+                      {tipo === 'hijo' ? (customIcons?.[nombre] || '👧') : resolveIcon(nombre)} {nombre}
                     </span>
                     <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(total)}</span>
                   </div>
-                  {catGeneralSeleccionada === cat && subcatsCatGeneral.length > 0 && (
+                  {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {subcatsCatGeneral.map(([subcat, montoSub]) => (
                         <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2372,61 +2514,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       ))}
                     </div>
                   )}
-                </React.Fragment>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: '4px', fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
-                <span>Subtotal</span>
-                <span>$ {formatMonto(categoriasBrutoSubtotalArs)}</span>
-              </div>
-              {categoriasResumenGeneralUsd.length > 0 && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
-                  {categoriasResumenGeneralUsd.map(([cat, total]) => total > 0 && (
-                    <React.Fragment key={`usd-${cat}`}>
-                      <div
-                        onClick={() => setCatGeneralSeleccionada(c => c === cat ? null : cat)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
-                        <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{catGeneralSeleccionada === cat ? '▾' : '▸'}</span>
-                          {resolveIcon(cat)} {cat}
-                        </span>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
-                      </div>
-                      {catGeneralSeleccionada === cat && subcatsCatGeneralUsd.length > 0 && (
-                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
-                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                              <span>{subcat}</span>
-                              <span>U$S {formatMontoFull(montoSub)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {/* Hijos: composición del gasto del mes por hijo, siempre en
-              bruto — cada fila despliega su propio detalle por categoría,
-              mismo patrón que "Gastos del mes por categoría" de arriba (antes
-              llevaba directo a la solapa del hijo, inconsistente con esa). */}
-          {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gasto del mes por hijo</p>
-              {hijosTotalesGeneral.map(([hijo, total]) => (
-                <React.Fragment key={hijo}>
-                  <div
-                    onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
-                    <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
-                      {customIcons?.[hijo] || '👧'} {hijo}
-                    </span>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(total)}</span>
-                  </div>
-                  {hijoGeneralSeleccionado === hijo && catsPorHijoGeneral.length > 0 && (
+                  {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {catsPorHijoGeneral.map(([cat, montoCat]) => (
                         <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2438,21 +2526,35 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   )}
                 </React.Fragment>
               ))}
-              {hijosTotalesGeneralUsd.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', marginTop: '4px', fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                <span>Subtotal</span>
+                <span>$ {formatMonto(gastosCategoriaEHijoSubtotalArs)}</span>
+              </div>
+              {gastosCategoriaEHijoGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                   <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
-                  {hijosTotalesGeneralUsd.map(([hijo, total]) => (
-                    <React.Fragment key={`usd-${hijo}`}>
+                  {gastosCategoriaEHijoGeneralUsd.map(({ tipo, nombre, total }) => total > 0 && (
+                    <React.Fragment key={`usd-${tipo}-${nombre}`}>
                       <div
-                        onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
+                        onClick={() => toggleGastoGeneralRow(tipo, nombre)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
                         <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
-                          {customIcons?.[hijo] || '👧'} {hijo}
+                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{(tipo === 'hijo' ? hijoGeneralSeleccionado : catGeneralSeleccionada) === nombre ? '▾' : '▸'}</span>
+                          {tipo === 'hijo' ? (customIcons?.[nombre] || '👧') : resolveIcon(nombre)} {nombre}
                         </span>
                         <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
                       </div>
-                      {hijoGeneralSeleccionado === hijo && catsPorHijoGeneralUsd.length > 0 && (
+                      {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneralUsd.length > 0 && (
+                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
+                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                              <span>{subcat}</span>
+                              <span>U$S {formatMontoFull(montoSub)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneralUsd.length > 0 && (
                         <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {catsPorHijoGeneralUsd.map(([cat, montoCat]) => (
                             <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
@@ -2779,7 +2881,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
             📊 Total facturado por resumen
-            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS." />
+            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS. Si un mes no coincide con lo esperado (ej. un resumen que no se pudo leer bien, o cargado dos veces), se puede corregir a mano con el lápiz de la lista de abajo." />
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -2789,6 +2891,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          {/* Carga/corrección manual por mes — mismo dato que dibuja la barra
+              (barData), así nunca puede desalinearse con lo que se ve arriba. */}
+          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {barData.map(b => (
+              <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                <span>{mesLabel(b.mes)}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes sumados)` : ''}</span>
+                {editBarMes?.mes === b.mes ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input type="number" autoFocus value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
+                      style={{ width: '110px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                    <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
+                    <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+                  </span>
+                ) : (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>$ {formatMonto(b.total)}</span>
+                    <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
