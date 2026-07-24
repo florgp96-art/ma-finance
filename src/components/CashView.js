@@ -374,7 +374,7 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
             <XAxis dataKey="label" tick={{ fontSize: 12, fill: txt }} axisLine={{ stroke: border }} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: txt }} axisLine={false} tickLine={false} width={52} tickFormatter={formatMontoCompacto} />
             <Tooltip
-              formatter={(value) => [`$ ${formatMonto(value)} (ARS, monedas extranjeras convertidas)`, 'Total pagado']}
+              formatter={(value) => [`$ ${formatMonto(value)}`, 'Total pagado']}
               labelFormatter={(l, payload) => payload?.[0] ? mesLabel(payload[0].payload.mes) : l}
               contentStyle={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '8px', fontSize: '12px' }}
               labelStyle={{ color: txt, fontWeight: '600' }}
