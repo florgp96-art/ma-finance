@@ -685,7 +685,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // vieja, cae a Donut en vez de a un tipo de gráfico que ya no existe.
     return saved === 'donut' || saved === 'bars' ? saved : 'donut'
   })
-  const [bubbleGroupBy, setBubbleGroupBy] = useState('categoria')
   const mesDropdownRef = useRef(null)
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
 
@@ -1034,7 +1033,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditCuenta(tx.account_id || '')
     const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
     setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
-    // Hijo de un ingreso (ej. cuota alimenticia que se cobra): va en child_id,
+    // Hijo de un ingreso (ej. cuota alimentaria que se cobra): va en child_id,
     // no en tag (que en un ingreso ya guarda la subcategoría elegida).
     setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
     setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
@@ -1280,14 +1279,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     : []
   // Único dataset para Donut y Barras: las dos vistas consumen exactamente esto, así
   // que togglear entre ellas nunca puede mostrar ítems/montos distintos — solo cambia
-  // cómo se dibuja el mismo dato. Incluye a los hijos como entradas propias (aparte de
-  // "categoría") cuando se agrupa por categoría; agrupado por persona, es una entrada
-  // por persona (incluyendo "Personal" = lo no atribuido a ningún hijo).
-  const displayChartData = esVistaIngresos
-    ? ingresoBubbleData
-    : bubbleGroupBy === 'persona'
-      ? personaBubbleData
-      : categoriaBubbleData
+  // cómo se dibuja el mismo dato. Se usa tal cual solo en la vista de ingresos —
+  // en gastos, categoriaBubbleData/personaBubbleData se muestran los dos juntos
+  // (ver el render más abajo), ya no hace falta elegir entre uno u otro.
+  const displayChartData = esVistaIngresos ? ingresoBubbleData : categoriaBubbleData
   // resolveIcon/resolveColor: para categorías/subcategorías de GASTO (usado en chips de
   // transacciones, tarjetas de statement, etc., no solo en el gráfico). resolveIconIngreso/
   // resolveColorIngreso: mismo criterio para categorías de INGRESO. Ambos pares llaman al
@@ -1301,14 +1296,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const resolveIconIngreso = (name) => resolveCategoryIcon(name, { customIcons, isIncome: true })
   const resolveColorIngreso = (name) => resolveCategoryColor(name, { isIncome: true })
   // Ícono/color para una entrada del gráfico (categoría, persona/hijo o categoría de
-  // ingreso, según la vista y el agrupamiento activos) — una sola función para Donut y
-  // Barras, así el color de cada entrada es siempre el mismo sin importar cuál de las
-  // dos vistas esté eligiendo el usuario.
-  const getChartIcon = (name) => {
-    if (esVistaIngresos) return resolveIconIngreso(name)
-    if (bubbleGroupBy === 'persona' && name === 'Personal') return customIcons?.['Personal'] || '👤'
-    return resolveIcon(name)
-  }
+  // ingreso, según la vista) — una sola función para Donut y Barras, así el color de
+  // cada entrada es siempre el mismo sin importar en cuál de los gráficos aparezca.
+  // "Personal" (el bucket de "vos" en el gráfico por persona) ya resuelve bien acá:
+  // resolveIcon mira customIcons primero y cae a CATEGORY_CONFIG['Personal'] = 👤.
+  const getChartIcon = (name) => esVistaIngresos ? resolveIconIngreso(name) : resolveIcon(name)
   const getChartColor = (name) => esVistaIngresos ? resolveColorIngreso(name) : resolveColor(name)
   const effectiveChartType = chartType
 
@@ -1354,16 +1346,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const diffIngMonto = totalIngSeleccionado - totalIngAnterior
 
     return {
-      ingresosBarData, displayChartData, childNames,
+      ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
       resolveIcon, resolveColor, getChartIcon, getChartColor,
       catTopList,
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, bubbleGroupBy, chartType, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
 
   const {
-    ingresosBarData, displayChartData, childNames,
+    ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
     resolveIcon, resolveColor, getChartIcon, getChartColor,
     catTopList,
     totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
@@ -1752,7 +1744,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 </select>
                 {children.length > 0 && (
                   <select style={selStyle} value={editHijoIngreso} onChange={e => setEditHijoIngreso(e.target.value)}>
-                    <option value="">👧 Sin hijo/a (ej. cuota alimenticia)</option>
+                    <option value="">👧 Sin hijo/a (ej. cuota alimentaria)</option>
                     {children.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                 )}
@@ -2930,89 +2922,89 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
           )}
 
-          {displayChartData.length > 0 && (() => {
+          {(() => {
+            // Antes había que elegir "Agrupar: Categoría / Persona" para ver uno u
+            // otro gráfico — con hijos de por medio hay lugar de sobra para mostrar
+            // los dos juntos, sin obligar a elegir.
+            const dosGraficos = !esVistaIngresos && childNames.length > 0
+            const graficoCategoria = esVistaIngresos ? displayChartData : categoriaBubbleData
+            const hayAlgunGrafico = dosGraficos ? (categoriaBubbleData.length > 0 || personaBubbleData.length > 0) : graficoCategoria.length > 0
+            if (!hayAlgunGrafico) return null
             const periodoLabelChart = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
               : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
               : `${selectedMeses.length} meses`
             const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
-            return (
-            <div style={styles.bubbleSection}>
-              <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
-                {esVistaIngresos ? 'Ingresos por categoría' : bubbleGroupBy === 'persona' ? 'Gastos por persona' : 'Gastos por categoría'}
-                <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
-              </h3>
-              {/* Selector de tipo de gráfico — solo Donut y Barras, mismo dataset
-                  (displayChartData) para las dos: togglear entre ellas nunca cambia
-                  qué se ve, solo cómo se dibuja. */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
-                {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
-                  <button key={opt.type}
-                    onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
-                    style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
-                    {opt.label}
-                  </button>
-                ))}
+            const renderBubbleCard = (data, titulo) => data.length === 0 ? null : (
+              <div key={titulo} style={{ ...styles.bubbleSection, flex: dosGraficos ? '1 1 380px' : '1 1 100%' }}>
+                <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
+                  {titulo}
+                  <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
+                </h3>
+                {effectiveChartType === 'donut' && (
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
+                    <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
+                      <PieChart>
+                        <Pie data={data} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
+                          {data.map((entry, idx) => (
+                            <Cell key={idx} fill={getChartColor(entry.name)} stroke="none" />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
+                      {data.map((entry, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                          <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
+                          <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                          <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {effectiveChartType === 'bars' && (() => {
+                  const rowH = 36
+                  const chartH = Math.max(180, data.length * rowH + 24)
+                  return (
+                    <ResponsiveContainer width="100%" height={chartH}>
+                      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+                        <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                        <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                        <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                          {data.map((entry, idx) => (
+                            <Cell key={idx} fill={getChartColor(entry.name)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )
+                })()}
               </div>
-
-              {!esVistaIngresos && childNames.length > 0 && (
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-                  <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', alignSelf: 'center', marginRight: '2px' }}>Agrupar:</span>
-                  {[{ key: 'categoria', label: 'Categoría' }, { key: 'persona', label: 'Persona' }].map(({ key, label }) => (
-                    <button key={key} onClick={() => setBubbleGroupBy(key)} style={{ padding: '4px 12px', borderRadius: '20px', border: `1px solid ${bubbleGroupBy === key ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: bubbleGroupBy === key ? '#5C4F5C' : 'transparent', color: bubbleGroupBy === key ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), fontSize: '11px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: bubbleGroupBy === key ? '600' : '400', outline: 'none' }}>
-                      {label}
+            )
+            return (
+              <>
+                {/* Selector de tipo de gráfico — solo Donut y Barras, compartido entre
+                    los dos gráficos cuando se muestran los dos a la vez. */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
+                  {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
+                    <button key={opt.type}
+                      onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
+                      style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                      {opt.label}
                     </button>
                   ))}
                 </div>
-              )}
-
-              {/* Donut */}
-              {effectiveChartType === 'donut' && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
-                  <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
-                    <PieChart>
-                      <Pie data={displayChartData} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
-                        {displayChartData.map((entry, idx) => (
-                          <Cell key={idx} fill={getChartColor(entry.name)} stroke="none" />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
-                    {displayChartData.map((entry, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-                        <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                        <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{getChartIcon(entry.name)} {entry.name}</span>
-                        <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
-                      </div>
-                    ))}
-                  </div>
+                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                  {dosGraficos
+                    ? [renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'), renderBubbleCard(personaBubbleData, 'Gastos por persona')]
+                    : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
                 </div>
-              )}
-
-              {/* Barras horizontales */}
-              {effectiveChartType === 'bars' && (() => {
-                const rowH = 36
-                const chartH = Math.max(180, displayChartData.length * rowH + 24)
-                return (
-                  <ResponsiveContainer width="100%" height={chartH}>
-                    <BarChart data={displayChartData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-                      <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                      <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
-                      <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {displayChartData.map((entry, idx) => (
-                          <Cell key={idx} fill={getChartColor(entry.name)} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )
-              })()}
-            </div>
+              </>
             )
           })()}
           {selectedMeses.length > 0 && displayChartData.length === 0 && !esVistaIngresos && (

@@ -136,7 +136,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const tc = parseFloat(tipoCambio) || 1
   const tcEUR = parseFloat(tipoCambioEUR) || 0
 
-  // Filtro por mes, totales, datos del bubble chart y cuota alimenticia — memoizados
+  // Filtro por mes, totales, datos del bubble chart y cuota alimentaria — memoizados
   // como un todo porque separar esto por partes recalcularía todo en cada render,
   // incluso uno ajeno (editar una fila, cambiar de orden). Ningún cálculo interno
   // de "gastos" se modificó — lo único nuevo es separar los ingresos (ej. cuota
@@ -186,7 +186,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       return s + t.monto
     }, 0)
 
-    // Cuota alimenticia: ingresos vs egresos del período elegido — el "egreso" acá
+    // Cuota Alimentaria: ingresos vs egresos del período elegido — el "egreso" acá
     // es lo mismo que ya mostraba "Total ARS/USD/EUR" de arriba (gastoTx), pero
     // convertido a un solo total en ARS para poder compararlo con el ingreso.
     const cuotaResumen = {
@@ -194,7 +194,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       egreso: totalEnArs(filteredTx),
     }
 
-    // Últimos 6 meses: ingresos (cuota alimenticia cobrada) vs egresos (gastado en
+    // Últimos 6 meses: ingresos (cuota alimentaria cobrada) vs egresos (gastado en
     // el hijo), para ver de un vistazo si lo que se cobra alcanza lo que se gasta.
     // USD/EUR convertidos al TC del mes de cada movimiento, nunca el de hoy.
     const totalEnArsDelMes = (txs, ym) => txs.reduce((s, t) => {
@@ -465,15 +465,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
         )
       })()}
 
-      {/* Cuota alimenticia: ingresos vs egresos de este hijo. Los ingresos son los
+      {/* Cuota Alimentaria: ingresos vs egresos de este hijo. Los ingresos son los
           movimientos tipo "ingreso" con este hijo asignado (ej. la cuota que se
           cobra); los egresos son lo mismo que ya se ve arriba en "Total ARS/USD/EUR"
           y "Gastos por categoría", en un solo total comparable. */}
       {(cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
-            Cuota alimenticia
-            <InfoTooltip darkMode={darkMode} text="Ingresos = movimientos de ingreso asignados a este hijo/a (ej. cuota alimenticia cobrada). Egresos = lo gastado en el hijo/a en el período elegido. ARS, monedas extranjeras convertidas." />
+            Cuota Alimentaria
+            <InfoTooltip darkMode={darkMode} text="Ingresos = movimientos de ingreso asignados a este hijo/a (ej. cuota alimentaria cobrada). Egresos = lo gastado en el hijo/a en el período elegido. ARS, monedas extranjeras convertidas." />
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) ? '20px' : 0 }}>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
