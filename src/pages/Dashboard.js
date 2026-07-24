@@ -2503,12 +2503,7 @@ export default function Dashboard() {
               }
               return (
                 <div style={styles.savingsPanel}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ ...styles.savingsPanelTitle, margin: 0 }}>💰 Ahorros</h3>
-                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid #5C4F5C`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
-                      {showAddCuentaAhorro ? '✕' : '+'}
-                    </button>
-                  </div>
+                  <h3 style={styles.savingsPanelTitle}>Ahorros</h3>
                   {cuentasAhorro.length === 0 && !showAddCuentaAhorro && (
                     <p style={{ fontSize: '12px', color: darkMode ? '#6e6e73' : '#aaa', textAlign: 'center', margin: '4px 0 8px' }}>Sin cuentas cargadas</p>
                   )}
@@ -2519,6 +2514,11 @@ export default function Dashboard() {
                       <button onClick={() => setCuentasAhorro(prev => prev.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '14px', padding: '0 0 0 6px', outline: 'none', flexShrink: 0 }}>×</button>
                     </div>
                   ))}
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: cuentasAhorro.length > 0 ? '10px 0 0' : '0' }}>
+                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid #5C4F5C`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
+                      {showAddCuentaAhorro ? '✕' : '+'}
+                    </button>
+                  </div>
                   {showAddCuentaAhorro && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
                       <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e => setNewCuentaAhorro(p => ({ ...p, cuenta: e.target.value }))} />
