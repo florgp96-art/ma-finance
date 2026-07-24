@@ -1978,15 +1978,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
   const hijosTotalesGeneral = sumarHijosPorNombre(hijosPorCategoriaGeneral)
   const hijosTotalesGeneralUsd = sumarHijosPorNombre(hijosPorCategoriaGeneralUsd)
-  // Subcategorías de la categoría elegida en la lista, sin importar si el
-  // gasto tiene un hijo asociado o no — la lista de categorías ya muestra
-  // el bruto combinado (resto + hijos), así que el desglose por
-  // subcategoría hace lo mismo.
+  // Subcategorías de la categoría elegida en la lista: igual que
+  // categoriasResumenGeneral, se excluye lo ya asignado a un hijo (esa parte
+  // se muestra en su propia pastilla en "Gasto del mes por hijo") — si no, el
+  // desglose por subcategoría no suma lo mismo que el total de la categoría.
   const [subcatsCatGeneral, subcatsCatGeneralUsd] = (soloAPagar && catGeneralSeleccionada)
     ? (() => {
         const map = {}, mapUsd = {}
         statementsAPagar.forEach(s => {
-          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro').forEach(t => {
+          itemsPorStatement(s).filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && !getChildName(t)).forEach(t => {
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
@@ -1995,6 +1995,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           })
         })
         gastosFijosDelMes.forEach(t => {
+          if (getChildName(t)) return
           const cat = t.categories?.nombre || 'A Identificar'
           if (cat !== catGeneralSeleccionada) return
           const subcat = t.subcategories?.nombre || 'Sin subcategoría'
