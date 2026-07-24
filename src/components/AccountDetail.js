@@ -2975,9 +2975,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </td>
                   <td style={styles.td}>
                     <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
-                      <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                      <button style={{...styles.editBtn, color:'#6e6e73'}} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
-                      <button style={{...styles.editBtn, color:'#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                      <button style={styles.accionBtnIcon} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                      <button style={styles.accionBtnIcon} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
+                      <button style={{...styles.accionBtnIcon, ...styles.accionBtnIconDanger}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
                     </div>
                   </td>
                   </>)}
@@ -3082,8 +3082,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </td>
                       <td style={styles.td}>
                         <div style={{display:'flex', gap:'4px'}}>
-                          <button style={styles.editBtn} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                          <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
+                          <button style={styles.accionBtnIcon} onClick={() => startEdit(tx)} title="Editar">✏️</button>
+                          <button style={{...styles.accionBtnIcon, ...styles.accionBtnIconDanger}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
                         </div>
                       </td>
                       </>)}
@@ -3215,6 +3215,11 @@ const getStyles = (dark, mobile) => {
     // altura táctil cómoda (~44px) en vez de texto suelto con emojis.
     accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
     accionBtnDanger: { border: '1px solid #c0392b', color: '#c0392b' },
+    // Misma pinta que accionBtn pero solo ícono, para columnas de acciones
+    // angostas (Sin identificar / Movimientos neutros) donde no entra texto —
+    // antes eran íconos sueltos sin borde, no se leían como botones.
+    accionBtnIcon: { width: '26px', height: '26px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '12px', padding: 0, outline: 'none' },
+    accionBtnIconDanger: { border: '1px solid #c0392b', color: '#c0392b' },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
