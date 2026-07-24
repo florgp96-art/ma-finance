@@ -502,8 +502,19 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
       const fecha = normFecha(t.fecha)
       return fecha > cierre && (!cierreSiguiente || fecha <= cierreSiguiente)
     }
-    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
-    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && !t.statement_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    // Un pago (tipo "neutro"/"ingreso") siempre resta del saldo pendiente de la
+    // ventana en la que cayó su fecha, tenga o no statement_id — total_resumen es
+    // el total que informa el banco tal cual, nunca se recalcula descontando nada
+    // por su cuenta, así que no hay riesgo de restar dos veces el mismo pago.
+    // Antes se exigía "!t.statement_id" (pago suelto, sin vincular a ningún
+    // resumen) para contarlo acá — pero el import de la tarjeta linkea TODAS las
+    // filas de su propio PDF al resumen nuevo, incluida cualquier línea de pago
+    // recibido que venga en ese mismo resumen. Esos pagos quedaban con
+    // statement_id seteado (al resumen que los contiene) y por eso se excluían
+    // acá, aunque sí se contaban en "Resumen mensual" (CashView, que no filtra
+    // por statement_id) — de ahí el desfasaje entre "A pagar" y "Resumen mensual".
+    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
     const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
     const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
     const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
