@@ -148,6 +148,21 @@ export default function Dashboard() {
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
   const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '' })
+  // Ingreso/Neutro suelen tener una sola categoría real (ej. "Ingresos"), lo
+  // que hacía el selector de Categoría redundante: había que elegir la única
+  // opción solo para desbloquear Subcategoría, que es donde está la elección
+  // real. Si hay una sola categoría para el tipo elegido, se autocompleta acá
+  // (cualquier punto de entrada que cambie tipoMovimiento) y el formulario
+  // oculta el selector, dejando solo Subcategoría. Si el usuario llegó a
+  // configurar más de una categoría para ese tipo, se sigue mostrando normal.
+  useEffect(() => {
+    const catsDelTipo = categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento)
+    if (catsDelTipo.length === 1 && efectivo.categoria !== catsDelTipo[0].nombre) {
+      setEfectivo(prev => ({ ...prev, categoria: catsDelTipo[0].nombre }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoMovimiento, categoriasDB])
+  const categoriasDelTipoMovimiento = categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento)
 
   // Widget ahorro — persiste en localStorage
   const [ahorro, setAhorro] = useState(() => {
@@ -4093,15 +4108,17 @@ export default function Dashboard() {
                   ))}
                 </select>
               </div>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
-                <div style={styles.field}>
-                  <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
-                  <select style={styles.input} value={efectivo.categoria}
-                    onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
-                    <option value="">— Elegir —</option>
-                    {categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                  </select>
-                </div>
+              <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
+                {categoriasDelTipoMovimiento.length > 1 && (
+                  <div style={styles.field}>
+                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                    <select style={styles.input} value={efectivo.categoria}
+                      onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
+                      <option value="">— Elegir —</option>
+                      {categoriasDelTipoMovimiento.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={styles.field}>
                   <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.subcategoria}
