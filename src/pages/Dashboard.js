@@ -1797,6 +1797,10 @@ export default function Dashboard() {
       if (!hijo) return null
       return childrenDB.find(c => c.nombre.toLowerCase() === hijo.toLowerCase())?.nombre || null
     }
+    const getHijoId = (hijo) => {
+      if (!hijo) return null
+      return childrenDB.find(c => c.nombre.toLowerCase() === hijo.toLowerCase())?.id || null
+    }
     // Contextos propios del usuario (wallets, cuentas, nombre propio) → auto-neutro en créditos
     const { data: contextoRules } = await supabase.from('user_rules')
       .select('texto_original').eq('user_id', user.id).like('texto_original', 'contexto_%')
@@ -1913,6 +1917,11 @@ export default function Dashboard() {
             cuotas_total: null, cuota_numero: null,
             category_id: null, subcategory_id: null,
             tag: histMatch?.tag || inferirTagIngreso(t.nombre_original, t.nombre_limpio, t.subcategoria_sugerida),
+            // La regla/alias de hijo (ej. "FAUSTINO" -> Amelia) tiene que aplicar
+            // también acá — antes solo se usaba en el gasto (tag), y en un ingreso
+            // el tag ya está ocupado por la subcategoría, así que el hijo va en
+            // child_id (ver también el selector de hijo en "Cargar movimiento").
+            child_id: getHijoId(t.hijo),
             estado: 'identificado', es_manual: false,
             account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso',
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
@@ -1927,6 +1936,7 @@ export default function Dashboard() {
             category_id: categoryId, subcategory_id: subcategoryId,
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
             tag: getHijoTag(t.hijo),
+            child_id: getHijoId(t.hijo),
             estado: (tipoTx === 'neutro' || (t.nombre_limpio && t.nombre_limpio !== t.nombre_original)) ? 'identificado' : 'a_identificar',
             es_manual: false,
             account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
@@ -2074,7 +2084,10 @@ export default function Dashboard() {
             tipo: t.tipo === 'neutro' ? 'neutro' : (esCreditoC ? 'ingreso' : 'gasto'), category_id: categoryId,
             subcategory_id: getSubcategoryId(t.subcategoria_sugerida, categoryId),
             fx_rate: t.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
-            tag: getHijoTag(t.hijo),
+            // En un ingreso (ej. reintegro) el tag ya está ocupado por la
+            // subcategoría — no pisarlo con el hijo ahí, el hijo va en child_id.
+            tag: esCreditoC ? null : getHijoTag(t.hijo),
+            child_id: getHijoId(t.hijo),
             estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
             es_manual: false
           }

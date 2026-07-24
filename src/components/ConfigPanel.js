@@ -582,7 +582,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             </div>
             </>)}
             {catTab === 'categorias' && (<>
-            <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
+            <div className="hide-scroll" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
               {(categoriasDB || []).map(cat => (
                 <div key={cat.id} style={{ marginBottom: '16px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingBottom: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
@@ -699,7 +699,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 style={{ ...s.actionBtn, background: 'none', border: '1.5px solid #c07a2b', color: '#c07a2b', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', fontWeight: '500', marginBottom: '14px', cursor: 'pointer' }}
               >🔄 Aplicar {pendingRulesCount} movimiento(s) pendiente(s)</button>
             )}
-            <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
+            <div className="hide-scroll" style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
               {(userAliases || []).length === 0 ? (
                 <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas. Agregá la primera abajo.</p>
               ) : (
@@ -808,7 +808,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '0 0 12px 0' }}>
               Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras (ej. "Comida → vos 50%, Amelia 25%, Vitto 25%"). Se aplican solas a cada gasto nuevo que matchee, sin importar cómo lo cargues — para dividir un gasto puntual ya cargado, usá el botón 🔀 en su fila.
             </p>
-            <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '16px' }}>
+            <div className="hide-scroll" style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '16px' }}>
               {(repartoRules || []).length === 0 ? (
                 <p style={{ color: '#aaa', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>Sin reglas de reparto. Agregá la primera abajo.</p>
               ) : (
