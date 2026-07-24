@@ -2745,8 +2745,13 @@ export default function Dashboard() {
             </div>
           )
 
+          // Alto mínimo para que el título "Vencimientos" + el estado ("N pend."/"Al
+          // día") siempre tengan lugar antes del degradé "ver más" del fondo — antes
+          // se igualaba sin piso al alto del widget de Monedas, y cuando ese widget
+          // era más bajo (ej. un solo renglón de cotización) el texto se superponía.
+          const vencCardMinH = 96
           const vencCard = (
-            <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${monedasCardH || 0}px` }}>
+            <div style={{ width: '140px', position: 'relative', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', boxSizing: 'border-box', maxHeight: vencExpanded ? 'none' : `${Math.max(monedasCardH || 0, vencCardMinH)}px` }}>
               <p style={{ fontSize: '11px', color: '#8e8e93', ...rotuloLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
               {vencList.length === 0 ? (
                 <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
