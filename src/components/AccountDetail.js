@@ -601,6 +601,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
   const [editCuenta, setEditCuenta] = useState('')
+  const [editBarMes, setEditBarMes] = useState(null)
+  const [editBarValor, setEditBarValor] = useState('')
   const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
@@ -1110,10 +1112,45 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Vista de cuenta de ingresos: todas las txs son tipo ingreso
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
-  const barData = statements.map(s => ({
-    mes: s.periodo || s.fecha_hasta?.slice(0, 7),
-    total: Number(s.total_resumen) || 0
-  }))
+  // Agrupado por mes (no un renglón por statement): si el mismo mes tiene más de
+  // un resumen cargado (ej. se subió el mismo PDF dos veces por error), antes
+  // aparecía como dos barras separadas para el mismo mes en vez de una sola —
+  // acá se suman y se guardan los ids de origen para poder editar el total a
+  // mano (ver editarTotalFacturadoMes) sin depender de cuál duplicado se toque.
+  const barDataPorMes = useMemo(() => {
+    const map = new Map()
+    statements.forEach(s => {
+      const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
+      if (!mes) return
+      const prev = map.get(mes) || { mes, total: 0, statementIds: [] }
+      prev.total += Number(s.total_resumen) || 0
+      prev.statementIds.push(s.id)
+      map.set(mes, prev)
+    })
+    return [...map.values()].sort((a, b) => a.mes.localeCompare(b.mes))
+  }, [statements])
+  const barData = barDataPorMes
+
+  // Carga manual del total de un mes en "Total facturado por resumen" — si el
+  // cálculo automático no da lo esperado (ej. un mes con resúmenes duplicados,
+  // o un extracto que no se pudo leer bien), se puede pisar el valor a mano.
+  // Si hay más de un resumen cargado para ese mes, el valor nuevo se guarda
+  // en el primero y el resto se deja en 0, para que la barra sume justo lo
+  // tipeado y no se dupliquen los dos números.
+  const guardarTotalFacturadoMes = async (barMes) => {
+    const valor = parseFloat(editBarValor.replace(',', '.'))
+    if (isNaN(valor) || valor < 0) return
+    const [primero, ...resto] = barMes.statementIds
+    const updates = [
+      supabase.from('statements').update({ total_resumen: valor }).eq('id', primero),
+      ...resto.map(id => supabase.from('statements').update({ total_resumen: 0 }).eq('id', id)),
+    ]
+    await Promise.all(updates)
+    setStatements(prev => prev.map(s =>
+      s.id === primero ? { ...s, total_resumen: valor } : resto.includes(s.id) ? { ...s, total_resumen: 0 } : s
+    ))
+    setEditBarMes(null)
+  }
 
   const mesTxs = useMemo(() => selectedMeses.length > 0
     ? transactions.filter(t => selectedMeses.some(m => t.fecha?.startsWith(m)) && t.tipo !== 'neutro')
@@ -2777,7 +2814,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
             📊 Total facturado por resumen
-            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS." />
+            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS. Si un mes no coincide con lo esperado (ej. un resumen que no se pudo leer bien, o cargado dos veces), se puede corregir a mano con el lápiz de la lista de abajo." />
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -2787,6 +2824,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          {/* Carga/corrección manual por mes — mismo dato que dibuja la barra
+              (barData), así nunca puede desalinearse con lo que se ve arriba. */}
+          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {barData.map(b => (
+              <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                <span>{mesLabel(b.mes)}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes sumados)` : ''}</span>
+                {editBarMes?.mes === b.mes ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input type="number" autoFocus value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
+                      style={{ width: '110px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                    <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
+                    <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+                  </span>
+                ) : (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>$ {formatMonto(b.total)}</span>
+                    <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

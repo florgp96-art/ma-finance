@@ -1952,6 +1952,17 @@ export default function Dashboard() {
       const txIngresosFiltrados = txIngresos.filter(t => !esDupeBanco(t))
       const omitidasBanco = (txEgresos.length - txEgresosFiltrados.length) + (txIngresos.length - txIngresosFiltrados.length)
 
+      // El extracto se creó con total_resumen: null (arriba) porque recién acá se
+      // sabe qué se terminó guardando de verdad. Para cuentas de banco esto quedaba
+      // SIEMPRE null — el gráfico "Total facturado por resumen" mostraba barras en
+      // $0 para todo extracto bancario (nunca calculaba nada desde las transacciones).
+      const totalFacturadoBanco = txEgresosFiltrados
+        .filter(t => t.tipo === 'gasto' && (t.moneda || 'ARS') === 'ARS')
+        .reduce((s, t) => s + Number(t.monto), 0)
+      if (totalFacturadoBanco > 0) {
+        await supabase.from('statements').update({ total_resumen: totalFacturadoBanco }).eq('id', stmtEgresos.id)
+      }
+
       const insertedIds = []
       if (txEgresosFiltrados.length > 0) {
         const { data: ins, error: errEg } = await supabase.from('transactions').insert(aplicarReglasReparto(txEgresosFiltrados, repartoRules)).select('id, detalle, estado')
