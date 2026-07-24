@@ -581,11 +581,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28, ACCIONES2_PX = 68, ACCIONES3_PX = 90
   const anchosTextoPral = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
-    colVisible, { nombre: 1.5, categoria: 1, cuenta: 1, subcategoria: 1.5 }
+    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 0.8, subcategoria: 1.3 }
   )
   const anchosTextoNeutros = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - ACCIONES2_PX,
-    colVisible, { nombre: 1.5, categoria: 1, subcategoria: 1.4, cuenta: 1 }
+    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 0.8 }
   )
   // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
   // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
@@ -1409,11 +1409,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {colVisible.categoria && (
             <td style={ellipsisCell}>
               {esIngresoTx ? (
-                <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                <span title={tx.tag || ''} style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                   {tx.tag || '—'}
                 </span>
               ) : (
-                <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                <span title={tx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                   {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                 </span>
               )}
@@ -1532,7 +1532,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         </td>
         {colVisible.categoria && (
           <td style={ellipsisCell}>
-            <span style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+            <span title={repTx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
               {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
             </span>
           </td>
@@ -2160,7 +2160,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <tr key={tx.id} style={styles.tr}>
                     <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                     <td style={styles.td}>
-                      <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                      <span title={tx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                         {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                       </span>
                     </td>
