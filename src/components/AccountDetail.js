@@ -608,6 +608,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
     colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
   )
   const [editNombre, setEditNombre] = useState('')
+  const [editMonto, setEditMonto] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
@@ -913,7 +914,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
-    const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
+    // Monto editable a mano (ej. corregir un reintegro mal leído del PDF, sin
+    // tener que borrar el movimiento y cargar uno nuevo) — siempre positivo, el
+    // tipo determina el signo en pantalla. Si el campo quedó vacío o inválido,
+    // no se toca el monto original.
+    const editMontoNum = parseFloat(String(editMonto).replace(',', '.'))
+    const montoCorregido = !isNaN(editMontoNum) && editMontoNum > 0 && Math.abs(editMontoNum - Math.abs(tx.monto)) > 0.001
+      ? editMontoNum
+      : (tx.monto < 0 ? Math.abs(tx.monto) : undefined)
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
     // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
@@ -1030,6 +1038,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // no en tag (que en un ingreso ya guarda la subcategoría elegida).
     setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
     setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
+    setEditMonto(String(Math.abs(Number(tx.monto)) || ''))
   }
 
   // Acción manual "Dividir gasto" (D3 Parte 2): reemplaza el viejo botón fijo
@@ -1724,6 +1733,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           )}
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} value={editNombre}
             onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
+          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="number" step="0.01" min="0" value={editMonto}
+            onChange={e => setEditMonto(e.target.value)} placeholder="Monto" />
           <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
             {(accounts || []).filter(a => esIngresoTx || a.tipo !== 'ingreso').map(a => (
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
