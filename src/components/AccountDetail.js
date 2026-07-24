@@ -367,7 +367,7 @@ export function InfoTooltip({ text, darkMode }) {
       >i</button>
       {open && (
         <div style={{
-          position: 'absolute', top: '20px', left: 0, zIndex: 60, minWidth: '200px', maxWidth: '260px',
+          position: 'absolute', top: '20px', right: 0, zIndex: 60, minWidth: '200px', maxWidth: '260px',
           padding: '8px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '400',
           textTransform: 'none', letterSpacing: 'normal', lineHeight: '1.4', textAlign: 'left',
           backgroundColor: darkMode ? '#2A232A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
