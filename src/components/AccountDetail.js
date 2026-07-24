@@ -649,7 +649,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // pedirlos ni recalcular su propia versión de "A pagar".
   useEffect(() => { onStatementsLoaded?.(statements) }, [statements, onStatementsLoaded])
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
-  const [stmtCollapsed, setStmtCollapsed] = useState(false)
+  const [stmtCollapsed, setStmtCollapsed] = useState(true)
   const [chartType, setChartType] = useState(() => {
     const saved = localStorage.getItem('chart_type_ma')
     // La vista "Burbujas" se eliminó — si alguien la tenía guardada de una sesión
