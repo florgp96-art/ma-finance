@@ -581,11 +581,11 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28, ACCIONES2_PX = 68, ACCIONES3_PX = 90
   const anchosTextoPral = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
-    colVisible, { nombre: 1.5, categoria: 1, cuenta: 1, subcategoria: 1.5 }
+    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 0.8, subcategoria: 1.3 }
   )
   const anchosTextoNeutros = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - ACCIONES2_PX,
-    colVisible, { nombre: 1.5, categoria: 1, subcategoria: 1.4, cuenta: 1 }
+    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 0.8 }
   )
   // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
   // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
@@ -1409,11 +1409,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {colVisible.categoria && (
             <td style={ellipsisCell}>
               {esIngresoTx ? (
-                <span style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                <span title={tx.tag || ''} style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                   {tx.tag || '—'}
                 </span>
               ) : (
-                <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                <span title={tx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                   {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                 </span>
               )}
@@ -1483,11 +1483,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 )}
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button style={styles.editBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
-                {tx.tipo === 'gasto' && !esVistaIngresos && (
-                  <button style={styles.editBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
+                <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                {tx.tipo === 'gasto' && !esVistaIngresos && children.length > 0 && (
+                  <button style={styles.accionBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
                 )}
-                <button style={{...styles.editBtn, color: '#c0392b'}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+                <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
               </div>
             </td>
           </tr>
@@ -1532,7 +1532,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         </td>
         {colVisible.categoria && (
           <td style={ellipsisCell}>
-            <span style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+            <span title={repTx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
               {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
             </span>
           </td>
@@ -2160,7 +2160,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <tr key={tx.id} style={styles.tr}>
                     <td style={styles.td}>{tx.nombre || tx.detalle}</td>
                     <td style={styles.td}>
-                      <span style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                      <span title={tx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                         {resolveIcon(tx.categories?.nombre || '')} {tx.categories?.nombre || '—'}
                       </span>
                     </td>
@@ -3165,6 +3165,12 @@ const getStyles = (dark, mobile) => {
     editInput: { width: '100%', padding: '4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt },
     editSelect: { width: '100%', padding: '4px 28px 4px 8px', borderRadius: '6px', border: `1px solid ${p}`, fontSize: '13px', outline: 'none', backgroundColor: dark ? '#1C1A1C' : 'white', color: txt, appearance: 'none', WebkitAppearance: 'none', colorScheme: dark ? 'dark' : 'light' },
     editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.6 },
+    // Botones de acción de la fila expandida (Editar/Dividir/Borrar), mismo
+    // lenguaje visual que el selector segmentado ARS/USD/EUR del simulador
+    // de Ahorros: grupo de botones con borde redondeado, buen padding,
+    // altura táctil cómoda (~44px) en vez de texto suelto con emojis.
+    accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
+    accionBtnDanger: { border: '1px solid #c0392b', color: '#c0392b' },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },

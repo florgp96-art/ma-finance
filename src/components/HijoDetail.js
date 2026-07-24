@@ -36,10 +36,13 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   // (no dependen del ancho de pantalla), el resto se reparte por peso entre
   // descripción/subcategoría/cuenta — antes "descripción" no tenía ancho propio y
   // se llevaba todo el sobrante.
-  const FECHA_PX = 58, CATEGORIA_PX = 88, MONTO_PX = 106, EXPAND_PX = 28
+  const FECHA_PX = 58, MONTO_PX = 106, EXPAND_PX = 28
+  // La columna Categoría siempre se muestra (no depende de colVisible.categoria),
+  // por eso se fuerza a true acá: antes tenía un ancho fijo de 88px que cortaba
+  // nombres de categoría más largos aunque sobrara espacio en pantallas anchas.
   const anchosTexto = repartirAnchoTexto(
-    tablaWidth - FECHA_PX - CATEGORIA_PX - MONTO_PX - EXPAND_PX,
-    colVisible, { descripcion: 1.7, subcategoria: 1, cuenta: 1 }
+    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
+    { ...colVisible, categoria: true }, { descripcion: 1.6, categoria: 1.3, subcategoria: 1, cuenta: 1 }
   )
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
@@ -478,7 +481,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
               <colgroup>
                 <col style={{ width: `${FECHA_PX}px` }} />
                 <col style={{ width: `${anchosTexto.descripcion}px` }} />
-                <col style={{ width: `${CATEGORIA_PX}px` }} />
+                <col style={{ width: `${anchosTexto.categoria}px` }} />
                 {colVisible.subcategoria && <col style={{ width: `${anchosTexto.subcategoria}px` }} />}
                 {colVisible.cuenta && <col style={{ width: `${anchosTexto.cuenta}px` }} />}
                 <col style={{ width: `${MONTO_PX}px` }} />
@@ -545,7 +548,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       </td>
                       <td style={ellipsisTd}>
                         {t.categories?.nombre
-                          ? <span style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
+                          ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
                           : <span style={{ color: '#aaa' }}>—</span>
                         }
                       </td>
@@ -585,7 +588,9 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
-                          <button onClick={() => startEdit(t)} style={{ padding: '6px 14px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✏️ Editar</button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => startEdit(t)} style={{ flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: 'transparent', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' }}>✏️ Editar</button>
+                          </div>
                         </td>
                       </tr>
                     )}
