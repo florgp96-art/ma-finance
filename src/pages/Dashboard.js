@@ -662,7 +662,7 @@ export default function Dashboard() {
       subcategory_id: subcatObj?.id || null,
       // Para ingreso conservamos el tag = subcategoría/categoría elegida: varias
       // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag —
-      // por eso el hijo de un ingreso (ej. cuota alimenticia que se cobra) va en
+      // por eso el hijo de un ingreso (ej. cuota alimentaria que se cobra) va en
       // child_id, no en tag (que ya está ocupado con la subcategoría).
       tag: tipoMovimiento === 'ingreso' ? (subcatObj?.nombre || catObj?.nombre || null) : (efectivo.hijo || null),
       child_id: efectivo.hijo ? (childrenDB.find(c => c.nombre === efectivo.hijo)?.id || null) : null,
@@ -4228,7 +4228,7 @@ export default function Dashboard() {
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                   {tipoMovimiento === 'ingreso' && (
-                    <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimenticia que cobrás, elegí acá a qué hijo/a corresponde.</p>
+                    <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
                   )}
                 </div>
               )}
