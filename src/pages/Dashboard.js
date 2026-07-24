@@ -1549,11 +1549,15 @@ export default function Dashboard() {
         const cuentaEsperada = (esIngreso && ingresosAcc) ? ingresosAcc.id : accountId
         const isDupe = txExistentes?.some(e => {
           if (e.account_id !== cuentaEsperada) return false
-          if ((e.moneda || 'ARS') !== (t.moneda || 'ARS')) return false
+          if ((e.moneda || 'ARS').trim().toUpperCase() !== (t.moneda || 'ARS').trim().toUpperCase()) return false
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
-          return fechaCercana(e.fecha, t.fecha, 5)
+          // 7 días en vez de 5: al releer un resumen viejo (para tener el
+          // historial completo), la fecha que la IA lee para el mismo
+          // movimiento puede correrse un par de días respecto de la carga
+          // original si el corte de ciclo cae distinto entre resúmenes.
+          return fechaCercana(e.fecha, t.fecha, 7)
         })
         if (isDupe) dupes.add(i)
         else selec.add(i)
@@ -3648,7 +3652,7 @@ export default function Dashboard() {
                     <button onClick={() => setPdfTxSelections(new Set())} style={{ background: darkMode ? '#2A232A' : '#f5f5f5', border: `1px solid ${darkMode ? '#3A333A' : '#ddd'}`, borderRadius: '6px', color: darkMode ? '#9e9e9e' : '#6e6e73', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Ninguna</button>
                   </div>
                 </div>
-                <div style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto' }}>
+                <div className="hide-scroll" style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto', scrollbarWidth: 'none' }}>
                   {statementData.transacciones.map((t, i) => {
                     const isDupe = pdfTxDuplicadas.has(i)
                     const isSelected = pdfTxSelections.has(i)
