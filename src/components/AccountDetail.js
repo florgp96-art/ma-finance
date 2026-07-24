@@ -1486,8 +1486,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(tx.fecha)}</td>
           <td style={ellipsisCell} title={tx.nombre || tx.detalle}>
             {tx.nombre || tx.detalle}
-            {(tx.children?.nombre || tx.tag) && !esIngresoTx && (
-              <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {tx.children?.nombre || tx.tag}</span>
+            {/* Hijo/a asignado — en un gasto puede venir por child_id o por tag
+                (modelo viejo); en un ingreso el tag ya está ocupado por la
+                subcategoría, así que ahí SOLO vale child_id (tx.children, el
+                join por FK). Antes esto no se mostraba nunca en un ingreso. */}
+            {(esIngresoTx ? tx.children?.nombre : (tx.children?.nombre || tx.tag)) && (
+              <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {esIngresoTx ? tx.children?.nombre : (tx.children?.nombre || tx.tag)}</span>
             )}
             {reparto && (
               <span style={{ fontSize: '11px', color: '#5C8AA8', marginLeft: '6px' }}>🔀</span>

@@ -473,15 +473,15 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
             Cuota Alimentaria
-            <InfoTooltip darkMode={darkMode} text="Ingresos = movimientos de ingreso asignados a este hijo/a (ej. cuota alimentaria cobrada). Egresos = lo gastado en el hijo/a en el período elegido. ARS, monedas extranjeras convertidas." />
+            <InfoTooltip darkMode={darkMode} text="ARS, monedas extranjeras convertidas." />
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) ? '20px' : 0 }}>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
-              <p style={{ ...s.statLabel, color: '#3a7d44' }}>Ingresos (cobrado)</p>
+              <p style={{ ...s.statLabel, color: '#3a7d44' }}>Ingresos</p>
               <p style={{ ...s.statValue, color: '#3a7d44' }}>$ {formatMonto(cuotaResumen.ingreso)}</p>
             </div>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#3A2323' : '#FBEAEA', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}` }}>
-              <p style={{ ...s.statLabel, color: '#c0392b' }}>Egresos (gastado)</p>
+              <p style={{ ...s.statLabel, color: '#c0392b' }}>Egresos</p>
               <p style={{ ...s.statValue, color: '#c0392b' }}>$ {formatMonto(cuotaResumen.egreso)}</p>
             </div>
             <div style={s.statCard}>
