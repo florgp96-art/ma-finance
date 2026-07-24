@@ -578,13 +578,13 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   // el resto del ancho medido de la tabla se reparte por peso entre nombre y
   // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
   // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
-  const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28, ACCIONES2_PX = 68, ACCIONES3_PX = 90
+  const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28
   const anchosTextoPral = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
     colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 0.8, subcategoria: 1.3 }
   )
   const anchosTextoNeutros = repartirAnchoTexto(
-    tablaWidth - FECHA_PX - MONTO_PX - ACCIONES2_PX,
+    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
     colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 0.8 }
   )
   // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
@@ -593,7 +593,7 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   // más lugar a nombre/cuenta/subcategoría en pantallas angostas.
   const SINID_CATEGORIA_PX = 56
   const anchosTextoSinId = repartirAnchoTexto(
-    tablaWidth - FECHA_PX - (colVisible.categoria ? SINID_CATEGORIA_PX : 0) - MONTO_PX - ACCIONES3_PX,
+    tablaWidth - FECHA_PX - (colVisible.categoria ? SINID_CATEGORIA_PX : 0) - MONTO_PX - EXPAND_PX,
     colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
   )
   const [editNombre, setEditNombre] = useState('')
@@ -2944,7 +2944,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <col style={{ width: `${anchosTextoSinId.nombre}px` }} />
               {colVisible.categoria && <col style={{ width: `${SINID_CATEGORIA_PX}px` }} />}
               <col style={{ width: `${MONTO_PX}px` }} />
-              <col style={{ width: `${ACCIONES3_PX}px` }} />
+              <col style={{ width: `${EXPAND_PX}px` }} />
             </colgroup>
             <thead>
               <tr>
@@ -2958,31 +2958,68 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </tr>
             </thead>
             <tbody>
-              {sinIdentificar.map(tx => (
-                <tr key={tx.id} style={styles.trUnknown}>
-                  {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)) : (<>
-                  <td style={{...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                  {colVisible.cuenta && <td style={ellipsisCell} title={tx.detalle}><span style={styles.detalle}>{tx.detalle}</span></td>}
-                  {colVisible.subcategoria && (
-                    <td style={ellipsisCell}>
-                      <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
-                    </td>
-                  )}
-                  <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
-                  {colVisible.categoria && <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>}
-                  <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
-                    {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-                  </td>
-                  <td style={styles.td}>
-                    <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
-                      <button style={styles.accionBtnIcon} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                      <button style={styles.accionBtnIcon} onClick={() => handleMarcarNeutro(tx)} title="Marcar como neutro (pago, transferencia, etc.)">🔄</button>
-                      <button style={{...styles.accionBtnIcon, ...styles.accionBtnIconDanger}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
-                    </div>
-                  </td>
-                  </>)}
-                </tr>
-              ))}
+              {sinIdentificar.map(tx => {
+                const numColsSinId = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0)
+                if (editingTx === tx.id) {
+                  return (
+                    <tr key={tx.id} style={styles.trUnknown}>
+                      {renderEditStackMobile(tx, numColsSinId)}
+                    </tr>
+                  )
+                }
+                const expandido = filaExpandida === tx.id
+                return (
+                  <React.Fragment key={tx.id}>
+                    <tr
+                      style={{ ...styles.trUnknown, cursor: 'pointer' }}
+                      onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
+                    >
+                      <td style={{...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
+                      {colVisible.cuenta && <td style={ellipsisCell} title={tx.detalle}><span style={styles.detalle}>{tx.detalle}</span></td>}
+                      {colVisible.subcategoria && (
+                        <td style={ellipsisCell}>
+                          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+                        </td>
+                      )}
+                      <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
+                      {colVisible.categoria && <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>}
+                      <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
+                        {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                      </td>
+                      <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+                    </tr>
+                    {expandido && (
+                      <tr style={styles.tr}>
+                        <td colSpan={numColsSinId} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
+                            <div style={{ flexBasis: '100%' }}>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || '—'}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Detalle original</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.detalle || '—'}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                            <button style={styles.accionBtn} onClick={() => handleMarcarNeutro(tx)}>🔄 Marcar neutro</button>
+                            <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
             </tbody>
           </table>
           </div>
@@ -3049,7 +3086,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   {colVisible.subcategoria && <col style={{ width: `${anchosTextoNeutros.subcategoria}px` }} />}
                   {colVisible.cuenta && <col style={{ width: `${anchosTextoNeutros.cuenta}px` }} />}
                   <col style={{ width: `${MONTO_PX}px` }} />
-                  <col style={{ width: `${ACCIONES2_PX}px` }} />
+                  <col style={{ width: `${EXPAND_PX}px` }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -3063,32 +3100,73 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </tr>
                 </thead>
                 <tbody>
-                  {txNeutras.map(tx => (
-                    <tr key={tx.id} style={{...styles.tr, opacity: editingTx === tx.id ? 1 : 0.6}}>
-                      {editingTx === tx.id ? renderEditStackMobile(tx, 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)) : (<>
-                      <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                      <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
-                      {colVisible.categoria && (
-                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
-                      )}
-                      {colVisible.subcategoria && (
-                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span></td>
-                      )}
-                      {colVisible.cuenta && (
-                        <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
-                      )}
-                      <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
-                        {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
-                      </td>
-                      <td style={styles.td}>
-                        <div style={{display:'flex', gap:'4px'}}>
-                          <button style={styles.accionBtnIcon} onClick={() => startEdit(tx)} title="Editar">✏️</button>
-                          <button style={{...styles.accionBtnIcon, ...styles.accionBtnIconDanger}} onClick={() => handleDeleteTx(tx)} title="Eliminar">🗑️</button>
-                        </div>
-                      </td>
-                      </>)}
-                    </tr>
-                  ))}
+                  {txNeutras.map(tx => {
+                    const numColsNeutros = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
+                    if (editingTx === tx.id) {
+                      return (
+                        <tr key={tx.id} style={styles.tr}>
+                          {renderEditStackMobile(tx, numColsNeutros)}
+                        </tr>
+                      )
+                    }
+                    const expandido = filaExpandida === tx.id
+                    return (
+                      <React.Fragment key={tx.id}>
+                        <tr
+                          style={{ ...styles.tr, opacity: 0.6, cursor: 'pointer' }}
+                          onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
+                        >
+                          <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
+                          <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
+                          {colVisible.categoria && (
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
+                          )}
+                          {colVisible.subcategoria && (
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span></td>
+                          )}
+                          {colVisible.cuenta && (
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
+                          )}
+                          <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
+                            {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
+                          </td>
+                          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+                        </tr>
+                        {expandido && (
+                          <tr style={styles.tr}>
+                            <td colSpan={numColsNeutros} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
+                                <div style={{ flexBasis: '100%' }}>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                                  <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || tx.detalle || '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Categoría</p>
+                                  <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.categories?.nombre || '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Subcategoría</p>
+                                  <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.subcategories?.nombre || '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                                  <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
+                                </div>
+                                <div>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                                  <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                                <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -3215,11 +3293,6 @@ const getStyles = (dark, mobile) => {
     // altura táctil cómoda (~44px) en vez de texto suelto con emojis.
     accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
     accionBtnDanger: { border: '1px solid #c0392b', color: '#c0392b' },
-    // Misma pinta que accionBtn pero solo ícono, para columnas de acciones
-    // angostas (Sin identificar / Movimientos neutros) donde no entra texto —
-    // antes eran íconos sueltos sin borde, no se leían como botones.
-    accionBtnIcon: { width: '26px', height: '26px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '12px', padding: 0, outline: 'none' },
-    accionBtnIconDanger: { border: '1px solid #c0392b', color: '#c0392b' },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
