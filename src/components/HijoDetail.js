@@ -136,17 +136,23 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
   const tc = parseFloat(tipoCambio) || 1
   const tcEUR = parseFloat(tipoCambioEUR) || 0
 
-  // Filtro por mes, totales, datos del bubble chart y evolución mensual — memoizados
-  // como un todo porque monthlyData por sí solo filtra transactions 3 veces POR CADA
-  // uno de los últimos 6 meses (18 barridos) y antes se recalculaba todo esto en cada
-  // render, incluso uno ajeno (editar una fila, cambiar de orden). Ningún cálculo
-  // interno se modificó.
-  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, monthlyData } = useMemo(() => {
+  // Filtro por mes, totales, datos del bubble chart y cuota alimenticia — memoizados
+  // como un todo porque separar esto por partes recalcularía todo en cada render,
+  // incluso uno ajeno (editar una fila, cambiar de orden). Ningún cálculo interno
+  // de "gastos" se modificó — lo único nuevo es separar los ingresos (ej. cuota
+  // alimenticia que se cobra, ahora que un ingreso también puede llevar child_id)
+  // para que no se mezclen con los gastos en los totales/categorías de siempre.
+  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData } = useMemo(() => {
     const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
+    const gastoTx = transactions.filter(t => t.tipo !== 'ingreso')
+    const ingresoTx = transactions.filter(t => t.tipo === 'ingreso')
 
     const filteredTx = selectedMeses.length > 0
-      ? transactions.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
-      : transactions
+      ? gastoTx.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
+      : gastoTx
+    const filteredIngresoTx = selectedMeses.length > 0
+      ? ingresoTx.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
+      : ingresoTx
 
     const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
     const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
@@ -174,19 +180,40 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
       if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
       return tcEUR
     }
+    const totalEnArs = (txs) => txs.reduce((s, t) => {
+      if (t.moneda === 'USD') return s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc)
+      if (t.moneda === 'EUR') return s + t.monto * tcEUR
+      return s + t.monto
+    }, 0)
 
-    // Evolución mensual (últimos 6 meses) — USD convertido al TC del mes de cada
-    // movimiento, nunca el TC de hoy para meses pasados.
+    // Cuota alimenticia: ingresos vs egresos del período elegido — el "egreso" acá
+    // es lo mismo que ya mostraba "Total ARS/USD/EUR" de arriba (gastoTx), pero
+    // convertido a un solo total en ARS para poder compararlo con el ingreso.
+    const cuotaResumen = {
+      ingreso: totalEnArs(filteredIngresoTx),
+      egreso: totalEnArs(filteredTx),
+    }
+
+    // Últimos 6 meses: ingresos (cuota alimenticia cobrada) vs egresos (gastado en
+    // el hijo), para ver de un vistazo si lo que se cobra alcanza lo que se gasta.
+    // USD/EUR convertidos al TC del mes de cada movimiento, nunca el de hoy.
+    const totalEnArsDelMes = (txs, ym) => txs.reduce((s, t) => {
+      if (t.moneda === 'USD') return s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc)
+      if (t.moneda === 'EUR') return s + t.monto * getTCEURForMonth(ym)
+      return s + t.monto
+    }, 0)
     const last6 = getLast6Months()
-    const monthlyData = last6.map(ym => {
-      const txs = transactions.filter(t => t.fecha?.startsWith(ym))
-      const ars = txs.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
-      const usd = txs.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc), 0)
-      const eur = txs.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
-      return { mes: mesLabel(ym), total: Math.round(ars + usd + eur * getTCEURForMonth(ym)) }
+    const cuotaMonthlyData = last6.map(ym => {
+      const egresosMes = gastoTx.filter(t => t.fecha?.startsWith(ym))
+      const ingresosMes = ingresoTx.filter(t => t.fecha?.startsWith(ym))
+      return {
+        mes: mesLabel(ym).slice(0, 3),
+        egreso: Math.round(totalEnArsDelMes(egresosMes, ym)),
+        ingreso: Math.round(totalEnArsDelMes(ingresosMes, ym)),
+      }
     })
 
-    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, monthlyData }
+    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData }
   }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR])
 
   const startEdit = (tx) => {
@@ -438,33 +465,55 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
         )
       })()}
 
-      {/* Evolución mensual */}
-      {monthlyData.some(m => m.total > 0) && (
+      {/* Cuota alimenticia: ingresos vs egresos de este hijo. Los ingresos son los
+          movimientos tipo "ingreso" con este hijo asignado (ej. la cuota que se
+          cobra); los egresos son lo mismo que ya se ve arriba en "Total ARS/USD/EUR"
+          y "Gastos por categoría", en un solo total comparable. */}
+      {(cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
-            Evolución mensual de gastos
-            <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas) · últimos 6 meses" />
+            Cuota alimenticia
+            <InfoTooltip darkMode={darkMode} text="Ingresos = movimientos de ingreso asignados a este hijo/a (ej. cuota alimenticia cobrada). Egresos = lo gastado en el hijo/a en el período elegido. ARS, monedas extranjeras convertidas." />
           </h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
-              <YAxis
-                tickFormatter={v => `$${formatMonto(v)}`}
-                tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888' }}
-                width={72}
-              />
-              <Tooltip
-                formatter={v => [`$ ${formatMonto(v)}`, 'Total ARS equiv.']}
-                contentStyle={{
-                  borderRadius: '8px', border: 'none',
-                  backgroundColor: darkMode ? '#2A272A' : '#fff',
-                  color: darkMode ? '#F0EDEC' : '#1d1d1f',
-                  fontSize: '13px', fontFamily: '"Montserrat", sans-serif'
-                }}
-              />
-              <Bar dataKey="total" fill="#A8B8D8" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) ? '20px' : 0 }}>
+            <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
+              <p style={{ ...s.statLabel, color: '#3a7d44' }}>Ingresos (cobrado)</p>
+              <p style={{ ...s.statValue, color: '#3a7d44' }}>$ {formatMonto(cuotaResumen.ingreso)}</p>
+            </div>
+            <div style={{ ...s.statCard, backgroundColor: darkMode ? '#3A2323' : '#FBEAEA', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}` }}>
+              <p style={{ ...s.statLabel, color: '#c0392b' }}>Egresos (gastado)</p>
+              <p style={{ ...s.statValue, color: '#c0392b' }}>$ {formatMonto(cuotaResumen.egreso)}</p>
+            </div>
+            <div style={s.statCard}>
+              <p style={s.statLabel}>Balance</p>
+              <p style={{ ...s.statValue, color: cuotaResumen.ingreso - cuotaResumen.egreso >= 0 ? '#3a7d44' : '#c0392b' }}>
+                {cuotaResumen.ingreso - cuotaResumen.egreso >= 0 ? '+' : ''}$ {formatMonto(cuotaResumen.ingreso - cuotaResumen.egreso)}
+              </p>
+            </div>
+          </div>
+          {cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) && (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={cuotaMonthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
+                <YAxis
+                  tickFormatter={v => `$${formatMonto(v)}`}
+                  tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888' }}
+                  width={72}
+                />
+                <Tooltip
+                  formatter={(v, name) => [`$ ${formatMonto(v)}`, name === 'ingreso' ? 'Ingresos' : 'Egresos']}
+                  contentStyle={{
+                    borderRadius: '8px', border: 'none',
+                    backgroundColor: darkMode ? '#2A272A' : '#fff',
+                    color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                    fontSize: '13px', fontFamily: '"Montserrat", sans-serif'
+                  }}
+                />
+                <Bar dataKey="ingreso" fill="#7CB88F" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="egreso" fill="#D88C8C" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       )}
 

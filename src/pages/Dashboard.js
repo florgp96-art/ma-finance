@@ -270,6 +270,7 @@ export default function Dashboard() {
           .select('monto, moneda, fecha')
           .eq('user_id', user.id)
           .gt('monto', 0)
+          .neq('tipo', 'ingreso')
           .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
           .gte('fecha', `${mesActual}-01`)
         // Antes solo sumaba ARS y descartaba en silencio los gastos de un hijo
@@ -660,8 +661,11 @@ export default function Dashboard() {
       category_id: catObj?.id || null,
       subcategory_id: subcatObj?.id || null,
       // Para ingreso conservamos el tag = subcategoría/categoría elegida: varias
-      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag.
+      // pantallas (breakdown de ingresos, evolución) siguen agrupando por tag —
+      // por eso el hijo de un ingreso (ej. cuota alimenticia que se cobra) va en
+      // child_id, no en tag (que ya está ocupado con la subcategoría).
       tag: tipoMovimiento === 'ingreso' ? (subcatObj?.nombre || catObj?.nombre || null) : (efectivo.hijo || null),
+      child_id: efectivo.hijo ? (childrenDB.find(c => c.nombre === efectivo.hijo)?.id || null) : null,
       estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
       cuotas_total: 1,
@@ -4215,7 +4219,7 @@ export default function Dashboard() {
                   </select>
                 </div>
               </div>
-              {tipoMovimiento !== 'ingreso' && childrenDB.length > 0 && (
+              {childrenDB.length > 0 && (
                 <div style={styles.field}>
                   <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
@@ -4223,6 +4227,9 @@ export default function Dashboard() {
                     <option value="">— Ninguno —</option>
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
+                  {tipoMovimiento === 'ingreso' && (
+                    <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimenticia que cobrás, elegí acá a qué hijo/a corresponde.</p>
+                  )}
                 </div>
               )}
               {tipoMovimiento !== 'ingreso' && (

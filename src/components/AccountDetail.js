@@ -601,6 +601,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
   const [editCuenta, setEditCuenta] = useState('')
+  const [editHijoIngreso, setEditHijoIngreso] = useState('')
+  const [editTipo, setEditTipo] = useState('gasto')
   const [editBarMes, setEditBarMes] = useState(null)
   const [editBarValor, setEditBarValor] = useState('')
   const [children, setChildren] = useState([])
@@ -903,7 +905,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const montoCorregido = tx.monto < 0 ? Math.abs(tx.monto) : undefined
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
-    if (account?.tipo === 'ingreso' || tx.tipo === 'ingreso') {
+    // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
+    // formulario de edición (editTipo), no infiriéndolo de tx.tipo — así una fila
+    // de gasto se puede pasar a ingreso (o al revés) sin el atajo viejo de elegir
+    // la categoría "Ingresos" desde la lista de gasto (confuso: mezclaba las
+    // categorías reales de ingreso ahí adentro). En la cuenta de Ingresos el tipo
+    // sigue fijo en ingreso, sin selector.
+    const esIngresoTx = esVistaIngresos || editTipo === 'ingreso'
+    if (esIngresoTx) {
       // El "tag" elegido acá tiene que ser siempre una subcategoría real de
       // "Ingresos" (ver subcategoriasDeIngreso) — se guarda category_id/subcategory_id
       // igual que hace el modal "Cargar movimiento", y se mantiene el tag en
@@ -912,7 +921,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ? subcategoriasDeIngreso(categories, subcategories).find(s => s.nombre === editTag)
         : null
       const catIngresos = categories.find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
-      const upd = { nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange }
+      const childIngresoObj = children.find(c => c.nombre === editHijoIngreso)
+      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
       if (!editTag) {
         // Sin categoría elegida: limpiar el vínculo.
         upd.category_id = null
@@ -931,16 +941,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
-    // Elegir la categoría "Ingresos" tiene que convertir la transacción en un ingreso
-    // de verdad (tipo), no solo cambiarle el color de la etiqueta — si no, el monto
-    // sigue mostrándose en negativo pese a decir "Ingresos".
-    const pasaAIngreso = catObj?.nombre === 'Ingresos'
+    // Si esta fila era un ingreso y se pasó a gasto con el selector de tipo,
+    // hay que volver el tipo a "gasto" explícitamente (antes esto pasaba solo
+    // al elegir la categoría "Ingresos" desde acá — ya no existe esa opción en
+    // esta lista, el tipo se elige aparte con el selector de arriba).
+    const vuelveAGasto = tx.tipo === 'ingreso' && editTipo !== 'ingreso'
 
     // Actualizar la transacción — monto siempre positivo (el tipo determina el signo en pantalla)
     const { error: errUpd } = await supabase.from('transactions').update({
@@ -949,7 +960,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       subcategory_id: subcatObj ? subcatObj.id : null,
       estado: 'identificado',
       tag: editTag || null,
-      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
+      ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
       ...accountChange,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
@@ -988,7 +999,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         estado: 'identificado',
         categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
         subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
-        ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
+        ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
         ...accountChange,
         ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
         ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
@@ -1004,6 +1015,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditCuenta(tx.account_id || '')
     const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
     setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
+    // Hijo de un ingreso (ej. cuota alimenticia que se cobra): va en child_id,
+    // no en tag (que en un ingreso ya guarda la subcategoría elegida).
+    setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
+    setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
   }
 
   // Acción manual "Dividir gasto" (D3 Parte 2): reemplaza el viejo botón fijo
@@ -1668,7 +1683,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // confirmar recortado fuera de la pantalla), así que se reemplaza la fila
   // entera por una sola celda a lo ancho con el formulario completo.
   const renderEditStackMobile = (tx, colSpan = 9) => {
-    const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
+    const esIngresoTx = esVistaIngresos || editTipo === 'ingreso'
     const selStyle = { ...styles.editSelect, width: '100%', boxSizing: 'border-box' }
     return (
       <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
@@ -1676,28 +1691,58 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <span style={{ fontSize: '12px', color: '#8e8e93' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </span>
+          {/* Tipo (gasto/ingreso): reemplaza el atajo viejo de elegir la categoría
+              "Ingresos" desde la lista de gasto para reclasificar un movimiento —
+              confuso porque mezclaba las categorías reales de ingreso ahí adentro.
+              Fijo en Ingreso, sin selector, dentro de la cuenta de Ingresos. */}
+          {!esVistaIngresos && (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[{ v: 'gasto', label: '➖ Gasto' }, { v: 'ingreso', label: '➕ Ingreso' }].map(opt => (
+                <button key={opt.v} type="button" onClick={() => setEditTipo(opt.v)}
+                  style={{
+                    flex: 1, padding: '6px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+                    fontFamily: '"Montserrat", sans-serif', fontWeight: editTipo === opt.v ? '600' : '400',
+                    border: editTipo === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                    background: editTipo === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                    color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} value={editNombre}
             onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
           <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
-            {(accounts || []).filter(a => tx.tipo === 'ingreso' || a.tipo !== 'ingreso').map(a => (
+            {(accounts || []).filter(a => esIngresoTx || a.tipo !== 'ingreso').map(a => (
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
             ))}
           </select>
           {esIngresoTx ? (() => {
             const { allOpts, valueIsCustom } = getIngresoTagOpts()
             return (
-              <select style={selStyle} value={valueIsCustom ? '__custom__' : (editTag || '')}
-                onChange={e => { if (e.target.value !== '__custom__') setEditTag(e.target.value) }}>
-                <option value="">— Sin categoría —</option>
-                {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                {valueIsCustom && <option value="__custom__">{editTag}</option>}
-              </select>
+              <>
+                <select style={selStyle} value={valueIsCustom ? '__custom__' : (editTag || '')}
+                  onChange={e => { if (e.target.value !== '__custom__') setEditTag(e.target.value) }}>
+                  <option value="">— Sin categoría —</option>
+                  {allOpts.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  {valueIsCustom && <option value="__custom__">{editTag}</option>}
+                </select>
+                {children.length > 0 && (
+                  <select style={selStyle} value={editHijoIngreso} onChange={e => setEditHijoIngreso(e.target.value)}>
+                    <option value="">👧 Sin hijo/a (ej. cuota alimenticia)</option>
+                    {children.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  </select>
+                )}
+              </>
             )
           })() : (
             <>
               <select style={selStyle} value={editCategoria}
                 onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }}>
-                {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                {/* Categorías de ingreso (ej. "Ingresos") no van acá — para reclasificar
+                    un gasto como ingreso está el selector de tipo de arriba. */}
+                {categories.filter(c => (c.tipo || 'gasto') !== 'ingreso').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
               </select>
               <select style={selStyle} value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)}>
                 <option value="">— Sin subcategoría</option>
