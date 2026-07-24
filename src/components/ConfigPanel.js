@@ -959,7 +959,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 Usar este valor en vez de la cotización automática
               </label>
               <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
-                Se usa para convertir montos en USD a ARS en los totales combinados (ej. Resúmenes mensuales, A pagar). Si lo dejás desactivado, se sigue usando la cotización automática de siempre.
+                Se usa para convertir montos en USD a ARS en los totales combinados (ej. Resumen mensual, A pagar). Si lo dejás desactivado, se sigue usando la cotización automática de siempre.
               </p>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
                 <button type="button" style={s.cancelBtn} onClick={() => setShowTipoCambio(false)}>Cancelar</button>

@@ -137,7 +137,13 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
       const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
       const totalPagadoEur = todos.reduce((s, t) => s + (t.moneda === 'EUR' ? Number(t.monto) : 0), 0)
       const totalIngresos = sum(ingresos)
-      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, balance: totalIngresos - totalPagado }
+      const totalIngresosArs = ingresos.reduce((s, t) => s + (t.moneda === 'ARS' ? Number(t.monto) : 0), 0)
+      const totalIngresosUsd = ingresos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
+      const totalIngresosEur = ingresos.reduce((s, t) => s + (t.moneda === 'EUR' ? Number(t.monto) : 0), 0)
+      const balanceArs = totalIngresosArs - totalPagadoArs
+      const balanceUsd = totalIngresosUsd - totalPagadoUsd
+      const balanceEur = totalIngresosEur - totalPagadoEur
+      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, totalIngresosArs, totalIngresosUsd, totalIngresosEur, balanceArs, balanceUsd, balanceEur, balance: totalIngresos - totalPagado }
     }
 
     const actual = desgloseDelMes(selectedMonth)
@@ -301,15 +307,17 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
           )}
         </div>
         <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${border}` }}>
-          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, ...rotuloLabel }}>Total unificado</p>
+          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: muted, display: 'flex', alignItems: 'center', justifyContent: 'center', ...rotuloLabel }}>
+            Total unificado
+            {(actual.totalPagadoUsd > 0 || actual.totalPagadoEur > 0) && (
+              <InfoTooltip darkMode={darkMode} text={
+                (tc > 0 || actual.totalPagadoEur === 0) && (tcE > 0 || actual.totalPagadoUsd === 0)
+                  ? `Monedas extranjeras convertidas al TC ${tcManual?.enabled ? 'manual' : 'automático'} vigente`
+                  : 'Falta un tipo de cambio configurado — las monedas extranjeras no se están sumando acá.'
+              } />
+            )}
+          </p>
           <p style={{ margin: '4px 0 0', fontSize: '36px', fontWeight: '800', color: txt }}>$ {formatMonto(actual.totalPagado)}</p>
-          {(actual.totalPagadoUsd > 0 || actual.totalPagadoEur > 0) && (
-            <p style={{ margin: '6px 0 0', fontSize: '12px', color: muted }}>
-              {(tc > 0 || actual.totalPagadoEur === 0) && (tcE > 0 || actual.totalPagadoUsd === 0)
-                ? `Monedas extranjeras convertidas al TC vigente (${tcManual?.enabled ? 'manual' : 'automático'})`
-                : 'Hay montos en moneda extranjera pero falta un tipo de cambio configurado — no se están sumando al total unificado.'}
-            </p>
-          )}
         </div>
       </div>
 
@@ -351,6 +359,26 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '700', paddingTop: '10px', marginTop: '6px', borderTop: `1px solid ${border}`, color: actual.balance >= 0 ? '#3a7d44' : '#c0392b' }}>
           <span>Balance</span><span>{actual.balance >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balance))}</span>
         </div>
+        {(actual.totalIngresosUsd > 0 || actual.totalPagadoUsd > 0 || actual.totalIngresosEur > 0 || actual.totalPagadoEur > 0) && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px dashed ${border}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+              <span>Balance ARS</span>
+              <span style={{ fontWeight: '600', color: actual.balanceArs >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceArs >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balanceArs))}</span>
+            </div>
+            {(actual.totalIngresosUsd > 0 || actual.totalPagadoUsd > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+                <span>Balance USD</span>
+                <span style={{ fontWeight: '600', color: actual.balanceUsd >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceUsd >= 0 ? '+' : '-'}U$S {formatMontoFull(Math.abs(actual.balanceUsd))}</span>
+              </div>
+            )}
+            {(actual.totalIngresosEur > 0 || actual.totalPagadoEur > 0) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+                <span>Balance EUR</span>
+                <span style={{ fontWeight: '600', color: actual.balanceEur >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceEur >= 0 ? '+' : '-'}€ {formatMontoFull(Math.abs(actual.balanceEur))}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cuotas comprometidas */}

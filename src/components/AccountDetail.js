@@ -912,7 +912,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
       if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+      // Si se movió a otra cuenta y esta vista es de una cuenta puntual (no
+      // "todas las cuentas"), ya no pertenece acá — sacarla de la lista en vez
+      // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
+      setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+        ? prev.filter(t => t.id !== tx.id)
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, estado: 'identificado', ...accountChange, category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -955,20 +960,25 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })
     }
 
-    setTransactions(prev => prev.map(t => t.id === tx.id ? {
-      ...t,
-      nombre: editNombre,
-      tag: editTag || null,
-      category_id: catObj?.id || t.category_id,
-      subcategory_id: subcatObj?.id || null,
-      estado: 'identificado',
-      categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
-      subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
-      ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
-      ...accountChange,
-      ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
-      ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
-    } : t))
+    // Igual que en la rama de ingresos: si se movió a otra cuenta y esta vista
+    // es de una cuenta puntual, sacarla de la lista en vez de dejarla visible
+    // (con la cuenta ya cambiada) hasta que se refresque la página.
+    setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+      ? prev.filter(t => t.id !== tx.id)
+      : prev.map(t => t.id === tx.id ? {
+        ...t,
+        nombre: editNombre,
+        tag: editTag || null,
+        category_id: catObj?.id || t.category_id,
+        subcategory_id: subcatObj?.id || null,
+        estado: 'identificado',
+        categories: catObj ? { nombre: catObj.nombre, color: catObj.color } : t.categories,
+        subcategories: subcatObj ? { nombre: subcatObj.nombre } : null,
+        ...(pasaAIngreso ? { tipo: 'ingreso' } : {}),
+        ...accountChange,
+        ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
+        ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
+      } : t))
     setEditingTx(null)
   }
 
@@ -2330,7 +2340,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <span style={{ fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {c.ars > 0 ? `$ ${formatMonto(c.ars)}` : ''}
                       {c.ars > 0 && c.usd > 0 ? ' + ' : ''}
-                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} ($ ${formatMonto(c.unificado - c.ars)})` : ''}
+                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} (total ≈ $ ${formatMonto(c.unificado)})` : ''}
                     </span>
                   </div>
                 ))}
