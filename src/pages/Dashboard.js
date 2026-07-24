@@ -2550,7 +2550,7 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>Proyección</p>
+                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, textAlign: 'center', margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>Proyección</p>
 
                   <div style={styles.savingsField}>
                     <label style={styles.savingsLabel}>Monto mensual</label>
