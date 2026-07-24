@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, formatFechaCorta, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -542,7 +542,7 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
                       style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}`, cursor: 'pointer' }}
                       onClick={() => setFilaExpandida(prev => prev === t.id ? null : t.id)}
                     >
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{t.fecha}</td>
+                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{formatFechaCorta(t.fecha)}</td>
                       <td style={ellipsisTd} title={t.nombre || t.detalle || ''}>
                         <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</span>
                       </td>
