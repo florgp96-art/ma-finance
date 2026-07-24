@@ -668,10 +668,6 @@ export default function Dashboard() {
 
   // Handlers pasados como props a AccountDetail — antes eran arrow functions
   // inline en el JSX, recreadas en cada render.
-  const handleNavigateToHijo = useCallback((nombre) => {
-    setSelectedHijoNombre(nombre)
-    setDashboardTab('hijos')
-  }, [])
   const handleAddIngreso = useCallback(() => {
     setTipoMovimiento('ingreso')
     setEfectivo(prev => ({ ...prev, cuenta: '' }))
@@ -3158,7 +3154,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} onNavigateToHijo={handleNavigateToHijo} />
+                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (

@@ -562,7 +562,7 @@ export const getLast6Months = () => {
   return months
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, onNavigateToHijo }) {
+export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -626,6 +626,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
+  const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   const cicloDesdeTimers = useRef({})
   const guardarCicloDesde = (accountId, fecha) => {
     // El input es un <input type="date">: al escribirlo a mano dispara un onChange
@@ -1978,6 +1979,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
   const hijosTotalesGeneral = sumarHijosPorNombre(hijosPorCategoriaGeneral)
   const hijosTotalesGeneralUsd = sumarHijosPorNombre(hijosPorCategoriaGeneralUsd)
+  // Desglose por categoría del hijo elegido en la lista: mismo patrón que
+  // "categoría → subcategorías" de arriba, en vez de navegar a la solapa del
+  // hijo — hijosPorCategoriaGeneral ya viene indexado por categoría, así que
+  // solo hace falta invertirlo para el hijo seleccionado.
+  const catsPorHijoGeneral = hijoGeneralSeleccionado
+    ? Object.entries(hijosPorCategoriaGeneral)
+        .map(([cat, porHijo]) => [cat, porHijo[hijoGeneralSeleccionado] || 0])
+        .filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1])
+    : []
+  const catsPorHijoGeneralUsd = hijoGeneralSeleccionado
+    ? Object.entries(hijosPorCategoriaGeneralUsd)
+        .map(([cat, porHijo]) => [cat, porHijo[hijoGeneralSeleccionado] || 0])
+        .filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1])
+    : []
   // Subcategorías de la categoría elegida en la lista: igual que
   // categoriasResumenGeneral, se excluye lo ya asignado a un hijo (esa parte
   // se muestra en su propia pastilla en "Gasto del mes por hijo") — si no, el
@@ -2019,17 +2034,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
       ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
       subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-      hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
+      hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+      statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen,
     }
-  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, getChildName])
+  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName])
 
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
     statementsFacturados, statementsSinResumen, totalProximoResumenArs, totalProximoResumenUsd,
     ingresosPorCategoriaMes, categoriasResumenGeneral, categoriasResumenGeneralUsd,
     subcatsCatGeneral, subcatsCatGeneralUsd, categoriasBrutoSubtotalArs,
-    hijosTotalesGeneral, hijosTotalesGeneralUsd, statementsVencidas, statementsNoVencidas,
+    hijosTotalesGeneral, hijosTotalesGeneralUsd, catsPorHijoGeneral, catsPorHijoGeneralUsd,
+    statementsVencidas, statementsNoVencidas,
     itemsPorStatement, categoriasResumen,
   } = apagarMemo
 
@@ -2392,34 +2409,60 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </div>
           )}
           {/* Hijos: composición del gasto del mes por hijo, siempre en
-              bruto — cada fila lleva directo a la solapa de ese hijo. */}
+              bruto — cada fila despliega su propio detalle por categoría,
+              mismo patrón que "Gastos del mes por categoría" de arriba (antes
+              llevaba directo a la solapa del hijo, inconsistente con esa). */}
           {(hijosTotalesGeneral.length > 0 || hijosTotalesGeneralUsd.length > 0) && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
               <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gasto del mes por hijo</p>
               {hijosTotalesGeneral.map(([hijo, total]) => (
-                <div key={hijo}
-                  onClick={() => onNavigateToHijo?.(hijo)}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: onNavigateToHijo ? 'pointer' : 'default' }}>
-                  <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {customIcons?.[hijo] || '👧'} {hijo}
-                  </span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    $ {formatMonto(total)} {onNavigateToHijo && <span style={{ opacity: 0.5, fontWeight: '400' }}>›</span>}
-                  </span>
-                </div>
+                <React.Fragment key={hijo}>
+                  <div
+                    onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
+                    <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
+                      {customIcons?.[hijo] || '👧'} {hijo}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(total)}</span>
+                  </div>
+                  {hijoGeneralSeleccionado === hijo && catsPorHijoGeneral.length > 0 && (
+                    <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {catsPorHijoGeneral.map(([cat, montoCat]) => (
+                        <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                          <span>{resolveIcon(cat)} {cat}</span>
+                          <span>$ {formatMonto(montoCat)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </React.Fragment>
               ))}
               {hijosTotalesGeneralUsd.length > 0 && (
                 <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                   <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {hijosTotalesGeneralUsd.map(([hijo, total]) => (
-                    <div key={`usd-${hijo}`}
-                      onClick={() => onNavigateToHijo?.(hijo)}
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: onNavigateToHijo ? 'pointer' : 'default' }}>
-                      <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{customIcons?.[hijo] || '👧'} {hijo}</span>
-                      <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        U$S {formatMontoFull(total)} {onNavigateToHijo && <span style={{ opacity: 0.5, fontWeight: '400' }}>›</span>}
-                      </span>
-                    </div>
+                    <React.Fragment key={`usd-${hijo}`}>
+                      <div
+                        onClick={() => setHijoGeneralSeleccionado(h => h === hijo ? null : hijo)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', cursor: 'pointer' }}>
+                        <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ opacity: 0.6, fontSize: '11px' }}>{hijoGeneralSeleccionado === hijo ? '▾' : '▸'}</span>
+                          {customIcons?.[hijo] || '👧'} {hijo}
+                        </span>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>U$S {formatMontoFull(total)}</span>
+                      </div>
+                      {hijoGeneralSeleccionado === hijo && catsPorHijoGeneralUsd.length > 0 && (
+                        <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {catsPorHijoGeneralUsd.map(([cat, montoCat]) => (
+                            <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                              <span>{resolveIcon(cat)} {cat}</span>
+                              <span>U$S {formatMontoFull(montoCat)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </React.Fragment>
                   ))}
                 </div>
               )}
