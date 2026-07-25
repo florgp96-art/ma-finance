@@ -1031,8 +1031,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditCategoria(tx.categories?.nombre || 'A Identificar')
     setEditSubcategoria(tx.subcategories?.nombre || '')
     setEditCuenta(tx.account_id || '')
-    const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
-    setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
+    if (tx.tipo === 'ingreso') {
+      // Los ingresos que vienen del import de tarjeta tienen category_id/
+      // subcategory_id reales pero nunca llenaron "tag" (ese import solo lo usa
+      // para el hijo) — sin este respaldo, el form mostraba "sin categoría" y
+      // guardar CUALQUIER cambio (ej. el monto) borraba la categoría real que
+      // sí tenía. Ver también el respaldo igual en la columna Categoría de la tabla.
+      setEditTag(tx.tag || tx.subcategories?.nombre || '')
+    } else {
+      const matchedChild = children.find(c => c.nombre.toLowerCase() === (tx.tag || '').toLowerCase())
+      setEditTag(matchedChild ? matchedChild.nombre : (tx.tag || ''))
+    }
     // Hijo de un ingreso (ej. cuota alimentaria que se cobra): va en child_id,
     // no en tag (que en un ingreso ya guarda la subcategoría elegida).
     setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
@@ -1473,6 +1482,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )
     }
     const esIngresoTx = esVistaIngresos || tx.tipo === 'ingreso'
+    // Igual que el respaldo de startEdit: los ingresos importados de tarjeta no
+    // llenan "tag" pero sí tienen subcategory_id/category_id reales — sin esto
+    // se veían en blanco en la tabla aunque la categoría estuviera bien guardada.
+    const ingresoLabel = tx.tag || tx.subcategories?.nombre || tx.categories?.nombre || '—'
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
     const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }
@@ -1500,8 +1513,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {colVisible.categoria && (
             <td style={ellipsisCell}>
               {esIngresoTx ? (
-                <span title={tx.tag || ''} style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
-                  {tx.tag || '—'}
+                <span title={ingresoLabel} style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                  {ingresoLabel}
                 </span>
               ) : (
                 <span title={tx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(tx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
@@ -1547,7 +1560,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 {esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Categoría</p>
-                    <p style={detailValue}>{tx.tag || '—'}</p>
+                    <p style={detailValue}>{ingresoLabel}</p>
                   </div>
                 )}
                 {!esIngresoTx && (
