@@ -2267,7 +2267,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             {editUsdStatementId === s.id ? (
               <span onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', justifyContent: 'flex-end' }}>
                 <input type="number" step="0.01" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
-                  placeholder="ej. -20.65 si es a favor"
+                  placeholder="negativo si es a favor"
                   style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                 <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
                 <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
