@@ -34,8 +34,6 @@ const BAR_COLOR = '#5C4F5C'
 // la base nunca rompe nada ni cambia de color entre sesiones.
 export const INCOME_CATEGORY_CONFIG = {
   'Mama':                          { icon: '👩', color: 'hsl(13, 55%, 81%)' },
-  'Cuota Alimentaria Faustino':    { icon: '👦', color: 'hsl(39, 55%, 85%)' },
-  'Cuota Alimentaria Matko':       { icon: '👦', color: 'hsl(64, 50%, 81%)' },
   'Cuota Alimentaria':             { icon: '👶', color: 'hsl(90, 45%, 85%)' },
   'Freelance':                     { icon: '💻', color: 'hsl(116, 45%, 81%)' },
   'Moms Food':                     { icon: '🍲', color: 'hsl(142, 45%, 85%)' },

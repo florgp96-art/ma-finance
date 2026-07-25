@@ -20,6 +20,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   onRefresh,
   tcManual,
   onSaveTC,
+  cuotaAlimentariaActiva,
+  onSaveCuotaAlimentaria,
 }, ref) {
   // Modal visibility
   const [showHijos, setShowHijos] = useState(false)
@@ -493,6 +495,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 <p style={{ fontSize: '13px', color: '#aaa', textAlign: 'center', padding: '16px 0' }}>Sin hijos registrados.</p>
               )}
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, cursor: 'pointer', marginBottom: '16px' }}>
+              <input type="checkbox" checked={cuotaAlimentariaActiva} onChange={e => onSaveCuotaAlimentaria?.(e.target.checked)} />
+              Usar función de Cuota Alimentaria
+            </label>
+            <p style={{ margin: '-10px 0 16px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+              Activá esto si a algún hijo/a le cobrás o pagás una cuota alimentaria periódica. Si tus hijos/as ya son mayores o no aplica, dejalo desactivado para no ver esa opción al cargar ingresos.
+            </p>
             <form onSubmit={handleAddHijo} style={{ display: 'flex', gap: '8px' }}>
               <input
                 style={{ ...s.input, flex: 1 }}

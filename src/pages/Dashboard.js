@@ -229,6 +229,11 @@ export default function Dashboard() {
     persistPref('tc_manual', valor)
   }
 
+  const guardarCuotaAlimentariaActiva = (activa) => {
+    setCuotaAlimentariaActiva(activa)
+    persistPref('cuota_alimentaria_activa', activa)
+  }
+
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
   const [rotarBannerCerrado, setRotarBannerCerrado] = useState(() => localStorage.getItem('rotar_banner_cerrado') === '1')
@@ -266,6 +271,11 @@ export default function Dashboard() {
   // Hijos
   const [childrenDB, setChildrenDB] = useState([])
   const [tieneHijos, setTieneHijos] = useState(null)
+  // Cuota Alimentaria: función opcional (no todos los que cargan hijos/as
+  // reciben o pagan una cuota — ej. hijos ya mayores de edad). Arranca
+  // activada para no romper el comportamiento de cuentas que ya la usan;
+  // se puede desactivar desde "Mis hijos" y queda guardado como preferencia.
+  const [cuotaAlimentariaActiva, setCuotaAlimentariaActiva] = useState(true)
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
@@ -516,6 +526,8 @@ export default function Dashboard() {
             }
           } catch {}
         }
+        const cuotaAlimentariaDB = readPref('cuota_alimentaria_activa')
+        if (cuotaAlimentariaDB === false) setCuotaAlimentariaActiva(false)
         prefsLoaded.current = true
       }
     })
@@ -3328,6 +3340,7 @@ export default function Dashboard() {
                       refreshKey={refreshKey}
                       initialPeriod={sharedPeriod}
                       customIcons={customIcons}
+                      cuotaAlimentariaActiva={cuotaAlimentariaActiva}
                     />
                   </div>
                 )}
@@ -4274,7 +4287,7 @@ export default function Dashboard() {
                   </select>
                 </div>
               </div>
-              {childrenDB.length > 0 && (
+              {childrenDB.length > 0 && (tipoMovimiento !== 'ingreso' || cuotaAlimentariaActiva) && (
                 <div style={styles.field}>
                   <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
@@ -4345,6 +4358,8 @@ export default function Dashboard() {
         onRefresh={() => { setRefreshKey(k => k + 1); fetchCustomIcons() }}
         tcManual={tcManual}
         onSaveTC={guardarTipoCambioManual}
+        cuotaAlimentariaActiva={cuotaAlimentariaActiva}
+        onSaveCuotaAlimentaria={guardarCuotaAlimentariaActiva}
       />
     </>
   )
