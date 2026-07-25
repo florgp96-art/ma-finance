@@ -91,6 +91,14 @@ export default function Dashboard() {
   const [selectedAccount, setSelectedAccount] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [userEmail, setUserEmail] = useState(null)
+  // Id del usuario logueado — necesario para que el widget de Ahorros use una
+  // clave de localStorage propia por usuario (ver más abajo). Antes usaba una
+  // clave fija ("ma_ahorro"/"ma_cuentas_ahorro") compartida por todo el
+  // navegador: en un dispositivo compartido (ej. el mismo celu/compu con dos
+  // cuentas distintas), lo que cargaba un usuario se filtraba al otro apenas
+  // iniciaba sesión ahí, porque el efecto de "migrar datos viejos del
+  // navegador a la base" no distinguía de quién eran esos datos.
+  const [currentUserId, setCurrentUserId] = useState(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
@@ -164,16 +172,14 @@ export default function Dashboard() {
   }, [tipoMovimiento, categoriasDB])
   const categoriasDelTipoMovimiento = categoriasDB.filter(c => (c.tipo || 'gasto') === tipoMovimiento)
 
-  // Widget ahorro — persiste en localStorage
-  const [ahorro, setAhorro] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ma_ahorro')
-      return saved ? JSON.parse(saved) : { monto: '', moneda: 'USD', anos: '', tasa: '' }
-    } catch { return { monto: '', moneda: 'USD', anos: '', tasa: '' } }
-  })
-  const [cuentasAhorro, setCuentasAhorro] = useState(() => {
-    try { const s = localStorage.getItem('ma_cuentas_ahorro'); return s ? JSON.parse(s) : [] } catch { return [] }
-  })
+  // Widget ahorro — persiste en la base (user_rules, ver más abajo) con una
+  // copia en localStorage por usuario como caché rápida entre sesiones en el
+  // mismo dispositivo. Arranca vacío: recién se sabe de quién es una vez que
+  // se resuelve el login (ver el useEffect de currentUserId) — nunca antes,
+  // que es justo lo que causaba la filtración entre cuentas en un dispositivo
+  // compartido.
+  const [ahorro, setAhorro] = useState({ monto: '', moneda: 'USD', anos: '', tasa: '' })
+  const [cuentasAhorro, setCuentasAhorro] = useState([])
   const [showAddCuentaAhorro, setShowAddCuentaAhorro] = useState(false)
   const [newCuentaAhorro, setNewCuentaAhorro] = useState({ cuenta: '', monto: '', moneda: 'ARS' })
 
@@ -381,8 +387,8 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => { setAccountTransactions([]); setSidebarCatEvol(['total']) }, [selectedAccount])
-  useEffect(() => { try { localStorage.setItem('ma_ahorro', JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro])
-  useEffect(() => { try { localStorage.setItem('ma_cuentas_ahorro', JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro])
+  useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_ahorro_${currentUserId}`, JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro, currentUserId])
+  useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_cuentas_ahorro_${currentUserId}`, JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro, currentUserId])
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
   useEffect(() => {
     const rateVivo = dolarRates[tcTipo]
@@ -400,6 +406,11 @@ export default function Dashboard() {
     fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchRepartoRules(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        setCurrentUserId(user.id)
+        // Limpiar las claves viejas sin scope de usuario (bug de filtración
+        // entre cuentas en dispositivos compartidos) para que no queden dando
+        // vueltas ni las lea ningún código viejo.
+        try { localStorage.removeItem('ma_ahorro'); localStorage.removeItem('ma_cuentas_ahorro') } catch {}
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
         const { data: settings } = await supabase.from('user_settings').select('onboarding_completo, tiene_hijos').eq('user_id', user.id).maybeSingle()
         if (!settings || !settings.onboarding_completo) {
@@ -441,17 +452,37 @@ export default function Dashboard() {
 
         // Preferencias sincronizadas (metas del mes, proyección de ahorro,
         // cuentas de ahorro): DB primero; si la DB no tiene nada y este
-        // navegador guarda datos viejos en localStorage, se migran solos.
+        // navegador guarda datos viejos de ESTE usuario en localStorage (clave
+        // por user.id, ver comentario del bug de filtración entre cuentas más
+        // arriba), se migran solos.
         const { data: prefRows } = await supabase.from('user_rules')
           .select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__pref__%')
         const prefs = Object.fromEntries((prefRows || []).map(r => [r.texto_original.replace('__pref__', ''), r.nombre_asignado]))
         const readPref = (key) => { try { return prefs[key] !== undefined ? JSON.parse(prefs[key]) : undefined } catch { return undefined } }
         const ahorroDB = readPref('ahorro')
-        if (ahorroDB) setAhorro(ahorroDB)
-        else if (ahorro && (ahorro.monto || ahorro.anos)) persistPref('ahorro', ahorro)
+        if (ahorroDB) {
+          setAhorro(ahorroDB)
+        } else {
+          try {
+            const localAhorro = localStorage.getItem(`ma_ahorro_${user.id}`)
+            if (localAhorro) {
+              const parsed = JSON.parse(localAhorro)
+              if (parsed) { setAhorro(parsed); persistPref('ahorro', parsed) }
+            }
+          } catch {}
+        }
         const cuentasAhorroDB = readPref('cuentas_ahorro')
-        if (Array.isArray(cuentasAhorroDB)) setCuentasAhorro(cuentasAhorroDB)
-        else if (cuentasAhorro.length > 0) persistPref('cuentas_ahorro', cuentasAhorro)
+        if (Array.isArray(cuentasAhorroDB)) {
+          setCuentasAhorro(cuentasAhorroDB)
+        } else {
+          try {
+            const localCuentas = localStorage.getItem(`ma_cuentas_ahorro_${user.id}`)
+            if (localCuentas) {
+              const parsed = JSON.parse(localCuentas)
+              if (Array.isArray(parsed)) { setCuentasAhorro(parsed); persistPref('cuentas_ahorro', parsed) }
+            }
+          } catch {}
+        }
         const tcManualDB = readPref('tc_manual')
         if (tcManualDB) setTcManual(tcManualDB)
         prefsLoaded.current = true
