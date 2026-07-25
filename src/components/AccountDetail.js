@@ -1178,20 +1178,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // ALTO entre los resúmenes de ese mes (no la suma): si son el mismo
   // resumen cargado dos veces, sumarlos duplicaría el monto — el más alto es
   // la mejor aproximación por default hasta que se corrija a mano (ver
-  // guardarTotalFacturadoMes). "mes" se normaliza a "YYYY-MM" (statements.periodo
-  // se guarda como texto en español, "Junio 2026") para poder ordenar
-  // cronológicamente y pasarlo por mesLabel al mostrarlo.
+  // guardarTotalFacturadoMes).
+  // Se agrupa por el texto tal cual lo guarda statements.periodo ("Junio
+  // 2026"), NO convertido a fecha — el texto es lo que hace que dos
+  // resúmenes del mismo mes se reconozcan entre sí de forma confiable. Para
+  // el orden cronológico (que con texto plano salía mal alfabéticamente) se
+  // usa periodoToYearMonth solo como criterio de sort, sin tocar el
+  // agrupamiento.
   const barDataPorMes = useMemo(() => {
     const map = new Map()
     statements.forEach(s => {
-      const mes = periodoToYearMonth(s.periodo) || s.fecha_hasta?.slice(0, 7)
+      const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
       if (!mes) return
-      const prev = map.get(mes) || { mes, mesDisplay: mesLabel(mes), total: 0, statementIds: [] }
+      const prev = map.get(mes) || { mes, total: 0, statementIds: [] }
       prev.total = Math.max(prev.total, Number(s.total_resumen) || 0)
       prev.statementIds.push(s.id)
       map.set(mes, prev)
     })
-    return [...map.values()].sort((a, b) => a.mes.localeCompare(b.mes))
+    return [...map.values()].sort((a, b) => {
+      const ka = periodoToYearMonth(a.mes) || a.mes
+      const kb = periodoToYearMonth(b.mes) || b.mes
+      return ka.localeCompare(kb)
+    })
   }, [statements])
   const barData = barDataPorMes
 
@@ -2964,7 +2972,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <XAxis dataKey="mesDisplay" tick={{ fontSize: 12, fill: '#6e6e73' }} />
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
               <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
               <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
               <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
@@ -2975,7 +2983,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {barData.map(b => (
               <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                <span>{b.mesDisplay}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
+                <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
                 {editBarMes?.mes === b.mes ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input type="number" autoFocus value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
