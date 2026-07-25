@@ -2474,8 +2474,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               cuando el banco cierra ese resumen. */}
           {allAccounts && statementsSinResumen.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>🕐 Próximos vencimientos</p>
-              <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
+                🕐 Próximos vencimientos
+                <InfoTooltip darkMode={darkMode} text={'Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".'} />
+              </p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsSinResumen.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
@@ -2503,8 +2505,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {/* Ingresos de este mes: informativo, no resta de "Te falta pagar". */}
           {allAccounts && ingresosPorCategoriaMes.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 4px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Ingresos de este mes</p>
-              <p style={{ margin: '0 0 10px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Informativo — no resta de "Te falta pagar".</p>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
+                Ingresos de este mes
+                <InfoTooltip darkMode={darkMode} text={'Informativo — no resta de "Te falta pagar".'} />
+              </p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {ingresosPorCategoriaMes.map(c => (
                   <div key={c.nombre} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', gap: '10px' }}>
