@@ -4395,7 +4395,9 @@ const getStyles = (dark, mobile = false) => {
     },
     sidebarBtnSecondary: {
       width: '100%', padding: '10px', backgroundColor: 'transparent', color: p,
-      border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', textAlign: 'center', outline: 'none'
+      border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer',
+      fontSize: '12px', fontWeight: '400', letterSpacing: '0.08em', textTransform: 'uppercase',
+      textAlign: 'center', outline: 'none', fontFamily: '"Montserrat", sans-serif'
     },
     accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
     emptyText: { fontSize: '13px', color: muted, textAlign: 'center', padding: '16px 0' },
