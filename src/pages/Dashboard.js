@@ -209,11 +209,11 @@ export default function Dashboard() {
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
+  const [rotarBannerCerrado, setRotarBannerCerrado] = useState(() => localStorage.getItem('rotar_banner_cerrado') === '1')
   const [dashboardTab, setDashboardTab] = useState('resumen')
   const tabsScrollRef = useRef(null)
   const [sharedPeriod, setSharedPeriod] = useState([])
   const [selectedHijoNombre, setSelectedHijoNombre] = useState(null)
-  const [hijosResumenMes, setHijosResumenMes] = useState({})
 
   // Excel import
   const [showExcel, setShowExcel] = useState(false)
@@ -253,42 +253,6 @@ export default function Dashboard() {
       setSelectedHijoNombre(childrenDB[0].nombre)
     }
   }, [childrenDB, selectedHijoNombre])
-
-  useEffect(() => {
-    if (dashboardTab !== 'hijos' || childrenDB.length === 0) return
-    let cancelled = false
-    const fetchResumenHijos = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const now = new Date()
-      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      const resultados = {}
-      const tc = parseFloat(tipoCambioEfectivo) || 0
-      const tcE = parseFloat(tipoCambioEUR) || 0
-      await Promise.all(childrenDB.map(async c => {
-        const { data } = await supabase.from('transactions')
-          .select('monto, moneda, fecha')
-          .eq('user_id', user.id)
-          .gt('monto', 0)
-          .neq('tipo', 'ingreso')
-          .or(`child_id.eq.${c.id},tag.ilike.${c.nombre}`)
-          .gte('fecha', `${mesActual}-01`)
-        // Antes solo sumaba ARS y descartaba en silencio los gastos de un hijo
-        // en USD/EUR. Son siempre movimientos del mes actual (ver gte de arriba),
-        // así que alcanza con el TC vigente — sin TC configurado, se avisa por
-        // consola en vez de sumar 0 sin decir nada.
-        resultados[c.nombre] = (data || []).reduce((s, t) => {
-          const monto = Number(t.monto) || 0
-          if (t.moneda === 'USD') { if (tc <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC USD para', c.nombre, t.fecha); return s }; return s + monto * tc }
-          if (t.moneda === 'EUR') { if (tcE <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('hijosResumenMes: sin TC EUR para', c.nombre, t.fecha); return s }; return s + monto * tcE }
-          return s + monto
-        }, 0)
-      }))
-      if (!cancelled) setHijosResumenMes(resultados)
-    }
-    fetchResumenHijos()
-    return () => { cancelled = true }
-  }, [dashboardTab, childrenDB, refreshKey, tipoCambioEfectivo, tipoCambioEUR])
 
   // Íconos de categorías
   const [customIcons, setCustomIcons] = useState({})
@@ -2979,13 +2943,18 @@ export default function Dashboard() {
               </div>
             </div>
 
-        {/* Banner: rotar teléfono — solo mobile portrait */}
-        {isPortraitMobile && (
+        {/* Banner: rotar teléfono — solo mobile portrait, hasta que lo cierren */}
+        {isPortraitMobile && !rotarBannerCerrado && (
           <div style={{ margin: '0 12px 10px', padding: '10px 14px', borderRadius: '12px', backgroundColor: darkMode ? '#2A202A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#D0C8CC'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '20px' }}>📱↔️</span>
-            <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#C8B4E8' : '#5C4F5C', fontWeight: '500' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#C8B4E8' : '#5C4F5C', fontWeight: '500', flex: 1 }}>
               Girá el teléfono en horizontal para mejor experiencia
             </p>
+            <button
+              onClick={() => { setRotarBannerCerrado(true); localStorage.setItem('rotar_banner_cerrado', '1') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 4px', flexShrink: 0 }}>
+              ✕
+            </button>
           </div>
         )}
 
@@ -3262,17 +3231,9 @@ export default function Dashboard() {
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
                   <div>
-                    {Object.keys(hijosResumenMes).length > 0 && (
-                      <div style={{ fontSize: '13px', color: darkMode ? '#C0B0C0' : '#6e6e73', marginBottom: '14px', fontFamily: '"Montserrat", sans-serif' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '700', ...rotuloLabel }}>Gastos {mesLabel(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)}: </span>
-                        {childrenDB.map((c, i) => (
-                          <span key={c.id}>
-                            {i > 0 && ' · '}
-                            {c.nombre}: {formatMontoFull(hijosResumenMes[c.nombre] || 0)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {/* La leyenda con el total del mes por hijo se sacó de acá: quedaba
+                        mal ubicada y era información redundante — cada hijo ya muestra
+                        sus propios totales más abajo al seleccionarlo. */}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
                       {childrenDB.map(c => {
                         const activo = (selectedHijoNombre || childrenDB[0].nombre) === c.nombre
