@@ -3090,8 +3090,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <input
           style={{
             flex: '1 1 260px', padding: '10px 14px', borderRadius: '12px',
-            border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
-            boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
+            border: `1.5px solid ${darkMode ? '#3A333A' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
+            boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f'
           }}
           placeholder="🔍 Buscar por nombre, categoría, fecha, monto..."
           value={searchQuery || ''}
@@ -3101,8 +3101,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <select
             style={{
               flex: '0 1 200px', padding: '10px 14px', borderRadius: '12px',
-              border: '1.5px solid #e0e0e0', fontSize: '14px', outline: 'none',
-              boxSizing: 'border-box', backgroundColor: '#fafafa', color: '#1d1d1f'
+              border: `1.5px solid ${darkMode ? '#3A333A' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
+              boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f'
             }}
             value={filtroCuenta}
             onChange={e => setFiltroCuenta(e.target.value)}

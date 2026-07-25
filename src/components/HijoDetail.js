@@ -31,18 +31,16 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const [filaExpandida, setFilaExpandida] = useState(null)
   const [tablaRef, tablaWidth] = useContainerWidth()
   const colVisible = columnasVisibles(tablaWidth)
-  const numColsTabla = 4 + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
-  // Igual que en AccountDetail.js: fecha/categoría/monto/expandir tienen ancho fijo
-  // (no dependen del ancho de pantalla), el resto se reparte por peso entre
-  // descripción/subcategoría/cuenta — antes "descripción" no tenía ancho propio y
-  // se llevaba todo el sobrante.
+  const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
+  // Mismo criterio que la tabla principal de AccountDetail.js: fecha/monto/
+  // expandir tienen ancho fijo, el resto se reparte por peso entre descripción/
+  // categoría/subcategoría/cuenta — y categoría se oculta en pantallas angostas
+  // (colVisible.categoria) en vez de forzarse siempre visible, que era lo que
+  // dejaba todo apretado y la descripción cortada en el celular.
   const FECHA_PX = 58, MONTO_PX = 106, EXPAND_PX = 28
-  // La columna Categoría siempre se muestra (no depende de colVisible.categoria),
-  // por eso se fuerza a true acá: antes tenía un ancho fijo de 88px que cortaba
-  // nombres de categoría más largos aunque sobrara espacio en pantallas anchas.
   const anchosTexto = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
-    { ...colVisible, categoria: true }, { descripcion: 1.6, categoria: 1.3, subcategoria: 1, cuenta: 1 }
+    colVisible, { descripcion: 1.6, categoria: 1.3, subcategoria: 1, cuenta: 1 }
   )
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
@@ -530,7 +528,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
               <colgroup>
                 <col style={{ width: `${FECHA_PX}px` }} />
                 <col style={{ width: `${anchosTexto.descripcion}px` }} />
-                <col style={{ width: `${anchosTexto.categoria}px` }} />
+                {colVisible.categoria && <col style={{ width: `${anchosTexto.categoria}px` }} />}
                 {colVisible.subcategoria && <col style={{ width: `${anchosTexto.subcategoria}px` }} />}
                 {colVisible.cuenta && <col style={{ width: `${anchosTexto.cuenta}px` }} />}
                 <col style={{ width: `${MONTO_PX}px` }} />
@@ -541,7 +539,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                   {[
                     { h: 'Fecha', key: 'fecha' },
                     { h: 'Descripción', key: 'descripcion' },
-                    { h: 'Categoría', key: 'categoria' },
+                    ...(colVisible.categoria ? [{ h: 'Categoría', key: 'categoria' }] : []),
                     ...(colVisible.subcategoria ? [{ h: 'Subcategoría' }] : []),
                     ...(colVisible.cuenta ? [{ h: 'Forma de pago' }] : []),
                     { h: 'Monto', key: 'monto' },
@@ -595,12 +593,14 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                       <td style={ellipsisTd} title={t.nombre || t.detalle || ''}>
                         <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</span>
                       </td>
-                      <td style={ellipsisTd}>
-                        {t.categories?.nombre
-                          ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
-                          : <span style={{ color: '#aaa' }}>—</span>
-                        }
-                      </td>
+                      {colVisible.categoria && (
+                        <td style={ellipsisTd}>
+                          {t.categories?.nombre
+                            ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
+                            : <span style={{ color: '#aaa' }}>—</span>
+                          }
+                        </td>
+                      )}
                       {colVisible.subcategoria && (
                         <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.subcategories?.nombre || '—'}</td>
                       )}
@@ -608,6 +608,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                         <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.accounts?.nombre || '—'}</td>
                       )}
                       <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', textAlign: 'right', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                        {t.tipo === 'ingreso' ? '+' : '-'}
                         {t.moneda === 'USD'
                           ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
                           : t.moneda === 'EUR'
