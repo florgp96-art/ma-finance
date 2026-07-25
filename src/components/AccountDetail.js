@@ -2105,11 +2105,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         gastosFijosDelMes.forEach(t => {
           const cat = t.categories?.nombre || 'A Identificar'
           const hijo = getChildName(t)
+          const esUsd = t.moneda === 'USD'
+          // Mismo bug que en subcatsCatGeneral: un gasto fijo en USD (ej. alquiler
+          // débito automático) se sumaba siempre en el mapa de pesos sin mirar la
+          // moneda — se veía como si "$ 1.400" fuera pesos en vez de dólares.
           if (hijo) {
-            if (!hijoMap[cat]) hijoMap[cat] = {}
-            hijoMap[cat][hijo] = (hijoMap[cat][hijo] || 0) + Number(t.monto)
+            const destinoHijo = esUsd ? hijoMapUsd : hijoMap
+            if (!destinoHijo[cat]) destinoHijo[cat] = {}
+            destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
           } else {
-            map[cat] = (map[cat] || 0) + Number(t.monto)
+            const destino = esUsd ? mapUsd : map
+            destino[cat] = (destino[cat] || 0) + Number(t.monto)
           }
         })
         return [
@@ -2166,7 +2172,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           const cat = t.categories?.nombre || 'A Identificar'
           if (cat !== catGeneralSeleccionada) return
           const subcat = t.subcategories?.nombre || 'Sin subcategoría'
-          map[subcat] = (map[subcat] || 0) + Number(t.monto)
+          // Alquiler y otros gastos fijos en USD (ej. débito automático en dólares)
+          // se estaban sumando siempre acá, en el mapa de pesos, sin mirar la
+          // moneda — un alquiler de U$S 1.400 se veía como "$ 1.400".
+          const destino = t.moneda === 'USD' ? mapUsd : map
+          destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
         })
         return [
           Object.entries(map).sort((a, b) => b[1] - a[1]),
