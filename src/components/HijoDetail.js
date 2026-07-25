@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod, customIcons }) {
+function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod, customIcons, cuotaAlimentariaActiva = true }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -467,7 +467,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
           movimientos tipo "ingreso" con este hijo asignado (ej. la cuota que se
           cobra); los egresos son lo mismo que ya se ve arriba en "Total ARS/USD/EUR"
           y "Gastos por categoría", en un solo total comparable. */}
-      {(cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (
+      {cuotaAlimentariaActiva && (cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
             Cuota Alimentaria
