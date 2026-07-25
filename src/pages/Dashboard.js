@@ -150,6 +150,14 @@ export default function Dashboard() {
   const [contextoDetectado, setContextoDetectado] = useState([])
   const [contextoIdx, setContextoIdx] = useState(0)
 
+  // Confirmación al recargar un resumen/extracto de un período ya cargado:
+  // reemplaza al window.confirm() genérico (un solo botón "OK" que no
+  // aclaraba qué pasaba) por dos opciones explícitas.
+  const [resumenDupConfirm, setResumenDupConfirm] = useState(null)
+  const confirmarResumenDuplicado = (periodo, tipoPalabra) => new Promise(resolve => {
+    setResumenDupConfirm({ periodo, tipoPalabra, resolve })
+  })
+
   const [msgIndex, setMsgIndex] = useState(0)
   const msgInterval = useRef(null)
   const [timer, setTimer] = useState(120)
@@ -1858,7 +1866,7 @@ export default function Dashboard() {
         if ((txCount || 0) > 0) {
           // Puede ser un extracto distinto con el mismo período detectado
           // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
-          const seguir = window.confirm(`Ya cargaste un extracto de ${statementData.periodo} para esta cuenta.\n\nSi este es OTRO extracto (por ejemplo, el que cierra el mes siguiente), podés cargarlo igual: los movimientos repetidos aparecen tachados como "ya cargados".\n\n¿Querés cargarlo?`)
+          const seguir = await confirmarResumenDuplicado(statementData.periodo, 'extracto')
           if (!seguir) { setLoading(false); return }
         } else {
           await supabase.from('statements').delete().eq('id', existing.id)
@@ -2053,7 +2061,7 @@ export default function Dashboard() {
         if ((txCount || 0) > 0) {
           // Puede ser un resumen distinto con el mismo período detectado
           // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
-          const seguir = window.confirm(`Ya cargaste un resumen de ${statementData.periodo} para esta cuenta.\n\nSi este es OTRO resumen (por ejemplo, el que cierra el mes siguiente), podés cargarlo igual: los movimientos repetidos aparecen tachados como "ya cargados".\n\n¿Querés cargarlo?`)
+          const seguir = await confirmarResumenDuplicado(statementData.periodo, 'resumen')
           if (!seguir) { setLoading(false); return }
         } else {
           await supabase.from('statements').delete().eq('id', existing.id)
@@ -3934,6 +3942,25 @@ export default function Dashboard() {
               </>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {resumenDupConfirm && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '400px'}}>
+            <h3 style={styles.modalTitle}>Ya está cargado</h3>
+            <p style={{ fontSize: '14px', color: darkMode ? '#ccc' : '#444', lineHeight: '1.5', margin: 0 }}>
+              Este {resumenDupConfirm.tipoPalabra} de {resumenDupConfirm.periodo} ya estaba cargado. Si había movimientos sin cargar, o es otro {resumenDupConfirm.tipoPalabra}, podés cargarlo igual — los que ya estén cargados van a aparecer tachados.
+            </p>
+            <div style={styles.modalButtons}>
+              <button style={styles.cancelBtn} onClick={() => { resumenDupConfirm.resolve(false); setResumenDupConfirm(null) }}>
+                Es el mismo, no cargar
+              </button>
+              <button style={styles.saveBtn} onClick={() => { resumenDupConfirm.resolve(true); setResumenDupConfirm(null) }}>
+                Cargarlo igual
+              </button>
+            </div>
           </div>
         </div>
       )}
