@@ -2278,9 +2278,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   U$S {formatMontoFull(s.total_usd)}
                   {/* Si el total en dólares que informa el resumen no se leyó bien del
                       PDF (típicamente un saldo a favor, que viene como negativo), se
-                      puede corregir a mano acá — mismo criterio que "Total facturado". */}
-                  <button onClick={e => { e.stopPropagation(); setEditUsdStatementId(s.id); setEditUsdValor(s.total_dolares != null ? String(s.total_dolares) : '') }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '11px', padding: 0 }}>✏️</button>
+                      puede corregir a mano acá — mismo criterio que "Total facturado".
+                      Solo en resúmenes reales: uno "virtual" (todavía no facturado,
+                      s._virtual) no tiene fila propia en la base para guardar nada, su
+                      id ni siquiera es un uuid real. */}
+                  {!s._virtual && (
+                    <button onClick={e => { e.stopPropagation(); setEditUsdStatementId(s.id); setEditUsdValor(s.total_dolares != null ? String(s.total_dolares) : '') }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '11px', padding: 0 }}>✏️</button>
+                  )}
                 </p>
               )
             )}
