@@ -41,7 +41,7 @@ const statementDelPago = (pago, statements) => {
   return null
 }
 
-export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual }) {
+function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [loading, setLoading] = useState(true)
@@ -415,3 +415,8 @@ export default function CashView({ accounts, refreshKey, darkMode, tipoCambio, t
     </div>
   )
 }
+
+// Mismo motivo que en AccountDetail/HijoDetail: evita repintar el desglose +
+// gráfico de este componente cuando cambia un estado ajeno en el Dashboard
+// que no le pega a ninguno de sus props.
+export default React.memo(CashView)

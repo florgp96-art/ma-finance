@@ -13,7 +13,7 @@ const getLast6Months = () => {
   return months
 }
 
-export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod, customIcons }) {
+function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambioEUR, tcMapEUR, refreshKey, initialPeriod, customIcons }) {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMeses, setSelectedMeses] = useState([])
@@ -655,6 +655,11 @@ export default function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, t
     </div>
   )
 }
+
+// Mismo motivo que en AccountDetail: evita repintar la tabla + gráficos de
+// este hijo cuando cambia un estado ajeno en el Dashboard que no le pega a
+// ninguno de sus props.
+export default React.memo(HijoDetail)
 
 const getStyles = (dark) => ({
   card: {
