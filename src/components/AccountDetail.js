@@ -1143,9 +1143,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }
   }
 
+  // Se fuerza la variante de texto plano — sin eso, ↕ (a diferencia de ↑/↓)
+  // se renderiza como emoji a color en iOS, con una caja de fondo, y quedaba
+  // visualmente distinto a la flecha de la columna ordenada.
   const sortIcon = (key) => {
-    if (sortKey !== key) return ' ↕'
-    return sortDir === 'asc' ? ' ↑' : ' ↓'
+    if (sortKey !== key) return ' ↕︎'
+    return sortDir === 'asc' ? ' ↑︎' : ' ↓︎'
   }
 
   const sortTx = useCallback((list) => {
@@ -2255,7 +2258,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (apagarSortKey === key) setApagarSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setApagarSortKey(key); setApagarSortDir(key === 'monto' ? 'desc' : 'asc') }
   }
-  const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕' : (apagarSortDir === 'asc' ? ' ↑' : ' ↓')
+  const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕︎' : (apagarSortDir === 'asc' ? ' ↑︎' : ' ↓︎')
   const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
   const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
 
