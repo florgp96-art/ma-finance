@@ -253,7 +253,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir(key === 'fecha' ? 'desc' : 'asc') }
   }
-  const sortIcon = (key) => sortKey !== key ? ' ↕' : (sortDir === 'asc' ? ' ↑' : ' ↓')
+  const sortIcon = (key) => sortKey !== key ? ' ↕︎' : (sortDir === 'asc' ? ' ↑︎' : ' ↓︎')
   const sortedTx = useMemo(() => [...filteredTx].sort((a, b) => {
     let valA, valB
     if (sortKey === 'fecha') { valA = a.fecha || ''; valB = b.fecha || '' }
