@@ -573,7 +573,7 @@ export const getLast6Months = () => {
   return months
 }
 
-export default function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail }) {
+function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -617,6 +617,8 @@ export default function AccountDetail({ account, accounts, allAccounts, refreshK
   const [editTipo, setEditTipo] = useState('gasto')
   const [editBarMes, setEditBarMes] = useState(null)
   const [editBarValor, setEditBarValor] = useState('')
+  const [editUsdStatementId, setEditUsdStatementId] = useState(null)
+  const [editUsdValor, setEditUsdValor] = useState('')
   const [children, setChildren] = useState([])
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
@@ -1193,6 +1195,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       s.id === primero ? { ...s, total_resumen: valor } : resto.includes(s.id) ? { ...s, total_resumen: 0 } : s
     ))
     setEditBarMes(null)
+  }
+
+  // Corrección manual del total en dólares de un resumen de tarjeta (columna
+  // "total_dolares") — para cuando la lectura automática del PDF no lo captó
+  // bien, típicamente un saldo A FAVOR en dólares (el resumen lo informa como
+  // negativo) que quedó sin leerse y la app termina calculando el dólar solo
+  // a partir de las compras nuevas en dólares de ese resumen, ignorando el
+  // saldo arrastrado. Acepta negativo a propósito (saldo a favor).
+  const guardarTotalDolaresStatement = async (statementId) => {
+    const valor = parseFloat(String(editUsdValor).replace(',', '.'))
+    if (isNaN(valor)) return
+    const { error } = await supabase.from('statements').update({ total_dolares: valor }).eq('id', statementId)
+    if (error) { window.alert('No se pudo guardar el cambio: ' + error.message); return }
+    setStatements(prev => prev.map(s => s.id === statementId ? { ...s, total_dolares: valor } : s))
+    setEditUsdStatementId(null)
   }
 
   const mesTxs = useMemo(() => selectedMeses.length > 0
@@ -2247,10 +2264,25 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             {s._pagosPosterioresArs > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
             )}
-            {s.total_usd !== 0 && (
-              <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                U$S {formatMontoFull(s.total_usd)}
-              </p>
+            {editUsdStatementId === s.id ? (
+              <span onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', justifyContent: 'flex-end' }}>
+                <input type="number" step="0.01" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
+                  placeholder="ej. -20.65 si es a favor"
+                  style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
+                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+              </span>
+            ) : (
+              (s.total_usd !== 0 || s.total_dolares) && (
+                <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                  U$S {formatMontoFull(s.total_usd)}
+                  {/* Si el total en dólares que informa el resumen no se leyó bien del
+                      PDF (típicamente un saldo a favor, que viene como negativo), se
+                      puede corregir a mano acá — mismo criterio que "Total facturado". */}
+                  <button onClick={e => { e.stopPropagation(); setEditUsdStatementId(s.id); setEditUsdValor(s.total_dolares != null ? String(s.total_dolares) : '') }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '11px', padding: 0 }}>✏️</button>
+                </p>
+              )
             )}
             {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
@@ -3368,6 +3400,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     </div>
   )
 }
+
+// Este componente es el más pesado de la app (tabla grande + dos gráficos de
+// recharts por cuenta) y no es el único hijo del Dashboard — cualquier cambio
+// de estado ajeno ahí (abrir el desplegable de monedas, el hover de una
+// cuenta en el sidebar, etc.) volvía a ejecutar y repintar todo esto sin que
+// ninguno de sus props hubiera cambiado en realidad. React.memo evita ese
+// repintado innecesario; los cálculos pesados de adentro ya estaban en
+// useMemo, esto corta la parte que useMemo no cubre (repintar el árbol).
+export default React.memo(AccountDetail)
 
 const getStyles = (dark, mobile) => {
   const p = dark ? '#8C7B8C' : '#5C4F5C'
