@@ -48,8 +48,15 @@ const parseFechaArgentina = (fecha) => {
 
 const parseCuotaDesc = (texto) => {
   const t = texto || ''
-  let m = t.match(/(\d+)\s*\/\s*(\d+)\s*\)?\s*$/)
-  if (!m) m = t.match(/cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i)
+  // Solo interpretamos un patrón "N/M" como cuota (compra financiada) si la
+  // palabra "cuota" aparece en la descripción. Un "N/M" suelto al final de un
+  // texto (ej. "OBRA SOCIAL 06/25", "MONOTRIBUTO 06/25") casi siempre es una
+  // referencia de mes/año del proveedor, no una cuota real — tratarlo como
+  // cuota generaba proyecciones de gastos futuros inventadas, con montos que
+  // no corresponden (esos importes no son fijos mes a mes).
+  if (!/cuota/i.test(t)) return { cuota_numero: 1, cuotas_total: 1 }
+  let m = t.match(/cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i)
+  if (!m) m = t.match(/(\d+)\s*\/\s*(\d+)\s*\)?\s*$/)
   if (!m) return { cuota_numero: 1, cuotas_total: 1 }
   const num = parseInt(m[1]), total = parseInt(m[2])
   if (num >= 1 && total >= 1 && num <= total && total <= 48) return { cuota_numero: num, cuotas_total: total }
@@ -194,9 +201,10 @@ export default function Dashboard() {
   // Tipo de cambio manual (setting editable por el usuario, opcional): si está
   // activado, se usa en vez de la cotización automática para los totales
   // combinados ARS+USD (Resúmenes mensuales, A pagar).
-  const [tcManual, setTcManual] = useState(() => {
-    try { const s = localStorage.getItem('tc_manual_ma'); return s ? JSON.parse(s) : { valor: null, enabled: false } } catch { return { valor: null, enabled: false } }
-  })
+  // Arranca en blanco por la misma razón que ahorro/cuentasAhorro más abajo:
+  // recién se sabe de quién es este valor una vez resuelto el login (evita la
+  // filtración entre cuentas en un dispositivo compartido).
+  const [tcManual, setTcManual] = useState({ valor: null, enabled: false })
   const tipoCambioEfectivo = (tcManual?.enabled && tcManual?.valor) ? String(tcManual.valor) : tipoCambio
   // tcMap/tcMapEUR: promedio por mes de cada tipo de dólar/euro, para convertir
   // movimientos históricos en USD/EUR con el TC de su propio mes (ver tcDeMovimiento
@@ -209,7 +217,7 @@ export default function Dashboard() {
   const tcMapEUR = useMemo(() => Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor])), [exchangeRates])
   const guardarTipoCambioManual = (valor) => {
     setTcManual(valor)
-    try { localStorage.setItem('tc_manual_ma', JSON.stringify(valor)) } catch {}
+    if (currentUserId) { try { localStorage.setItem(`tc_manual_${currentUserId}`, JSON.stringify(valor)) } catch {} }
     persistPref('tc_manual', valor)
   }
 
@@ -360,9 +368,9 @@ export default function Dashboard() {
     else next.add(id)
     setVencPagados(next)
     const mes = new Date().toISOString().slice(0, 7)
-    try { localStorage.setItem(`venc_pagados_${mes}`, JSON.stringify([...next])) } catch {}
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    try { localStorage.setItem(`venc_pagados_${user.id}_${mes}`, JSON.stringify([...next])) } catch {}
     await supabase.from('user_rules').upsert({
       user_id: user.id, texto_original: '__venc_pagados__',
       nombre_asignado: JSON.stringify({ mes, ids: [...next] }), category_id: null, subcategory_id: null
@@ -370,9 +378,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    // No leer localStorage acá antes de saber qué usuario está logueado — ver
+    // el comentario sobre la filtración entre cuentas del widget de Ahorros.
+    setVencPagados(new Set())
     const mes = new Date().toISOString().slice(0, 7)
-    const stored = localStorage.getItem(`venc_pagados_${mes}`)
-    setVencPagados(stored ? new Set(JSON.parse(stored)) : new Set())
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
       const { data: row } = await supabase.from('user_rules').select('nombre_asignado')
@@ -380,9 +389,13 @@ export default function Dashboard() {
       if (row?.nombre_asignado) {
         try {
           const parsed = JSON.parse(row.nombre_asignado)
-          if (parsed?.mes === mes && Array.isArray(parsed.ids)) setVencPagados(new Set(parsed.ids))
+          if (parsed?.mes === mes && Array.isArray(parsed.ids)) { setVencPagados(new Set(parsed.ids)); return }
         } catch {}
       }
+      try {
+        const stored = localStorage.getItem(`venc_pagados_${user.id}_${mes}`)
+        if (stored) setVencPagados(new Set(JSON.parse(stored)))
+      } catch {}
     })
   }, [])
 
@@ -410,7 +423,7 @@ export default function Dashboard() {
         // Limpiar las claves viejas sin scope de usuario (bug de filtración
         // entre cuentas en dispositivos compartidos) para que no queden dando
         // vueltas ni las lea ningún código viejo.
-        try { localStorage.removeItem('ma_ahorro'); localStorage.removeItem('ma_cuentas_ahorro') } catch {}
+        try { localStorage.removeItem('ma_ahorro'); localStorage.removeItem('ma_cuentas_ahorro'); localStorage.removeItem('tc_manual_ma') } catch {}
         // Verificar onboarding completo — solo redirigir si no hay settings Y no hay cuentas (usuario nuevo de verdad)
         const { data: settings } = await supabase.from('user_settings').select('onboarding_completo, tiene_hijos').eq('user_id', user.id).maybeSingle()
         if (!settings || !settings.onboarding_completo) {
@@ -484,7 +497,17 @@ export default function Dashboard() {
           } catch {}
         }
         const tcManualDB = readPref('tc_manual')
-        if (tcManualDB) setTcManual(tcManualDB)
+        if (tcManualDB) {
+          setTcManual(tcManualDB)
+        } else {
+          try {
+            const localTc = localStorage.getItem(`tc_manual_${user.id}`)
+            if (localTc) {
+              const parsed = JSON.parse(localTc)
+              if (parsed) { setTcManual(parsed); persistPref('tc_manual', parsed) }
+            }
+          } catch {}
+        }
         prefsLoaded.current = true
       }
     })

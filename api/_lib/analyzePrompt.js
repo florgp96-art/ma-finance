@@ -166,7 +166,8 @@ REGLAS GENERALES:
 - SÍ incluir "SU PAGO", "Gracias por su pago" y pagos al resumen de tarjeta (en extractos de tarjeta): son pagos hechos hacia la tarjeta, no un gasto ni un ingreso — van con tipo: "neutro" (categoria_sugerida: "A Identificar" si no hay una mejor)
 - nombre_limpio: nombre legible. Si es críptico, dejarlo igual al original.
 - es_credito: true para devoluciones o reintegros reales en tarjeta (ej. "Devolución Percepción...", "Dev. Imp...", "Reintegro..."). Cuando es_credito es true, el campo "tipo" de esa transacción tiene que ser "ingreso", nunca "gasto"
-- Para cuotas: completar cuotas_total y cuota_numero
+- Para cuotas: completar cuotas_total y cuota_numero SOLO cuando el resumen indica explícitamente que es una compra financiada en cuotas (aparece la palabra "cuota"/"cuotas", o un formato tipo "03/12" pegado a una compra puntual, ej. "NETFLIX 03/12"). Si no hay ninguna señal de eso, dejar cuotas_total: 1, cuota_numero: 1.
+  NUNCA interpretes como cuota un número que en realidad es una referencia de mes/año del proveedor (ej. obra social, monotributo, servicios con débito automático que en la descripción incluyen el período que factura, tipo "OBRA SOCIAL 06/25" o "MONOTRIBUTO 06/2025" — eso NO es "cuota 6 de 25", es el mes 06 del año 25). Estos son gastos recurrentes de monto variable mes a mes, no compras financiadas: tratarlos como cuota genera proyecciones de gastos futuros inventadas, con montos que no van a ser los reales.
 - titular: nombre del titular
 - categoria_sugerida y subcategoria_sugerida: elegí SOLO de las listas de abajo, con el nombre exacto tal como está escrito. Nunca inventes una categoría o subcategoría que no esté en la lista. Si no estás seguro o no encaja en ninguna → "A Identificar"
 - IMPORTANTE: incluí TODAS las transacciones del período, sin omitir ninguna, aunque sean muchas.
