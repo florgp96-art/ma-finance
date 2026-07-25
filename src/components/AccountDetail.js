@@ -563,6 +563,20 @@ export const mesLabel = (yearMonth) => {
   return `${MESES[parseInt(month) - 1]} ${year}`
 }
 
+// statements.periodo se guarda como texto en español ("Junio 2026"), no como
+// "YYYY-MM" — convertirlo es necesario para poder ordenar cronológicamente
+// (un ordenamiento alfabético pone "Junio" antes que "Mayo") y para poder
+// pasarlo por mesLabel (que espera "YYYY-MM" y si no lo recibe así devuelve
+// "undefined" en el mes).
+const MESES_LOWER = MESES.map(m => m.toLowerCase())
+export const periodoToYearMonth = (periodo) => {
+  const m = String(periodo || '').trim().match(/^([a-záéíóúñ]+)\s+(\d{4})$/i)
+  if (!m) return null
+  const idx = MESES_LOWER.indexOf(m[1].toLowerCase())
+  if (idx === -1) return null
+  return `${m[2]}-${String(idx + 1).padStart(2, '0')}`
+}
+
 export const getLast6Months = () => {
   const months = []
   const now = new Date()
@@ -1158,17 +1172,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
   // Agrupado por mes (no un renglón por statement): si el mismo mes tiene más de
-  // un resumen cargado (ej. se subió el mismo PDF dos veces por error), antes
-  // aparecía como dos barras separadas para el mismo mes en vez de una sola —
-  // acá se suman y se guardan los ids de origen para poder editar el total a
-  // mano (ver editarTotalFacturadoMes) sin depender de cuál duplicado se toque.
+  // un resumen cargado (ej. se volvió a subir el mismo resumen porque
+  // faltaban movimientos, o por error) antes aparecía como dos barras
+  // separadas para el mismo mes en vez de una sola. Se toma el total MÁS
+  // ALTO entre los resúmenes de ese mes (no la suma): si son el mismo
+  // resumen cargado dos veces, sumarlos duplicaría el monto — el más alto es
+  // la mejor aproximación por default hasta que se corrija a mano (ver
+  // guardarTotalFacturadoMes). "mes" se normaliza a "YYYY-MM" (statements.periodo
+  // se guarda como texto en español, "Junio 2026") para poder ordenar
+  // cronológicamente y pasarlo por mesLabel al mostrarlo.
   const barDataPorMes = useMemo(() => {
     const map = new Map()
     statements.forEach(s => {
-      const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
+      const mes = periodoToYearMonth(s.periodo) || s.fecha_hasta?.slice(0, 7)
       if (!mes) return
-      const prev = map.get(mes) || { mes, total: 0, statementIds: [] }
-      prev.total += Number(s.total_resumen) || 0
+      const prev = map.get(mes) || { mes, mesDisplay: mesLabel(mes), total: 0, statementIds: [] }
+      prev.total = Math.max(prev.total, Number(s.total_resumen) || 0)
       prev.statementIds.push(s.id)
       map.set(mes, prev)
     })
@@ -2945,7 +2964,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
+              <XAxis dataKey="mesDisplay" tick={{ fontSize: 12, fill: '#6e6e73' }} />
               <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
               <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
               <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
@@ -2956,7 +2975,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {barData.map(b => (
               <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                <span>{mesLabel(b.mes)}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes sumados)` : ''}</span>
+                <span>{b.mesDisplay}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
                 {editBarMes?.mes === b.mes ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input type="number" autoFocus value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
