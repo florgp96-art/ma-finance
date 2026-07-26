@@ -2246,18 +2246,27 @@ export default function Dashboard() {
     const stripCuotaSuffix = n => (n || '')
       .replace(/\s+\d+\/\d+\s*$/, '')
       .trim()
-    // El mes en que arrancó la compra (cuota 1) identifica la compra de
-    // forma estable entre sus cuotas, a diferencia del monto: si el monto
-    // varía cuota a cuota (ej. en dólares, con el tipo de cambio de cada
-    // mes), usar Math.round(monto) partía la misma compra en varias
-    // entradas, cada una proyectando sus propias cuotas restantes por
-    // separado — duplicando el total de los meses futuros.
-    const mesInicioCompra = t => {
-      const f = new Date(t.fecha + 'T12:00:00')
-      const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    }
-    const groupKey = t => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
+    // Además del "N/M" final, se saca un posible prefijo de titular
+    // adicional tipo "BETTY — " / "FEDERICO — ": la misma compra real a
+    // veces se lee con ese prefijo y a veces sin él según el resumen, y si
+    // no se normaliza queda como dos compras distintas.
+    const normalizarNombreCompra = n => stripCuotaSuffix(n)
+      .replace(/^.+?\s+[—-]\s+/, '')
+      .toLowerCase()
+    // Se agrupa solo por nombre normalizado + cantidad de cuotas + cuenta —
+    // SIN usar la fecha de cada fila para "adivinar" el mes en que arrancó
+    // la compra. Antes se incluía ese mes calculado en la clave para poder
+    // distinguir dos compras distintas con el mismo nombre; el problema es
+    // que si las cuotas intermedias de UNA MISMA compra real no quedaron
+    // con fechas espaciadas exactamente un mes entre sí (algo común: resúmenes
+    // que no cierran siempre el mismo día, o dos cuotas cargadas con la
+    // misma fecha), el mes calculado salía distinto para cada cuota y
+    // partía esa única compra en varios grupos fantasma — cada uno
+    // proyectando sus propias cuotas restantes y multiplicando la deuda
+    // futura mostrada. Agrupando solo por nombre+cuotas+cuenta, y tomando
+    // siempre la cuota de número más alto como la más reciente conocida
+    // (ver maxCuotaPorGrupo), la compra queda unificada en un solo grupo.
+    const groupKey = t => `${normalizarNombreCompra(t.nombre || t.detalle || '')}|${t.cuotas_total}|${t.account_id}`
     // Una compra dividida (regla de tipo "split") queda como varias filas
     // reales con el mismo número de cuota — hay que sumarlas para recuperar
     // el monto total de esa cuota, no quedarnos con una sola parte.
