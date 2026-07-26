@@ -3013,7 +3013,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </ResponsiveContainer>
         </div>
       )}
-      {!esVistaIngresos && !allAccounts && (
+      {!esVistaIngresos && !allAccounts && account?.tipo === 'credito' && (
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
             📊 Total facturado por resumen
@@ -3059,8 +3059,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))); setEditBarPeriodo(b.mes); setEditBarMoneda(b.moneda) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
                       {confirmDeleteMes === b.mes ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <button onClick={() => eliminarMesFacturado(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: '11px' }}>Sí, borrar</button>
-                          <button onClick={() => setConfirmDeleteMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '11px' }}>No</button>
+                          <button onClick={() => setConfirmDeleteMes(null)} style={{ padding: '3px 8px', background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
+                          <button onClick={() => eliminarMesFacturado(b)} style={{ padding: '3px 8px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>Sí, borrar</button>
                         </span>
                       ) : (
                         <button onClick={() => setConfirmDeleteMes(b.mes)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>🗑️</button>
