@@ -629,6 +629,11 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [editTipo, setEditTipo] = useState('gasto')
   const [editBarMes, setEditBarMes] = useState(null)
   const [editBarValor, setEditBarValor] = useState('')
+  const [editBarMoneda, setEditBarMoneda] = useState('ARS')
+  const [editBarPeriodo, setEditBarPeriodo] = useState('')
+  const [confirmDeleteMes, setConfirmDeleteMes] = useState(null)
+  const [showAddMes, setShowAddMes] = useState(false)
+  const [nuevoMes, setNuevoMes] = useState({ periodo: '', valor: '', moneda: 'ARS' })
   const [editUsdStatementId, setEditUsdStatementId] = useState(null)
   const [editUsdValor, setEditUsdValor] = useState('')
   const [children, setChildren] = useState([])
@@ -1191,8 +1196,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     statements.forEach(s => {
       const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
       if (!mes) return
-      const prev = map.get(mes) || { mes, total: 0, statementIds: [] }
-      prev.total = Math.max(prev.total, Number(s.total_resumen) || 0)
+      // Cada resumen guarda su monto en ARS (total_resumen) o en USD
+      // (total_dolares) — nunca los dos a la vez para un mismo mes cargado
+      // acá, así se puede elegir en qué moneda va cada mes (ej. una tarjeta
+      // que se factura en dólares).
+      const esUsd = (Number(s.total_dolares) || 0) > 0 && !(Number(s.total_resumen) || 0)
+      const monto = esUsd ? Number(s.total_dolares) || 0 : Number(s.total_resumen) || 0
+      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', statementIds: [] }
+      if (monto >= prev.total) { prev.total = monto; prev.moneda = esUsd ? 'USD' : 'ARS' }
       prev.statementIds.push(s.id)
       map.set(mes, prev)
     })
@@ -1206,23 +1217,60 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   // Carga manual del total de un mes en "Total facturado por resumen" — si el
   // cálculo automático no da lo esperado (ej. un mes con resúmenes duplicados,
-  // o un extracto que no se pudo leer bien), se puede pisar el valor a mano.
-  // Si hay más de un resumen cargado para ese mes, el valor nuevo se guarda
-  // en el primero y el resto se deja en 0, para que la barra sume justo lo
-  // tipeado y no se dupliquen los dos números.
+  // o un extracto que no se pudo leer bien), se puede pisar el valor, el
+  // nombre del mes y la moneda a mano. Si hay más de un resumen cargado para
+  // ese mes, el valor nuevo se guarda en el primero y el resto se deja en 0
+  // en las dos monedas, para que la barra muestre justo lo tipeado y no se
+  // dupliquen los números. El nombre del mes (periodo) se renombra en TODOS
+  // los resúmenes del grupo, para que sigan agrupados juntos.
   const guardarTotalFacturadoMes = async (barMes) => {
     const valor = parseFloat(editBarValor.replace(',', '.'))
     if (isNaN(valor) || valor < 0) return
+    const periodo = editBarPeriodo.trim()
+    if (!periodo) return
     const [primero, ...resto] = barMes.statementIds
+    const campoMonto = editBarMoneda === 'USD' ? 'total_dolares' : 'total_resumen'
+    const otroCampo = editBarMoneda === 'USD' ? 'total_resumen' : 'total_dolares'
     const updates = [
-      supabase.from('statements').update({ total_resumen: valor }).eq('id', primero),
-      ...resto.map(id => supabase.from('statements').update({ total_resumen: 0 }).eq('id', id)),
+      supabase.from('statements').update({ periodo, [campoMonto]: valor, [otroCampo]: 0 }).eq('id', primero),
+      ...resto.map(id => supabase.from('statements').update({ periodo, total_resumen: 0, total_dolares: 0 }).eq('id', id)),
     ]
     await Promise.all(updates)
-    setStatements(prev => prev.map(s =>
-      s.id === primero ? { ...s, total_resumen: valor } : resto.includes(s.id) ? { ...s, total_resumen: 0 } : s
-    ))
+    setStatements(prev => prev.map(s => {
+      if (s.id === primero) return { ...s, periodo, [campoMonto]: valor, [otroCampo]: 0 }
+      if (resto.includes(s.id)) return { ...s, periodo, total_resumen: 0, total_dolares: 0 }
+      return s
+    }))
     setEditBarMes(null)
+  }
+
+  // Agregar un mes a mano a "Total facturado por resumen", sin depender de
+  // haber importado un PDF — crea un resumen "vacío" (sin nombre_archivo,
+  // sin transacciones asociadas) que solo existe para guardar el total de
+  // ese mes en la moneda elegida.
+  const agregarMesFacturado = async () => {
+    const valor = parseFloat(String(nuevoMes.valor).replace(',', '.'))
+    const periodo = nuevoMes.periodo.trim()
+    if (!periodo || isNaN(valor) || valor < 0) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data, error } = await supabase.from('statements').insert({
+      user_id: user.id, account_id: account.id, periodo, nombre_archivo: null,
+      fecha_desde: null, fecha_hasta: null, fecha_vencimiento: null,
+      total_resumen: nuevoMes.moneda === 'USD' ? 0 : valor,
+      total_dolares: nuevoMes.moneda === 'USD' ? valor : 0,
+      estado: 'completo',
+    }).select().single()
+    if (error || !data) { window.alert('No se pudo agregar el mes: ' + (error?.message || 'Probá de nuevo.')); return }
+    setStatements(prev => [...prev, data])
+    setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' })
+    setShowAddMes(false)
+  }
+
+  const eliminarMesFacturado = async (barMes) => {
+    await supabase.from('statements').delete().in('id', barMes.statementIds)
+    setStatements(prev => prev.filter(s => !barMes.statementIds.includes(s.id)))
+    setConfirmDeleteMes(null)
   }
 
   // Corrección manual del total en dólares de un resumen de tarjeta (columna
@@ -2965,42 +3013,82 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </ResponsiveContainer>
         </div>
       )}
-      {!esVistaIngresos && barData.length > 0 && !allAccounts && (
+      {!esVistaIngresos && !allAccounts && (
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
             📊 Total facturado por resumen
-            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS. Si un mes no coincide con lo esperado (ej. un resumen que no se pudo leer bien, o cargado dos veces), se puede corregir a mano con el lápiz de la lista de abajo." />
+            <InfoTooltip darkMode={darkMode} text="Histórico completo, un mes por barra. Con el lápiz de la lista de abajo se puede corregir el monto, el nombre del mes y la moneda (ARS o USD) de cada uno, o agregar un mes nuevo a mano sin necesidad de cargar un PDF." />
           </h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => `$${formatMonto(v)}`} width={80} />
-              <Tooltip formatter={(v) => [`$${formatMontoFull(v)}`, 'Total']} />
-              <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {barData.length > 0 && (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
+                <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => formatMonto(v)} width={80} />
+                <Tooltip formatter={(v, n, props) => [`${props.payload.moneda === 'USD' ? 'U$S' : '$'} ${formatMontoFull(v)}`, 'Total']} />
+                <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
           {/* Carga/corrección manual por mes — mismo dato que dibuja la barra
               (barData), así nunca puede desalinearse con lo que se ve arriba. */}
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {barData.map(b => (
-              <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
-                <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
+              <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', gap: '8px' }}>
                 {editBarMes?.mes === b.mes ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input type="number" autoFocus value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
-                      style={{ width: '110px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
-                    <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-                    <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
-                  </span>
+                  <>
+                    <input type="text" autoFocus value={editBarPeriodo} onChange={e => setEditBarPeriodo(e.target.value)}
+                      placeholder="Ej: Junio 2026"
+                      style={{ flex: 1, minWidth: 0, padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <select value={editBarMoneda} onChange={e => setEditBarMoneda(e.target.value)}
+                        style={{ padding: '3px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
+                        <option value="ARS">$</option>
+                        <option value="USD">U$S</option>
+                      </select>
+                      <input type="number" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
+                        style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                      <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
+                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+                    </span>
+                  </>
                 ) : (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>$ {formatMonto(b.total)}</span>
-                    <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
-                  </span>
+                  <>
+                    <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <span>{b.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(b.total)}</span>
+                      <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))); setEditBarPeriodo(b.mes); setEditBarMoneda(b.moneda) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
+                      {confirmDeleteMes === b.mes ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button onClick={() => eliminarMesFacturado(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: '11px' }}>Sí, borrar</button>
+                          <button onClick={() => setConfirmDeleteMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '11px' }}>No</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteMes(b.mes)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>🗑️</button>
+                      )}
+                    </span>
+                  </>
                 )}
               </div>
             ))}
           </div>
+          {showAddMes ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+              <input type="text" autoFocus value={nuevoMes.periodo} onChange={e => setNuevoMes({ ...nuevoMes, periodo: e.target.value })}
+                placeholder="Ej: Agosto 2026"
+                style={{ flex: 1, minWidth: '120px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+              <select value={nuevoMes.moneda} onChange={e => setNuevoMes({ ...nuevoMes, moneda: e.target.value })}
+                style={{ padding: '5px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
+                <option value="ARS">$</option>
+                <option value="USD">U$S</option>
+              </select>
+              <input type="number" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
+                placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+              <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
+              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowAddMes(true)} style={{ marginTop: '8px', background: 'none', border: 'none', cursor: 'pointer', color: BAR_COLOR, fontSize: '12px', padding: '4px 2px', textAlign: 'left' }}>+ Agregar mes</button>
+          )}
         </div>
       )}
 
