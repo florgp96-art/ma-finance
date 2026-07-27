@@ -360,12 +360,23 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return matches.filter(m => m.category_id !== catObj.id || (subcatObj ? m.subcategory_id !== subcatObj.id : false)).length
     }
     if (alias.tipo === 'hijo') {
-      const { data: matches } = await supabase.from('transactions')
-        .select('id, tag')
-        .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-      if (!matches) return 0
-      return matches.filter(m => m.tag !== alias.valor).length
+      // Una regla de hijo aplica tanto a gastos (se guarda en "tag", modelo
+      // viejo) como a ingresos (se guarda en "child_id" — ej. Cuota
+      // Alimentaria, que siempre es un ingreso). Antes solo se contaban los
+      // gastos, así que una regla como "CUOTA ALIMENTARIA X" → hijo nunca
+      // aparecía como pendiente de aplicar sobre los ingresos reales.
+      const childObj = (childrenDB || []).find(c => c.nombre === alias.valor)
+      const [{ data: matchesGasto }, { data: matchesIngreso }] = await Promise.all([
+        supabase.from('transactions').select('id, tag')
+          .eq('user_id', user.id).eq('tipo', 'gasto')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+        supabase.from('transactions').select('id, child_id')
+          .eq('user_id', user.id).eq('tipo', 'ingreso')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+      ])
+      const pendGasto = (matchesGasto || []).filter(m => m.tag !== alias.valor).length
+      const pendIngreso = childObj ? (matchesIngreso || []).filter(m => m.child_id !== childObj.id).length : 0
+      return pendGasto + pendIngreso
     }
     if (alias.tipo === 'neutro') {
       const { data: matches } = await supabase.from('transactions')
@@ -399,13 +410,28 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return matches.length
     }
     if (alias.tipo === 'hijo') {
-      const { data: matches } = await supabase.from('transactions')
+      // Mismo criterio que countPendingForAlias: gastos van por "tag" (modelo
+      // viejo), ingresos por "child_id" (ej. Cuota Alimentaria).
+      const childObj = (childrenDB || []).find(c => c.nombre === alias.valor)
+      const { data: matchesGasto } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).eq('tipo', 'gasto')
         .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-      if (!matches || matches.length === 0) return 0
-      await supabase.from('transactions').update({ tag: alias.valor }).in('id', matches.map(m => m.id))
-      return matches.length
+      if (matchesGasto && matchesGasto.length > 0) {
+        await supabase.from('transactions').update({ tag: alias.valor }).in('id', matchesGasto.map(m => m.id))
+      }
+      let totalIngreso = 0
+      if (childObj) {
+        const { data: matchesIngreso } = await supabase.from('transactions')
+          .select('id')
+          .eq('user_id', user.id).eq('tipo', 'ingreso')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        if (matchesIngreso && matchesIngreso.length > 0) {
+          await supabase.from('transactions').update({ child_id: childObj.id, estado: 'identificado' }).in('id', matchesIngreso.map(m => m.id))
+          totalIngreso = matchesIngreso.length
+        }
+      }
+      return (matchesGasto?.length || 0) + totalIngreso
     }
     if (alias.tipo === 'neutro') {
       const { data: matches } = await supabase.from('transactions')
