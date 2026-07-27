@@ -56,10 +56,15 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  // Se dispara una sola vez por hijo (no en cada refreshKey — antes cualquier
+  // guardado en OTRA parte de la app volvía a elegir el período por default acá,
+  // pisando los meses que el usuario había tocado a mano en esta vista).
+  const autoSelectedRef = useRef(false)
+  useEffect(() => { autoSelectedRef.current = false; setSelectedMeses([]) }, [hijoId, hijoNombre])
+
   useEffect(() => {
     setLoading(true)
     setTransactions([])
-    setSelectedMeses([])
     setEditingTx(null)
     fetchTransactions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,17 +75,21 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
 
     // Trae tanto lo asignado por child_id (modelo nuevo) como por tag (modelo viejo/actual),
     // ya que hoy las importaciones y ediciones solo escriben "tag".
-    let txQuery = supabase.from('transactions')
+    // El nombre del hijo es texto libre (se carga sin restricciones en
+    // ConfigPanel). Antes se armaba un solo filtro
+    // .or(`child_id.eq.${hijoId},tag.ilike.${hijoNombre}`) interpolando el
+    // nombre tal cual — una coma o paréntesis en el nombre rompía la sintaxis
+    // del filtro. Ahora van como dos queries separadas (fusionadas más abajo,
+    // sin duplicados), y "%"/"_" se escapan para que no actúen como wildcard.
+    const tagPattern = hijoNombre.replace(/[%_]/g, '\\$&')
+    const baseTxSelect = () => supabase.from('transactions')
       .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre)')
       .eq('user_id', user.id)
       .gt('monto', 0)
       .order('fecha', { ascending: false })
-
-    if (hijoId) {
-      txQuery = txQuery.or(`child_id.eq.${hijoId},tag.ilike.${hijoNombre}`)
-    } else {
-      txQuery = txQuery.ilike('tag', hijoNombre)
-    }
+    const txQueries = hijoId
+      ? [baseTxSelect().eq('child_id', hijoId), baseTxSelect().ilike('tag', tagPattern)]
+      : [baseTxSelect().ilike('tag', tagPattern)]
 
     // Gastos repartidos (ej. división en 3 de Comida/Casa): la fila completa le
     // pertenece a la cuenta, pero una parte de "reparto" es de este hijo — se
@@ -91,8 +100,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       .not('reparto', 'is', null)
       .gt('monto', 0)
 
-    const [txRes, repartoRes, catRes] = await Promise.all([
-      txQuery,
+    const [txResList, repartoRes, catRes] = await Promise.all([
+      Promise.all(txQueries),
       repartoQuery,
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('nombre'),
     ])
@@ -103,7 +112,12 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       : { data: [] }
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
-    const directTxs = txRes.data || []
+    const seenDirectIds = new Set()
+    const directTxs = txResList.flatMap(r => r.data || []).filter(t => {
+      if (seenDirectIds.has(t.id)) return false
+      seenDirectIds.add(t.id)
+      return true
+    })
     const repartidas = (repartoRes.data || [])
       .map(t => {
         const participante = t.reparto?.participantes?.find(p => (p.nombre || '').toLowerCase() === hijoNombre.toLowerCase())
@@ -114,7 +128,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     const txs = [...directTxs, ...repartidas.filter(t => !yaIncluidos.has(t.id))]
       .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
     setTransactions(txs)
-    if (txs.length > 0) {
+    if (txs.length > 0 && !autoSelectedRef.current) {
+      autoSelectedRef.current = true
       const meses = [...new Set(txs.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
       const validShared = (initialPeriod || []).filter(m => meses.includes(m))
       if (validShared.length > 0) {
@@ -156,14 +171,21 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
     const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
 
-    // Bubble chart data agrupado por categoría — USD convertido al TC del mes de
-    // cada movimiento (según el tipo de dólar elegido), nunca el TC de hoy para
-    // algo viejo.
+    const getTCEURForMonth = (ym) => {
+      const mesActual = new Date().toISOString().slice(0, 7)
+      if (ym === mesActual) return tcEUR
+      if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
+      return tcEUR
+    }
+
+    // Bubble chart data agrupado por categoría — USD/EUR convertidos al TC del
+    // mes de cada movimiento (según el tipo de dólar elegido), nunca el TC de
+    // hoy para algo viejo.
     const catMap = {}
     filteredTx.forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
       if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
-      catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * tcEUR : t.monto
+      catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * getTCEURForMonth(t.fecha?.slice(0, 7)) : t.monto
       if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
       else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
       else catMap[cat].originalUSD += t.monto
@@ -172,15 +194,9 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       .map(([name, val]) => ({ name, ...val }))
       .sort((a, b) => b.value - a.value)
 
-    const getTCEURForMonth = (ym) => {
-      const mesActual = new Date().toISOString().slice(0, 7)
-      if (ym === mesActual) return tcEUR
-      if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
-      return tcEUR
-    }
     const totalEnArs = (txs) => txs.reduce((s, t) => {
       if (t.moneda === 'USD') return s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc)
-      if (t.moneda === 'EUR') return s + t.monto * tcEUR
+      if (t.moneda === 'EUR') return s + t.monto * getTCEURForMonth(t.fecha?.slice(0, 7))
       return s + t.monto
     }, 0)
 
@@ -224,13 +240,15 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const handleSaveEdit = async (tx) => {
     const catObj = categories.find(c => c.nombre === editCategoria)
     const subcatObj = subcategories.find(s => s.nombre === editSubcategoria && s.category_id === catObj?.id)
-    const { error } = await supabase.from('transactions').update({
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase.from('transactions').update({
       nombre: editNombre,
       category_id: catObj?.id || null,
       subcategory_id: subcatObj?.id || null,
       estado: 'identificado',
-    }).eq('id', tx.id)
+    }).eq('id', tx.id).eq('user_id', user.id).select('id')
     if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
+    if (!data || data.length === 0) { window.alert('No se pudo guardar el cambio: no se encontró el movimiento.\nProbá de nuevo.'); return }
     setTransactions(prev => prev.map(t => t.id === tx.id ? {
       ...t,
       nombre: editNombre,
@@ -388,10 +406,10 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             <p style={{ ...s.statValue, color: '#3a7d44' }}>€ {formatMontoFull(totalEUR)}</p>
           </div>
         )}
-        {totalARS > 0 && (totalUSD > 0 || totalEUR > 0) && (tc > 1 || tcEUR > 0) && (
+        {(totalUSD > 0 || totalEUR > 0) && (
           <div style={s.statCard}>
             <p style={s.statLabel}>Total equiv. en pesos</p>
-            <p style={s.statValue}>$ {formatMonto(totalARS + totalUSD * tc + totalEUR * tcEUR)}</p>
+            <p style={s.statValue}>$ {formatMonto(cuotaResumen.egreso)}</p>
           </div>
         )}
       </div>

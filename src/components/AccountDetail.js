@@ -2,6 +2,15 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
+// "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
+// toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
+// las 23:59 del último día de cada mes.
+const hoyLocal = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const mesActualLocal = () => hoyLocal().slice(0, 7)
+
 // Colores espaciados ~26° en el círculo de matices (14 categorías, 360°/14) en vez de
 // variantes del mismo violeta/lavanda — así "Personal" y "Transporte", por ejemplo, se
 // distinguen a simple vista en vez de verse como el mismo tono. "A Identificar" queda
@@ -145,7 +154,7 @@ export const subcategoriasDeIngreso = (categorias, subcategorias) => {
 // — mejor aproximación que el TC de HOY para algo viejo — y solo como último
 // recurso (o si es el mes actual) usa el TC vigente.
 export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
-  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesActual = mesActualLocal()
   const mesTx = t.fecha?.slice(0, 7)
   if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioActual) || 0
   if (tcMap && tcMap[mesTx]) return Number(tcMap[mesTx])
@@ -157,7 +166,7 @@ export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
 // congelado por movimiento (solo el dólar se guarda al cargar), así que cae
 // directo del promedio del mes al TC vigente, sin ese paso intermedio.
 export const tcEURDeMovimiento = (t, tcMapEUR, tipoCambioEURActual) => {
-  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesActual = mesActualLocal()
   const mesTx = t.fecha?.slice(0, 7)
   if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioEURActual) || 0
   if (tcMapEUR && tcMapEUR[mesTx]) return Number(tcMapEUR[mesTx])
@@ -921,7 +930,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (autoSelectedMonthRef.current) return
     if (selectedMeses.length > 0 || mesesDisponibles.length === 0) return
     autoSelectedMonthRef.current = true
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     setSelectedMeses([mesesDisponibles.includes(mesActual) ? mesActual : mesesDisponibles[0]])
   }, [mesesDisponibles, selectedMeses])
 
@@ -1014,14 +1023,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const texto_original = (tx.detalle || '').trim()
     if (texto_original && catObj) {
       const { data: { user } } = await supabase.auth.getUser()
-      // Upsert: si ya existe una regla para este patrón, la actualiza
+      // Upsert: si ya existe una regla para este patrón, la actualiza — y
+      // suma a veces_confirmado en vez de pisarlo siempre a 1.
+      const { data: reglaExistente } = await supabase.from('user_rules')
+        .select('veces_confirmado').eq('user_id', user.id).eq('texto_original', texto_original).maybeSingle()
       await supabase.from('user_rules').upsert({
         user_id: user.id,
         texto_original: texto_original,
         nombre_asignado: editNombre || texto_original,
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
-        veces_confirmado: 1,
+        veces_confirmado: (reglaExistente?.veces_confirmado || 0) + 1,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,texto_original',
@@ -1203,14 +1215,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     statements.forEach(s => {
       const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
       if (!mes) return
-      // Cada resumen guarda su monto en ARS (total_resumen) o en USD
-      // (total_dolares) — nunca los dos a la vez para un mismo mes cargado
-      // acá, así se puede elegir en qué moneda va cada mes (ej. una tarjeta
-      // que se factura en dólares).
-      const esUsd = (Number(s.total_dolares) || 0) > 0 && !(Number(s.total_resumen) || 0)
-      const monto = esUsd ? Number(s.total_dolares) || 0 : Number(s.total_resumen) || 0
-      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', statementIds: [] }
-      if (monto >= prev.total) { prev.total = monto; prev.moneda = esUsd ? 'USD' : 'ARS' }
+      // Un resumen puede traer total_resumen (ARS) y total_dolares (USD) a la
+      // vez (ej. una tarjeta con compras en pesos y en dólares ese período —
+      // el import de PDF sí guarda ambos campos juntos, ver Dashboard.js) —
+      // antes acá se elegía uno solo y el otro se descartaba en silencio. Se
+      // guardan los dos; "total"/"moneda" quedan para la barra del gráfico
+      // (ARS con preferencia, como antes) y la lista de abajo muestra ambos.
+      const montoArs = Number(s.total_resumen) || 0
+      const montoUsd = Number(s.total_dolares) || 0
+      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', totalArs: 0, totalUsd: 0, statementIds: [] }
+      if (montoArs >= prev.totalArs) prev.totalArs = montoArs
+      if (montoUsd >= prev.totalUsd) prev.totalUsd = montoUsd
+      prev.total = prev.totalArs > 0 ? prev.totalArs : prev.totalUsd
+      prev.moneda = prev.totalArs > 0 ? 'ARS' : 'USD'
       prev.statementIds.push(s.id)
       map.set(mes, prev)
     })
@@ -1301,21 +1318,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   , [transactions, selectedMeses])
 
   const getTC = (mes) => {
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     if (mes === mesActual) return parseFloat(tipoCambio) || 1
     if (mes && tcMap && tcMap[mes]) return Number(tcMap[mes])
     return parseFloat(tipoCambio) || 1
   }
 
   // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
-  const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+  const tcEfectivo = getTC(selectedMeses[0] || mesActualLocal())
   const getTCEUR = useCallback((mes) => {
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     if (!mes || mes === mesActual) return parseFloat(tipoCambioEUR) || 0
     if (tcMapEUR?.[mes]) return Number(tcMapEUR[mes])
     return parseFloat(tipoCambioEUR) || 0
   }, [tipoCambioEUR, tcMapEUR])
-  const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+  const tcEUR = getTCEUR(selectedMeses[0] || mesActualLocal())
 
   const getChildName = useCallback((t) => t.children?.nombre || (t.child_id ? children.find(c => c.id === t.child_id)?.nombre : null) || (t.tag || null), [children])
 
@@ -1376,7 +1393,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+          // getTCEUR(t.fecha) en vez de tcEUR fijo — este último solo refleja
+          // la tasa del primer mes seleccionado (selectedMeses[0]), así que con
+          // varios meses elegidos convertía TODOS los ingresos en EUR con la
+          // tasa de uno solo de ellos.
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * getTCEUR(t.fecha?.slice(0, 7)) : Number(t.monto)
           if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
           acc[cat].value += monto
           if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
@@ -1421,6 +1442,32 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     .slice(0, 3)
     .map(e => [e.name, e.value])
 
+  // "Pago tarjetas del mes": pagos/reintegros neutros cargados en la cuenta de
+  // cada tarjeta de crédito (así es como ya se registran — ver reconciliarSueltas
+  // más arriba, que los excluye del resumen porque restan del saldo pendiente en
+  // vez de sumar una compra más), agrupados por tarjeta para el período elegido.
+  const pagosTarjetasGeneral = (() => {
+    if (!allAccounts || selectedMeses.length === 0) return []
+    const porCuenta = {}
+    transactions.forEach(t => {
+      if (t.tipo !== 'neutro') return
+      if (!t.fecha || !selectedMeses.some(m => t.fecha.startsWith(m))) return
+      const cuenta = (accounts || []).find(a => a.id === t.account_id)
+      if (!cuenta || cuenta.tipo !== 'credito') return
+      const monto = Number(t.monto) || 0
+      let montoArs = monto
+      if (t.moneda === 'USD') {
+        const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+        montoArs = tcTx > 0 ? monto * tcTx : monto
+      } else if (t.moneda === 'EUR') {
+        const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+        montoArs = tcTx > 0 ? monto * tcTx : monto
+      }
+      porCuenta[cuenta.nombre] = (porCuenta[cuenta.nombre] || 0) + montoArs
+    })
+    return Object.entries(porCuenta).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  })()
+
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
   const idxMesSeleccionado = mesSeleccionado ? mesesDisponibles.indexOf(mesSeleccionado) : -1
@@ -1457,16 +1504,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return {
       ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
       resolveIcon, resolveColor, getChartIcon, getChartColor,
-      catTopList,
+      catTopList, pagosTarjetasGeneral,
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, accounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
 
   const {
     ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
     resolveIcon, resolveColor, getChartIcon, getChartColor,
-    catTopList,
+    catTopList, pagosTarjetasGeneral,
     totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
     mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
   } = chartsMemo
@@ -1941,7 +1988,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // En "Resumen General" (todas las cuentas sin soloAPagar) ya no se muestra acá: vive en
   // su propia pestaña de primer nivel. Sigue disponible dentro de cada cuenta individual.
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyLocal()
   const mesActual = hoyISO.slice(0, 7)
 
   // Cascada bottom-up de "A pagar": statements, estado de cada uno, atribución de
@@ -2114,7 +2161,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   statementsAPagar.forEach(s => {
     totalBrutoAPagarGeneral += itemsPorStatement(s)
       .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
-      .reduce((s2, t) => s2 + Number(t.monto), 0)
+      .reduce((s2, t) => {
+        const monto = Number(t.monto) || 0
+        if (t.moneda === 'EUR') {
+          const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+          if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('totalBrutoAPagarGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return s2 }
+          return s2 + monto * tcTx
+        }
+        return s2 + monto
+      }, 0)
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
   // La barra de "Pagado" no es solo tarjetas: suma también los gastos fijos
@@ -2180,6 +2235,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Composición del gasto del mes: SIEMPRE montos brutos (compras de
   // tarjeta + gastos fijos de débito/alquiler), sin descontar pagos
   // parciales — esas restas viven solo en la cascada de "A pagar", nunca acá.
+  // EUR no tiene bucket propio (a diferencia de USD): se convierte a su
+  // equivalente en ARS con el TC del movimiento y entra al mapa de pesos —
+  // si no, quedaba sumado crudo en el mapa de ARS (ej. € 50 como "$ 50").
+  const montoARSEquiv = (t) => {
+    const monto = Number(t.monto) || 0
+    if (t.moneda !== 'EUR') return monto
+    const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+    if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('categoriasResumenGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return 0 }
+    return monto * tcTx
+  }
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -2191,10 +2256,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             if (hijo) {
               const destinoHijo = esUsd ? hijoMapUsd : hijoMap
               if (!destinoHijo[cat]) destinoHijo[cat] = {}
-              destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+              destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
             } else {
               const destino = esUsd ? mapUsd : map
-              destino[cat] = (destino[cat] || 0) + Number(t.monto)
+              destino[cat] = (destino[cat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
             }
           })
         })
@@ -2208,10 +2273,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           if (hijo) {
             const destinoHijo = esUsd ? hijoMapUsd : hijoMap
             if (!destinoHijo[cat]) destinoHijo[cat] = {}
-            destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+            destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           } else {
             const destino = esUsd ? mapUsd : map
-            destino[cat] = (destino[cat] || 0) + Number(t.monto)
+            destino[cat] = (destino[cat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           }
         })
         return [
@@ -2259,8 +2324,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
-            const destino = t.moneda === 'USD' ? mapUsd : map
-            destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
+            const esUsd = t.moneda === 'USD'
+            const destino = esUsd ? mapUsd : map
+            destino[subcat] = (destino[subcat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           })
         })
         gastosFijosDelMes.forEach(t => {
@@ -2271,8 +2337,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           // Alquiler y otros gastos fijos en USD (ej. débito automático en dólares)
           // se estaban sumando siempre acá, en el mapa de pesos, sin mirar la
           // moneda — un alquiler de U$S 1.400 se veía como "$ 1.400".
-          const destino = t.moneda === 'USD' ? mapUsd : map
-          destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
+          const esUsd = t.moneda === 'USD'
+          const destino = esUsd ? mapUsd : map
+          destino[subcat] = (destino[subcat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
         })
         return [
           Object.entries(map).sort((a, b) => b[1] - a[1]),
@@ -2978,6 +3045,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             )}
 
+            {/* Pago tarjetas del mes */}
+            {pagosTarjetasGeneral.length > 0 && !esVistaIngresos && (
+              <div style={{ ...styles.summaryCard }}>
+                <p style={styles.summaryLabel}>Pago tarjetas del mes</p>
+                {pagosTarjetasGeneral.map(([cuenta, val], i) => (
+                  <div key={cuenta} style={{ marginTop: i === 0 ? '6px' : '10px' }}>
+                    <div style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>💳 {cuenta}</div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginTop: '2px' }}>$ {formatMonto(val)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Equiv con toggle ARS⇌USD */}
             {tcEfectivo > 0 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
@@ -3076,7 +3156,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <>
                     <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      <span>{b.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(b.total)}</span>
+                      <span>
+                        {b.totalArs > 0 && `$ ${formatMonto(b.totalArs)}`}
+                        {b.totalArs > 0 && b.totalUsd > 0 && ' + '}
+                        {b.totalUsd > 0 && `U$S ${formatMonto(b.totalUsd)}`}
+                      </span>
                       <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))); setEditBarPeriodo(b.mes); setEditBarMoneda(b.moneda) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
                       {confirmDeleteMes === b.mes ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -3177,7 +3261,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <ResponsiveContainer width="100%" height={chartH}>
                       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
                         <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                        <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                        <YAxis type="category" dataKey="name" width={isMobile ? 90 : 130}
+                          tickFormatter={(name) => {
+                            const max = isMobile ? 13 : 19
+                            return name && name.length > max ? `${name.slice(0, max - 1)}…` : name
+                          }}
+                          tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
                         <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                           {data.map((entry, idx) => (

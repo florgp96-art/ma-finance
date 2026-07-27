@@ -10,32 +10,47 @@ export default function Onboarding() {
   const [tieneHijos, setTieneHijos] = useState(false)
   const [hijos, setHijos] = useState([''])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
   const navigate = useNavigate()
 
   const handleFinish = async () => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    setError(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    await supabase.from('user_profiles').upsert({ id: user.id }, { onConflict: 'id', ignoreDuplicates: true })
-    await supabase.from('user_settings').insert({
-      user_id: user.id,
-      tiene_hijos: tieneHijos,
-      alquila: false,
-      onboarding_completo: true
-    })
+      await supabase.from('user_profiles').upsert({ id: user.id }, { onConflict: 'id', ignoreDuplicates: true })
 
-    if (tieneHijos) {
-      const hijosData = hijos.filter(h => h.trim() !== '').map(nombre => ({ user_id: user.id, nombre }))
-      if (hijosData.length > 0) await supabase.from('children').insert(hijosData)
+      // upsert manual (select + insert/update) en vez de un insert simple: si el
+      // usuario recarga a mitad del flujo, apreta "atrás" o reintenta después de
+      // un error acá abajo, esto no duplica la fila de user_settings (que rompe
+      // el .maybeSingle() del Dashboard) en vez de crear una nueva cada vez.
+      const { data: existingSettings } = await supabase.from('user_settings').select('id').eq('user_id', user.id).maybeSingle()
+      const settingsData = { tiene_hijos: tieneHijos, alquila: false, onboarding_completo: true }
+      if (existingSettings) {
+        await supabase.from('user_settings').update(settingsData).eq('user_id', user.id)
+      } else {
+        await supabase.from('user_settings').insert({ user_id: user.id, ...settingsData })
+      }
+
+      if (tieneHijos) {
+        const hijosData = hijos.filter(h => h.trim() !== '').map(nombre => ({ user_id: user.id, nombre }))
+        if (hijosData.length > 0) await supabase.from('children').insert(hijosData)
+      }
+
+      // Cuentas predeterminadas: solo si todavía no existen (mismo motivo que
+      // arriba) — si no, un reintento duplicaba "Efectivo"/"Ingresos" para siempre.
+      const { data: existingAccounts } = await supabase.from('accounts').select('tipo').eq('user_id', user.id)
+      const tiposExistentes = new Set((existingAccounts || []).map(a => a.tipo))
+      const accountsACrear = []
+      if (!tiposExistentes.has('efectivo')) accountsACrear.push({ user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' })
+      if (!tiposExistentes.has('ingreso')) accountsACrear.push({ user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' })
+      if (accountsACrear.length > 0) await supabase.from('accounts').insert(accountsACrear)
+
+      navigate('/dashboard')
+    } catch (err) {
+      setError('No se pudo guardar. Probá de nuevo — ' + (err.message || 'error desconocido') + '.')
     }
-
-    // Crear cuentas predeterminadas
-    await supabase.from('accounts').insert([
-      { user_id: user.id, nombre: 'Efectivo', tipo: 'efectivo' },
-      { user_id: user.id, nombre: 'Ingresos', tipo: 'ingreso' },
-    ])
-
-    navigate('/dashboard')
     setLoading(false)
   }
 
@@ -76,6 +91,10 @@ export default function Onboarding() {
               </div>
             ))}
           </div>
+        )}
+
+        {error && (
+          <p style={{ color: '#c0392b', fontSize: '13px', margin: '0 0 14px', fontFamily: FONT }}>{error}</p>
         )}
 
         <button onClick={handleFinish} disabled={loading}

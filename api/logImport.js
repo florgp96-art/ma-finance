@@ -1,29 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit } from './_lib/rateLimit.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const rateLimitMap = new Map()
-
-function checkRateLimit(ip) {
-  const now = Date.now()
-  const windowMs = 60 * 1000
-  const limit = 20
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  const entry = rateLimitMap.get(ip)
-  if (now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  if (entry.count >= limit) return false
-  entry.count++
-  return true
-}
+// Escapa HTML antes de interpolar cualquier campo controlado por el usuario
+// (nombre de archivo, mensaje de error) en el mail — si no, un nombre de
+// archivo o error con markup se inyecta tal cual en el mail que llega al owner.
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas, userEmail }) {
   const notifyEmail = process.env.NOTIFY_EMAIL
@@ -36,17 +22,17 @@ async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, t
     : `✅ Resumen leído — ${userEmail}`
   const filas = esError
     ? [
-        ['Usuario', userEmail],
-        ['Archivo', nombreArchivo || '—'],
-        ['Tipo', tipo],
-        ['Error', errorMensaje || '—'],
+        ['Usuario', esc(userEmail)],
+        ['Archivo', esc(nombreArchivo || '—')],
+        ['Tipo', esc(tipo)],
+        ['Error', esc(errorMensaje || '—')],
       ]
     : [
-        ['Usuario', userEmail],
-        ['Archivo', nombreArchivo || '—'],
-        ['Tipo', tipo],
-        ['Detectado', tarjetaDetectada || '—'],
-        ['Documento', tipoDocumento || '—'],
+        ['Usuario', esc(userEmail)],
+        ['Archivo', esc(nombreArchivo || '—')],
+        ['Tipo', esc(tipo)],
+        ['Detectado', esc(tarjetaDetectada || '—')],
+        ['Documento', esc(tipoDocumento || '—')],
         ['Transacciones', transaccionesDetectadas ?? '—'],
       ]
   const html = `<div style="font-family: sans-serif; font-size: 14px;">
@@ -75,21 +61,20 @@ async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, t
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
-  if (!checkRateLimit(ip)) return res.status(429).json({ error: 'Too many requests' })
-
   const authHeader = req.headers['authorization']
   if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
   const token = authHeader.slice(7)
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
+  if (!checkRateLimit(`logImport:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
+
   const { tipo, nombreArchivo, estado, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas } = req.body
   if (!tipo || !estado || (estado !== 'exito' && estado !== 'error')) {
     return res.status(400).json({ error: 'Faltan campos o estado inválido' })
   }
 
-  await supabaseAdmin.from('import_logs').insert({
+  const { error: insertError } = await supabaseAdmin.from('import_logs').insert({
     user_id: user.id,
     tipo,
     nombre_archivo: nombreArchivo || null,
@@ -99,6 +84,7 @@ export default async function handler(req, res) {
     tipo_documento: tipoDocumento || null,
     transacciones_detectadas: transaccionesDetectadas ?? null,
   })
+  if (insertError) console.error('Error guardando import_log:', insertError.message)
 
   await enviarNotificacion({
     estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas,

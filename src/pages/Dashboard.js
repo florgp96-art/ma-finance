@@ -112,6 +112,8 @@ export default function Dashboard() {
   // iniciaba sesión ahí, porque el efecto de "migrar datos viejos del
   // navegador a la base" no distinguía de quién eran esos datos.
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [showTutorial, setShowTutorial] = useState(false)
+  const [tutorialStep, setTutorialStep] = useState(0)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
@@ -459,7 +461,12 @@ export default function Dashboard() {
     })
   }, [])
 
-  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol(['total']) }, [selectedAccount])
+  // No vaciar accountTransactions acá: alimenta los widgets del costado
+  // (Evolución, Cuotas pendientes), que deben seguir mostrando datos de
+  // todas las cuentas sin importar qué cuenta puntual se esté mirando en el
+  // contenido principal — vaciarlo los dejaba en $0 hasta volver a "Resumen
+  // general"/"A pagar".
+  useEffect(() => { setSidebarCatEvol(['total']) }, [selectedAccount])
   useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_ahorro_${currentUserId}`, JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro, currentUserId])
   useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_cuentas_ahorro_${currentUserId}`, JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro, currentUserId])
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
@@ -481,6 +488,13 @@ export default function Dashboard() {
       if (user) {
         setCurrentUserId(user.id)
         fetchPlan(user.id)
+        // Tutorial de bienvenida: se muestra una sola vez por usuario (mismo
+        // patrón que rotar_banner_cerrado), la primera vez que entra al
+        // Dashboard después del onboarding. Después queda accesible de nuevo
+        // desde Configuración → "Ver tutorial".
+        try {
+          if (!localStorage.getItem(`tutorial_visto_${user.id}`)) { setTutorialStep(0); setShowTutorial(true) }
+        } catch {}
         // Limpiar las claves viejas sin scope de usuario (bug de filtración
         // entre cuentas en dispositivos compartidos) para que no queden dando
         // vueltas ni las lea ningún código viejo.
@@ -610,7 +624,7 @@ export default function Dashboard() {
       setDashboardStatements(stmtRes.data || [])
     }
     fetchGlobalWidgetsData()
-  }, [accounts, refreshKey])
+  }, [accounts])
 
 
   useEffect(() => {
@@ -650,18 +664,21 @@ export default function Dashboard() {
 
   const fetchChildren = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('children').select('id, nombre').eq('user_id', user.id).order('nombre')
     setChildrenDB(data || [])
   }
 
   const fetchUserAliases = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
     setUserAliases(data || [])
   }
 
   const fetchRepartoRules = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('reparto_rules')
       .select('*, categories(nombre), subcategories(nombre)')
       .eq('user_id', user.id)
@@ -807,6 +824,7 @@ export default function Dashboard() {
 
   const fetchAccounts = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
     if (data && data.length > 0) {
@@ -1137,8 +1155,14 @@ export default function Dashboard() {
       for (const mp of uniqueModoPagos) await resolveAccount(mp)
       const accountsForRows = excelPreview.map(r => accountCache[(r.modo_pago || 'EFECTIVO').toUpperCase().trim()])
       const uniqueAccountIds = [...new Set(accountsForRows.map(a => a.id))]
-      const { data: existentes } = await supabase.from('transactions')
-        .select('fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
+      // Sin paginar, una cuenta con más de 1000 movimientos no veía a los más
+      // viejos acá — el chequeo de duplicados podía dejar pasar duplicados
+      // sin avisar (ver comentario de fetchAllTxPages más arriba).
+      const existentes = await fetchAllTxPages(() =>
+        supabase.from('transactions')
+          .select('id, fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
+      )
 
       const rowsWithAccounts = excelPreview.map((row, i) => ({ row, acc: accountsForRows[i] }))
 
@@ -1385,7 +1409,12 @@ export default function Dashboard() {
     const keeper = duplicates[0]
     const toRemove = duplicates.slice(1)
     for (const acc of toRemove) {
-      await supabase.from('transactions').update({ account_id: keeper.id }).eq('account_id', acc.id).eq('user_id', user.id)
+      // statement_id se limpia acá (no solo account_id): esas transacciones
+      // reasignadas seguían apuntando al statement de la cuenta vieja, que se
+      // borra en el paso siguiente — si esa FK fuera ON DELETE CASCADE, el
+      // delete de statements se llevaba puestas las transacciones recién
+      // movidas. Limpiando la referencia antes, no importa cuál sea la FK.
+      await supabase.from('transactions').update({ account_id: keeper.id, statement_id: null }).eq('account_id', acc.id).eq('user_id', user.id)
       await supabase.from('statements').delete().eq('account_id', acc.id).eq('user_id', user.id)
       await supabase.from('accounts').delete().eq('id', acc.id).eq('user_id', user.id)
     }
@@ -1741,9 +1770,10 @@ export default function Dashboard() {
       const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
       const txExistentes = await fetchAllTxPages(() =>
         supabase.from('transactions')
-          .select('fecha, monto, moneda, account_id')
+          .select('id, fecha, monto, moneda, account_id')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
 
       let billingMes = null
@@ -1843,6 +1873,7 @@ export default function Dashboard() {
 
     // Actualizar todas las transacciones con el mismo detalle (no solo la actual)
     const { data: { user: uClasif } } = await supabase.auth.getUser()
+    if (!uClasif) return
     if (detalle) {
       await supabase.from('transactions').update({
         nombre: txEditTemp.nombre,
@@ -1862,13 +1893,17 @@ export default function Dashboard() {
     // Guardar regla aprendida
     if (detalle && catObj) {
       const { data: { user } } = await supabase.auth.getUser()
+      // Antes esto pisaba veces_confirmado a 1 en cada upsert — nunca reflejaba
+      // cuántas veces se confirmó realmente la misma regla.
+      const { data: reglaExistente } = await supabase.from('user_rules')
+        .select('veces_confirmado').eq('user_id', user.id).eq('texto_original', detalle.trim()).maybeSingle()
       await supabase.from('user_rules').upsert({
         user_id: user.id,
         texto_original: detalle.trim(),
         nombre_asignado: txEditTemp.nombre || detalle.trim(),
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
-        veces_confirmado: 1,
+        veces_confirmado: (reglaExistente?.veces_confirmado || 0) + 1,
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,texto_original', ignoreDuplicates: false })
     }
@@ -1897,6 +1932,7 @@ export default function Dashboard() {
   const handleMarcarNeutro = async (txId) => {
     const txDet = txSinIdentificar[txIdentificarIdx]?.detalle
     const { data: { user: uNeutro } } = await supabase.auth.getUser()
+    if (!uNeutro) return
     if (txDet) {
       await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('user_id', uNeutro.id).eq('detalle', txDet).eq('estado', 'a_identificar')
     } else {
@@ -2149,7 +2185,8 @@ export default function Dashboard() {
       // quedaban duplicadas de verdad (incluidos los pagos de tarjeta tipo "neutro").
       const cuentasDestinoBanco = [cuentaEgresos.id, ...(cuentaIngresos ? [cuentaIngresos.id] : [])]
       const existentesBanco = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
       const normDetBanco = (s) => (s || '').toLowerCase().trim()
       const esDupeBanco = (cand) => (existentesBanco || []).some(e =>
@@ -2296,7 +2333,8 @@ export default function Dashboard() {
       // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
       // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
       const existentesTarjeta = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('fecha, monto, moneda, detalle').eq('account_id', account.id)
+        supabase.from('transactions').select('id, fecha, monto, moneda, detalle').eq('account_id', account.id)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
       const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
       const transacciones = transaccionesCandidatas.filter(cand =>
@@ -2449,6 +2487,7 @@ export default function Dashboard() {
     const today = new Date()
     const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
     const tc = parseFloat(tipoCambio) || 0
+    const tcEUR = parseFloat(tipoCambioEUR) || 0
     const byPeriod = {}
 
     Object.values(latestByPurchase).forEach(t => {
@@ -2460,7 +2499,7 @@ export default function Dashboard() {
         const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
         if (period < todayPeriod) continue
         if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
-        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
+        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'EUR' && tcEUR > 0 ? t.monto * tcEUR : t.monto
         byPeriod[period].total_ars += arsEquiv
         byPeriod[period].items.push({
           nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
@@ -2474,7 +2513,7 @@ export default function Dashboard() {
     })
 
     return Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
-  }, [accountTransactions, tipoCambio])
+  }, [accountTransactions, tipoCambio, tipoCambioEUR])
 
   // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
   // (gasto) o tag (ingreso) con datos + serie de 6 meses de CADA selección activa —
@@ -3196,6 +3235,7 @@ export default function Dashboard() {
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>❓ VER TUTORIAL</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
                       </div>
@@ -3405,7 +3445,7 @@ export default function Dashboard() {
                     style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
                     onClick={() => setConfigOpen(o => !o)}
                   >
-                    <span>⚙️ CONFIGURACIÓN</span>
+                    <span>CONFIGURACIÓN</span>
                     <span style={{ fontSize: '10px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                   </button>
                   {configOpen && (
@@ -3415,6 +3455,7 @@ export default function Dashboard() {
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>❓ VER TUTORIAL</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
                     </div>
@@ -3422,7 +3463,7 @@ export default function Dashboard() {
                 </>
               )}
               {isMobile && (
-                <button style={{ ...styles.logoutBtn, marginTop: '4px' }} onClick={handleLogout}>Cerrar sesión</button>
+                <button style={{ ...styles.sidebarBtnSecondary, fontWeight: '700', marginTop: '4px' }} onClick={handleLogout}>Cerrar sesión</button>
               )}
             </div>
           </div>
@@ -3585,7 +3626,7 @@ export default function Dashboard() {
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {servicios.map((s, i) => (
-                          <div key={i} style={{
+                          <div key={s.id || i} style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '14px 18px', borderRadius: '12px',
                             backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
@@ -3693,6 +3734,66 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {showTutorial && (() => {
+        const steps = [
+          {
+            icon: '💰',
+            title: 'Cargar movimientos',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Para cargar un gasto o ingreso a mano, usá el botón <strong>+ Cargar movimiento</strong> del panel de la izquierda.</p>
+                <p style={{ margin: 0 }}>Si tenés el PDF o Excel de un resumen, usá <strong>+ Importar</strong> — subís el archivo y la app arma los movimientos sola, ya clasificados por categoría.</p>
+              </>
+            )
+          },
+          {
+            icon: '🏷️',
+            title: 'Categorías y subcategorías',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Andá a <strong>Configuración → Editar categorías</strong> para crear una categoría nueva, cambiarle el nombre, agregarle subcategorías o darle un ícono propio.</p>
+                <p style={{ margin: 0 }}>Ahí mismo podés borrarlas — si tienen movimientos cargados, la app te avisa antes de dejarte borrar.</p>
+              </>
+            )
+          },
+          {
+            icon: '💳',
+            title: 'Crear y borrar cuentas',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá el lápiz ✏️ que aparece arriba a la derecha.</p>
+              </>
+            )
+          },
+        ]
+        const step = steps[tutorialStep]
+        const esUltimo = tutorialStep === steps.length - 1
+        const cerrarTutorial = () => {
+          setShowTutorial(false)
+          try { if (currentUserId) localStorage.setItem(`tutorial_visto_${currentUserId}`, '1') } catch {}
+        }
+        return (
+          <div style={styles.overlay}>
+            <div style={{ ...styles.modal, maxWidth: '440px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
+                {steps.map((_, i) => (
+                  <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: i === tutorialStep ? styles.saveBtn.backgroundColor : (darkMode ? '#3A333A' : '#E2DDE0') }} />
+                ))}
+              </div>
+              <h3 style={{ ...styles.modalTitle, textAlign: 'center' }}>{step.icon} {step.title}</h3>
+              <div style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? '#C0B0C0' : '#444', fontFamily: '"Montserrat", sans-serif' }}>{step.body}</div>
+              <div style={styles.modalButtons}>
+                {tutorialStep > 0
+                  ? <button type="button" style={styles.cancelBtn} onClick={() => setTutorialStep(s => s - 1)}>Anterior</button>
+                  : <button type="button" style={styles.cancelBtn} onClick={cerrarTutorial}>Saltar</button>}
+                <button type="button" style={styles.saveBtn} onClick={() => esUltimo ? cerrarTutorial() : setTutorialStep(s => s + 1)}>{esUltimo ? 'Entendido' : 'Siguiente'}</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {showReportBug && (
         <div style={styles.overlay}>
@@ -4680,10 +4781,6 @@ const getStyles = (dark, mobile = false) => {
     accountActions: { display: 'flex', gap: '2px' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
     sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: `1px solid ${border}` },
-    logoutBtn: {
-      width: '100%', padding: '9px', backgroundColor: 'transparent', color: p,
-      border: `1.5px solid ${p}`, borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', outline: 'none'
-    },
     mainContent: { flex: 1, minWidth: 0 },
     section: { backgroundColor: panel, borderRadius: '16px', padding: '24px', boxShadow: shadow },
     sectionTitle: { fontSize: '18px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },
