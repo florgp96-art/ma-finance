@@ -611,13 +611,16 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
   // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
   const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28
+  // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
+  // cuenta como "Mastercard Preferred" son tan largos como una categoría —
+  // se cortaban con "..." mientras sobraba aire en las demás columnas.
   const anchosTextoPral = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
-    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 0.8, subcategoria: 1.3 }
+    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 1.3, subcategoria: 1.3 }
   )
   const anchosTextoNeutros = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
-    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 0.8 }
+    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 1.3 }
   )
   // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
   // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
@@ -3225,8 +3228,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
-            const renderBubbleCard = (data, titulo) => data.length === 0 ? null : (
-              <div key={titulo} style={{ ...styles.bubbleSection, minWidth: 0 }}>
+            const renderBubbleCard = (data, titulo, extraStyle) => data.length === 0 ? null : (
+              <div key={titulo} style={{ ...styles.bubbleSection, minWidth: 0, ...extraStyle }}>
                 <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
                   {titulo}
                   <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
@@ -3304,7 +3307,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     y la página no queda tan larga para llegar a los movimientos. */}
                 <div style={{ display: dosGraficos && !isMobile ? 'grid' : 'flex', gridTemplateColumns: dosGraficos && !isMobile ? 'repeat(2, 1fr)' : undefined, gap: '20px', flexWrap: 'wrap' }}>
                   {dosGraficos
-                    ? [renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'), renderBubbleCard(personaBubbleData, 'Gastos por persona')]
+                    ? [
+                        renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'),
+                        // Línea sutil entre los dos donuts para que no se lean como un
+                        // solo bloque — mismo color de borde que el resto de la app.
+                        renderBubbleCard(personaBubbleData, 'Gastos por persona', !isMobile ? {
+                          borderLeft: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, paddingLeft: '20px'
+                        } : undefined),
+                      ]
                     : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
                 </div>
               </>
