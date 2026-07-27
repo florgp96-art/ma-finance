@@ -119,6 +119,34 @@ export default function Dashboard() {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
   }, [])
 
+  // Plan gratis/premium — determina límites (cuentas, análisis con IA) y si
+  // se puede usar el asistente. `is_legacy` son usuarios de antes del
+  // paywall, gratis para siempre.
+  // Arranca en "premium" (sin restricciones) a propósito: si la migración
+  // SQL de este feature todavía no corrió en la base (columnas/tabla nuevas
+  // inexistentes), la consulta abajo va a fallar — mejor no bloquear a nadie
+  // por eso que bloquear por error a usuarios legacy/pagos.
+  const [plan, setPlan] = useState({ plan: 'premium', is_legacy: true })
+  const isPremium = plan.is_legacy || plan.plan === 'premium'
+  const fetchPlan = async (userId) => {
+    const { data, error } = await supabase.from('user_profiles').select('plan, is_legacy').eq('id', userId).maybeSingle()
+    if (!error && data) setPlan(data)
+  }
+  const [showUpsell, setShowUpsell] = useState(null) // razón del upsell (string) o null
+  const [showMiPlan, setShowMiPlan] = useState(false)
+  const [suscribiendo, setSuscribiendo] = useState(false)
+
+  // Vuelta del checkout de Mercado Pago (ver back_url en mp-create-subscription.js).
+  // El estado real de la suscripción lo confirma el webhook, no esta vuelta —
+  // por eso solo avisamos y refrescamos el plan, sin asumir que ya es premium.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('mp') !== 'return') return
+    window.history.replaceState(null, '', window.location.pathname)
+    showToast('¡Gracias! Estamos confirmando tu suscripción, puede tardar unos segundos.')
+    supabase.auth.getUser().then(({ data }) => { if (data?.user) fetchPlan(data.user.id) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
   const [editAccount, setEditAccount] = useState(null)
@@ -459,6 +487,7 @@ export default function Dashboard() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         setCurrentUserId(user.id)
+        fetchPlan(user.id)
         // Tutorial de bienvenida: se muestra una sola vez por usuario (mismo
         // patrón que rotar_banner_cerrado), la primera vez que entra al
         // Dashboard después del onboarding. Después queda accesible de nuevo
@@ -1277,11 +1306,73 @@ export default function Dashboard() {
     setReportBugSending(false)
   }
 
+  const handleSuscribirse = async () => {
+    setSuscribiendo(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const response = await fetch('/api/mp-create-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      })
+      const body = await response.json()
+      if (!response.ok || !body.checkoutUrl) throw new Error(body.error || 'No se pudo iniciar la suscripción')
+      window.location.href = body.checkoutUrl
+    } catch (err) {
+      showToast('Error al iniciar la suscripción: ' + err.message, 'error')
+      setSuscribiendo(false)
+    }
+  }
+
+  const handleCancelarSuscripcion = async () => {
+    setSuscribiendo(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const response = await fetch('/api/mp-cancel-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'No se pudo cancelar la suscripción')
+      showToast('Tu suscripción fue cancelada.')
+      setShowMiPlan(false)
+      if (currentUserId) fetchPlan(currentUserId)
+    } catch (err) {
+      showToast('Error al cancelar: ' + err.message, 'error')
+    }
+    setSuscribiendo(false)
+  }
+
+  // Ni "efectivo" ni "ingreso" son cuentas reales para el límite del plan
+  // gratis (se autocrean para uso interno, ver getOrCreateIngresosAccount y
+  // el alta de la cuenta Efectivo más abajo).
+  const cuentasFacturables = accounts.filter(a => a.tipo !== 'efectivo' && a.tipo !== 'ingreso')
+
+  const handleClickCrearCuenta = () => {
+    setConfigOpen(false)
+    if (!isPremium && cuentasFacturables.length >= 1) {
+      setShowUpsell('Con el plan gratis podés tener 1 cuenta además de Efectivo. Sumá Premium para agregar todas las que necesites.')
+      return
+    }
+    setShowAddAccount(true)
+  }
+
   const handleAddAccount = async (e) => {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('accounts').insert({ user_id: user.id, nombre: newAccount.nombre, tipo: newAccount.tipo })
+    const { error } = await supabase.from('accounts').insert({ user_id: user.id, nombre: newAccount.nombre, tipo: newAccount.tipo })
+    if (error) {
+      setShowAddAccount(false)
+      setLoading(false)
+      if (/l[ií]mite de cuentas/i.test(error.message || '')) {
+        setShowUpsell('Con el plan gratis podés tener 1 cuenta además de Efectivo. Sumá Premium para agregar todas las que necesites.')
+      } else {
+        showToast('Error al crear la cuenta: ' + error.message, 'error')
+      }
+      return
+    }
     setNewAccount({ nombre: '', tipo: 'credito' })
     setShowAddAccount(false)
     fetchAccounts()
@@ -1361,6 +1452,10 @@ export default function Dashboard() {
             body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
           })
           if (!response.ok) {
+            if (response.status === 402) {
+              const body = await response.json().catch(() => ({}))
+              throw new Error(body.error || 'Ya usaste tu análisis con IA gratis este mes.')
+            }
             if ([502, 503, 504, 524].includes(response.status)) {
               throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')
             }
@@ -3135,13 +3230,14 @@ export default function Dashboard() {
                     </button>
                     {configOpen && (
                       <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>➕ CREAR CUENTA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>➕ CREAR CUENTA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>❓ VER TUTORIAL</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
                       </div>
                     )}
                   </div>
@@ -3354,13 +3450,14 @@ export default function Dashboard() {
                   </button>
                   {configOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => setShowAddAccount(true)}>➕ CREAR CUENTA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>➕ CREAR CUENTA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>❓ VER TUTORIAL</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
                     </div>
                   )}
                 </>
@@ -3720,6 +3817,61 @@ export default function Dashboard() {
                 <button type="submit" style={styles.saveBtn} disabled={reportBugSending}>{reportBugSending ? 'Enviando...' : 'Enviar'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showMiPlan && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '420px'}}>
+            <h3 style={styles.modalTitle}>Mi plan 💎</h3>
+            {isPremium ? (
+              <>
+                <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>
+                  {plan.is_legacy
+                    ? 'Tenés acceso completo gratis, sin límites.'
+                    : 'Tenés el plan Premium activo: cuentas, análisis con IA y asistente sin límites.'}
+                </p>
+                <div style={styles.modalButtons}>
+                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Cerrar</button>
+                  {!plan.is_legacy && (
+                    <button type="button" style={{ ...styles.saveBtn, backgroundColor: '#e74c3c' }} disabled={suscribiendo} onClick={handleCancelarSuscripcion}>
+                      {suscribiendo ? 'Cancelando...' : 'Cancelar suscripción'}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px 0' }}>
+                  Plan gratis: 1 cuenta además de Efectivo, y 1 análisis con IA (PDF o foto) por mes. Excel sin límite.
+                </p>
+                <p style={{ fontSize: '14px', color: darkMode ? '#C0B0C0' : '#5C5560', margin: '0 0 20px 0' }}>
+                  Premium: cuentas ilimitadas, análisis con IA ilimitados, y el asistente financiero. $3.999/mes.
+                </p>
+                <div style={styles.modalButtons}>
+                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Cerrar</button>
+                  <button type="button" style={styles.saveBtn} disabled={suscribiendo} onClick={handleSuscribirse}>
+                    {suscribiendo ? 'Redirigiendo...' : 'Suscribirme'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showUpsell && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '420px'}}>
+            <h3 style={styles.modalTitle}>Función de Premium 💎</h3>
+            <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>{showUpsell}</p>
+            <div style={styles.modalButtons}>
+              <button type="button" style={styles.cancelBtn} onClick={() => setShowUpsell(null)}>Ahora no</button>
+              <button type="button" style={styles.saveBtn} disabled={suscribiendo} onClick={() => { setShowUpsell(null); handleSuscribirse() }}>
+                {suscribiendo ? 'Redirigiendo...' : 'Suscribirme'}
+              </button>
+            </div>
           </div>
         </div>
       )}
