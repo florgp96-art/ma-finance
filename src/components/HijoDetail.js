@@ -336,6 +336,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
           </button>
           {mesDropdownOpen && (
             <div
+              className="hide-scroll"
               style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: '200px', maxHeight: '320px', overflowY: 'auto', padding: '6px 0' }}
               onMouseLeave={() => setMesDropdownOpen(false)}
             >

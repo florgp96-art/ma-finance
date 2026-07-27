@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
@@ -317,7 +317,6 @@ export default function Dashboard() {
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
   const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
-  const [monedasCardH, setMonedasCardH] = useState(null)
   // Desplegable de Vencimientos: mismo patrón tap/click + cierre afuera que
   // "Monedas extranjeras" (ver abajo) — antes "ver más" agrandaba el card in-line
   // (maxHeight: none), lo que empujaba hacia abajo todo el contenido de la página
@@ -563,13 +562,6 @@ export default function Dashboard() {
     }
     fetchGlobalWidgetsData()
   }, [accounts, refreshKey])
-
-  useLayoutEffect(() => {
-    const measure = () => { if (monedasCardRef.current) setMonedasCardH(monedasCardRef.current.offsetHeight) }
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [dolarRates, tcTipo, tipoCambio])
 
 
   useEffect(() => {
@@ -2915,11 +2907,6 @@ export default function Dashboard() {
             </div>
           )
 
-          // Alto mínimo para que el título "Vencimientos" + el estado ("N pend."/"Al
-          // día") siempre tengan lugar antes del degradé "ver más" del fondo — antes
-          // se igualaba sin piso al alto del widget de Monedas, y cuando ese widget
-          // era más bajo (ej. un solo renglón de cotización) el texto se superponía.
-          const vencCardMinH = 96
           // Un solo ítem: tarjeta o servicio pendiente (los pagados ya no se
           // muestran acá — no aportan nada útil en un widget de "qué falta pagar").
           const renderVencItem = (v) => {
@@ -2945,36 +2932,41 @@ export default function Dashboard() {
                   <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
                   <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
                 </div>
-                <input type="checkbox" checked={v.pagado} readOnly style={{ accentColor: '#5C4F5C', flexShrink: 0, cursor: 'pointer', width: '14px', height: '14px' }} />
+                <div style={{
+                  width: '16px', height: '16px', borderRadius: '5px', flexShrink: 0,
+                  border: `1.5px solid ${v.pagado ? '#5C4F5C' : (darkMode ? '#5A4F5A' : '#c9c2c9')}`,
+                  backgroundColor: v.pagado ? '#5C4F5C' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  {v.pagado && <span style={{ color: 'white', fontSize: '11px', lineHeight: 1 }}>✓</span>}
+                </div>
               </div>
             )
           }
+          // Mismo patrón que el desplegable de "Monedas extranjeras" de al lado: un
+          // botón compacto (título + estado) que solo abre/cierra un panel flotante
+          // con la lista completa — antes el card colapsado YA mostraba una vista
+          // previa de los ítems (recortada con maxHeight) y, al expandir, el panel
+          // flotante con la lista completa se dibujaba encima, superponiendo las
+          // dos listas.
           const vencCard = (
             <div ref={vencCardRef} style={{ width: '140px', position: 'relative' }}>
-              <div style={{ borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden', position: 'relative', boxSizing: 'border-box', maxHeight: `${Math.max(monedasCardH || 0, vencCardMinH)}px` }}>
-                <p style={{ fontSize: '11px', color: '#8e8e93', ...rotuloLabel, textAlign: 'center', margin: 0, fontWeight: 700 }}>Vencimientos</p>
-                {vencList.length === 0 ? (
-                  <p style={{ fontSize: '11px', color: '#8e8e93', textAlign: 'center', margin: '6px 0', fontStyle: 'italic' }}>Sin vencimientos</p>
-                ) : (
-                  <>
-                    <p style={{ fontSize: '11px', color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e', textAlign: 'center', margin: 0, fontWeight: 700 }}>
-                      {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
-                    </p>
-                    {pendientes.map(renderVencItem)}
-                  </>
-                )}
-                {/* gradiente + botón VER MÁS dentro del card (no agrega altura extra) */}
-                {pendientes.length > 2 && (
-                  <div onClick={() => setVencExpanded(o => !o)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '36px', background: `linear-gradient(transparent, ${cardBg})`, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '5px', cursor: 'pointer', borderRadius: '0 0 14px 14px' }}>
-                    <span style={{ fontSize: '10px', color: '#8e8e93', fontWeight: 600, fontFamily: '"Montserrat", sans-serif' }}>{vencExpanded ? '▴ ver menos' : '▾ ver todos'}</span>
-                  </div>
-                )}
-              </div>
+              <button type="button" onClick={() => setVencExpanded(o => !o)} aria-haspopup="true" aria-expanded={vencExpanded}
+                disabled={vencList.length === 0}
+                style={{ width: '100%', textAlign: 'left', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '5px', cursor: vencList.length === 0 ? 'default' : 'pointer', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }}>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                  <span style={{ fontSize: '10px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</span>
+                  {vencList.length > 0 && <span style={{ fontSize: '9px', opacity: 0.6, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{vencExpanded ? '▴' : '▾'}</span>}
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
+                  {vencList.length === 0 ? 'Sin vencimientos' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
+                </span>
+              </button>
               {/* Panel flotante con la lista completa — no empuja el resto de la página
                   porque está fuera del flujo normal (position: absolute), igual que el
                   desplegable de "Monedas extranjeras" de al lado. */}
               {vencExpanded && pendientes.length > 0 && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: '220px', maxHeight: '320px', overflowY: 'auto', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div className="hide-scroll" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200, minWidth: '220px', maxHeight: '320px', overflowY: 'auto', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, boxShadow: '0 4px 20px rgba(0,0,0,0.18)', padding: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {pendientes.map(renderVencItem)}
                 </div>
               )}
