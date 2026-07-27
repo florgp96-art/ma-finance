@@ -355,6 +355,20 @@ export default function Dashboard() {
   const [sidebarCatEvol, setSidebarCatEvol] = useState(['total'])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
+  const evolDropdownRef = useRef(null)
+  useEffect(() => {
+    if (!evolDropdownOpen) return
+    const cerrarSiAfuera = (e) => { if (evolDropdownRef.current && !evolDropdownRef.current.contains(e.target)) setEvolDropdownOpen(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setEvolDropdownOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+  }, [evolDropdownOpen])
   const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
   // Desplegable de Vencimientos: mismo patrón tap/click + cierre afuera que
@@ -2707,9 +2721,19 @@ export default function Dashboard() {
               // está por sacar, el click no hace nada — siempre hay algo para
               // mostrar (el default es "Total", igual que el viejo gráfico de
               // barras separado, ahora fusionado acá).
+              // "Total" es excluyente con el resto: no tiene sentido comparar
+              // "Total" a la vez que una cuenta/categoría puntual, y si no se
+              // saca solo al elegir otra cosa, queda tildado sin que el usuario
+              // lo haya pedido (hay que volver a abrir el desplegable y sacarlo
+              // a mano). El resto de las opciones sí se combinan libremente entre sí.
               const toggleClave = (key) => setSidebarCatEvol(prev => {
-                if (prev.includes(key)) return prev.length > 1 ? prev.filter(k => k !== key) : prev
-                return [...prev, key]
+                if (key === 'total') return ['total']
+                const sinTotal = prev.filter(k => k !== 'total')
+                if (sinTotal.includes(key)) {
+                  const next = sinTotal.filter(k => k !== key)
+                  return next.length > 0 ? next : ['total']
+                }
+                return [...sinTotal, key]
               })
               const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol(['total']); setEvolDropdownOpen(false) } }
               const opciones = [
@@ -2749,7 +2773,7 @@ export default function Dashboard() {
                   {/* Dropdown de selección múltiple — "Total" (default) más
                       categorías/subcategorías/hijos (gastos) o tags (ingresos),
                       mezclados libremente. */}
-                  <div style={{ position: 'relative', marginBottom: '14px' }}>
+                  <div ref={evolDropdownRef} style={{ position: 'relative', marginBottom: '14px' }}>
                     <button type="button" onClick={() => setEvolDropdownOpen(o => !o)}
                       style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
                         border: `1.5px solid ${!soloTotal ? '#5C4F5C' : borderClr}`,
@@ -2762,7 +2786,7 @@ export default function Dashboard() {
                       <span>▾</span>
                     </button>
                     {evolDropdownOpen && (
-                      <div onMouseLeave={() => setEvolDropdownOpen(false)} className="hide-scroll"
+                      <div className="hide-scroll"
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
                         {opciones.map(op => {
                           const activo = sidebarCatEvol.includes(op.key)
