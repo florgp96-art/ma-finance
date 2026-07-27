@@ -3235,7 +3235,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
                 </h3>
                 {effectiveChartType === 'donut' && (
-                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
+                  // flexWrap: cuando la tarjeta queda angosta (ej. dos donuts lado a
+                  // lado en un ancho intermedio, ni mobile ni desktop completo), la
+                  // columna de texto NO se aprieta infinitamente — al llegar a su
+                  // ancho mínimo (flexBasis, flexShrink:0) toda la columna pasa a la
+                  // fila de abajo en vez de que el texto se corte letra por letra.
+                  <div style={{ display: 'flex', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
                     <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
                       <PieChart>
                         <Pie data={data} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
@@ -3246,7 +3251,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', minWidth: 0, flex: isMobile ? 'none' : '1 1 auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '200px', flexGrow: isMobile ? 0 : 1, flexShrink: 0, flexBasis: isMobile ? '100%' : '200px' }}>
                       {/* Antes el nombre se truncaba con "..." a los 150px fijos aunque
                           sobrara espacio a lo ancho — ahora ocupa el espacio disponible
                           de la fila (flex:1) y si de verdad no entra, pasa a una segunda
