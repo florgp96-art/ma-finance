@@ -3581,12 +3581,14 @@ const getStyles = (dark, mobile) => {
     table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: 'fixed' },
     th: {
       textAlign: 'left', padding: mobile ? '6px 8px' : '10px 12px', fontSize: '11px',
-      color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400'
+      color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400',
+      overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis'
     },
     thSortable: {
       textAlign: 'left', padding: mobile ? '6px 8px' : '10px 12px', fontSize: '11px',
       color: muted, textTransform: 'uppercase', borderBottom: `2px solid ${hdrBorder}`, fontWeight: '400',
-      cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
+      cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+      overflow: 'hidden', textOverflow: 'ellipsis'
     },
     sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
     td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt, overflowWrap: 'break-word', wordBreak: 'break-word' },
