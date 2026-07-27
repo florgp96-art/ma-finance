@@ -77,6 +77,12 @@ const addMonths = (fechaISO, n) => {
 // mucho historial superan eso fácil, así que una consulta sin paginar puede devolver solo
 // una porción de las transacciones existentes — rompiendo silenciosamente cualquier
 // comparación (ej. detección de duplicados) que dependa de "todo lo que ya está cargado".
+// IMPORTANTE: la query que se le pasa tiene que ordenar por una columna que
+// desempate por completo (ej. .order('fecha', ...).order('id', ...)) — si
+// muchas filas comparten la misma fecha (algo común acá), ordenar solo por
+// fecha no da un orden estable entre ellas, y Postgres puede devolver la
+// misma fila en dos páginas distintas (duplicada) u omitir otra, ya que cada
+// página es una consulta separada con su propio LIMIT/OFFSET.
 const fetchAllTxPages = async (buildQuery) => {
   const PAGE = 1000
   let all = []
@@ -553,7 +559,7 @@ export default function Dashboard() {
           supabase.from('transactions')
             .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
             .in('account_id', accountIds)
-            .order('fecha', { ascending: false })
+            .order('fecha', { ascending: false }).order('id', { ascending: true })
         ),
         supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
       ])

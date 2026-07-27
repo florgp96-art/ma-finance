@@ -729,6 +729,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     })
   }, [])
 
+  // IMPORTANTE: la query que se le pasa tiene que ordenar por una columna que
+  // desempate por completo (ej. .order('fecha', ...).order('id', ...)) — si
+  // muchas filas comparten la misma fecha (algo común acá), ordenar solo por
+  // fecha no da un orden estable entre ellas, y Postgres puede devolver la
+  // misma fila en dos páginas distintas (duplicada, y hasta con dos filas de
+  // React con la misma key) u omitir otra, ya que cada página es una
+  // consulta separada con su propio LIMIT/OFFSET.
   const fetchAllPages = async (buildQuery) => {
     const PAGE = 1000
     let all = []
@@ -833,7 +840,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         q = esCuentaIngresos
           ? q.eq('user_id', user.id).eq('tipo', 'ingreso')
           : q.eq('account_id', account.id)
-        return q.order('fecha', { ascending: false })
+        return q.order('fecha', { ascending: false }).order('id', { ascending: true })
       }),
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
       supabase.from('statements')
@@ -869,7 +876,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         supabase.from('transactions')
           .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
           .in('account_id', accountIds)
-          .order('fecha', { ascending: false })
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       ),
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
       supabase.from('statements')
