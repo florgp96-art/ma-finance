@@ -2735,16 +2735,24 @@ export default function Dashboard() {
                 }
                 return [...sinTotal, key]
               })
-              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol(['total']); setEvolDropdownOpen(false) } }
+              // Ya no resetea la selección: las categorías/subcategorías/hijos/ingresos
+              // elegidos son válidos sin importar el switch (cada clave sabe su propio
+              // tipo), así que cambiar de Gastos a Ingresos y viceversa no debería
+              // perder lo que ya se venía comparando. Solo cambia qué representa "Total".
+              const cambiarTipo = (v) => { if (evolucionTipo !== v) setEvolucionTipo(v) }
+              // Categorías/subcategorías/hijos (gasto) e ingresos se ofrecen SIEMPRE
+              // juntos, sin importar si el switch está en "Gastos" o "Ingresos": cada
+              // clave ya sabe su propio tipo (cat:/sub:/hijo: son de gasto, ingreso: es
+              // de ingreso — ver el cálculo de evolData más abajo), así que mezclarlas
+              // en la selección funciona sin ambigüedad. Antes el switch tapaba la
+              // mitad de las opciones, dando la sensación de que lo que se podía
+              // elegir "dependía" de dónde se estuviera parado.
               const opciones = [
                 { key: 'total', label: 'Total', icon: '📊' },
-                ...(evolucionTipo === 'gasto'
-                  ? [
-                      ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
-                      ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
-                      ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
-                    ]
-                  : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))),
+                ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
+                ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
+                ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
+                ...ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) })),
                 // Por cuenta — disponible en gastos e ingresos por igual, para no
                 // perder esa forma de mirar la evolución al elegir otras.
                 ...cuentasConTx.map(c => ({ key: `cuenta:${c}`, label: c, icon: '💳' })),
@@ -3997,6 +4005,10 @@ export default function Dashboard() {
                 <p style={styles.timerText}>
                   {timer > 0 ? `${timer}s restantes` : 'El extracto es largo y está tardando un poco más... seguimos procesando, no cierres la página'}
                 </p>
+                <div style={{ marginTop: '18px', padding: '12px 14px', borderRadius: '10px', backgroundColor: darkMode ? '#2A232A' : '#F7F2F5', border: `1px solid ${darkMode ? '#3A2F3A' : '#E8DEE5'}`, fontSize: '12.5px', lineHeight: '1.5', color: darkMode ? '#C8BCC8' : '#5C4F5C', textAlign: 'left' }}>
+                  ⚠️ No cierres ni salgas de esta página mientras se procesa.<br />
+                  Aunque lo analiza una IA, siempre puede haber errores — revisá los movimientos cargados antes de darlos por buenos.
+                </div>
               </div>
             )}
 
