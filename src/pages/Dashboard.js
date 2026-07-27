@@ -2734,24 +2734,25 @@ export default function Dashboard() {
                 }
                 return [...sinTotal, key]
               })
-              // Ya no resetea la selección: las categorías/subcategorías/hijos/ingresos
-              // elegidos son válidos sin importar el switch (cada clave sabe su propio
-              // tipo), así que cambiar de Gastos a Ingresos y viceversa no debería
-              // perder lo que ya se venía comparando. Solo cambia qué representa "Total".
-              const cambiarTipo = (v) => { if (evolucionTipo !== v) setEvolucionTipo(v) }
-              // Categorías/subcategorías/hijos (gasto) e ingresos se ofrecen SIEMPRE
-              // juntos, sin importar si el switch está en "Gastos" o "Ingresos": cada
-              // clave ya sabe su propio tipo (cat:/sub:/hijo: son de gasto, ingreso: es
-              // de ingreso — ver el cálculo de evolData más abajo), así que mezclarlas
-              // en la selección funciona sin ambigüedad. Antes el switch tapaba la
-              // mitad de las opciones, dando la sensación de que lo que se podía
-              // elegir "dependía" de dónde se estuviera parado.
+              // Al cambiar el switch se resetea la selección a "Total": una
+              // categoría de GASTO (ej. "Comida") elegida en la vista de Gastos no
+              // tiene sentido en Ingresos (no existe "Comida" del lado de los
+              // ingresos) — dejarla seleccionada mostraba datos de gasto mientras
+              // el switch decía "Ingresos", como si no respetara la elección.
+              const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol(['total']); setEvolDropdownOpen(false) } }
+              // Categorías/subcategorías/hijos son siempre de GASTO y los tags son
+              // siempre de INGRESO — el desplegable solo ofrece las que aplican al
+              // switch actual, para no mezclar opciones que no tienen sentido del
+              // otro lado. "Por cuenta" sí queda disponible en los dos modos.
               const opciones = [
                 { key: 'total', label: 'Total', icon: '📊' },
-                ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
-                ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
-                ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
-                ...ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) })),
+                ...(evolucionTipo === 'gasto'
+                  ? [
+                      ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
+                      ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
+                      ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
+                    ]
+                  : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))),
                 // Por cuenta — disponible en gastos e ingresos por igual, para no
                 // perder esa forma de mirar la evolución al elegir otras.
                 ...cuentasConTx.map(c => ({ key: `cuenta:${c}`, label: c, icon: '💳' })),
