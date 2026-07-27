@@ -86,6 +86,10 @@ export async function extractTextFromPDF(file) {
 
 const parseAnalyzeResponse = async (response) => {
   if (!response.ok) {
+    if (response.status === 402) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error || 'Ya usaste tu análisis con IA gratis este mes.')
+    }
     console.error('Error HTTP:', response.status, await response.text())
     if ([502, 503, 504, 524].includes(response.status)) {
       throw new Error('El extracto tardó demasiado en procesarse (puede ser muy largo o el servidor está ocupado). Probá de nuevo, o si el PDF es muy largo intentá dividirlo en partes más chicas.')

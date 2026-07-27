@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { buildAnalysisPrompt, salvageClaudeJson } from './_lib/analyzePrompt.js'
+import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage } from './_lib/plan.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -44,6 +45,27 @@ export default async function handler(req, res) {
   if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })
   if (pdfText.length > 200_000) return res.status(400).json({ error: 'PDF text too large' })
 
+  let esPremium = true
+  try {
+    esPremium = (await getUserPlan(supabaseAdmin, user.id)).isPremium
+  } catch (e) {
+    console.error('Error leyendo plan del usuario:', e.message)
+  }
+  if (!esPremium) {
+    let cupoUsado = false
+    try {
+      cupoUsado = await hasUsedMonthlyAiQuota(supabaseAdmin, user.id)
+    } catch (e) {
+      console.error('Error leyendo cupo de IA del usuario:', e.message)
+    }
+    if (cupoUsado) {
+      return res.status(402).json({
+        error: 'Ya usaste tu análisis con IA gratis este mes. Podés seguir cargando por Excel sin límite, o suscribirte a Premium para análisis ilimitados.',
+        code: 'AI_QUOTA_EXCEEDED',
+      })
+    }
+  }
+
   const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases })
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -67,5 +89,6 @@ ${pdfText}`
   })
 
   const data = await response.json()
+  if (!esPremium) await recordAiUsage(supabaseAdmin, user.id)
   res.status(200).json(salvageClaudeJson(data))
 }
