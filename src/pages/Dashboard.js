@@ -117,6 +117,10 @@ export default function Dashboard() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [hoveredAccount, setHoveredAccount] = useState(null)
 
+  const [showReportBug, setShowReportBug] = useState(false)
+  const [reportBugText, setReportBugText] = useState('')
+  const [reportBugSending, setReportBugSending] = useState(false)
+
   const [archivo, setArchivo] = useState(null)
   const [toast, setToast] = useState(null)
   const [servicios, setServicios] = useState(SERVICIOS_DEFAULT)
@@ -1217,6 +1221,28 @@ export default function Dashboard() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     navigate('/login')
+  }
+
+  const handleReportBug = async (e) => {
+    e.preventDefault()
+    if (!reportBugText.trim()) return
+    setReportBugSending(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const response = await fetch('/api/reportBug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ mensaje: reportBugText, pagina: dashboardTab }),
+      })
+      if (!response.ok) throw new Error('No se pudo enviar el reporte')
+      setShowReportBug(false)
+      setReportBugText('')
+      showToast('¡Gracias! Reporte enviado.')
+    } catch (err) {
+      showToast('Error al enviar el reporte: ' + err.message, 'error')
+    }
+    setReportBugSending(false)
   }
 
   const handleAddAccount = async (e) => {
@@ -3052,6 +3078,7 @@ export default function Dashboard() {
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
                       </div>
                     )}
                   </div>
@@ -3269,6 +3296,7 @@ export default function Dashboard() {
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
                     </div>
                   )}
                 </>
@@ -3540,6 +3568,32 @@ export default function Dashboard() {
               <div style={styles.modalButtons}>
                 <button type="button" style={styles.cancelBtn} onClick={() => setShowAddAccount(false)}>Cancelar</button>
                 <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showReportBug && (
+        <div style={styles.overlay}>
+          <div style={{...styles.modal, maxWidth: '440px'}}>
+            <h3 style={styles.modalTitle}>Reportar un error 🐞</h3>
+            <form onSubmit={handleReportBug}>
+              <div style={styles.field}>
+                <label style={styles.label}>Contanos qué pasó</label>
+                <textarea
+                  style={{...styles.input, minHeight: '120px', resize: 'vertical', fontFamily: 'inherit'}}
+                  value={reportBugText}
+                  onChange={(e) => setReportBugText(e.target.value)}
+                  placeholder="Ej: al cargar un extracto de Visa me tira error y no importa las transacciones"
+                  maxLength={4000}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div style={styles.modalButtons}>
+                <button type="button" style={styles.cancelBtn} onClick={() => setShowReportBug(false)}>Cancelar</button>
+                <button type="submit" style={styles.saveBtn} disabled={reportBugSending}>{reportBugSending ? 'Enviando...' : 'Enviar'}</button>
               </div>
             </form>
           </div>
