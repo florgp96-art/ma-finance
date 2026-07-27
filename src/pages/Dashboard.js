@@ -2424,6 +2424,12 @@ export default function Dashboard() {
     const hijosConTx = [...new Set(
       partesGastoUltimos6.filter(p => p.tipo === 'persona').map(p => p.nombre)
     )].sort()
+    // Por cuenta (ej. "Amex Galicia") — disponible en gastos e ingresos por
+    // igual, para no perder esa forma de mirar la evolución al mezclarla con
+    // categoría/subcategoría/hijo/tag.
+    const cuentasConTx = [...new Set(
+      txsUltimos6.filter(t => t.tipo === evolucionTipo && t.accounts?.nombre).map(t => t.accounts.nombre)
+    )].sort()
 
     // Con qué porción de derivarPorcionesGasto matchea cada clave del selector
     // (categoría/subcategoría → la parte "yo" de esa categoría, sin lo de los
@@ -2459,6 +2465,7 @@ export default function Dashboard() {
       if (key === 'total') return 'Total'
       if (key.startsWith('ingreso:')) return key.slice(8)
       if (key.startsWith('hijo:')) return key.slice(5)
+      if (key.startsWith('cuenta:')) return key.slice(7)
       if (key.startsWith('sub:')) { const [cat, sub] = key.slice(4).split('::'); return `${cat} › ${sub}` }
       return key.slice(4)
     }
@@ -2472,12 +2479,14 @@ export default function Dashboard() {
       if (key.startsWith('ingreso:')) return resolveCategoryColor(key.slice(8), { isIncome: true })
       if (key.startsWith('sub:')) { const [, sub] = key.slice(4).split('::'); return resolveCategoryColor(sub) }
       if (key.startsWith('hijo:')) return resolveCategoryColor(key.slice(5))
+      if (key.startsWith('cuenta:')) return resolveCategoryColor(key.slice(7))
       return resolveCategoryColor(key.slice(4))
     }
     const iconDeKey = (key) => {
       if (key === 'total') return '📊'
       if (key.startsWith('ingreso:')) return resolveCategoryIcon(key.slice(8), { customIcons, isIncome: true })
       if (key.startsWith('hijo:')) return customIcons?.[key.slice(5)] || '👧'
+      if (key.startsWith('cuenta:')) return '💳'
       if (key.startsWith('sub:')) return '·'
       return resolveCategoryIcon(key.slice(4), { customIcons })
     }
@@ -2498,6 +2507,9 @@ export default function Dashboard() {
         } else if (key.startsWith('ingreso:')) {
           const nombre = key.slice(8)
           total = txsDelMes.filter(t => t.tipo === 'ingreso' && getIngresoName(t) === nombre).reduce((s, t) => s + convertirMontoDelMovimiento(t), 0)
+        } else if (key.startsWith('cuenta:')) {
+          const nombre = key.slice(7)
+          total = txsDelMes.filter(t => t.tipo === evolucionTipo && t.accounts?.nombre === nombre).reduce((s, t) => s + convertirMontoDelMovimiento(t), 0)
         } else {
           total = txsDelMes.filter(t => t.tipo === 'gasto').reduce((s, t) =>
             s + derivarPorcionesGasto(t, tcParamsGasto).filter(p => parteCoincideConKey(p, key)).reduce((s2, p) => s2 + p.monto, 0)
@@ -2509,7 +2521,7 @@ export default function Dashboard() {
     })
     const seleccion = sidebarCatEvol.map(key => ({ key, label: labelDeKey(key), color: colorDeKey(key), icon: iconDeKey(key) }))
 
-    return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion }
+    return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion }
   }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, childrenDB, customIcons])
 
   const sideWidgets = () => (
@@ -2553,7 +2565,7 @@ export default function Dashboard() {
             })()}
 
             {(() => {
-              const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, evolData, seleccion } = evolucionCategoriaMemo
+              const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion } = evolucionCategoriaMemo
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
@@ -2575,6 +2587,9 @@ export default function Dashboard() {
                       ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
                     ]
                   : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))),
+                // Por cuenta — disponible en gastos e ingresos por igual, para no
+                // perder esa forma de mirar la evolución al elegir otras.
+                ...cuentasConTx.map(c => ({ key: `cuenta:${c}`, label: c, icon: '💳' })),
               ]
               // Con solo "Total" elegido, barras (se lee mejor un total por mes) con
               // línea de promedio — es lo que mostraba el viejo mini-gráfico. En
