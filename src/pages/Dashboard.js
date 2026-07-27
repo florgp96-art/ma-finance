@@ -502,13 +502,6 @@ export default function Dashboard() {
       if (user) {
         setCurrentUserId(user.id)
         fetchPlan(user.id)
-        // Tutorial de bienvenida: se muestra una sola vez por usuario (mismo
-        // patrón que rotar_banner_cerrado), la primera vez que entra al
-        // Dashboard después del onboarding. Después queda accesible de nuevo
-        // desde Configuración → "Ver tutorial".
-        try {
-          if (!localStorage.getItem(`tutorial_visto_${user.id}`)) { setTutorialStep(0); setShowTutorial(true) }
-        } catch {}
         // Limpiar las claves viejas sin scope de usuario (bug de filtración
         // entre cuentas en dispositivos compartidos) para que no queden dando
         // vueltas ni las lea ningún código viejo.
@@ -561,6 +554,12 @@ export default function Dashboard() {
           .select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__pref__%')
         const prefs = Object.fromEntries((prefRows || []).map(r => [r.texto_original.replace('__pref__', ''), r.nombre_asignado]))
         const readPref = (key) => { try { return prefs[key] !== undefined ? JSON.parse(prefs[key]) : undefined } catch { return undefined } }
+        // Tutorial de bienvenida: se muestra una sola vez por CUENTA (guardado
+        // en la DB, no en localStorage — antes quedaba "visto" solo en ese
+        // navegador/dispositivo puntual, así que reaparecía al entrar desde
+        // otro navegador, en modo privado, o si el navegador borraba datos).
+        // Después queda accesible de nuevo desde Configuración → "Ver tutorial".
+        if (!readPref('tutorial_visto')) { setTutorialStep(0); setShowTutorial(true) }
         const ahorroDB = readPref('ahorro')
         if (ahorroDB) {
           setAhorro(ahorroDB)
@@ -3804,7 +3803,7 @@ export default function Dashboard() {
         const esUltimo = tutorialStep === steps.length - 1
         const cerrarTutorial = () => {
           setShowTutorial(false)
-          try { if (currentUserId) localStorage.setItem(`tutorial_visto_${currentUserId}`, '1') } catch {}
+          persistPref('tutorial_visto', true)
         }
         return (
           <div style={styles.overlay}>
