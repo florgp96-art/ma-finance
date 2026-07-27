@@ -73,8 +73,12 @@ export async function extractTextFromPDF(file) {
   // ¿El texto tiene pinta de contener la tabla de movimientos? Contamos líneas
   // con fecha + importe. Si hay muy pocas (resúmenes donde la tabla no sale
   // como texto, ej. algunos Galicia), mejor mandar el PDF entero a la IA.
+  // Incluye fechas DD/MM(/AAAA) y también AAAA-MM-DD (ISO) — antes solo
+  // reconocía el primer formato, así que un extracto con fechas ISO siempre
+  // caía al camino más caro (documento completo a la IA) aunque el texto
+  // extraído tuviera la tabla de movimientos perfectamente legible.
   const txLikeLines = finalText.split('\n').filter(l =>
-    /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/.test(l) && /\d(?:[\d.,]*\d)?[.,]\d{2}\b/.test(l)
+    (/\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/.test(l) || /\b\d{4}-\d{1,2}-\d{1,2}\b/.test(l)) && /\d(?:[\d.,]*\d)?[.,]\d{2}\b/.test(l)
   ).length
   if (txLikeLines < 5) {
     console.warn(`Solo ${txLikeLines} líneas con pinta de movimiento: se usará análisis de documento`)

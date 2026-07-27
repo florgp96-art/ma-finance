@@ -1,39 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
-
-const rateLimitMap = new Map()
-
-function checkRateLimit(ip) {
-  const now = Date.now()
-  const windowMs = 60 * 1000
-  const limit = 10
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  const entry = rateLimitMap.get(ip)
-  if (now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  if (entry.count >= limit) return false
-  entry.count++
-  return true
-}
+import { checkRateLimit } from './_lib/rateLimit.js'
+import { secretsMatch } from './_lib/secretsMatch.js'
 
 export default async function handler(req, res) {
-  if (req.headers['authorization'] !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!secretsMatch(req.headers['authorization'], `Bearer ${process.env.CRON_SECRET}`)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
-  if (!checkRateLimit(ip)) return res.status(429).json({ error: 'Too many requests' })
+  if (!checkRateLimit('cron-reclasificar', 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const supabase = createClient(
     process.env.REACT_APP_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
 
-  const { data: rules } = await supabase.from('user_rules').select('*')
+  // Los "contexto_*" son marcadores (ej. "contexto_hijo") con un category_id
+  // ajeno, no reglas de clasificación reales — el resto de la app (Dashboard.js,
+  // analyzePrompt.js) ya los filtra antes de aplicar reglas; acá faltaba.
+  const { data: rulesData } = await supabase.from('user_rules').select('*')
+  const rules = (rulesData || []).filter(r => !r.texto_original?.startsWith('contexto_'))
   const { data: neutroAliases } = await supabase.from('user_aliases').select('*').eq('tipo', 'neutro')
 
   if ((!rules || rules.length === 0) && (!neutroAliases || neutroAliases.length === 0)) {

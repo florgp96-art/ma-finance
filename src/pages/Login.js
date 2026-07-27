@@ -14,7 +14,7 @@ export default function Login() {
   const navigate = useNavigate()
 
   const handleLogin = async () => {
-    if (!email || !password) return
+    if (!email || !password) { setError('Completá el email y la contraseña.'); return }
     setLoading(true)
     setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -91,9 +91,14 @@ export default function Login() {
         </button>
 
         {resetSent ? (
-          <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '13px', color: '#27ae60' }}>
-            ✅ Te enviamos un email para restablecer tu contraseña.
-          </p>
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <p style={{ fontSize: '13px', color: '#27ae60', margin: '0 0 8px' }}>
+              ✅ Te enviamos un email para restablecer tu contraseña.
+            </p>
+            <button onClick={() => setResetSent(false)} style={{ background: 'none', border: 'none', color: COLORS.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
+              Volver
+            </button>
+          </div>
         ) : (
           <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: COLORS.textSecondary }}>
             <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: COLORS.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>

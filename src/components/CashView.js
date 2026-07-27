@@ -5,6 +5,14 @@ import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreD
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
+// "Mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3, toISOString()
+// adelanta el mes ~3hs antes de tiempo entre las 21:00 y las 23:59 del
+// último día de cada mes.
+const mesActualLocal = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 // IMPORTANTE: la query que se le pasa tiene que ordenar por una columna que
 // desempate por completo (ej. .order('fecha', ...).order('id', ...)) — si
 // muchas filas comparten la misma fecha, ordenar solo por fecha no da un
@@ -16,7 +24,11 @@ const fetchAllPages = async (buildQuery) => {
   let all = []
   let page = 0
   while (true) {
-    const { data } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
+    const { data, error } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
+    // Antes un error acá (RLS, red caída) se veía idéntico a "no hay pagos
+    // este mes" — ahora al menos queda un rastro en consola en vez de
+    // desaparecer en silencio.
+    if (error) { console.error('CashView: error cargando página de datos:', error.message); break }
     if (!data || data.length === 0) break
     all = all.concat(data)
     if (data.length < PAGE) break
@@ -51,7 +63,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [selectedMonth, setSelectedMonth] = useState(() => mesActualLocal())
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
   // Un solo Set con las claves de los ítems desplegados del "Desglose de pagos" —
   // mismo patrón para Mastercard/Visa/Alquiler/Débitos/etc., cualquiera sea la
@@ -101,7 +113,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
 
   const mesesDisponibles = useMemo(() => [...new Set([
     ...transactions.map(t => normFecha(t.fecha).slice(0, 7)).filter(Boolean),
-    new Date().toISOString().slice(0, 7),
+    mesActualLocal(),
   ])].sort().reverse()
   , [transactions])
 

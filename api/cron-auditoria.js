@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { secretsMatch } from './_lib/secretsMatch.js'
 
 // Auditoría interna, invisible para los usuarios: no escribe nada, solo lee
 // transacciones de TODAS las cuentas y le manda a NOTIFY_EMAIL un resumen de
@@ -26,7 +27,7 @@ function detectarDuplicados(txs) {
   const grupos = new Map()
   for (const t of txs) {
     if (t.monto == null || !t.fecha) continue
-    const key = `${t.account_id}|${t.fecha}|${t.monto}`
+    const key = `${t.account_id}|${t.fecha}|${t.monto}|${t.moneda || ''}`
     if (!grupos.has(key)) grupos.set(key, [])
     grupos.get(key).push(t)
   }
@@ -60,26 +61,33 @@ function detectarCuotasInconsistentes(txs) {
 
   const hallazgos = []
   for (const [accountId, rows] of porCuenta) {
-    const totalPorMes = new Map()
-    const nuevasPorMes = new Map()
-    for (const t of rows) {
-      const mes = mesDe(t.fecha)
-      totalPorMes.set(mes, (totalPorMes.get(mes) || 0) + Math.abs(Number(t.monto) || 0))
-      if ((t.cuota_numero || 1) === 1) nuevasPorMes.set(mes, (nuevasPorMes.get(mes) || 0) + 1)
-    }
-    const meses = [...totalPorMes.keys()].sort()
-    for (let i = 1; i < meses.length; i++) {
-      const mesAnterior = meses[i - 1]
-      const mesActual = meses[i]
-      if (mesSiguiente(mesAnterior) !== mesActual) continue // hay hueco de meses sin datos, no comparable
-      const totalAnterior = totalPorMes.get(mesAnterior)
-      const totalActual = totalPorMes.get(mesActual)
-      const hayNuevasEsteMonto = nuevasPorMes.get(mesActual) || 0
-      if (totalActual > totalAnterior + 1 && hayNuevasEsteMonto === 0) {
-        const cuenta = rows.find(r => r.account_id === accountId)
-        hallazgos.push(
-          `Cuenta "${cuenta?.accounts?.nombre || accountId}": cuotas subieron de $${totalAnterior.toFixed(0)} (${mesAnterior}) a $${totalActual.toFixed(0)} (${mesActual}) sin compras nuevas ese mes`
-        )
+    // Por moneda: sumar ARS+USD en un mismo total generaba falsos positivos (un
+    // cargo nuevo en una moneda distinta a la que venía la cuota) y podía
+    // enmascarar una inconsistencia real de una moneda con el cambio de la otra.
+    const monedas = [...new Set(rows.map(t => t.moneda || 'ARS'))]
+    for (const moneda of monedas) {
+      const rowsMoneda = rows.filter(t => (t.moneda || 'ARS') === moneda)
+      const totalPorMes = new Map()
+      const nuevasPorMes = new Map()
+      for (const t of rowsMoneda) {
+        const mes = mesDe(t.fecha)
+        totalPorMes.set(mes, (totalPorMes.get(mes) || 0) + Math.abs(Number(t.monto) || 0))
+        if ((t.cuota_numero || 1) === 1) nuevasPorMes.set(mes, (nuevasPorMes.get(mes) || 0) + 1)
+      }
+      const meses = [...totalPorMes.keys()].sort()
+      for (let i = 1; i < meses.length; i++) {
+        const mesAnterior = meses[i - 1]
+        const mesActual = meses[i]
+        if (mesSiguiente(mesAnterior) !== mesActual) continue // hay hueco de meses sin datos, no comparable
+        const totalAnterior = totalPorMes.get(mesAnterior)
+        const totalActual = totalPorMes.get(mesActual)
+        const hayNuevasEsteMonto = nuevasPorMes.get(mesActual) || 0
+        if (totalActual > totalAnterior + 1 && hayNuevasEsteMonto === 0) {
+          const cuenta = rowsMoneda.find(r => r.account_id === accountId)
+          hallazgos.push(
+            `Cuenta "${cuenta?.accounts?.nombre || accountId}": cuotas en ${moneda} subieron de ${totalAnterior.toFixed(0)} (${mesAnterior}) a ${totalActual.toFixed(0)} (${mesActual}) sin compras nuevas ese mes`
+          )
+        }
       }
     }
   }
@@ -87,7 +95,7 @@ function detectarCuotasInconsistentes(txs) {
 }
 
 export default async function handler(req, res) {
-  if (req.headers['authorization'] !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!secretsMatch(req.headers['authorization'], `Bearer ${process.env.CRON_SECRET}`)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
@@ -122,8 +130,16 @@ export default async function handler(req, res) {
 
   let emails = {}
   if (reportePorUsuario.length > 0) {
-    const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
-    emails = Object.fromEntries((usersData?.users || []).map(u => [u.id, u.email]))
+    // Paginado: listUsers trae como máximo 1000 por página — sin este loop, los
+    // usuarios más allá del #1000 quedaban con su UUID crudo en vez del mail.
+    const allUsers = []
+    for (let page = 1; ; page++) {
+      const { data: usersData } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 })
+      const users = usersData?.users || []
+      allUsers.push(...users)
+      if (users.length < 1000) break
+    }
+    emails = Object.fromEntries(allUsers.map(u => [u.id, u.email]))
   }
 
   const notifyEmail = process.env.NOTIFY_EMAIL

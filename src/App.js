@@ -8,9 +8,10 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
+import ResetPassword from './pages/ResetPassword'
 
 function App() {
-  const { user, loading } = useAuth()
+  const { user, loading, passwordRecovery, clearPasswordRecovery } = useAuth()
 
   if (loading) {
     return (
@@ -26,6 +27,13 @@ function App() {
         Cargando...
       </div>
     )
+  }
+
+  // El link de "olvidé mi contraseña" trae una sesión válida (evento
+  // PASSWORD_RECOVERY) — antes de dejar entrar al Dashboard con la contraseña
+  // vieja intacta, obligamos a elegir una nueva.
+  if (user && passwordRecovery) {
+    return <ResetPassword onDone={clearPasswordRecovery} />
   }
 
   return (
