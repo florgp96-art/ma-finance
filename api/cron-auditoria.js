@@ -16,22 +16,32 @@ function mesSiguiente(mes) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-// Transacciones repetidas: misma cuenta, fecha, monto y detalle — típico de
-// haber cargado el mismo extracto dos veces.
+// Transacciones repetidas: misma cuenta, fecha y monto — no exigimos que el
+// detalle coincida porque el caso típico es cargar algo a mano y después
+// importar el resumen que trae el mismo movimiento con otra descripción (o
+// viceversa). Si además el detalle coincide, es más probable que sea el
+// mismo extracto cargado dos veces; si uno es manual y el otro importado, es
+// más probable que sea el caso de carga manual + resumen.
 function detectarDuplicados(txs) {
   const grupos = new Map()
   for (const t of txs) {
-    if (!t.detalle) continue
-    const key = `${t.account_id}|${t.fecha}|${t.monto}|${t.detalle.trim().toUpperCase()}`
+    if (t.monto == null || !t.fecha) continue
+    const key = `${t.account_id}|${t.fecha}|${t.monto}`
     if (!grupos.has(key)) grupos.set(key, [])
     grupos.get(key).push(t)
   }
   const hallazgos = []
   for (const [, grupo] of grupos) {
-    if (grupo.length > 1) {
-      const t = grupo[0]
-      hallazgos.push(`Posible duplicado (${grupo.length}x): "${t.detalle}" por ${t.monto} ${t.moneda} el ${t.fecha}`)
-    }
+    if (grupo.length <= 1) continue
+    const t = grupo[0]
+    const mismoDetalle = grupo.every(g => (g.detalle || '').trim().toUpperCase() === (t.detalle || '').trim().toUpperCase())
+    const mezclaManualEImportado = grupo.some(g => g.es_manual) && grupo.some(g => !g.es_manual)
+    const motivo = mismoDetalle
+      ? 'mismo detalle'
+      : mezclaManualEImportado
+        ? 'una carga manual y otra importada, detalle distinto'
+        : 'detalle distinto'
+    hallazgos.push(`Posible duplicado (${grupo.length}x, ${motivo}): ${t.monto} ${t.moneda} el ${t.fecha}${grupo.map(g => ` · "${g.detalle || '(sin detalle)'}"`).join('')}`)
   }
   return hallazgos
 }
@@ -88,7 +98,7 @@ export default async function handler(req, res) {
 
   const { data: txs, error } = await supabaseAdmin
     .from('transactions')
-    .select('id, user_id, account_id, fecha, monto, moneda, tipo, detalle, cuotas_total, cuota_numero, accounts(nombre)')
+    .select('id, user_id, account_id, fecha, monto, moneda, tipo, detalle, cuotas_total, cuota_numero, es_manual, accounts(nombre)')
 
   if (error) {
     console.error('Error leyendo transacciones para auditoría:', error.message)
