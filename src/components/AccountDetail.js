@@ -214,7 +214,16 @@ export const derivarPorcionesGasto = (t, { tcMap, tipoCambio, tcMapEUR, tipoCamb
   }
   const categoria = t.categories?.nombre || 'A Identificar'
   const subcategoria = t.subcategories?.nombre || null
-  const childDirecto = t.children?.nombre || t.tag || null
+  // El fallback a "tag" es del modelo viejo (reparto a mano escribiendo el
+  // nombre del hijo antes de que existiera child_id) — pero "tag" también se
+  // usa para etiquetas de ingreso tipo "Cuota Alimentaria Faustina" (ver
+  // inferirTagIngreso en Dashboard.js), y si esa etiqueta quedó en un gasto
+  // (a mano, por una regla, o un dato viejo) se mostraba como si fuera una
+  // persona nueva llamada "Cuota Alimentaria Faustina" en vez de ir a su
+  // categoría real. Por eso el tag solo cuenta como asignación directa a un
+  // hijo si coincide con el nombre real de alguno de los hijos registrados.
+  const tagEsHijo = t.tag && (children || []).some(c => (c.nombre || '').toLowerCase() === t.tag.toLowerCase())
+  const childDirecto = t.children?.nombre || (tagEsHijo ? t.tag : null)
   if (childDirecto) {
     return [{ tipo: 'persona', nombre: normalizarNombrePersona(childDirecto, children), monto: aArs(montoTotal) }]
   }
