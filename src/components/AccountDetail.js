@@ -214,7 +214,16 @@ export const derivarPorcionesGasto = (t, { tcMap, tipoCambio, tcMapEUR, tipoCamb
   }
   const categoria = t.categories?.nombre || 'A Identificar'
   const subcategoria = t.subcategories?.nombre || null
-  const childDirecto = t.children?.nombre || t.tag || null
+  // El fallback a "tag" es del modelo viejo (reparto a mano escribiendo el
+  // nombre del hijo antes de que existiera child_id) — pero "tag" también se
+  // usa para etiquetas de ingreso tipo "Cuota Alimentaria Faustina" (ver
+  // inferirTagIngreso en Dashboard.js), y si esa etiqueta quedó en un gasto
+  // (a mano, por una regla, o un dato viejo) se mostraba como si fuera una
+  // persona nueva llamada "Cuota Alimentaria Faustina" en vez de ir a su
+  // categoría real. Por eso el tag solo cuenta como asignación directa a un
+  // hijo si coincide con el nombre real de alguno de los hijos registrados.
+  const tagEsHijo = t.tag && (children || []).some(c => (c.nombre || '').toLowerCase() === t.tag.toLowerCase())
+  const childDirecto = t.children?.nombre || (tagEsHijo ? t.tag : null)
   if (childDirecto) {
     return [{ tipo: 'persona', nombre: normalizarNombrePersona(childDirecto, children), monto: aArs(montoTotal) }]
   }
@@ -997,7 +1006,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -1854,10 +1863,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     URL.revokeObjectURL(url)
   }
 
-  const handleDeleteTx = async (tx) => {
-    if (!window.confirm(account?.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?')) return
-    await supabase.from('transactions').delete().eq('id', tx.id)
-    setTransactions(prev => prev.filter(t => t.id !== tx.id))
+  // Reemplaza el window.confirm nativo (bloqueaba la pestaña y podía sentirse
+  // como que la app "se traba") por un modal propio, mismo patrón que el de
+  // "Dividir gasto" de arriba.
+  const [deleteConfirmTx, setDeleteConfirmTx] = useState(null)
+  const handleDeleteTx = (tx) => setDeleteConfirmTx(tx)
+  const confirmarDeleteTx = async () => {
+    if (!deleteConfirmTx) return
+    await supabase.from('transactions').delete().eq('id', deleteConfirmTx.id)
+    setTransactions(prev => prev.filter(t => t.id !== deleteConfirmTx.id))
+    setDeleteConfirmTx(null)
   }
 
   const handleMarcarNeutro = async (tx) => {
@@ -3662,6 +3677,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   Guardar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmTx && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '400px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', boxSizing: 'border-box' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
+              🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
+            </h3>
+            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 20px' }}>
+              {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setDeleteConfirmTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmarDeleteTx} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Eliminar
+              </button>
             </div>
           </div>
         </div>
