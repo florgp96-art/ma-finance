@@ -1476,13 +1476,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const q = norm(searchQuery)
     return (
       norm(t.nombre).includes(q) ||
-      (!t.nombre && norm(t.detalle).includes(q)) ||
+      // El detalle original (el texto tal cual vino del banco/tarjeta) se
+      // busca siempre, no solo cuando no hay un "nombre" limpio — si no,
+      // buscar algo que solo aparece en el texto original (ej. el nombre de
+      // un titular adicional, "FEDERICO — LPBS") no encontraba nada en
+      // cuanto la fila tenía un nombre limpio asignado.
+      norm(t.detalle).includes(q) ||
       // Sin categoría asignada cuenta como "A Identificar": el gráfico las
       // agrupa bajo esa etiqueta y el buscador tiene que encontrarlas igual
       norm(t.categories?.nombre || (t.tipo !== 'ingreso' ? 'A Identificar' : '')).includes(q) ||
       norm(t.subcategories?.nombre).includes(q) ||
       norm(t.children?.nombre).includes(q) ||
       norm(t.tag).includes(q) ||
+      norm(t.titular).includes(q) ||
       norm(t.tipo).includes(q) ||
       norm(t.moneda).includes(q) ||
       (t.fecha || '').includes(q) ||

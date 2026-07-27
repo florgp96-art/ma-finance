@@ -552,8 +552,18 @@ export default function Dashboard() {
   // resúmenes, para los widgets del costado (Evolución, Cuotas pendientes,
   // Vencimientos) — así siempre muestran el total real de todas las cuentas
   // sin importar qué pestaña/cuenta individual esté abierta en el contenido
-  // principal. Se dispara con las mismas cuentas cargadas y con refreshKey
-  // (igual que el resto de los datos que se refrescan tras guardar algo).
+  // principal.
+  // Se dispara solo con las cuentas (montaje / alta o baja de una cuenta), NO
+  // con refreshKey: como este fetch trae TODO el historial de TODAS las
+  // cuentas (potencialmente varios miles de movimientos, paginado), atarlo a
+  // refreshKey significaba repetirlo entero cada vez que se guarda cualquier
+  // cosa (cargar un movimiento, abrir una cuenta) — se sentía como que la app
+  // se puso lenta, porque literalmente se dobló el trabajo de red en esos
+  // momentos. Los widgets del costado se refrescan solos igual cada vez que
+  // se visita "Resumen general" o "A pagar" (esas pestañas ya hacen su propio
+  // fetch de todas las cuentas); quedan levemente desactualizados mientras se
+  // trabaja en una cuenta puntual, un costo aceptable para widgets de
+  // tendencia de 6 meses.
   useEffect(() => {
     if (accounts.length === 0) return
     const fetchGlobalWidgetsData = async () => {
