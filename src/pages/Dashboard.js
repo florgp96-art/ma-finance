@@ -296,11 +296,16 @@ export default function Dashboard() {
   const [repartoRules, setRepartoRules] = useState([])
   const [vencPagados, setVencPagados] = useState(new Set())
   const [vencExpanded, setVencExpanded] = useState(false)
+  // accountTransactions/dashboardStatements alimentan los widgets del costado
+  // (Evolución, Cuotas pendientes, Vencimientos) que se ven sin importar qué
+  // pestaña/cuenta esté abierta en el contenido principal — por eso se
+  // completan con un fetch propio de TODAS las cuentas (ver el useEffect de
+  // fetchGlobalWidgetsData más abajo), independiente de cuál AccountDetail
+  // esté montado. Antes los llenaba la instancia de AccountDetail que
+  // estuviera visible, y al entrar a una cuenta individual (ej. "Débito")
+  // quedaban acotados solo a esa cuenta — por eso Evolución mostraba $0 de
+  // ingresos apenas se salía de "Resumen general".
   const [accountTransactions, setAccountTransactions] = useState([])
-  // Igual que accountTransactions: lo reporta la instancia de AccountDetail que esté
-  // montada (resumen/a pagar/cuenta individual) vía onStatementsLoaded, para que el
-  // widget de Vencimientos pueda incluir tarjetas de crédito reusando calcularStatementsPendientes
-  // (misma función que usa la pestaña "A pagar") sin volver a pedirle nada a Supabase.
   const [dashboardStatements, setDashboardStatements] = useState([])
   // Selección múltiple y libre de categorías/subcategorías/hijos (gasto) o tags
   // (ingreso) para el gráfico de evolución — array de claves 'cat:X' | 'sub:X::Y' |
@@ -533,6 +538,31 @@ export default function Dashboard() {
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate])
+
+  // Fetch propio (no delegado a AccountDetail) de TODAS las transacciones y
+  // resúmenes, para los widgets del costado (Evolución, Cuotas pendientes,
+  // Vencimientos) — así siempre muestran el total real de todas las cuentas
+  // sin importar qué pestaña/cuenta individual esté abierta en el contenido
+  // principal. Se dispara con las mismas cuentas cargadas y con refreshKey
+  // (igual que el resto de los datos que se refrescan tras guardar algo).
+  useEffect(() => {
+    if (accounts.length === 0) return
+    const fetchGlobalWidgetsData = async () => {
+      const accountIds = accounts.map(a => a.id)
+      const [txs, stmtRes] = await Promise.all([
+        fetchAllTxPages(() =>
+          supabase.from('transactions')
+            .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
+            .in('account_id', accountIds)
+            .order('fecha', { ascending: false })
+        ),
+        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
+      ])
+      setAccountTransactions(txs)
+      setDashboardStatements(stmtRes.data || [])
+    }
+    fetchGlobalWidgetsData()
+  }, [accounts, refreshKey])
 
   useLayoutEffect(() => {
     const measure = () => { if (monedasCardRef.current) setMonedasCardH(monedasCardRef.current.offsetHeight) }
@@ -932,7 +962,7 @@ export default function Dashboard() {
         enriched = rows.map(r => ({
           ...r,
           nombre: r.descripcion,
-          estado: r.cat && r.cat !== 'A Identificar' ? 'identificado' : 'a_identificar'
+          estado: r.tipo === 'neutro' || (r.cat && r.cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
         }))
       } else {
         const totalBatches = Math.ceil(rowsNeedingClassification.length / 30)
@@ -990,7 +1020,7 @@ export default function Dashboard() {
               cat, subcat,
               hijo: r.hijo || cl?.hijo || null,
               nombre: cl?.nombre || r.descripcion,
-              estado: cat && cat !== 'A Identificar' ? 'identificado' : 'a_identificar'
+              estado: r.tipo === 'neutro' || (cat && cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
             }
           }
           // Filas con cat del Excel: aplicar aliases igual
@@ -2126,7 +2156,10 @@ export default function Dashboard() {
             // subcategoría — no pisarlo con el hijo ahí, el hijo va en child_id.
             tag: esCreditoC ? null : getHijoTag(t.hijo),
             child_id: getHijoId(t.hijo),
-            estado: (!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado',
+            // Los movimientos neutros (ej. "Gracias por su pago", pago recibido de
+            // la tarjeta) ya están clasificados por definición — no son un gasto sin
+            // identificar, aunque el nombre no se haya podido "limpiar".
+            estado: t.tipo === 'neutro' ? 'identificado' : ((!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado'),
             es_manual: false
           }
         })
@@ -3453,7 +3486,7 @@ export default function Dashboard() {
                     ✏️
                   </button>
                 </div>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -3812,7 +3845,7 @@ export default function Dashboard() {
                         <div style={styles.transactionLeft}>
                           <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {t.nombre_limpio || t.nombre_original}
-                            {t.nombre_limpio === t.nombre_original && <span style={{ textDecoration: 'none' }}>❓</span>}
+                            {t.nombre_limpio === t.nombre_original && t.tipo !== 'neutro' && <span style={{ textDecoration: 'none' }}>❓</span>}
                             {isDupe && <span style={{ textDecoration: 'none', fontSize: '10px', color: '#8e8e93', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px' }}>ya cargada</span>}
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
@@ -3829,9 +3862,9 @@ export default function Dashboard() {
                     )
                   })}
                 </div>
-                {statementData.transacciones.some((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar') && (
+                {statementData.transacciones.some((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar' && t.tipo !== 'neutro') && (
                   <div style={styles.warningBox}>
-                    ❓ Hay {statementData.transacciones.filter((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar').length} transacciones sin identificar entre las seleccionadas. Te vamos a pedir que las clasifiques antes de cerrar.
+                    ❓ Hay {statementData.transacciones.filter((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar' && t.tipo !== 'neutro').length} transacciones sin identificar entre las seleccionadas. Te vamos a pedir que las clasifiques antes de cerrar.
                   </div>
                 )}
                 <div style={styles.modalButtons}>
