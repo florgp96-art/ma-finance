@@ -1863,10 +1863,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     URL.revokeObjectURL(url)
   }
 
-  const handleDeleteTx = async (tx) => {
-    if (!window.confirm(account?.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?')) return
-    await supabase.from('transactions').delete().eq('id', tx.id)
-    setTransactions(prev => prev.filter(t => t.id !== tx.id))
+  // Reemplaza el window.confirm nativo (bloqueaba la pestaña y podía sentirse
+  // como que la app "se traba") por un modal propio, mismo patrón que el de
+  // "Dividir gasto" de arriba.
+  const [deleteConfirmTx, setDeleteConfirmTx] = useState(null)
+  const handleDeleteTx = (tx) => setDeleteConfirmTx(tx)
+  const confirmarDeleteTx = async () => {
+    if (!deleteConfirmTx) return
+    await supabase.from('transactions').delete().eq('id', deleteConfirmTx.id)
+    setTransactions(prev => prev.filter(t => t.id !== deleteConfirmTx.id))
+    setDeleteConfirmTx(null)
   }
 
   const handleMarcarNeutro = async (tx) => {
@@ -3671,6 +3677,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   Guardar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmTx && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '400px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', boxSizing: 'border-box' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
+              🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
+            </h3>
+            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 20px' }}>
+              {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setDeleteConfirmTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmarDeleteTx} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Eliminar
+              </button>
             </div>
           </div>
         </div>
