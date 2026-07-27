@@ -5,6 +5,12 @@ import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreD
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
+// IMPORTANTE: la query que se le pasa tiene que ordenar por una columna que
+// desempate por completo (ej. .order('fecha', ...).order('id', ...)) — si
+// muchas filas comparten la misma fecha, ordenar solo por fecha no da un
+// orden estable entre ellas, y Postgres puede devolver la misma fila en dos
+// páginas distintas (duplicada) u omitir otra, ya que cada página es una
+// consulta separada con su propio LIMIT/OFFSET.
 const fetchAllPages = async (buildQuery) => {
   const PAGE = 1000
   let all = []
@@ -71,7 +77,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
           supabase.from('transactions')
             .select('*, categories(nombre), subcategories(nombre)')
             .in('account_id', accountIds)
-            .order('fecha', { ascending: false })
+            .order('fecha', { ascending: false }).order('id', { ascending: true })
         ),
         supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
       ])
