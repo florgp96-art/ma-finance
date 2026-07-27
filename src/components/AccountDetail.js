@@ -1491,8 +1491,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       norm(t.titular).includes(q) ||
       norm(t.tipo).includes(q) ||
       norm(t.moneda).includes(q) ||
+      // Nombre de la cuenta (ej. "Amex Galicia") — antes no se buscaba, así
+      // que escribir "amex" no encontraba nada por más que se viera esa
+      // cuenta en la columna "Cuenta" de la tabla.
+      norm(t.accounts?.nombre).includes(q) ||
       (t.fecha || '').includes(q) ||
       norm(formatFecha(t.fecha)).includes(q) ||
+      // Mes en palabras (ej. "julio" o "julio 2026") — la fecha numérica ya
+      // se busca arriba, pero buscar el mes escrito no encontraba nada.
+      norm(`${MESES[parseInt((t.fecha || '').slice(5, 7), 10) - 1] || ''} ${(t.fecha || '').slice(0, 4)}`).includes(q) ||
       String(t.monto || '').includes(q)
     )
   }, [searchQuery])
@@ -3223,7 +3230,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             border: `1.5px solid ${darkMode ? '#3A333A' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
             boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f'
           }}
-          placeholder="🔍 Buscar por nombre, categoría, fecha, monto..."
+          placeholder="🔍 Buscar por nombre, cuenta, categoría, fecha, monto..."
           value={searchQuery || ''}
           onChange={e => onSearchChange && onSearchChange(e.target.value)}
         />
