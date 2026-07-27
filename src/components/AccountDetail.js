@@ -3226,7 +3226,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
             const renderBubbleCard = (data, titulo) => data.length === 0 ? null : (
-              <div key={titulo} style={{ ...styles.bubbleSection, flex: dosGraficos ? '1 1 380px' : '1 1 100%' }}>
+              <div key={titulo} style={{ ...styles.bubbleSection, minWidth: 0 }}>
                 <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
                   {titulo}
                   <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
@@ -3243,12 +3243,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', minWidth: 0, flex: isMobile ? 'none' : '1 1 auto' }}>
+                      {/* Antes el nombre se truncaba con "..." a los 150px fijos aunque
+                          sobrara espacio a lo ancho — ahora ocupa el espacio disponible
+                          de la fila (flex:1) y si de verdad no entra, pasa a una segunda
+                          línea en vez de cortarse. */}
                       {data.map((entry, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                           <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                          <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{getChartIcon(entry.name)} {entry.name}</span>
-                          <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
+                          <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', flex: '1 1 auto', minWidth: 0, wordBreak: 'break-word' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                          <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap', flexShrink: 0 }}>$ {formatMonto(entry.value)}</span>
                         </div>
                       ))}
                     </div>
@@ -3293,7 +3297,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </button>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                {/* Grid fijo de 2 columnas en desktop (en vez de flex-wrap, que
+                    dependía de que la suma de anchos "entrara" y en la práctica
+                    los apilaba igual) — así "Gastos por categoría" y "Gastos por
+                    persona" quedan siempre lado a lado en pantallas de compu,
+                    y la página no queda tan larga para llegar a los movimientos. */}
+                <div style={{ display: dosGraficos && !isMobile ? 'grid' : 'flex', gridTemplateColumns: dosGraficos && !isMobile ? 'repeat(2, 1fr)' : undefined, gap: '20px', flexWrap: 'wrap' }}>
                   {dosGraficos
                     ? [renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'), renderBubbleCard(personaBubbleData, 'Gastos por persona')]
                     : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
@@ -3670,8 +3679,13 @@ const getStyles = (dark, mobile) => {
     // auto-fit (no auto-fill): las columnas vacías colapsan a 0 en vez de
     // reservar su ancho — en desktop ancho, las cards que sí hay se reparten
     // todo el espacio disponible en vez de dejar un hueco a la derecha.
-    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
-    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
+    // 3 columnas fijas en desktop (antes era auto-fit, que entraban 4 en la
+    // primera fila y 2 en la segunda según el ancho disponible) — con 6
+    // tarjetas típicas (ARS/USD/vs mes anterior/Categorías top/Pago
+    // tarjetas/Equiv. totales) queda prolijo en 3 arriba y 3 abajo, con
+    // Categorías top y Pago tarjetas del mes juntas (misma estética de lista).
+    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: mobile ? '10px' : '18px', marginBottom: '24px' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '22px 24px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
     summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...rotuloLabel },
     summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
