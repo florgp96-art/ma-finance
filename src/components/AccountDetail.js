@@ -1358,6 +1358,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // "Total por mes" de ingresos: incluye USD/EUR convertidos (antes solo sumaba
   // ARS) — USD con el TC del mes de cada movimiento (según el tipo de dólar
   // elegido), nunca el TC de hoy para algo viejo.
+  // Se limita a los últimos 12 meses: con todo el historial desde la
+  // creación de la cuenta, meses viejos con montos chicos quedaban con
+  // barras casi invisibles al lado de los meses recientes (mucho más
+  // altos), dando la sensación de que "no había barras".
   const ingresosBarData = (() => {
     const byMonth = {}
     transactions.filter(t => t.tipo === 'ingreso').forEach(t => {
@@ -1371,7 +1375,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           : monto
       byMonth[m] = (byMonth[m] || 0) + equivArs
     })
-    return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
+    return Object.keys(byMonth).sort().slice(-12).map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
   })()
 
   // Único punto de entrada para descomponer gastos en categoría vs. persona
@@ -3119,8 +3123,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {esVistaIngresos && ingresosBarData.length > 0 && (
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
-            📊 Ingresos por mes
-            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS — los ingresos en USD/€ están convertidos a pesos al TC de cada movimiento." />
+            📊 Ingresos por mes — últimos 12 meses
+            <InfoTooltip darkMode={darkMode} text="Últimos 12 meses. Moneda: ARS — los ingresos en USD/€ están convertidos a pesos al TC de cada movimiento." />
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ingresosBarData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
