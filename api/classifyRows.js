@@ -12,11 +12,10 @@ const BATCH_SIZE = 30
 const MAX_ROWS = 500
 
 async function classifyBatch(batch, categories, subcategories, children, aliases) {
-  const EXCLUDED_FOR_EXPENSES = ['ingresos', 'devoluciones']
-  const expenseCategories = (categories || []).filter(c => !EXCLUDED_FOR_EXPENSES.includes(c.nombre.toLowerCase()))
-  const categoriesText = expenseCategories.map(c => {
+  const categoriesText = (categories || []).map(c => {
     const subs = (subcategories || []).filter(s => s.category_id === c.id).map(s => s.nombre)
-    return subs.length > 0 ? `- ${c.nombre}: ${subs.join(', ')}` : `- ${c.nombre}`
+    const tag = (c.tipo || 'gasto') === 'ingreso' ? ' [INGRESO]' : (c.tipo === 'neutro' ? ' [NEUTRO]' : '')
+    return subs.length > 0 ? `- ${c.nombre}${tag}: ${subs.join(', ')}` : `- ${c.nombre}${tag}`
   }).join('\n') || '- A Identificar'
   const childrenText = (children || []).length > 0
     ? children.map(c => `- ${c.nombre}`).join('\n')
@@ -32,7 +31,7 @@ async function classifyBatch(batch, categories, subcategories, children, aliases
     : 'Ninguno'
 
   const rowsText = batch.map((r, i) =>
-    `${i + 1}. NOTAS: "${r.notas || ''}", DESCRIPCION: "${r.descripcion || ''}", MONTO: ${r.monto} ${r.moneda}`
+    `${i + 1}. TIPO: ${r.tipo || 'gasto'}, NOTAS: "${r.notas || ''}", DESCRIPCION: "${r.descripcion || ''}", MONTO: ${r.monto} ${r.moneda}`
   ).join('\n')
 
   const prompt = `Sos un clasificador de gastos personales argentinos. Devolvé SOLO un JSON array con exactamente ${batch.length} objetos en el mismo orden que las filas.
@@ -54,6 +53,7 @@ INSTRUCCIONES:
 3. "subcategoria": solo si estás 100% seguro por el comercio (Shell→Nafta, Carrefour→Supermercado, Spotify→Streaming). En caso de duda → null.
 4. "hijo": si DESCRIPCION contiene exactamente un nombre de hijo registrado → asignarlo. Sino null.
 5. Reglas del usuario: si DESCRIPCION contiene la palabra clave (sin importar mayúsculas) → aplicar esa categoría sin excepciones.
+6. TIPO indica si la fila es un gasto, ingreso o movimiento neutro. Si TIPO es "ingreso", la categoría tiene que ser una marcada [INGRESO] en la lista (ej. "Ingresos"), con una de sus subcategorías reales si aplica. Si TIPO es "gasto" o "neutro", nunca elijas una categoría marcada [INGRESO].
 
 FILAS:
 ${rowsText}
@@ -119,7 +119,18 @@ export default async function handler(req, res) {
       }
       allClassifications.push(...batchResult.slice(0, batch.length))
     }
-    return res.status(200).json({ classifications: allClassifications })
+    // Salvaguarda: si Claude ignora la marca [INGRESO] y le pone una categoría de
+    // gasto a una fila de ingreso (o viceversa), la mandamos a "A Identificar" en
+    // vez de dejar un ingreso clasificado como gasto (o al revés).
+    const categoriaTipo = Object.fromEntries((categories || []).map(c => [c.nombre, c.tipo || 'gasto']))
+    const normalized = allClassifications.map((cl, i) => {
+      const rowTipo = rows[i]?.tipo || 'gasto'
+      const esIngreso = rowTipo === 'ingreso'
+      const catEsIngreso = categoriaTipo[cl?.categoria] === 'ingreso'
+      if (esIngreso !== catEsIngreso) return { ...cl, categoria: 'A Identificar', subcategoria: null }
+      return cl
+    })
+    return res.status(200).json({ classifications: normalized })
   } catch (e) {
     console.error('classifyRows error:', e.message)
     return res.status(500).json({ error: `Error clasificando filas: ${e.message}` })
