@@ -3239,7 +3239,7 @@ export default function Dashboard() {
                 // pantallas angostas. Ahora viven arriba de "Resumen General" en
                 // el drawer del sidebar (ver más abajo), donde hay lugar de sobra.
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
-                  <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
+                  <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>☰</button>
                 </div>
               ) : isTablet ? (
                 // maxWidth + wrap: que los chips pasen a segunda fila antes de
