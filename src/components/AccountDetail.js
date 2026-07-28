@@ -3737,8 +3737,8 @@ const getStyles = (dark, mobile) => {
     // Categorías top y Pago tarjetas del mes juntas (misma estética de lista).
     summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: mobile ? '10px' : '18px', marginBottom: '24px' },
     summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '22px 24px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
-    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...rotuloLabel },
-    summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
+    summaryLabel: { fontSize: mobile ? '11px' : '12px', fontWeight: '600', color: muted, margin: '0 0 4px 0', textAlign: 'center', ...rotuloLabel },
+    summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word', textAlign: 'center' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
     chartTitle: { fontSize: '16px', fontWeight: '500', color: txt, margin: '0 0 16px 0' },
