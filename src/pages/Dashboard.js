@@ -112,6 +112,8 @@ export default function Dashboard() {
   // iniciaba sesión ahí, porque el efecto de "migrar datos viejos del
   // navegador a la base" no distinguía de quién eran esos datos.
   const [currentUserId, setCurrentUserId] = useState(null)
+  const [showTutorial, setShowTutorial] = useState(false)
+  const [tutorialStep, setTutorialStep] = useState(0)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
@@ -354,8 +356,36 @@ export default function Dashboard() {
   const [sidebarCatEvol, setSidebarCatEvol] = useState(['total'])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
+  const evolDropdownRef = useRef(null)
+  useEffect(() => {
+    if (!evolDropdownOpen) return
+    const cerrarSiAfuera = (e) => { if (evolDropdownRef.current && !evolDropdownRef.current.contains(e.target)) setEvolDropdownOpen(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setEvolDropdownOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+  }, [evolDropdownOpen])
   const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
+  const configMenuRef = useRef(null)
+  useEffect(() => {
+    if (!configOpen) return
+    const cerrarSiAfuera = (e) => { if (configMenuRef.current && !configMenuRef.current.contains(e.target)) setConfigOpen(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setConfigOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+  }, [configOpen])
   // Desplegable de Vencimientos: mismo patrón tap/click + cierre afuera que
   // "Monedas extranjeras" (ver abajo) — antes "ver más" agrandaba el card in-line
   // (maxHeight: none), lo que empujaba hacia abajo todo el contenido de la página
@@ -460,7 +490,12 @@ export default function Dashboard() {
     })
   }, [])
 
-  useEffect(() => { setAccountTransactions([]); setSidebarCatEvol(['total']) }, [selectedAccount])
+  // No vaciar accountTransactions acá: alimenta los widgets del costado
+  // (Evolución, Cuotas pendientes), que deben seguir mostrando datos de
+  // todas las cuentas sin importar qué cuenta puntual se esté mirando en el
+  // contenido principal — vaciarlo los dejaba en $0 hasta volver a "Resumen
+  // general"/"A pagar".
+  useEffect(() => { setSidebarCatEvol(['total']) }, [selectedAccount])
   useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_ahorro_${currentUserId}`, JSON.stringify(ahorro)) } catch {}; if (prefsLoaded.current) persistPref('ahorro', ahorro) }, [ahorro, currentUserId])
   useEffect(() => { if (!currentUserId) return; try { localStorage.setItem(`ma_cuentas_ahorro_${currentUserId}`, JSON.stringify(cuentasAhorro)) } catch {}; if (prefsLoaded.current) persistPref('cuentas_ahorro', cuentasAhorro) }, [cuentasAhorro, currentUserId])
   // Auto-setear tipoCambio: primero rate vivo de API, sino del DB histórico
@@ -534,6 +569,12 @@ export default function Dashboard() {
           .select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__pref__%')
         const prefs = Object.fromEntries((prefRows || []).map(r => [r.texto_original.replace('__pref__', ''), r.nombre_asignado]))
         const readPref = (key) => { try { return prefs[key] !== undefined ? JSON.parse(prefs[key]) : undefined } catch { return undefined } }
+        // Tutorial de bienvenida: se muestra una sola vez por CUENTA (guardado
+        // en la DB, no en localStorage — antes quedaba "visto" solo en ese
+        // navegador/dispositivo puntual, así que reaparecía al entrar desde
+        // otro navegador, en modo privado, o si el navegador borraba datos).
+        // Después queda accesible de nuevo desde Configuración → "Ver tutorial".
+        if (!readPref('tutorial_visto')) { setTutorialStep(0); setShowTutorial(true) }
         const ahorroDB = readPref('ahorro')
         if (ahorroDB) {
           setAhorro(ahorroDB)
@@ -611,7 +652,7 @@ export default function Dashboard() {
       setDashboardStatements(stmtRes.data || [])
     }
     fetchGlobalWidgetsData()
-  }, [accounts, refreshKey])
+  }, [accounts])
 
 
   useEffect(() => {
@@ -651,18 +692,21 @@ export default function Dashboard() {
 
   const fetchChildren = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('children').select('id, nombre').eq('user_id', user.id).order('nombre')
     setChildrenDB(data || [])
   }
 
   const fetchUserAliases = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
     setUserAliases(data || [])
   }
 
   const fetchRepartoRules = async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('reparto_rules')
       .select('*, categories(nombre), subcategories(nombre)')
       .eq('user_id', user.id)
@@ -808,6 +852,7 @@ export default function Dashboard() {
 
   const fetchAccounts = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
     const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
     setAccounts(data || [])
     if (data && data.length > 0) {
@@ -1138,8 +1183,14 @@ export default function Dashboard() {
       for (const mp of uniqueModoPagos) await resolveAccount(mp)
       const accountsForRows = excelPreview.map(r => accountCache[(r.modo_pago || 'EFECTIVO').toUpperCase().trim()])
       const uniqueAccountIds = [...new Set(accountsForRows.map(a => a.id))]
-      const { data: existentes } = await supabase.from('transactions')
-        .select('fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
+      // Sin paginar, una cuenta con más de 1000 movimientos no veía a los más
+      // viejos acá — el chequeo de duplicados podía dejar pasar duplicados
+      // sin avisar (ver comentario de fetchAllTxPages más arriba).
+      const existentes = await fetchAllTxPages(() =>
+        supabase.from('transactions')
+          .select('id, fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
+      )
 
       const rowsWithAccounts = excelPreview.map((row, i) => ({ row, acc: accountsForRows[i] }))
 
@@ -1386,7 +1437,12 @@ export default function Dashboard() {
     const keeper = duplicates[0]
     const toRemove = duplicates.slice(1)
     for (const acc of toRemove) {
-      await supabase.from('transactions').update({ account_id: keeper.id }).eq('account_id', acc.id).eq('user_id', user.id)
+      // statement_id se limpia acá (no solo account_id): esas transacciones
+      // reasignadas seguían apuntando al statement de la cuenta vieja, que se
+      // borra en el paso siguiente — si esa FK fuera ON DELETE CASCADE, el
+      // delete de statements se llevaba puestas las transacciones recién
+      // movidas. Limpiando la referencia antes, no importa cuál sea la FK.
+      await supabase.from('transactions').update({ account_id: keeper.id, statement_id: null }).eq('account_id', acc.id).eq('user_id', user.id)
       await supabase.from('statements').delete().eq('account_id', acc.id).eq('user_id', user.id)
       await supabase.from('accounts').delete().eq('id', acc.id).eq('user_id', user.id)
     }
@@ -1742,9 +1798,10 @@ export default function Dashboard() {
       const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
       const txExistentes = await fetchAllTxPages(() =>
         supabase.from('transactions')
-          .select('fecha, monto, moneda, account_id')
+          .select('id, fecha, monto, moneda, account_id')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
 
       let billingMes = null
@@ -1844,6 +1901,7 @@ export default function Dashboard() {
 
     // Actualizar todas las transacciones con el mismo detalle (no solo la actual)
     const { data: { user: uClasif } } = await supabase.auth.getUser()
+    if (!uClasif) return
     if (detalle) {
       await supabase.from('transactions').update({
         nombre: txEditTemp.nombre,
@@ -1863,13 +1921,17 @@ export default function Dashboard() {
     // Guardar regla aprendida
     if (detalle && catObj) {
       const { data: { user } } = await supabase.auth.getUser()
+      // Antes esto pisaba veces_confirmado a 1 en cada upsert — nunca reflejaba
+      // cuántas veces se confirmó realmente la misma regla.
+      const { data: reglaExistente } = await supabase.from('user_rules')
+        .select('veces_confirmado').eq('user_id', user.id).eq('texto_original', detalle.trim()).maybeSingle()
       await supabase.from('user_rules').upsert({
         user_id: user.id,
         texto_original: detalle.trim(),
         nombre_asignado: txEditTemp.nombre || detalle.trim(),
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
-        veces_confirmado: 1,
+        veces_confirmado: (reglaExistente?.veces_confirmado || 0) + 1,
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,texto_original', ignoreDuplicates: false })
     }
@@ -1898,6 +1960,7 @@ export default function Dashboard() {
   const handleMarcarNeutro = async (txId) => {
     const txDet = txSinIdentificar[txIdentificarIdx]?.detalle
     const { data: { user: uNeutro } } = await supabase.auth.getUser()
+    if (!uNeutro) return
     if (txDet) {
       await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('user_id', uNeutro.id).eq('detalle', txDet).eq('estado', 'a_identificar')
     } else {
@@ -2150,7 +2213,8 @@ export default function Dashboard() {
       // quedaban duplicadas de verdad (incluidos los pagos de tarjeta tipo "neutro").
       const cuentasDestinoBanco = [cuentaEgresos.id, ...(cuentaIngresos ? [cuentaIngresos.id] : [])]
       const existentesBanco = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
       const normDetBanco = (s) => (s || '').toLowerCase().trim()
       const esDupeBanco = (cand) => (existentesBanco || []).some(e =>
@@ -2297,7 +2361,8 @@ export default function Dashboard() {
       // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
       // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
       const existentesTarjeta = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('fecha, monto, moneda, detalle').eq('account_id', account.id)
+        supabase.from('transactions').select('id, fecha, monto, moneda, detalle').eq('account_id', account.id)
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
       const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
       const transacciones = transaccionesCandidatas.filter(cand =>
@@ -2450,6 +2515,7 @@ export default function Dashboard() {
     const today = new Date()
     const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
     const tc = parseFloat(tipoCambio) || 0
+    const tcEUR = parseFloat(tipoCambioEUR) || 0
     const byPeriod = {}
 
     Object.values(latestByPurchase).forEach(t => {
@@ -2461,7 +2527,7 @@ export default function Dashboard() {
         const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
         if (period < todayPeriod) continue
         if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
-        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'ARS' ? t.monto : t.monto
+        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'EUR' && tcEUR > 0 ? t.monto * tcEUR : t.monto
         byPeriod[period].total_ars += arsEquiv
         byPeriod[period].items.push({
           nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
@@ -2475,7 +2541,7 @@ export default function Dashboard() {
     })
 
     return Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
-  }, [accountTransactions, tipoCambio])
+  }, [accountTransactions, tipoCambio, tipoCambioEUR])
 
   // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
   // (gasto) o tag (ingreso) con datos + serie de 6 meses de CADA selección activa —
@@ -2632,7 +2698,10 @@ export default function Dashboard() {
 
               return (
                 <div style={{ ...styles.savingsPanel }}>
-                  <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
+                  <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', alignItems: 'center' }}>
+                    Cuotas pendientes
+                    <InfoTooltip darkMode={darkMode} text="Es una proyección de lo que falta pagar de tus compras en cuotas — no son movimientos ya cargados. Cada mes tenés que cargar el resumen real de la tarjeta para que ese pago quede registrado; no lo generamos solos." />
+                  </h3>
                   {periods.map(([period, data], pi) => {
                     const expandido = cuotasPendientesExpandido === period
                     return (
@@ -2647,8 +2716,8 @@ export default function Dashboard() {
                           <div style={{ marginTop: '6px', paddingLeft: '8px', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                             {data.items.map((it, ii) => (
                               <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', padding: '2px 0' }}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
-                                <span style={{ whiteSpace: 'nowrap' }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
+                                <span style={{ flex: 1, minWidth: 0 }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
+                                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
                               </div>
                             ))}
                           </div>
@@ -2669,11 +2738,30 @@ export default function Dashboard() {
               // está por sacar, el click no hace nada — siempre hay algo para
               // mostrar (el default es "Total", igual que el viejo gráfico de
               // barras separado, ahora fusionado acá).
+              // "Total" es excluyente con el resto: no tiene sentido comparar
+              // "Total" a la vez que una cuenta/categoría puntual, y si no se
+              // saca solo al elegir otra cosa, queda tildado sin que el usuario
+              // lo haya pedido (hay que volver a abrir el desplegable y sacarlo
+              // a mano). El resto de las opciones sí se combinan libremente entre sí.
               const toggleClave = (key) => setSidebarCatEvol(prev => {
-                if (prev.includes(key)) return prev.length > 1 ? prev.filter(k => k !== key) : prev
-                return [...prev, key]
+                if (key === 'total') return ['total']
+                const sinTotal = prev.filter(k => k !== 'total')
+                if (sinTotal.includes(key)) {
+                  const next = sinTotal.filter(k => k !== key)
+                  return next.length > 0 ? next : ['total']
+                }
+                return [...sinTotal, key]
               })
+              // Al cambiar el switch se resetea la selección a "Total": una
+              // categoría de GASTO (ej. "Comida") elegida en la vista de Gastos no
+              // tiene sentido en Ingresos (no existe "Comida" del lado de los
+              // ingresos) — dejarla seleccionada mostraba datos de gasto mientras
+              // el switch decía "Ingresos", como si no respetara la elección.
               const cambiarTipo = (v) => { if (evolucionTipo !== v) { setEvolucionTipo(v); setSidebarCatEvol(['total']); setEvolDropdownOpen(false) } }
+              // Categorías/subcategorías/hijos son siempre de GASTO y los tags son
+              // siempre de INGRESO — el desplegable solo ofrece las que aplican al
+              // switch actual, para no mezclar opciones que no tienen sentido del
+              // otro lado. "Por cuenta" sí queda disponible en los dos modos.
               const opciones = [
                 { key: 'total', label: 'Total', icon: '📊' },
                 ...(evolucionTipo === 'gasto'
@@ -2711,7 +2799,7 @@ export default function Dashboard() {
                   {/* Dropdown de selección múltiple — "Total" (default) más
                       categorías/subcategorías/hijos (gastos) o tags (ingresos),
                       mezclados libremente. */}
-                  <div style={{ position: 'relative', marginBottom: '14px' }}>
+                  <div ref={evolDropdownRef} style={{ position: 'relative', marginBottom: '14px' }}>
                     <button type="button" onClick={() => setEvolDropdownOpen(o => !o)}
                       style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
                         border: `1.5px solid ${!soloTotal ? '#5C4F5C' : borderClr}`,
@@ -2724,7 +2812,7 @@ export default function Dashboard() {
                       <span>▾</span>
                     </button>
                     {evolDropdownOpen && (
-                      <div onMouseLeave={() => setEvolDropdownOpen(false)} className="hide-scroll"
+                      <div className="hide-scroll"
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
                         {opciones.map(op => {
                           const activo = sidebarCatEvol.includes(op.key)
@@ -3183,22 +3271,22 @@ export default function Dashboard() {
                   {darkMode ? '☀️' : '🌙'}
                  </button>
                 {!isMobile && (
-                  <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
+                  <div ref={configMenuRef} style={{ display: 'flex', gap: '8px', position: 'relative' }}>
                     <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                     </button>
-                    <button onClick={handleLogout} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500 }}>
-                      Cerrar sesión
-                    </button>
                     {configOpen && (
                       <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
-                        <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>➕ CREAR CUENTA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
-                        {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
-                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>CREAR CUENTA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>EDITAR CATEGORÍAS</button>
+                        {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>HIJOS</button>}
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>REGLAS DE CLASIFICACIÓN</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>CAMBIAR CONTRASEÑA</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>REPORTAR UN ERROR</button>
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
+                        <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, margin: '2px 0' }} />
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); handleLogout() }}>Cerrar sesión</button>
                       </div>
                     )}
                   </div>
@@ -3221,7 +3309,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '1800px', margin: isMobile ? undefined : '0 auto', width: isMobile ? undefined : '100%', boxSizing: 'border-box' }}>
+        <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '2200px', margin: isMobile ? undefined : '0 auto', width: isMobile ? undefined : '100%', boxSizing: 'border-box' }}>
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && (
@@ -3267,12 +3355,13 @@ export default function Dashboard() {
                   onMouseLeave={() => setHoveredAccount(null)}
                 >
                   <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
-                  <p style={styles.accountName}>{acc.nombre}</p>
-                  {/* En mobile no hay "hover" — sin esto el lápiz de editar nunca se veía */}
-                  {(hoveredAccount === acc.id || isMobile) && (
-                    <button style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
-                      onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
-                  )}
+                  <p
+                    style={{ ...styles.accountName, textDecoration: hoveredAccount === acc.id ? 'underline' : 'none', textDecorationColor: darkMode ? '#9A8A9A' : '#B0A6AA', textUnderlineOffset: '3px' }}
+                    title="Tocar para editar"
+                    onClick={(e) => { e.stopPropagation(); setEditAccount({ ...acc }) }}
+                  >
+                    {acc.nombre}
+                  </p>
                 </div>
               )
 
@@ -3401,29 +3490,29 @@ export default function Dashboard() {
 
               {/* Configuración colapsable — solo mobile (en desktop está en el header) */}
               {isMobile && (
-                <>
+                <div ref={configMenuRef}>
                   <button
                     style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
                     onClick={() => setConfigOpen(o => !o)}
                   >
-                    <span>⚙️ CONFIGURACIÓN</span>
+                    <span>CONFIGURACIÓN</span>
                     <span style={{ fontSize: '10px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                   </button>
                   {configOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px' }}>
-                      <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>➕ CREAR CUENTA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>✏️ EDITAR CATEGORÍAS</button>
-                      {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>👧 HIJOS</button>}
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>📋 REGLAS DE CLASIFICACIÓN</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>🔑 CAMBIAR CONTRASEÑA</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>🐞 REPORTAR UN ERROR</button>
-                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>💎 MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>CREAR CUENTA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>EDITAR CATEGORÍAS</button>
+                      {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>HIJOS</button>}
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>REGLAS DE CLASIFICACIÓN</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>CAMBIAR CONTRASEÑA</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>REPORTAR UN ERROR</button>
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
+                      <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, margin: '2px 0' }} />
+                      <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); handleLogout() }}>Cerrar sesión</button>
                     </div>
                   )}
-                </>
-              )}
-              {isMobile && (
-                <button style={{ ...styles.logoutBtn, marginTop: '4px' }} onClick={handleLogout}>Cerrar sesión</button>
+                </div>
               )}
             </div>
           </div>
@@ -3586,7 +3675,7 @@ export default function Dashboard() {
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {servicios.map((s, i) => (
-                          <div key={i} style={{
+                          <div key={s.id || i} style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '14px 18px', borderRadius: '12px',
                             backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
@@ -3694,6 +3783,66 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {showTutorial && (() => {
+        const steps = [
+          {
+            icon: '💰',
+            title: 'Cargar movimientos',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Para cargar un gasto o ingreso a mano, usá el botón <strong>+ Cargar movimiento</strong> del panel de la izquierda.</p>
+                <p style={{ margin: 0 }}>Si tenés el PDF o Excel de un resumen, usá <strong>+ Importar</strong> — subís el archivo y la app arma los movimientos sola, ya clasificados por categoría.</p>
+              </>
+            )
+          },
+          {
+            icon: '🏷️',
+            title: 'Categorías y subcategorías',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Andá a <strong>Configuración → Editar categorías</strong> para crear una categoría nueva, cambiarle el nombre, agregarle subcategorías o darle un ícono propio.</p>
+                <p style={{ margin: 0 }}>Ahí mismo podés borrarlas — si tienen movimientos cargados, la app te avisa antes de dejarte borrar.</p>
+              </>
+            )
+          },
+          {
+            icon: '💳',
+            title: 'Crear y borrar cuentas',
+            body: (
+              <>
+                <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, tocá el nombre de la cuenta en el listado de la izquierda.</p>
+              </>
+            )
+          },
+        ]
+        const step = steps[tutorialStep]
+        const esUltimo = tutorialStep === steps.length - 1
+        const cerrarTutorial = () => {
+          setShowTutorial(false)
+          persistPref('tutorial_visto', true)
+        }
+        return (
+          <div style={styles.overlay}>
+            <div style={{ ...styles.modal, maxWidth: '440px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
+                {steps.map((_, i) => (
+                  <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: i === tutorialStep ? styles.saveBtn.backgroundColor : (darkMode ? '#3A333A' : '#E2DDE0') }} />
+                ))}
+              </div>
+              <h3 style={{ ...styles.modalTitle, textAlign: 'center' }}>{step.icon} {step.title}</h3>
+              <div style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? '#C0B0C0' : '#444', fontFamily: '"Montserrat", sans-serif' }}>{step.body}</div>
+              <div style={styles.modalButtons}>
+                {tutorialStep > 0
+                  ? <button type="button" style={styles.cancelBtn} onClick={() => setTutorialStep(s => s - 1)}>Anterior</button>
+                  : <button type="button" style={styles.cancelBtn} onClick={cerrarTutorial}>Saltar</button>}
+                <button type="button" style={styles.saveBtn} onClick={() => esUltimo ? cerrarTutorial() : setTutorialStep(s => s + 1)}>{esUltimo ? 'Entendido' : 'Siguiente'}</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {showReportBug && (
         <div style={styles.overlay}>
@@ -3877,6 +4026,10 @@ export default function Dashboard() {
                 <p style={styles.timerText}>
                   {timer > 0 ? `${timer}s restantes` : 'El extracto es largo y está tardando un poco más... seguimos procesando, no cierres la página'}
                 </p>
+                <div style={{ marginTop: '18px', padding: '12px 14px', borderRadius: '10px', backgroundColor: darkMode ? '#2A232A' : '#F7F2F5', border: `1px solid ${darkMode ? '#3A2F3A' : '#E8DEE5'}`, fontSize: '12.5px', lineHeight: '1.5', color: darkMode ? '#C8BCC8' : '#5C4F5C', textAlign: 'left' }}>
+                  ⚠️ No cierres ni salgas de esta página mientras se procesa.<br />
+                  Aunque lo analiza una IA, siempre puede haber errores — revisá los movimientos cargados antes de darlos por buenos.
+                </div>
               </div>
             )}
 
@@ -4685,10 +4838,6 @@ const getStyles = (dark, mobile = false) => {
     accountActions: { display: 'flex', gap: '2px' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
     sidebarFooter: { marginTop: 'auto', paddingTop: '16px', borderTop: `1px solid ${border}` },
-    logoutBtn: {
-      width: '100%', padding: '9px', backgroundColor: 'transparent', color: p,
-      border: `1.5px solid ${p}`, borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', outline: 'none'
-    },
     mainContent: { flex: 1, minWidth: 0 },
     section: { backgroundColor: panel, borderRadius: '16px', padding: '24px', boxShadow: shadow },
     sectionTitle: { fontSize: '18px', fontWeight: '500', color: txt, margin: '0 0 24px 0' },

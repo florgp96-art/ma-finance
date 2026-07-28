@@ -2,6 +2,15 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
+// "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
+// toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
+// las 23:59 del último día de cada mes.
+const hoyLocal = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const mesActualLocal = () => hoyLocal().slice(0, 7)
+
 // Colores espaciados ~26° en el círculo de matices (14 categorías, 360°/14) en vez de
 // variantes del mismo violeta/lavanda — así "Personal" y "Transporte", por ejemplo, se
 // distinguen a simple vista en vez de verse como el mismo tono. "A Identificar" queda
@@ -145,7 +154,7 @@ export const subcategoriasDeIngreso = (categorias, subcategorias) => {
 // — mejor aproximación que el TC de HOY para algo viejo — y solo como último
 // recurso (o si es el mes actual) usa el TC vigente.
 export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
-  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesActual = mesActualLocal()
   const mesTx = t.fecha?.slice(0, 7)
   if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioActual) || 0
   if (tcMap && tcMap[mesTx]) return Number(tcMap[mesTx])
@@ -157,7 +166,7 @@ export const tcDeMovimiento = (t, tcMap, tipoCambioActual) => {
 // congelado por movimiento (solo el dólar se guarda al cargar), así que cae
 // directo del promedio del mes al TC vigente, sin ese paso intermedio.
 export const tcEURDeMovimiento = (t, tcMapEUR, tipoCambioEURActual) => {
-  const mesActual = new Date().toISOString().slice(0, 7)
+  const mesActual = mesActualLocal()
   const mesTx = t.fecha?.slice(0, 7)
   if (!mesTx || mesTx === mesActual) return parseFloat(tipoCambioEURActual) || 0
   if (tcMapEUR && tcMapEUR[mesTx]) return Number(tcMapEUR[mesTx])
@@ -205,7 +214,16 @@ export const derivarPorcionesGasto = (t, { tcMap, tipoCambio, tcMapEUR, tipoCamb
   }
   const categoria = t.categories?.nombre || 'A Identificar'
   const subcategoria = t.subcategories?.nombre || null
-  const childDirecto = t.children?.nombre || t.tag || null
+  // El fallback a "tag" es del modelo viejo (reparto a mano escribiendo el
+  // nombre del hijo antes de que existiera child_id) — pero "tag" también se
+  // usa para etiquetas de ingreso tipo "Cuota Alimentaria Faustina" (ver
+  // inferirTagIngreso en Dashboard.js), y si esa etiqueta quedó en un gasto
+  // (a mano, por una regla, o un dato viejo) se mostraba como si fuera una
+  // persona nueva llamada "Cuota Alimentaria Faustina" en vez de ir a su
+  // categoría real. Por eso el tag solo cuenta como asignación directa a un
+  // hijo si coincide con el nombre real de alguno de los hijos registrados.
+  const tagEsHijo = t.tag && (children || []).some(c => (c.nombre || '').toLowerCase() === t.tag.toLowerCase())
+  const childDirecto = t.children?.nombre || (tagEsHijo ? t.tag : null)
   if (childDirecto) {
     return [{ tipo: 'persona', nombre: normalizarNombrePersona(childDirecto, children), monto: aArs(montoTotal) }]
   }
@@ -602,13 +620,16 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
   // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
   const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28
+  // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
+  // cuenta como "Mastercard Preferred" son tan largos como una categoría —
+  // se cortaban con "..." mientras sobraba aire en las demás columnas.
   const anchosTextoPral = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
-    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 0.8, subcategoria: 1.3 }
+    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 1.3, subcategoria: 1.3 }
   )
   const anchosTextoNeutros = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
-    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 0.8 }
+    colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 1.3 }
   )
   // "Sin identificar": la columna "Categoría" acá es puro relleno (siempre
   // muestra "—", todavía no se clasificó) — se oculta con el mismo criterio que
@@ -921,7 +942,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (autoSelectedMonthRef.current) return
     if (selectedMeses.length > 0 || mesesDisponibles.length === 0) return
     autoSelectedMonthRef.current = true
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     setSelectedMeses([mesesDisponibles.includes(mesActual) ? mesActual : mesesDisponibles[0]])
   }, [mesesDisponibles, selectedMeses])
 
@@ -985,7 +1006,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       return
     }
@@ -1014,14 +1035,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const texto_original = (tx.detalle || '').trim()
     if (texto_original && catObj) {
       const { data: { user } } = await supabase.auth.getUser()
-      // Upsert: si ya existe una regla para este patrón, la actualiza
+      // Upsert: si ya existe una regla para este patrón, la actualiza — y
+      // suma a veces_confirmado en vez de pisarlo siempre a 1.
+      const { data: reglaExistente } = await supabase.from('user_rules')
+        .select('veces_confirmado').eq('user_id', user.id).eq('texto_original', texto_original).maybeSingle()
       await supabase.from('user_rules').upsert({
         user_id: user.id,
         texto_original: texto_original,
         nombre_asignado: editNombre || texto_original,
         category_id: catObj.id,
         subcategory_id: subcatObj?.id || null,
-        veces_confirmado: 1,
+        veces_confirmado: (reglaExistente?.veces_confirmado || 0) + 1,
         updated_at: new Date().toISOString()
       }, {
         onConflict: 'user_id,texto_original',
@@ -1203,14 +1227,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     statements.forEach(s => {
       const mes = s.periodo || s.fecha_hasta?.slice(0, 7)
       if (!mes) return
-      // Cada resumen guarda su monto en ARS (total_resumen) o en USD
-      // (total_dolares) — nunca los dos a la vez para un mismo mes cargado
-      // acá, así se puede elegir en qué moneda va cada mes (ej. una tarjeta
-      // que se factura en dólares).
-      const esUsd = (Number(s.total_dolares) || 0) > 0 && !(Number(s.total_resumen) || 0)
-      const monto = esUsd ? Number(s.total_dolares) || 0 : Number(s.total_resumen) || 0
-      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', statementIds: [] }
-      if (monto >= prev.total) { prev.total = monto; prev.moneda = esUsd ? 'USD' : 'ARS' }
+      // Un resumen puede traer total_resumen (ARS) y total_dolares (USD) a la
+      // vez (ej. una tarjeta con compras en pesos y en dólares ese período —
+      // el import de PDF sí guarda ambos campos juntos, ver Dashboard.js) —
+      // antes acá se elegía uno solo y el otro se descartaba en silencio. Se
+      // guardan los dos; "total"/"moneda" quedan para la barra del gráfico
+      // (ARS con preferencia, como antes) y la lista de abajo muestra ambos.
+      const montoArs = Number(s.total_resumen) || 0
+      const montoUsd = Number(s.total_dolares) || 0
+      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', totalArs: 0, totalUsd: 0, statementIds: [] }
+      if (montoArs >= prev.totalArs) prev.totalArs = montoArs
+      if (montoUsd >= prev.totalUsd) prev.totalUsd = montoUsd
+      prev.total = prev.totalArs > 0 ? prev.totalArs : prev.totalUsd
+      prev.moneda = prev.totalArs > 0 ? 'ARS' : 'USD'
       prev.statementIds.push(s.id)
       map.set(mes, prev)
     })
@@ -1301,21 +1330,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   , [transactions, selectedMeses])
 
   const getTC = (mes) => {
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     if (mes === mesActual) return parseFloat(tipoCambio) || 1
     if (mes && tcMap && tcMap[mes]) return Number(tcMap[mes])
     return parseFloat(tipoCambio) || 1
   }
 
   // TC efectivo para el período seleccionado (usa el del primer mes seleccionado)
-  const tcEfectivo = getTC(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+  const tcEfectivo = getTC(selectedMeses[0] || mesActualLocal())
   const getTCEUR = useCallback((mes) => {
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesActualLocal()
     if (!mes || mes === mesActual) return parseFloat(tipoCambioEUR) || 0
     if (tcMapEUR?.[mes]) return Number(tcMapEUR[mes])
     return parseFloat(tipoCambioEUR) || 0
   }, [tipoCambioEUR, tcMapEUR])
-  const tcEUR = getTCEUR(selectedMeses[0] || new Date().toISOString().slice(0, 7))
+  const tcEUR = getTCEUR(selectedMeses[0] || mesActualLocal())
 
   const getChildName = useCallback((t) => t.children?.nombre || (t.child_id ? children.find(c => c.id === t.child_id)?.nombre : null) || (t.tag || null), [children])
 
@@ -1329,6 +1358,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // "Total por mes" de ingresos: incluye USD/EUR convertidos (antes solo sumaba
   // ARS) — USD con el TC del mes de cada movimiento (según el tipo de dólar
   // elegido), nunca el TC de hoy para algo viejo.
+  // Se limita a los últimos 12 meses: con todo el historial desde la
+  // creación de la cuenta, meses viejos con montos chicos quedaban con
+  // barras casi invisibles al lado de los meses recientes (mucho más
+  // altos), dando la sensación de que "no había barras".
   const ingresosBarData = (() => {
     const byMonth = {}
     transactions.filter(t => t.tipo === 'ingreso').forEach(t => {
@@ -1342,7 +1375,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           : monto
       byMonth[m] = (byMonth[m] || 0) + equivArs
     })
-    return Object.keys(byMonth).sort().map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
+    return Object.keys(byMonth).sort().slice(-12).map(m => ({ mes: mesLabel(m), total: byMonth[m] }))
   })()
 
   // Único punto de entrada para descomponer gastos en categoría vs. persona
@@ -1376,7 +1409,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
-          const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * tcEUR : Number(t.monto)
+          // getTCEUR(t.fecha) en vez de tcEUR fijo — este último solo refleja
+          // la tasa del primer mes seleccionado (selectedMeses[0]), así que con
+          // varios meses elegidos convertía TODOS los ingresos en EUR con la
+          // tasa de uno solo de ellos.
+          const monto = t.moneda === 'USD' ? Number(t.monto) * (tcDeMovimiento(t, tcMap, tipoCambio) || parseFloat(tcEfectivo) || 0) : t.moneda === 'EUR' ? Number(t.monto) * getTCEUR(t.fecha?.slice(0, 7)) : Number(t.monto)
           if (!acc[cat]) acc[cat] = { name: cat, value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
           acc[cat].value += monto
           if (t.moneda === 'ARS') acc[cat].originalARS += Number(t.monto)
@@ -1421,6 +1458,32 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     .slice(0, 3)
     .map(e => [e.name, e.value])
 
+  // "Pago tarjetas del mes": pagos/reintegros neutros cargados en la cuenta de
+  // cada tarjeta de crédito (así es como ya se registran — ver reconciliarSueltas
+  // más arriba, que los excluye del resumen porque restan del saldo pendiente en
+  // vez de sumar una compra más), agrupados por tarjeta para el período elegido.
+  const pagosTarjetasGeneral = (() => {
+    if (!allAccounts || selectedMeses.length === 0) return []
+    const porCuenta = {}
+    transactions.forEach(t => {
+      if (t.tipo !== 'neutro') return
+      if (!t.fecha || !selectedMeses.some(m => t.fecha.startsWith(m))) return
+      const cuenta = (accounts || []).find(a => a.id === t.account_id)
+      if (!cuenta || cuenta.tipo !== 'credito') return
+      const monto = Number(t.monto) || 0
+      let montoArs = monto
+      if (t.moneda === 'USD') {
+        const tcTx = tcDeMovimiento(t, tcMap, tipoCambio)
+        montoArs = tcTx > 0 ? monto * tcTx : monto
+      } else if (t.moneda === 'EUR') {
+        const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+        montoArs = tcTx > 0 ? monto * tcTx : monto
+      }
+      porCuenta[cuenta.nombre] = (porCuenta[cuenta.nombre] || 0) + montoArs
+    })
+    return Object.entries(porCuenta).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  })()
+
   const puedeComparar = selectedMeses.length === 1
   const mesSeleccionado = puedeComparar ? selectedMeses[0] : null
   const idxMesSeleccionado = mesSeleccionado ? mesesDisponibles.indexOf(mesSeleccionado) : -1
@@ -1457,16 +1520,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return {
       ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
       resolveIcon, resolveColor, getChartIcon, getChartColor,
-      catTopList,
+      catTopList, pagosTarjetasGeneral,
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcEUR, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, accounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
 
   const {
     ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
     resolveIcon, resolveColor, getChartIcon, getChartColor,
-    catTopList,
+    catTopList, pagosTarjetasGeneral,
     totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
     mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
   } = chartsMemo
@@ -1804,10 +1867,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     URL.revokeObjectURL(url)
   }
 
-  const handleDeleteTx = async (tx) => {
-    if (!window.confirm(account?.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?')) return
-    await supabase.from('transactions').delete().eq('id', tx.id)
-    setTransactions(prev => prev.filter(t => t.id !== tx.id))
+  // Reemplaza el window.confirm nativo (bloqueaba la pestaña y podía sentirse
+  // como que la app "se traba") por un modal propio, mismo patrón que el de
+  // "Dividir gasto" de arriba.
+  const [deleteConfirmTx, setDeleteConfirmTx] = useState(null)
+  const handleDeleteTx = (tx) => setDeleteConfirmTx(tx)
+  const confirmarDeleteTx = async () => {
+    if (!deleteConfirmTx) return
+    await supabase.from('transactions').delete().eq('id', deleteConfirmTx.id)
+    setTransactions(prev => prev.filter(t => t.id !== deleteConfirmTx.id))
+    setDeleteConfirmTx(null)
   }
 
   const handleMarcarNeutro = async (tx) => {
@@ -1941,7 +2010,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // En "Resumen General" (todas las cuentas sin soloAPagar) ya no se muestra acá: vive en
   // su propia pestaña de primer nivel. Sigue disponible dentro de cada cuenta individual.
   const mostrarTabAPagar = soloAPagar || (!allAccounts && account?.tipo === 'credito')
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyLocal()
   const mesActual = hoyISO.slice(0, 7)
 
   // Cascada bottom-up de "A pagar": statements, estado de cada uno, atribución de
@@ -2114,7 +2183,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   statementsAPagar.forEach(s => {
     totalBrutoAPagarGeneral += itemsPorStatement(s)
       .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
-      .reduce((s2, t) => s2 + Number(t.monto), 0)
+      .reduce((s2, t) => {
+        const monto = Number(t.monto) || 0
+        if (t.moneda === 'EUR') {
+          const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+          if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('totalBrutoAPagarGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return s2 }
+          return s2 + monto * tcTx
+        }
+        return s2 + monto
+      }, 0)
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
   // La barra de "Pagado" no es solo tarjetas: suma también los gastos fijos
@@ -2180,6 +2257,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Composición del gasto del mes: SIEMPRE montos brutos (compras de
   // tarjeta + gastos fijos de débito/alquiler), sin descontar pagos
   // parciales — esas restas viven solo en la cascada de "A pagar", nunca acá.
+  // EUR no tiene bucket propio (a diferencia de USD): se convierte a su
+  // equivalente en ARS con el TC del movimiento y entra al mapa de pesos —
+  // si no, quedaba sumado crudo en el mapa de ARS (ej. € 50 como "$ 50").
+  const montoARSEquiv = (t) => {
+    const monto = Number(t.monto) || 0
+    if (t.moneda !== 'EUR') return monto
+    const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+    if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('categoriasResumenGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return 0 }
+    return monto * tcTx
+  }
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -2191,10 +2278,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             if (hijo) {
               const destinoHijo = esUsd ? hijoMapUsd : hijoMap
               if (!destinoHijo[cat]) destinoHijo[cat] = {}
-              destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+              destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
             } else {
               const destino = esUsd ? mapUsd : map
-              destino[cat] = (destino[cat] || 0) + Number(t.monto)
+              destino[cat] = (destino[cat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
             }
           })
         })
@@ -2208,10 +2295,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           if (hijo) {
             const destinoHijo = esUsd ? hijoMapUsd : hijoMap
             if (!destinoHijo[cat]) destinoHijo[cat] = {}
-            destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + Number(t.monto)
+            destinoHijo[cat][hijo] = (destinoHijo[cat][hijo] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           } else {
             const destino = esUsd ? mapUsd : map
-            destino[cat] = (destino[cat] || 0) + Number(t.monto)
+            destino[cat] = (destino[cat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           }
         })
         return [
@@ -2259,8 +2346,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const cat = t.categories?.nombre || 'A Identificar'
             if (cat !== catGeneralSeleccionada) return
             const subcat = t.subcategories?.nombre || 'Sin subcategoría'
-            const destino = t.moneda === 'USD' ? mapUsd : map
-            destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
+            const esUsd = t.moneda === 'USD'
+            const destino = esUsd ? mapUsd : map
+            destino[subcat] = (destino[subcat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
           })
         })
         gastosFijosDelMes.forEach(t => {
@@ -2271,8 +2359,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           // Alquiler y otros gastos fijos en USD (ej. débito automático en dólares)
           // se estaban sumando siempre acá, en el mapa de pesos, sin mirar la
           // moneda — un alquiler de U$S 1.400 se veía como "$ 1.400".
-          const destino = t.moneda === 'USD' ? mapUsd : map
-          destino[subcat] = (destino[subcat] || 0) + Number(t.monto)
+          const esUsd = t.moneda === 'USD'
+          const destino = esUsd ? mapUsd : map
+          destino[subcat] = (destino[subcat] || 0) + (esUsd ? Number(t.monto) : montoARSEquiv(t))
         })
         return [
           Object.entries(map).sort((a, b) => b[1] - a[1]),
@@ -2978,6 +3067,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             )}
 
+            {/* Pago tarjetas del mes */}
+            {pagosTarjetasGeneral.length > 0 && !esVistaIngresos && (
+              <div style={{ ...styles.summaryCard }}>
+                <p style={styles.summaryLabel}>Pago tarjetas del mes</p>
+                {pagosTarjetasGeneral.map(([cuenta, val], i) => (
+                  <div key={cuenta} style={{ marginTop: i === 0 ? '6px' : '10px' }}>
+                    <div style={{ fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>💳 {cuenta}</div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginTop: '2px' }}>$ {formatMonto(val)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Equiv con toggle ARS⇌USD */}
             {tcEfectivo > 0 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
@@ -3021,8 +3123,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {esVistaIngresos && ingresosBarData.length > 0 && (
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
-            📊 Ingresos por mes
-            <InfoTooltip darkMode={darkMode} text="Histórico completo. Moneda: ARS — los ingresos en USD/€ están convertidos a pesos al TC de cada movimiento." />
+            📊 Ingresos por mes — últimos 12 meses
+            <InfoTooltip darkMode={darkMode} text="Últimos 12 meses. Moneda: ARS — los ingresos en USD/€ están convertidos a pesos al TC de cada movimiento." />
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ingresosBarData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
@@ -3076,7 +3178,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <>
                     <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      <span>{b.moneda === 'USD' ? 'U$S' : '$'} {formatMonto(b.total)}</span>
+                      <span>
+                        {b.totalArs > 0 && `$ ${formatMonto(b.totalArs)}`}
+                        {b.totalArs > 0 && b.totalUsd > 0 && ' + '}
+                        {b.totalUsd > 0 && `U$S ${formatMonto(b.totalUsd)}`}
+                      </span>
                       <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))); setEditBarPeriodo(b.mes); setEditBarMoneda(b.moneda) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
                       {confirmDeleteMes === b.mes ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -3141,14 +3247,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
-            const renderBubbleCard = (data, titulo) => data.length === 0 ? null : (
-              <div key={titulo} style={{ ...styles.bubbleSection, flex: dosGraficos ? '1 1 380px' : '1 1 100%' }}>
+            const renderBubbleCard = (data, titulo, extraStyle) => data.length === 0 ? null : (
+              <div key={titulo} style={{ ...styles.bubbleSection, minWidth: 0, ...extraStyle }}>
                 <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
                   {titulo}
                   <InfoTooltip darkMode={darkMode} text={`${monedaLabelChart} · ${periodoLabelChart}`} />
                 </h3>
                 {effectiveChartType === 'donut' && (
-                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
+                  // flexWrap: cuando la tarjeta queda angosta (ej. dos donuts lado a
+                  // lado en un ancho intermedio, ni mobile ni desktop completo), la
+                  // columna de texto NO se aprieta infinitamente — al llegar a su
+                  // ancho mínimo (flexBasis, flexShrink:0) toda la columna pasa a la
+                  // fila de abajo en vez de que el texto se corte letra por letra.
+                  <div style={{ display: 'flex', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: isMobile ? 'center' : 'flex-start' }}>
                     <ResponsiveContainer width={isMobile ? '100%' : 260} height={isMobile ? 220 : 240}>
                       <PieChart>
                         <Pie data={data} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
@@ -3159,12 +3270,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '200px', flexGrow: isMobile ? 0 : 1, flexShrink: 0, flexBasis: isMobile ? '100%' : '200px' }}>
+                      {/* Antes el nombre se truncaba con "..." a los 150px fijos aunque
+                          sobrara espacio a lo ancho — ahora ocupa el espacio disponible
+                          de la fila (flex:1) y si de verdad no entra, pasa a una segunda
+                          línea en vez de cortarse. */}
                       {data.map((entry, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                           <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                          <span title={`${getChartIcon(entry.name)} ${entry.name}`} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{getChartIcon(entry.name)} {entry.name}</span>
-                          <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
+                          <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', flex: '1 1 auto', minWidth: 0, wordBreak: 'break-word' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                          <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap', flexShrink: 0 }}>$ {formatMonto(entry.value)}</span>
                         </div>
                       ))}
                     </div>
@@ -3177,7 +3292,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <ResponsiveContainer width="100%" height={chartH}>
                       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
                         <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
-                        <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
+                        <YAxis type="category" dataKey="name" width={isMobile ? 90 : 130}
+                          tickFormatter={(name) => {
+                            const max = isMobile ? 13 : 19
+                            return name && name.length > max ? `${name.slice(0, max - 1)}…` : name
+                          }}
+                          tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
                         <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                           {data.map((entry, idx) => (
@@ -3204,9 +3324,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </button>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                {/* Grid fijo de 2 columnas en desktop (en vez de flex-wrap, que
+                    dependía de que la suma de anchos "entrara" y en la práctica
+                    los apilaba igual) — así "Gastos por categoría" y "Gastos por
+                    persona" quedan siempre lado a lado en pantallas de compu,
+                    y la página no queda tan larga para llegar a los movimientos. */}
+                <div style={{ display: dosGraficos && !isMobile ? 'grid' : 'flex', gridTemplateColumns: dosGraficos && !isMobile ? 'repeat(2, 1fr)' : undefined, gap: '20px', flexWrap: 'wrap' }}>
                   {dosGraficos
-                    ? [renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'), renderBubbleCard(personaBubbleData, 'Gastos por persona')]
+                    ? [
+                        renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'),
+                        // Línea sutil entre los dos donuts para que no se lean como un
+                        // solo bloque — mismo color de borde que el resto de la app.
+                        renderBubbleCard(personaBubbleData, 'Gastos por persona', !isMobile ? {
+                          borderLeft: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, paddingLeft: '20px'
+                        } : undefined),
+                      ]
                     : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
                 </div>
               </>
@@ -3553,6 +3685,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </div>
         </div>
       )}
+
+      {deleteConfirmTx && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '400px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', boxSizing: 'border-box' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
+              🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
+            </h3>
+            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 20px' }}>
+              {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setDeleteConfirmTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmarDeleteTx} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -3581,10 +3734,15 @@ const getStyles = (dark, mobile) => {
     // auto-fit (no auto-fill): las columnas vacías colapsan a 0 en vez de
     // reservar su ancho — en desktop ancho, las cards que sí hay se reparten
     // todo el espacio disponible en vez de dejar un hueco a la derecha.
-    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: mobile ? '10px' : '16px', marginBottom: '24px' },
-    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '18px 20px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
-    summaryLabel: { fontSize: mobile ? '10px' : '11px', fontWeight: '400', color: muted, margin: '0 0 4px 0', ...rotuloLabel },
-    summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word' },
+    // 3 columnas fijas en desktop (antes era auto-fit, que entraban 4 en la
+    // primera fila y 2 en la segunda según el ancho disponible) — con 6
+    // tarjetas típicas (ARS/USD/vs mes anterior/Categorías top/Pago
+    // tarjetas/Equiv. totales) queda prolijo en 3 arriba y 3 abajo, con
+    // Categorías top y Pago tarjetas del mes juntas (misma estética de lista).
+    summaryCards: { display: 'grid', gridTemplateColumns: mobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: mobile ? '10px' : '18px', marginBottom: '24px' },
+    summaryCard: { backgroundColor: panel, borderRadius: '14px', padding: mobile ? '12px 14px' : '22px 24px', boxShadow: shadow, border: `1px solid ${hdrBorder}`, minWidth: 0 },
+    summaryLabel: { fontSize: mobile ? '11px' : '12px', fontWeight: '600', color: muted, margin: '0 0 4px 0', textAlign: 'center', ...rotuloLabel },
+    summaryValue: { fontSize: mobile ? '16px' : '24px', fontWeight: '500', color: txt, margin: '0 0 2px 0', wordBreak: 'break-word', textAlign: 'center' },
     summarySubval: { fontSize: '12px', color: muted, margin: 0 },
     chartSection: { marginBottom: '32px' },
     chartTitle: { fontSize: '16px', fontWeight: '500', color: txt, margin: '0 0 16px 0' },
@@ -3596,7 +3754,12 @@ const getStyles = (dark, mobile) => {
       fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
     },
     mesChipActive: { backgroundColor: p, color: 'white', borderColor: p, fontWeight: '500' },
-    bubbleSection: { marginBottom: '32px' },
+    // width: '100%' es necesario para el caso de un solo gráfico (ver "Ingresos
+    // por categoría"): ese wrapper es un flex container con un único hijo sin
+    // flex-grow, así que sin este ancho explícito el hijo se encoge al tamaño
+    // de su contenido — y su contenido (el ResponsiveContainer) pide "100% del
+    // padre" para dibujarse, quedando en un ancho casi nulo en desktop.
+    bubbleSection: { marginBottom: '32px', width: '100%' },
     tableSection: { marginBottom: '32px' },
     tableHint: { fontSize: '13px', color: muted, margin: '-8px 0 12px 0' },
     table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: 'fixed' },

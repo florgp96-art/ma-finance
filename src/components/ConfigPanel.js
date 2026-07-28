@@ -128,7 +128,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleDeleteReparto = async (id) => {
     if (!window.confirm('¿Eliminar esta regla de reparto?')) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('reparto_rules').delete().eq('id', id).eq('user_id', user.id)
+    const { data, error } = await supabase.from('reparto_rules').delete().eq('id', id).eq('user_id', user.id).select('id')
+    if (reportarFalloEscritura('eliminar la regla de reparto', error, data?.length)) return
     fetchRepartoRules()
   }
 
@@ -189,7 +190,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     e.preventDefault()
     if (!newHijoNombre.trim()) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('children').insert({ user_id: user.id, nombre: newHijoNombre.trim() })
+    const { data, error } = await supabase.from('children').insert({ user_id: user.id, nombre: newHijoNombre.trim() }).select('id')
+    if (reportarFalloEscritura('crear el hijo', error, data?.length)) return
     setNewHijoNombre('')
     fetchChildren()
   }
@@ -197,7 +199,14 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleDeleteHijo = async (id, nombre) => {
     if (!window.confirm(`¿Eliminar a "${nombre}"?`)) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('children').delete().eq('id', id).eq('user_id', user.id)
+    // Mismo chequeo que categorías/subcategorías: si tiene transacciones
+    // asignadas (child_id), no dejar borrar — si no, quedaban huérfanas
+    // apuntando a un hijo que ya no existe en la UI.
+    const { count, error: errCount } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('child_id', id).eq('user_id', user.id)
+    if (errCount) { showToast(`No se pudo verificar si "${nombre}" tiene transacciones: ${errCount.message}`, 'error'); return }
+    if (count > 0) { showToast(`"${nombre}" tiene ${count} transacción(es) asignadas. Primero reasignalas o borralas.`, 'error'); return }
+    const { data, error } = await supabase.from('children').delete().eq('id', id).eq('user_id', user.id).select('id')
+    if (reportarFalloEscritura(`eliminar a "${nombre}"`, error, data?.length)) return
     fetchChildren()
   }
 
@@ -282,7 +291,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleDeleteCategoria = async (cat) => {
     if (!window.confirm(`¿Eliminar "${cat.nombre}" y sus subcategorías?`)) return
     const { data: { user } } = await supabase.auth.getUser()
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id).eq('user_id', user.id)
+    const { count, error: errCount } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('category_id', cat.id).eq('user_id', user.id)
+    if (errCount) { showToast(`No se pudo verificar si la categoría tiene transacciones: ${errCount.message}`, 'error'); return }
     if (count > 0) {
       showToast(`Esta categoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
@@ -300,7 +310,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleDeleteSubcat = async (subcat) => {
     if (!window.confirm(`¿Eliminar "${subcat.nombre}"?`)) return
     const { data: { user } } = await supabase.auth.getUser()
-    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id).eq('user_id', user.id)
+    const { count, error: errCount } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('subcategory_id', subcat.id).eq('user_id', user.id)
+    if (errCount) { showToast(`No se pudo verificar si la subcategoría tiene transacciones: ${errCount.message}`, 'error'); return }
     if (count > 0) {
       showToast(`Esta subcategoría tiene ${count} transacción(es). Primero reclasificalas.`, 'error')
       return
@@ -349,12 +360,23 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return matches.filter(m => m.category_id !== catObj.id || (subcatObj ? m.subcategory_id !== subcatObj.id : false)).length
     }
     if (alias.tipo === 'hijo') {
-      const { data: matches } = await supabase.from('transactions')
-        .select('id, tag')
-        .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-      if (!matches) return 0
-      return matches.filter(m => m.tag !== alias.valor).length
+      // Una regla de hijo aplica tanto a gastos (se guarda en "tag", modelo
+      // viejo) como a ingresos (se guarda en "child_id" — ej. Cuota
+      // Alimentaria, que siempre es un ingreso). Antes solo se contaban los
+      // gastos, así que una regla como "CUOTA ALIMENTARIA X" → hijo nunca
+      // aparecía como pendiente de aplicar sobre los ingresos reales.
+      const childObj = (childrenDB || []).find(c => c.nombre === alias.valor)
+      const [{ data: matchesGasto }, { data: matchesIngreso }] = await Promise.all([
+        supabase.from('transactions').select('id, tag')
+          .eq('user_id', user.id).eq('tipo', 'gasto')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+        supabase.from('transactions').select('id, child_id')
+          .eq('user_id', user.id).eq('tipo', 'ingreso')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+      ])
+      const pendGasto = (matchesGasto || []).filter(m => m.tag !== alias.valor).length
+      const pendIngreso = childObj ? (matchesIngreso || []).filter(m => m.child_id !== childObj.id).length : 0
+      return pendGasto + pendIngreso
     }
     if (alias.tipo === 'neutro') {
       const { data: matches } = await supabase.from('transactions')
@@ -388,13 +410,28 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return matches.length
     }
     if (alias.tipo === 'hijo') {
-      const { data: matches } = await supabase.from('transactions')
+      // Mismo criterio que countPendingForAlias: gastos van por "tag" (modelo
+      // viejo), ingresos por "child_id" (ej. Cuota Alimentaria).
+      const childObj = (childrenDB || []).find(c => c.nombre === alias.valor)
+      const { data: matchesGasto } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).eq('tipo', 'gasto')
         .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
-      if (!matches || matches.length === 0) return 0
-      await supabase.from('transactions').update({ tag: alias.valor }).in('id', matches.map(m => m.id))
-      return matches.length
+      if (matchesGasto && matchesGasto.length > 0) {
+        await supabase.from('transactions').update({ tag: alias.valor }).in('id', matchesGasto.map(m => m.id))
+      }
+      let totalIngreso = 0
+      if (childObj) {
+        const { data: matchesIngreso } = await supabase.from('transactions')
+          .select('id')
+          .eq('user_id', user.id).eq('tipo', 'ingreso')
+          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        if (matchesIngreso && matchesIngreso.length > 0) {
+          await supabase.from('transactions').update({ child_id: childObj.id, estado: 'identificado' }).in('id', matchesIngreso.map(m => m.id))
+          totalIngreso = matchesIngreso.length
+        }
+      }
+      return (matchesGasto?.length || 0) + totalIngreso
     }
     if (alias.tipo === 'neutro') {
       const { data: matches } = await supabase.from('transactions')
@@ -420,13 +457,16 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         : newAlias.tipo === 'categoria' && newAlias.subcategoria
           ? `${newAlias.valor.trim()} > ${newAlias.subcategoria.trim()}`
           : newAlias.valor.trim()
-    await supabase.from('user_aliases').insert({
+    const { data, error } = await supabase.from('user_aliases').insert({
       user_id: user.id,
       alias: aliasKeyword,
       tipo: newAlias.tipo,
       valor: valorFinal,
       descripcion: newAlias.descripcion.trim() || null
-    })
+    }).select('id')
+    // Antes esto no se chequeaba: si el insert fallaba, igual se mostraba
+    // "Regla creada." — un falso positivo.
+    if (reportarFalloEscritura('crear la regla', error, data?.length)) return
 
     const actualizados = await applyAliasToExisting({ alias: aliasKeyword, tipo: newAlias.tipo, valor: valorFinal }, user)
     showToast(actualizados > 0 ? `Regla creada y aplicada a ${actualizados} movimiento(s) existente(s).` : 'Regla creada.')
@@ -453,7 +493,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleDeleteAlias = async (id) => {
     if (!window.confirm('¿Eliminar este alias?')) return
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('user_aliases').delete().eq('id', id).eq('user_id', user.id)
+    const { data, error } = await supabase.from('user_aliases').delete().eq('id', id).eq('user_id', user.id).select('id')
+    if (reportarFalloEscritura('eliminar el alias', error, data?.length)) return
     fetchUserAliases()
   }
 
