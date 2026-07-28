@@ -3703,17 +3703,14 @@ export default function Dashboard() {
               </div>
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                  {/* Editar/borrar esta cuenta sin tener que ir al dashboard general — antes
-                      solo se podía desde el lápiz (visible solo al pasar el mouse) del
-                      listado de cuentas del sidebar, inaccesible en mobile. */}
-                  <button
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2
+                    style={{ ...styles.sectionTitle, cursor: 'pointer' }}
+                    title="Tocar para editar o borrar esta cuenta"
                     onClick={() => setEditAccount({ ...selectedAccount })}
-                    title="Editar o borrar esta cuenta"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.7, padding: '4px' }}>
-                    ✏️
-                  </button>
+                  >
+                    📊 {selectedAccount.nombre}
+                  </h2>
                 </div>
                 <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
@@ -3803,7 +3800,7 @@ export default function Dashboard() {
             body: (
               <>
                 <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
-                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá el lápiz ✏️ que aparece arriba, al lado del nombre.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá su nombre, arriba de todo.</p>
               </>
             )
           },
