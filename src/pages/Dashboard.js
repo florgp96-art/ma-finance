@@ -4602,7 +4602,7 @@ export default function Dashboard() {
               <>
                 <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
                 <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-                  {excelPreview.length} filas encontradas · mostrando primeras 10
+                  {excelPreview.length} filas encontradas
                 </p>
                 <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -4614,7 +4614,7 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {excelPreview.slice(0, 10).map((row, i) => (
+                      {excelPreview.map((row, i) => (
                         <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nombre || row.notas || '—'}</td>
@@ -4636,7 +4636,7 @@ export default function Dashboard() {
                             <select
                               value={row.cat || ''}
                               onChange={e => updateExcelPreviewRow(i, { cat: e.target.value || null, subcat: null })}
-                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: row.cat && row.cat !== 'A Identificar' ? 'transparent' : '#fff8e1', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              style={{ ...styles.excelPreviewSelect, backgroundColor: row.cat && row.cat !== 'A Identificar' ? 'transparent' : '#fff8e1', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                               <option value="">❓ Sin identificar</option>
                               {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
@@ -4645,7 +4645,7 @@ export default function Dashboard() {
                             <select
                               value={row.subcat || ''}
                               onChange={e => updateExcelPreviewRow(i, { subcat: e.target.value || null })}
-                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              style={{ ...styles.excelPreviewSelect, backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                               <option value="">— Sin subcategoría</option>
                               {subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === row.cat)?.id).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                             </select>
@@ -4897,6 +4897,17 @@ const getStyles = (dark, mobile = false) => {
     emptyStateText: { fontSize: '15px', color: muted, fontWeight: '500' },
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: mobile ? '12px' : '20px', boxSizing: 'border-box' },
     modal: { backgroundColor: panel, borderRadius: mobile ? '14px' : '16px', padding: mobile ? '20px 16px' : '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: mobile ? '95vh' : '90vh', overflowY: 'auto' },
+    // El <select> nativo en iOS/Android dibuja su propia flechita pegada al
+    // borde derecho — con textos largos (nombres de categoría) y poco ancho
+    // (celda de tabla), el texto quedaba pegado justo arriba de esa flecha,
+    // como si se superpusieran. Se resetea el appearance nativo y se dibuja
+    // una propia, con padding-right fijo para que nunca choquen.
+    excelPreviewSelect: {
+      padding: '4px 22px 4px 6px', borderRadius: '6px', border: `1px solid ${border}`,
+      fontSize: '11px', maxWidth: '130px', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px',
+    },
     modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
