@@ -371,6 +371,20 @@ export default function Dashboard() {
   }, [evolDropdownOpen])
   const monedasCardRef = useRef(null)
   const configPanelRef = useRef(null)
+  const configMenuRef = useRef(null)
+  useEffect(() => {
+    if (!configOpen) return
+    const cerrarSiAfuera = (e) => { if (configMenuRef.current && !configMenuRef.current.contains(e.target)) setConfigOpen(false) }
+    const cerrarConEscape = (e) => { if (e.key === 'Escape') setConfigOpen(false) }
+    document.addEventListener('mousedown', cerrarSiAfuera)
+    document.addEventListener('touchstart', cerrarSiAfuera)
+    document.addEventListener('keydown', cerrarConEscape)
+    return () => {
+      document.removeEventListener('mousedown', cerrarSiAfuera)
+      document.removeEventListener('touchstart', cerrarSiAfuera)
+      document.removeEventListener('keydown', cerrarConEscape)
+    }
+  }, [configOpen])
   // Desplegable de Vencimientos: mismo patrón tap/click + cierre afuera que
   // "Monedas extranjeras" (ver abajo) — antes "ver más" agrandaba el card in-line
   // (maxHeight: none), lo que empujaba hacia abajo todo el contenido de la página
@@ -2698,8 +2712,8 @@ export default function Dashboard() {
                           <div style={{ marginTop: '6px', paddingLeft: '8px', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
                             {data.items.map((it, ii) => (
                               <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', padding: '2px 0' }}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
-                                <span style={{ whiteSpace: 'nowrap' }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
+                                <span style={{ flex: 1, minWidth: 0 }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
+                                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
                               </div>
                             ))}
                           </div>
@@ -3253,7 +3267,7 @@ export default function Dashboard() {
                   {darkMode ? '☀️' : '🌙'}
                  </button>
                 {!isMobile && (
-                  <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
+                  <div ref={configMenuRef} style={{ display: 'flex', gap: '8px', position: 'relative' }}>
                     <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                     </button>
@@ -3337,12 +3351,13 @@ export default function Dashboard() {
                   onMouseLeave={() => setHoveredAccount(null)}
                 >
                   <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
-                  <p style={styles.accountName}>{acc.nombre}</p>
-                  {/* En mobile no hay "hover" — sin esto el lápiz de editar nunca se veía */}
-                  {(hoveredAccount === acc.id || isMobile) && (
-                    <button style={{ position: 'absolute', top: '8px', right: '8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px', opacity: 0.7, outline: 'none' }}
-                      onClick={(e) => { e.stopPropagation(); setEditAccount({...acc}) }}>✏️</button>
-                  )}
+                  <p
+                    style={{ ...styles.accountName, textDecoration: hoveredAccount === acc.id ? 'underline' : 'none', textDecorationColor: darkMode ? '#9A8A9A' : '#B0A6AA', textUnderlineOffset: '3px' }}
+                    title="Tocar para editar"
+                    onClick={(e) => { e.stopPropagation(); setEditAccount({ ...acc }) }}
+                  >
+                    {acc.nombre}
+                  </p>
                 </div>
               )
 
@@ -3471,7 +3486,7 @@ export default function Dashboard() {
 
               {/* Configuración colapsable — solo mobile (en desktop está en el header) */}
               {isMobile && (
-                <>
+                <div ref={configMenuRef}>
                   <button
                     style={{ ...styles.sidebarBtnSecondary, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
                     onClick={() => setConfigOpen(o => !o)}
@@ -3493,7 +3508,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); handleLogout() }}>Cerrar sesión</button>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -3793,7 +3808,7 @@ export default function Dashboard() {
             body: (
               <>
                 <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
-                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá el lápiz ✏️ que aparece arriba a la derecha.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, tocá el nombre de la cuenta en el listado de la izquierda.</p>
               </>
             )
           },

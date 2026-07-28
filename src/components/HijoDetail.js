@@ -486,11 +486,16 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
           movimientos tipo "ingreso" con este hijo asignado (ej. la cuota que se
           cobra); los egresos son lo mismo que ya se ve arriba en "Total ARS/USD/EUR"
           y "Gastos por categoría", en un solo total comparable. */}
-      {cuotaAlimentariaActiva && (cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (
+      {cuotaAlimentariaActiva && (cuotaResumen.ingreso > 0 || cuotaResumen.egreso > 0) && (() => {
+        const periodoLabelCuota = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
+          : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
+          : selectedMeses.length === 0 ? 'todos los meses'
+          : `${selectedMeses.length} meses`
+        return (
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
             Cuota Alimentaria
-            <InfoTooltip darkMode={darkMode} text="ARS, monedas extranjeras convertidas." />
+            <InfoTooltip darkMode={darkMode} text={`ARS, monedas extranjeras convertidas. Ingresos/Egresos/Balance de ${periodoLabelCuota}.`} />
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) ? '20px' : 0 }}>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
@@ -509,30 +514,34 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             </div>
           </div>
           {cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) && (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={cuotaMonthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
-                <YAxis
-                  tickFormatter={v => `$${formatMonto(v)}`}
-                  tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888' }}
-                  width={72}
-                />
-                <Tooltip
-                  formatter={(v, name) => [`$ ${formatMonto(v)}`, name === 'ingreso' ? 'Ingresos' : 'Egresos']}
-                  contentStyle={{
-                    borderRadius: '8px', border: 'none',
-                    backgroundColor: darkMode ? '#2A272A' : '#fff',
-                    color: darkMode ? '#F0EDEC' : '#1d1d1f',
-                    fontSize: '13px', fontFamily: '"Montserrat", sans-serif'
-                  }}
-                />
-                <Bar dataKey="ingreso" fill="#7CB88F" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="egreso" fill="#D88C8C" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <>
+              <p style={{ ...s.statLabel, margin: '0 0 8px' }}>Últimos 6 meses</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={cuotaMonthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
+                  <YAxis
+                    tickFormatter={v => `$${formatMonto(v)}`}
+                    tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888' }}
+                    width={72}
+                  />
+                  <Tooltip
+                    formatter={(v, name) => [`$ ${formatMonto(v)}`, name === 'ingreso' ? 'Ingresos' : 'Egresos']}
+                    contentStyle={{
+                      borderRadius: '8px', border: 'none',
+                      backgroundColor: darkMode ? '#2A272A' : '#fff',
+                      color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                      fontSize: '13px', fontFamily: '"Montserrat", sans-serif'
+                    }}
+                  />
+                  <Bar dataKey="ingreso" fill="#7CB88F" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="egreso" fill="#D88C8C" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </>
           )}
         </div>
-      )}
+        )
+      })()}
 
       {/* Tabla de transacciones */}
       <div style={s.card}>
