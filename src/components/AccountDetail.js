@@ -3754,7 +3754,12 @@ const getStyles = (dark, mobile) => {
       fontWeight: '500', transition: 'all 0.15s', outline: 'none', WebkitAppearance: 'none'
     },
     mesChipActive: { backgroundColor: p, color: 'white', borderColor: p, fontWeight: '500' },
-    bubbleSection: { marginBottom: '32px' },
+    // width: '100%' es necesario para el caso de un solo gráfico (ver "Ingresos
+    // por categoría"): ese wrapper es un flex container con un único hijo sin
+    // flex-grow, así que sin este ancho explícito el hijo se encoge al tamaño
+    // de su contenido — y su contenido (el ResponsiveContainer) pide "100% del
+    // padre" para dibujarse, quedando en un ancho casi nulo en desktop.
+    bubbleSection: { marginBottom: '32px', width: '100%' },
     tableSection: { marginBottom: '32px' },
     tableHint: { fontSize: '13px', color: muted, margin: '-8px 0 12px 0' },
     table: { width: '100%', borderCollapse: 'collapse', fontSize: mobile ? '12px' : '13px', tableLayout: 'fixed' },
