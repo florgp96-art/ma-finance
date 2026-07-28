@@ -312,6 +312,7 @@ export default function Dashboard() {
   // resolveAccount (en handleImportarExcel) las mandaba todas a "Efectivo" por
   // default, ya que este formato no trae MODO_PAGO propio.
   const [excelBankPendingRows, setExcelBankPendingRows] = useState(null)
+  const [excelNuevaCuenta, setExcelNuevaCuenta] = useState(null)
   const [excelDupReview, setExcelDupReview] = useState(null)
   const [excelDupSelections, setExcelDupSelections] = useState(new Set())
   const [excelDragOver, setExcelDragOver] = useState(false)
@@ -1033,6 +1034,11 @@ export default function Dashboard() {
         // historial + IA, revisión, importación), así no hace falta que el
         // usuario reordene nada a mano.
         const esFormatoBanco = rows.some(row => row && row['MOVIMIENTO'] != null && (row['DEBITO'] != null || row['CREDITO'] != null))
+        // Primera fila de metadata (ej. "Banco Galicia - Caja Ahorro Pesos") como
+        // nombre sugerido de cuenta, igual que "tarjeta_detectada" en el import de
+        // PDF — para poder resaltar la cuenta que coincide o sugerir el nombre al
+        // crear una nueva, en vez de mostrar una lista pelada para elegir a ciegas.
+        const nombreDetectado = esFormatoBanco && typeof aoa[0]?.[0] === 'string' ? aoa[0][0].trim() : null
         const parsed = rows
           .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD'] || row['MOVIMIENTO']))
           .map(row => {
@@ -1062,7 +1068,7 @@ export default function Dashboard() {
             return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo, cuota_numero, cuotas_total }
           })
           .filter(r => r.fecha && r.monto > 0)
-        resolve({ rows: parsed, esFormatoBanco })
+        resolve({ rows: parsed, esFormatoBanco, nombreDetectado })
       } catch (err) { reject(err) }
     }
     reader.onerror = reject
@@ -1074,7 +1080,7 @@ export default function Dashboard() {
     setLoadingExcel(true)
     setExcelBackgroundMode(false)
     try {
-      const { rows, esFormatoBanco } = await parsearExcel(excelFile)
+      const { rows, esFormatoBanco, nombreDetectado } = await parsearExcel(excelFile)
       if (rows.length === 0) {
         showToast('No se encontraron filas válidas en la hoja GASTOS.', 'error')
         setLoadingExcel(false)
@@ -1083,7 +1089,7 @@ export default function Dashboard() {
       if (esFormatoBanco) {
         // Un extracto bancario es siempre de UNA sola cuenta real — hay que
         // preguntar cuál antes de seguir (ver comentario de excelBankPendingRows).
-        setExcelBankPendingRows(rows)
+        setExcelBankPendingRows({ rows, nombreDetectado })
         setLoadingExcel(false)
         return
       }
@@ -1095,10 +1101,27 @@ export default function Dashboard() {
   }
 
   const handleElegirCuentaExtractoBanco = (nombreCuenta) => {
-    const rows = (excelBankPendingRows || []).map(r => ({ ...r, modo_pago: nombreCuenta }))
+    const rows = (excelBankPendingRows?.rows || []).map(r => ({ ...r, modo_pago: nombreCuenta }))
     setExcelBankPendingRows(null)
+    setExcelNuevaCuenta(null)
     setLoadingExcel(true)
     clasificarYPrevisualizarExcel(rows)
+  }
+
+  const crearCuentaParaExtractoBanco = async (e) => {
+    e.preventDefault()
+    if (!excelNuevaCuenta?.nombre?.trim()) return
+    setLoadingExcel(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: account, error } = await supabase.from('accounts')
+      .insert({ user_id: user.id, nombre: excelNuevaCuenta.nombre.trim(), tipo: excelNuevaCuenta.tipo }).select().single()
+    if (error || !account) {
+      showToast('No se pudo crear la cuenta: ' + (error?.message || ''), 'error')
+      setLoadingExcel(false)
+      return
+    }
+    fetchAccounts()
+    handleElegirCuentaExtractoBanco(account.nombre)
   }
 
   const clasificarYPrevisualizarExcel = async (rows) => {
@@ -4558,23 +4581,70 @@ export default function Dashboard() {
             {excelPreview === null && excelBankPendingRows ? (
               <>
                 <h3 style={styles.modalTitle}>¿A qué cuenta pertenece este extracto? 🏦</h3>
-                <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: '16px' }}>
-                  Detectamos un extracto bancario ({excelBankPendingRows.length} movimientos) — elegí a qué cuenta tuya corresponde, para no cargarlo por error en otra.
+                {excelBankPendingRows.nombreDetectado && (
+                  <p style={{ fontSize: '14px', color: '#666', marginBottom: '4px' }}>
+                    Detectamos: <strong>{excelBankPendingRows.nombreDetectado}</strong>
+                  </p>
+                )}
+                <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '16px' }}>
+                  {excelBankPendingRows.rows.length} movimientos — elegí a qué cuenta tuya corresponden, para no cargarlos por error en otra.
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
-                  {accounts.filter(a => a.tipo !== 'ingreso').map(acc => (
-                    <button key={acc.id} style={styles.selectAccountBtn} onClick={() => handleElegirCuentaExtractoBanco(acc.nombre)}>
-                      {acc.tipo === 'credito' ? '💳' : acc.tipo === 'efectivo' ? '💵' : '🏦'} {acc.nombre}
-                    </button>
-                  ))}
-                  <button style={{ ...styles.selectAccountBtn, ...styles.selectAccountBtnNew }}
-                    onClick={() => { setShowExcel(false); setExcelBankPendingRows(null); setExcelFile(null); handleClickCrearCuenta() }}>
-                    + Crear nueva cuenta
-                  </button>
-                </div>
-                <div style={styles.modalButtons}>
-                  <button style={styles.cancelBtn} onClick={() => { setExcelBankPendingRows(null); setExcelFile(null) }}>← Atrás</button>
-                </div>
+                {excelNuevaCuenta ? (
+                  <form onSubmit={crearCuentaParaExtractoBanco}>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Nombre de la cuenta</label>
+                      <input style={styles.input} value={excelNuevaCuenta.nombre}
+                        onChange={e => setExcelNuevaCuenta(prev => ({ ...prev, nombre: e.target.value }))} autoFocus required />
+                    </div>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Tipo</label>
+                      <select style={styles.input} value={excelNuevaCuenta.tipo}
+                        onChange={e => setExcelNuevaCuenta(prev => ({ ...prev, tipo: e.target.value }))}>
+                        <option value="debito">🏦 Débito / Cuenta bancaria</option>
+                        <option value="credito">💳 Tarjeta de crédito</option>
+                        <option value="efectivo">💵 Efectivo</option>
+                      </select>
+                    </div>
+                    <div style={styles.modalButtons}>
+                      <button type="button" style={styles.cancelBtn} onClick={() => setExcelNuevaCuenta(null)}>← Atrás</button>
+                      <button type="submit" style={styles.saveBtn} disabled={loadingExcel}>{loadingExcel ? 'Creando...' : 'Crear e importar acá'}</button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {(() => {
+                      const detectado = (excelBankPendingRows.nombreDetectado || '').trim().toLowerCase()
+                      const disponibles = accounts.filter(a => a.tipo !== 'ingreso')
+                      const match = detectado ? disponibles.find(a => {
+                        const n = a.nombre.trim().toLowerCase()
+                        return detectado.includes(n) || n.includes(detectado)
+                      }) : null
+                      const resto = disponibles.filter(a => a.id !== match?.id)
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px', maxHeight: '46vh', overflowY: 'auto' }}>
+                          {match && (
+                            <button style={{ ...styles.selectAccountBtn, border: '2px solid #27AE60' }} onClick={() => handleElegirCuentaExtractoBanco(match.nombre)}>
+                              🏦 {match.nombre}
+                              <span style={{ fontSize: '12px', color: '#27AE60', fontWeight: '600', marginLeft: '8px' }}>✓ Coincide con lo detectado</span>
+                            </button>
+                          )}
+                          {resto.map(acc => (
+                            <button key={acc.id} style={styles.selectAccountBtn} onClick={() => handleElegirCuentaExtractoBanco(acc.nombre)}>
+                              {acc.tipo === 'credito' ? '💳' : acc.tipo === 'efectivo' ? '💵' : '🏦'} {acc.nombre}
+                            </button>
+                          ))}
+                          <button style={{ ...styles.selectAccountBtn, ...styles.selectAccountBtnNew }}
+                            onClick={() => setExcelNuevaCuenta({ nombre: excelBankPendingRows.nombreDetectado || '', tipo: 'debito' })}>
+                            + Crear nueva cuenta
+                          </button>
+                        </div>
+                      )
+                    })()}
+                    <div style={styles.modalButtons}>
+                      <button style={styles.cancelBtn} onClick={() => { setExcelBankPendingRows(null); setExcelFile(null) }}>← Atrás</button>
+                    </div>
+                  </>
+                )}
               </>
             ) : excelPreview === null ? (
               <>
