@@ -126,10 +126,11 @@ export default function Dashboard() {
   // SQL de este feature todavía no corrió en la base (columnas/tabla nuevas
   // inexistentes), la consulta abajo va a fallar — mejor no bloquear a nadie
   // por eso que bloquear por error a usuarios legacy/pagos.
-  const [plan, setPlan] = useState({ plan: 'premium', is_legacy: true })
-  const isPremium = plan.is_legacy || plan.plan === 'premium'
+  const [plan, setPlan] = useState({ plan: 'premium', is_legacy: true, premium_hasta: null, mp_status: null })
+  const graciaVencida = !!plan.premium_hasta && new Date(plan.premium_hasta) <= new Date()
+  const isPremium = plan.is_legacy || (plan.plan === 'premium' && !graciaVencida)
   const fetchPlan = async (userId) => {
-    const { data, error } = await supabase.from('user_profiles').select('plan, is_legacy').eq('id', userId).maybeSingle()
+    const { data, error } = await supabase.from('user_profiles').select('plan, is_legacy, premium_hasta, mp_status').eq('id', userId).maybeSingle()
     if (!error && data) setPlan(data)
   }
   const [showUpsell, setShowUpsell] = useState(null) // razón del upsell (string) o null
@@ -3878,11 +3879,15 @@ export default function Dashboard() {
                 <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>
                   {plan.is_legacy
                     ? 'Tenés acceso completo gratis, sin límites.'
-                    : 'Tenés el plan Premium activo: cuentas, análisis con IA y asistente sin límites.'}
+                    : plan.mp_status === 'paused' && plan.premium_hasta
+                      ? `No pudimos cobrar tu tarjeta. Actualizala en Mercado Pago antes del ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')} para no perder el acceso Premium.`
+                      : plan.premium_hasta
+                        ? `Cancelaste la suscripción, pero mantenés Premium hasta el ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')} (el período que ya pagaste).`
+                        : 'Tenés el plan Premium activo: cuentas, análisis con IA y asistente sin límites.'}
                 </p>
                 <div style={styles.modalButtons}>
                   <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Cerrar</button>
-                  {!plan.is_legacy && (
+                  {!plan.is_legacy && plan.mp_status !== 'cancelled' && (
                     <button type="button" style={{ ...styles.saveBtn, backgroundColor: '#e74c3c' }} disabled={suscribiendo} onClick={handleCancelarSuscripcion}>
                       {suscribiendo ? 'Cancelando...' : 'Cancelar suscripción'}
                     </button>

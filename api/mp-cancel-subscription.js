@@ -48,7 +48,7 @@ export default async function handler(req, res) {
 
   const { data: profile } = await supabaseAdmin
     .from('user_profiles')
-    .select('mp_preapproval_id')
+    .select('mp_preapproval_id, mp_next_payment_date')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -71,7 +71,17 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: 'No se pudo cancelar la suscripción' })
   }
 
-  await supabaseAdmin.from('user_profiles').update({ plan: 'free', mp_status: mpData.status }).eq('id', user.id)
+  // Ya pagó este período: mantiene premium hasta la fecha del próximo cobro
+  // que ya conocíamos (guardada en cada notificación 'authorized'), no lo
+  // cortamos al toque.
+  const limite = profile.mp_next_payment_date ? new Date(profile.mp_next_payment_date) : null
+  const premiumHasta = limite && limite > new Date() ? limite.toISOString() : null
 
-  res.status(200).json({ ok: true })
+  await supabaseAdmin.from('user_profiles').update({
+    plan: premiumHasta ? 'premium' : 'free',
+    mp_status: mpData.status,
+    premium_hasta: premiumHasta,
+  }).eq('id', user.id)
+
+  res.status(200).json({ ok: true, premiumHasta })
 }

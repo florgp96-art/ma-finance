@@ -1,14 +1,31 @@
 // Legacy (usuarios de antes del paywall) o plan 'premium' con suscripción de
-// Mercado Pago activa → sin límites. Todo lo demás es plan gratis.
+// Mercado Pago activa → sin límites. `premium_hasta` es el límite de una
+// gracia (cancelación con período ya pagado, o reintento de cobro fallido) —
+// mientras no se cumpla, sigue siendo premium; pasada la fecha, ya no,
+// aunque nadie haya vuelto a tocar la fila (no depende de un cron).
 export async function getUserPlan(supabaseAdmin, userId) {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('user_profiles')
-    .select('plan, is_legacy')
+    .select('plan, is_legacy, premium_hasta, tuvo_premium')
     .eq('id', userId)
     .maybeSingle()
+  if (error) {
+    // Columna inexistente (falta correr la migración) u otro error de
+    // lectura: no bloqueamos a nadie por un problema nuestro.
+    console.error('Error leyendo plan del usuario:', error.message)
+    return { isPremium: true, plan: 'premium', isLegacy: true, tuvoPremium: false }
+  }
   const isLegacy = !!data?.is_legacy
   const plan = data?.plan || 'free'
-  return { isPremium: isLegacy || plan === 'premium', plan, isLegacy }
+  const graciaVencida = !!data?.premium_hasta && new Date(data.premium_hasta) <= new Date()
+  return {
+    isPremium: isLegacy || (plan === 'premium' && !graciaVencida),
+    plan,
+    isLegacy,
+    // Ex-premium que canceló (a diferencia de alguien que nunca pagó): no
+    // tiene la prueba gratis de 1 análisis IA/mes, solo Excel.
+    tuvoPremium: !!data?.tuvo_premium,
+  }
 }
 
 // Cupo de "1 análisis con IA por mes" (PDF o foto de comprobante) del plan

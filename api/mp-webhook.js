@@ -69,15 +69,57 @@ export default async function handler(req, res) {
   const userId = preapproval.external_reference
   if (!userId) return res.status(200).json({ ok: true })
 
-  await supabaseAdmin.from('user_profiles').upsert(
-    {
-      id: userId,
-      mp_preapproval_id: preapproval.id,
-      mp_status: preapproval.status,
-      plan: preapproval.status === 'authorized' ? 'premium' : 'free',
-    },
-    { onConflict: 'id' }
-  )
+  const update = {
+    id: userId,
+    mp_preapproval_id: preapproval.id,
+    mp_status: preapproval.status,
+  }
+
+  if (preapproval.status === 'authorized') {
+    // Cobro al día: sin tope de gracia, y guardamos next_payment_date para
+    // saber hasta cuándo vale el período ya pagado si el día de mañana se
+    // cancela o se pausa por una tarjeta rechazada.
+    update.plan = 'premium'
+    update.premium_hasta = null
+    update.tuvo_premium = true
+    if (preapproval.next_payment_date) update.mp_next_payment_date = preapproval.next_payment_date
+  } else if (preapproval.status === 'paused') {
+    // Mercado Pago pausa la preapproval cuando falla un cobro (ej. tarjeta
+    // vencida) — damos 7 días de margen para actualizar el medio de pago
+    // antes de cortar el acceso. No pisamos premium_hasta si ya estaba
+    // seteado, para no reiniciar la cuenta atrás en cada notificación repetida.
+    const { data: actual } = await supabaseAdmin
+      .from('user_profiles')
+      .select('plan, premium_hasta')
+      .eq('id', userId)
+      .maybeSingle()
+    update.plan = actual?.plan === 'premium' ? 'premium' : 'free'
+    update.premium_hasta = actual?.premium_hasta || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  } else if (preapproval.status === 'cancelled') {
+    // Si se canceló desde el botón de la app, mp-cancel-subscription.js ya
+    // dejó esto resuelto. Esto cubre que se cancele directo desde Mercado
+    // Pago: el límite es el último next_payment_date que conocíamos (el
+    // período que ya se pagó), no el de esta respuesta — una vez cancelada,
+    // Mercado Pago puede devolverlo vacío.
+    const { data: actual } = await supabaseAdmin
+      .from('user_profiles')
+      .select('mp_next_payment_date')
+      .eq('id', userId)
+      .maybeSingle()
+    const limite = actual?.mp_next_payment_date ? new Date(actual.mp_next_payment_date) : null
+    if (limite && limite > new Date()) {
+      update.plan = 'premium'
+      update.premium_hasta = limite.toISOString()
+    } else {
+      update.plan = 'free'
+      update.premium_hasta = null
+    }
+  } else {
+    update.plan = 'free'
+    update.premium_hasta = null
+  }
+
+  await supabaseAdmin.from('user_profiles').upsert(update, { onConflict: 'id' })
 
   res.status(200).json({ ok: true })
 }
