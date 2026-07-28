@@ -1190,7 +1190,7 @@ export default function Dashboard() {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
+            rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda, tipo: r.tipo })),
             categories: categoriasDB,
             subcategories: subcategoriasDB,
             children: childrenDB,
