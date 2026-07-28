@@ -152,7 +152,6 @@ export default function Dashboard() {
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
   const [editAccount, setEditAccount] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [hoveredAccount, setHoveredAccount] = useState(null)
 
   const [showReportBug, setShowReportBug] = useState(false)
   const [reportBugText, setReportBugText] = useState('')
@@ -3351,17 +3350,9 @@ export default function Dashboard() {
                 <div key={acc.id}
                   style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
                   onClick={() => { setSelectedAccount(selectedAccount?.id === acc.id ? null : acc); setSidebarOpen(false) }}
-                  onMouseEnter={() => setHoveredAccount(acc.id)}
-                  onMouseLeave={() => setHoveredAccount(null)}
                 >
                   <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
-                  <p
-                    style={{ ...styles.accountName, textDecoration: hoveredAccount === acc.id ? 'underline' : 'none', textDecorationColor: darkMode ? '#9A8A9A' : '#B0A6AA', textUnderlineOffset: '3px' }}
-                    title="Tocar para editar"
-                    onClick={(e) => { e.stopPropagation(); setEditAccount({ ...acc }) }}
-                  >
-                    {acc.nombre}
-                  </p>
+                  <p style={styles.accountName}>{acc.nombre}</p>
                 </div>
               )
 
@@ -3812,7 +3803,7 @@ export default function Dashboard() {
             body: (
               <>
                 <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
-                <p style={{ margin: 0 }}>Para editarla o borrarla, tocá el nombre de la cuenta en el listado de la izquierda.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá el lápiz ✏️ que aparece arriba, al lado del nombre.</p>
               </>
             )
           },
