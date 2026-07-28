@@ -1745,6 +1745,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <p style={detailValue}>{tx.subcategories?.nombre || '—'}</p>
                   </div>
                 )}
+                {/* Antes esto solo se veía entrando a "Editar" — en cuentas con
+                    hijos cargados, había que abrir el formulario de edición
+                    para saber si un gasto ya estaba asignado a alguno. */}
+                {!esIngresoTx && getChildName(tx) && (
+                  <div>
+                    <p style={detailLabel}>Hijo</p>
+                    <p style={detailValue}>👧 {getChildName(tx)}</p>
+                  </div>
+                )}
                 {!esIngresoTx && (
                   <div>
                     <p style={detailLabel}>Cuotas</p>
