@@ -47,6 +47,19 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Suscripciones no disponibles todavía' })
   }
 
+  // Sin este chequeo, abandonar un checkout y tocar "Suscribirme" de nuevo
+  // crea una segunda preapproval en Mercado Pago y pisa la referencia a la
+  // primera en nuestra base — si esa primera se termina autorizando, queda
+  // cobrando todos los meses sin que la app pueda verla ni cancelarla.
+  const { data: existente } = await supabaseAdmin
+    .from('user_profiles')
+    .select('mp_status')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (existente?.mp_status === 'authorized' || existente?.mp_status === 'pending') {
+    return res.status(409).json({ error: 'Ya tenés una suscripción activa o pendiente de confirmación' })
+  }
+
   const precioArs = Number(process.env.MERCADOPAGO_PRICE_ARS || 3999)
   const origin = req.headers.origin || `https://${req.headers.host}`
 
