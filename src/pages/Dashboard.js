@@ -307,6 +307,11 @@ export default function Dashboard() {
   const [excelPreview, setExcelPreview] = useState(null)
   const updateExcelPreviewRow = (index, changes) =>
     setExcelPreview(prev => prev.map((r, i) => i === index ? { ...r, ...changes } : r))
+  // Filas ya parseadas de un extracto bancario (Movimiento + Débito/Crédito),
+  // esperando que el usuario elija a qué cuenta real corresponden — sin esto,
+  // resolveAccount (en handleImportarExcel) las mandaba todas a "Efectivo" por
+  // default, ya que este formato no trae MODO_PAGO propio.
+  const [excelBankPendingRows, setExcelBankPendingRows] = useState(null)
   const [excelDupReview, setExcelDupReview] = useState(null)
   const [excelDupSelections, setExcelDupSelections] = useState(new Set())
   const [excelDragOver, setExcelDragOver] = useState(false)
@@ -1057,7 +1062,7 @@ export default function Dashboard() {
             return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo, cuota_numero, cuotas_total }
           })
           .filter(r => r.fecha && r.monto > 0)
-        resolve(parsed)
+        resolve({ rows: parsed, esFormatoBanco })
       } catch (err) { reject(err) }
     }
     reader.onerror = reject
@@ -1069,13 +1074,35 @@ export default function Dashboard() {
     setLoadingExcel(true)
     setExcelBackgroundMode(false)
     try {
-      const rows = await parsearExcel(excelFile)
+      const { rows, esFormatoBanco } = await parsearExcel(excelFile)
       if (rows.length === 0) {
         showToast('No se encontraron filas válidas en la hoja GASTOS.', 'error')
         setLoadingExcel(false)
         return
       }
+      if (esFormatoBanco) {
+        // Un extracto bancario es siempre de UNA sola cuenta real — hay que
+        // preguntar cuál antes de seguir (ver comentario de excelBankPendingRows).
+        setExcelBankPendingRows(rows)
+        setLoadingExcel(false)
+        return
+      }
+      await clasificarYPrevisualizarExcel(rows)
+    } catch (err) {
+      showToast('Error procesando el archivo: ' + err.message, 'error')
+      setLoadingExcel(false)
+    }
+  }
 
+  const handleElegirCuentaExtractoBanco = (nombreCuenta) => {
+    const rows = (excelBankPendingRows || []).map(r => ({ ...r, modo_pago: nombreCuenta }))
+    setExcelBankPendingRows(null)
+    setLoadingExcel(true)
+    clasificarYPrevisualizarExcel(rows)
+  }
+
+  const clasificarYPrevisualizarExcel = async (rows) => {
+    try {
       // Pre-clasificar usando historial de transacciones ya identificadas (aprende del pasado)
       const { data: { user: userForHistory } } = await supabase.auth.getUser()
       if (userForHistory) {
@@ -4528,7 +4555,28 @@ export default function Dashboard() {
       {showExcel && !excelDupReview && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: excelPreview ? 'min(96vw, 980px)' : '600px' }}>
-            {excelPreview === null ? (
+            {excelPreview === null && excelBankPendingRows ? (
+              <>
+                <h3 style={styles.modalTitle}>¿A qué cuenta pertenece este extracto? 🏦</h3>
+                <p style={{ fontSize: '13px', color: '#6e6e73', marginBottom: '16px' }}>
+                  Detectamos un extracto bancario ({excelBankPendingRows.length} movimientos) — elegí a qué cuenta tuya corresponde, para no cargarlo por error en otra.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
+                  {accounts.filter(a => a.tipo !== 'ingreso').map(acc => (
+                    <button key={acc.id} style={styles.selectAccountBtn} onClick={() => handleElegirCuentaExtractoBanco(acc.nombre)}>
+                      {acc.tipo === 'credito' ? '💳' : acc.tipo === 'efectivo' ? '💵' : '🏦'} {acc.nombre}
+                    </button>
+                  ))}
+                  <button style={{ ...styles.selectAccountBtn, ...styles.selectAccountBtnNew }}
+                    onClick={() => { setShowExcel(false); setExcelBankPendingRows(null); setExcelFile(null); handleClickCrearCuenta() }}>
+                    + Crear nueva cuenta
+                  </button>
+                </div>
+                <div style={styles.modalButtons}>
+                  <button style={styles.cancelBtn} onClick={() => { setExcelBankPendingRows(null); setExcelFile(null) }}>← Atrás</button>
+                </div>
+              </>
+            ) : excelPreview === null ? (
               <>
                 <h3 style={styles.modalTitle}>Importar Excel 📊</h3>
                 {loadingExcel ? (() => {
