@@ -85,14 +85,33 @@ const addMonths = (fechaISO, n) => {
 // página es una consulta separada con su propio LIMIT/OFFSET.
 const fetchAllTxPages = async (buildQuery) => {
   const PAGE = 1000
-  let all = []
-  let page = 0
+  const first = await buildQuery().range(0, PAGE - 1)
+  const firstData = first.data || []
+  if (firstData.length < PAGE) return firstData
+  // Hay más de una página. En vez de pedir la 2da, 3ra, etc. una por una
+  // (esperando el round-trip de cada una antes de pedir la siguiente), se
+  // piden de a varias en paralelo por tanda — con historiales largos
+  // (miles de movimientos, algo común con años de uso) esto baja bastante
+  // el tiempo total de carga, sobre todo en conexiones de celular donde la
+  // latencia por request pesa más que el volumen de datos en sí.
+  let all = firstData
+  let page = 1
+  const BATCH = 4
   while (true) {
-    const { data } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
-    if (!data || data.length === 0) break
-    all = all.concat(data)
-    if (data.length < PAGE) break
-    page++
+    const pageStart = page
+    const batchPages = Array.from({ length: BATCH }, (_, i) => pageStart + i)
+    const results = await Promise.all(
+      batchPages.map(p => buildQuery().range(p * PAGE, (p + 1) * PAGE - 1))
+    )
+    let stop = false
+    for (const r of results) {
+      const data = r.data || []
+      if (data.length === 0) { stop = true; break }
+      all = all.concat(data)
+      if (data.length < PAGE) { stop = true; break }
+    }
+    if (stop) break
+    page += BATCH
   }
   return all
 }
@@ -115,9 +134,6 @@ export default function Dashboard() {
   const [showTutorial, setShowTutorial] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(0)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
-  }, [])
 
   // Plan gratis/premium — determina límites (cuentas, análisis con IA) y si
   // se puede usar el asistente. `is_legacy` son usuarios de antes del
@@ -470,12 +486,16 @@ export default function Dashboard() {
   useEffect(() => {
     // No leer localStorage acá antes de saber qué usuario está logueado — ver
     // el comentario sobre la filtración entre cuentas del widget de Ahorros.
+    // Depende de currentUserId (ya resuelto una sola vez en el efecto
+    // principal de mount) en vez de pedir su propio supabase.auth.getUser() —
+    // uno menos de los tantos round-trips de auth que se disparaban juntos
+    // al abrir la app.
+    if (!currentUserId) return
     setVencPagados(new Set())
     const mes = new Date().toISOString().slice(0, 7)
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
+    ;(async () => {
       const { data: row } = await supabase.from('user_rules').select('nombre_asignado')
-        .eq('user_id', user.id).eq('texto_original', '__venc_pagados__').maybeSingle()
+        .eq('user_id', currentUserId).eq('texto_original', '__venc_pagados__').maybeSingle()
       if (row?.nombre_asignado) {
         try {
           const parsed = JSON.parse(row.nombre_asignado)
@@ -483,11 +503,11 @@ export default function Dashboard() {
         } catch {}
       }
       try {
-        const stored = localStorage.getItem(`venc_pagados_${user.id}_${mes}`)
+        const stored = localStorage.getItem(`venc_pagados_${currentUserId}_${mes}`)
         if (stored) setVencPagados(new Set(JSON.parse(stored)))
       } catch {}
-    })
-  }, [])
+    })()
+  }, [currentUserId])
 
   // No vaciar accountTransactions acá: alimenta los widgets del costado
   // (Evolución, Cuotas pendientes), que deben seguir mostrando datos de
@@ -511,10 +531,18 @@ export default function Dashboard() {
   }, [dolarRates])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchRepartoRules(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
+    // exchange_rates y dolarapi.com no dependen del usuario logueado — se
+    // piden ya mismo en paralelo, sin esperar a resolver el user.
+    fetchExchangeRates(); fetchDolarRates()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        // Un solo getUser() para todo el mount, en vez de que cada fetchXxx
+        // pida el suyo por separado (eran ~6 llamadas de red concurrentes a
+        // la API de auth, apenas para saber quién sos — bastante peso extra
+        // en una conexión de celular).
+        fetchAccounts(user.id); fetchCategorias(user.id); fetchChildren(user.id); fetchUserAliases(user.id); fetchRepartoRules(user.id); fetchCustomIcons(user.id)
         setCurrentUserId(user.id)
+        setUserEmail(user.email ?? null)
         fetchPlan(user.id)
         // Limpiar las claves viejas sin scope de usuario (bug de filtración
         // entre cuentas en dispositivos compartidos) para que no queden dando
@@ -677,10 +705,10 @@ export default function Dashboard() {
     return () => { clearInterval(msgInterval.current); clearInterval(timerInterval.current) }
   }, [step])
 
-  const fetchCategorias = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden')
+  const fetchCategorias = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},es_sistema.eq.true`).order('orden')
     const catIds = (cats || []).map(c => c.id)
     const { data: subcats } = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
@@ -689,37 +717,37 @@ export default function Dashboard() {
     setSubcategoriasDB(subcats || [])
   }
 
-  const fetchChildren = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('children').select('id, nombre').eq('user_id', user.id).order('nombre')
+  const fetchChildren = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('children').select('id, nombre').eq('user_id', uid).order('nombre')
     setChildrenDB(data || [])
   }
 
-  const fetchUserAliases = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
+  const fetchUserAliases = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('user_aliases').select('*').eq('user_id', uid).order('alias')
     setUserAliases(data || [])
   }
 
-  const fetchRepartoRules = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const fetchRepartoRules = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
     const { data } = await supabase.from('reparto_rules')
       .select('*, categories(nombre), subcategories(nombre)')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .order('created_at', { ascending: false })
     setRepartoRules(data || [])
   }
 
-  const fetchCustomIcons = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const fetchCustomIcons = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
     const [{ data: catIcons }, { data: childIcons }, { data: ruleIcons }] = await Promise.all([
-      supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id),
-      supabase.from('children').select('nombre, icono').eq('user_id', user.id).not('icono', 'is', null),
-      supabase.from('user_rules').select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__icon__%')
+      supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', uid),
+      supabase.from('children').select('nombre, icono').eq('user_id', uid).not('icono', 'is', null),
+      supabase.from('user_rules').select('texto_original, nombre_asignado').eq('user_id', uid).like('texto_original', '__icon__%')
     ])
     const icons = {}
     if (catIcons) catIcons.filter(r => r.categories?.nombre).forEach(r => { icons[r.categories.nombre] = r.icono })
@@ -849,10 +877,17 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  const fetchAccounts = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
+  // userId opcional: en el mount inicial ya tenemos el user resuelto una sola
+  // vez más arriba y se lo pasamos directo acá, para no hacer 6+ llamadas en
+  // paralelo a supabase.auth.getUser() (cada una un round-trip de red contra
+  // el servidor de auth) apenas se abre la app — eso es buena parte de por
+  // qué tardaba tanto en mobile. El resto de los call sites (después de
+  // crear/editar/borrar algo) no pasan userId y siguen andando igual que
+  // antes, resolviendo el user acá adentro.
+  const fetchAccounts = useCallback(async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('accounts').select('*').eq('user_id', uid)
     setAccounts(data || [])
     if (data && data.length > 0) {
       setSelectedAccount(prev => prev === null ? 'all' : prev)
