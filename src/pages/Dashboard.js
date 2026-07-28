@@ -995,8 +995,22 @@ export default function Dashboard() {
           MONTOARS: 'MONTO_ARS', MONTOUSD: 'MONTO_USD',
           CATEGORIA: 'CATEGORIA', SUBCATEGORIA: 'SUBCATEGORIA',
           HIJO: 'HIJO', MODOPAGO: 'MODO_PAGO',
+          MOVIMIENTO: 'MOVIMIENTO', DETALLE: 'MOVIMIENTO', CONCEPTO: 'MOVIMIENTO',
+          DEBITO: 'DEBITO', CREDITO: 'CREDITO',
         }
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: null }).map(row => {
+        // Un extracto bancario exportado a Excel (ej. Banco Galicia) trae varias
+        // filas de encabezado ("Banco Galicia - Caja Ahorro Pesos", "Nro. de
+        // Cuenta: ...", etc.) ANTES de la fila real de columnas — sheet_to_json
+        // sin "range" toma la fila 1 como encabezado a ciegas, así que esas
+        // filas de metadata se leían como si fueran los nombres de columna y
+        // toda la tabla real quedaba mal interpretada (0 filas válidas). Se
+        // busca la fila que realmente tiene "FECHA" como columna y se arranca
+        // a leer desde ahí.
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
+        const headerRowIdx = aoa.findIndex(r =>
+          Array.isArray(r) && r.some(c => typeof c === 'string' && normKey(c) === 'FECHA')
+        )
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: null, range: headerRowIdx > 0 ? headerRowIdx : 0 }).map(row => {
           const norm = {}
           Object.keys(row).forEach(k => { norm[HEADER_ALIASES[normKey(k)] || k.trim().toUpperCase()] = row[k] })
           return norm
@@ -1008,10 +1022,24 @@ export default function Dashboard() {
           else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
           return parseFloat(s) || 0
         }
+        // Extracto de banco (Movimiento + Débito/Crédito en vez de la plantilla
+        // propia con Descripción + Monto): se arma la misma forma interna de
+        // fila que ya consume el resto del flujo (clasificación automática por
+        // historial + IA, revisión, importación), así no hace falta que el
+        // usuario reordene nada a mano.
+        const esFormatoBanco = rows.some(row => row && row['MOVIMIENTO'] != null && (row['DEBITO'] != null || row['CREDITO'] != null))
         const parsed = rows
-          .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
+          .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD'] || row['MOVIMIENTO']))
           .map(row => {
             const fechaOriginal = parseExcelDate(row['FECHA'])
+            if (esFormatoBanco) {
+              const debito = toNum(row['DEBITO'])
+              const credito = toNum(row['CREDITO'])
+              const descripcion = String(row['MOVIMIENTO'] || '').replace(/\s*\n\s*/g, ' - ').replace(/\s{2,}/g, ' ').trim().replace(/\s*-\s*$/, '')
+              const tipo = debito !== 0 ? 'gasto' : 'ingreso'
+              const monto = Math.abs(debito !== 0 ? debito : credito)
+              return { fecha: fechaOriginal, monto, moneda: 'ARS', monto_ars: monto, monto_usd: 0, descripcion, notas: descripcion, modo_pago: '', cat: null, subcat: null, hijo: null, tipo, cuota_numero: 1, cuotas_total: 1 }
+            }
             const monto_ars = toNum(row['MONTO_ARS'])
             const monto_usd = toNum(row['MONTO_USD'])
             const descripcion = String(row['DESCRIPCION'] || '').trim()
