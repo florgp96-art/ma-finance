@@ -2864,7 +2864,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={styles.stmtHistory}>
           <div
             onClick={() => setStmtCollapsed(c => !c)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
+            style={{ display: 'inline-flex', width: 'fit-content', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
             <h3 style={{ ...styles.stmtHistoryTitle, margin: 0 }}>
               Extractos cargados ({stmtsConTx.length})
             </h3>
