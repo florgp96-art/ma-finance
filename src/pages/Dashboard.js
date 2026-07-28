@@ -2697,7 +2697,10 @@ export default function Dashboard() {
 
               return (
                 <div style={{ ...styles.savingsPanel }}>
-                  <h3 style={styles.savingsPanelTitle}>Cuotas pendientes</h3>
+                  <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', alignItems: 'center' }}>
+                    Cuotas pendientes
+                    <InfoTooltip darkMode={darkMode} text="Es una proyección de lo que falta pagar de tus compras en cuotas — no son movimientos ya cargados. Cada mes tenés que cargar el resumen real de la tarjeta para que ese pago quede registrado; no lo generamos solos." />
+                  </h3>
                   {periods.map(([period, data], pi) => {
                     const expandido = cuotasPendientesExpandido === period
                     return (
