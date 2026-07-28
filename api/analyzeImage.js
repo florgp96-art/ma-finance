@@ -43,12 +43,21 @@ export default async function handler(req, res) {
   const { imageBase64, mediaType, cardName, userRules } = req.body
 
   let esPremium = true
+  let tuvoPremium = false
   try {
-    esPremium = (await getUserPlan(supabaseAdmin, user.id)).isPremium
+    const plan = await getUserPlan(supabaseAdmin, user.id)
+    esPremium = plan.isPremium
+    tuvoPremium = plan.tuvoPremium
   } catch (e) {
     console.error('Error leyendo plan del usuario:', e.message)
   }
   if (!esPremium) {
+    if (tuvoPremium) {
+      return res.status(402).json({
+        error: 'Tu suscripción Premium terminó. Podés seguir cargando por Excel sin límite, o reactivar Premium para volver a análisis con IA.',
+        code: 'EX_PREMIUM_NO_IA',
+      })
+    }
     let cupoUsado = false
     try {
       cupoUsado = await hasUsedMonthlyAiQuota(supabaseAdmin, user.id)

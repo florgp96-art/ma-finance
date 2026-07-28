@@ -81,6 +81,7 @@ export default async function handler(req, res) {
     // cancela o se pausa por una tarjeta rechazada.
     update.plan = 'premium'
     update.premium_hasta = null
+    update.tuvo_premium = true
     if (preapproval.next_payment_date) update.mp_next_payment_date = preapproval.next_payment_date
   } else if (preapproval.status === 'paused') {
     // Mercado Pago pausa la preapproval cuando falla un cobro (ej. tarjeta

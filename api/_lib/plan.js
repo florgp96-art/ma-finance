@@ -6,19 +6,26 @@
 export async function getUserPlan(supabaseAdmin, userId) {
   const { data, error } = await supabaseAdmin
     .from('user_profiles')
-    .select('plan, is_legacy, premium_hasta')
+    .select('plan, is_legacy, premium_hasta, tuvo_premium')
     .eq('id', userId)
     .maybeSingle()
   if (error) {
-    // Columna `premium_hasta` inexistente (falta correr la migración) u otro
-    // error de lectura: no bloqueamos a nadie por un problema nuestro.
+    // Columna inexistente (falta correr la migración) u otro error de
+    // lectura: no bloqueamos a nadie por un problema nuestro.
     console.error('Error leyendo plan del usuario:', error.message)
-    return { isPremium: true, plan: 'premium', isLegacy: true }
+    return { isPremium: true, plan: 'premium', isLegacy: true, tuvoPremium: false }
   }
   const isLegacy = !!data?.is_legacy
   const plan = data?.plan || 'free'
   const graciaVencida = !!data?.premium_hasta && new Date(data.premium_hasta) <= new Date()
-  return { isPremium: isLegacy || (plan === 'premium' && !graciaVencida), plan, isLegacy }
+  return {
+    isPremium: isLegacy || (plan === 'premium' && !graciaVencida),
+    plan,
+    isLegacy,
+    // Ex-premium que canceló (a diferencia de alguien que nunca pagó): no
+    // tiene la prueba gratis de 1 análisis IA/mes, solo Excel.
+    tuvoPremium: !!data?.tuvo_premium,
+  }
 }
 
 // Cupo de "1 análisis con IA por mes" (PDF o foto de comprobante) del plan
