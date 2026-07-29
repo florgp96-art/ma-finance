@@ -379,9 +379,15 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return pendGasto + pendIngreso
     }
     if (alias.tipo === 'neutro') {
+      // Un movimiento neutro (transferencia entre cuentas propias, venta de
+      // bonos/títulos) no es ni gasto ni ingreso, así que la regla tiene que
+      // poder convertir los DOS. Antes esto miraba solo tipo='gasto': una
+      // regla sobre algo que se cargó como ingreso (ej. "VENTA DE TITULOS /
+      // AL30" en la cuenta Ingresos) contaba 0 pendientes y no cambiaba nada,
+      // aunque los movimientos siguieran ahí sin identificar.
       const { data: matches } = await supabase.from('transactions')
         .select('id')
-        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .eq('user_id', user.id).neq('tipo', 'neutro')
         .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
       return matches?.length || 0
     }
@@ -434,9 +440,11 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       return (matchesGasto?.length || 0) + totalIngreso
     }
     if (alias.tipo === 'neutro') {
+      // Mismo criterio que countPendingForAlias: convierte gastos E ingresos
+      // (un neutro no es ninguno de los dos), no solo gastos.
       const { data: matches } = await supabase.from('transactions')
         .select('id')
-        .eq('user_id', user.id).eq('tipo', 'gasto')
+        .eq('user_id', user.id).neq('tipo', 'neutro')
         .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
       if (!matches || matches.length === 0) return 0
       await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).in('id', matches.map(m => m.id))
@@ -478,8 +486,12 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleApplyAllAliases = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo')
-    if (aplicables.length === 0) { showToast('No hay reglas de categoría o hijo para aplicar.', 'error'); return }
+    // Tiene que incluir los mismos tipos que cuenta countPendingForAlias
+    // (categoría, hijo y neutro): al excluir 'neutro' acá, el botón podía
+    // decir "Aplicar 12 pendientes", no aplicar ninguno y avisar que no había
+    // nada que modificar — mientras esos 12 seguían sin identificar.
+    const aplicables = (userAliases || []).filter(a => a.tipo === 'categoria' || a.tipo === 'hijo' || a.tipo === 'neutro')
+    if (aplicables.length === 0) { showToast('No hay reglas de categoría, hijo o neutro para aplicar.', 'error'); return }
     showToast('Aplicando reglas a movimientos existentes...')
     let total = 0
     for (const a of aplicables) {
