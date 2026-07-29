@@ -1124,6 +1124,19 @@ export default function Dashboard() {
     handleElegirCuentaExtractoBanco(account.nombre)
   }
 
+  // Único lugar que sabe matchear los alias del usuario (categoría, hijo,
+  // neutro, split) contra una descripción — lo usan tanto la importación por
+  // Excel (clasificarYPrevisualizarExcel) como la de PDF/foto
+  // (aplicarReglasYAlias) para que un tipo de alias nuevo se aplique en los
+  // dos flujos sin tener que acordarse de tocar dos lugares distintos (así
+  // quedó "neutro" aplicándose en uno y no en el otro).
+  const buscarAliases = (descUpper, aliasesList) => ({
+    categoria: (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias)),
+    hijo: (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias)),
+    neutro: (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias)),
+    split: (aliasesList || []).find(a => a.tipo === 'split' && descUpper.includes(a.alias)),
+  })
+
   const clasificarYPrevisualizarExcel = async (rows) => {
     try {
       // Pre-clasificar usando historial de transacciones ya identificadas (aprende del pasado)
@@ -1153,14 +1166,8 @@ export default function Dashboard() {
         })
       }
 
-      // A diferencia de aplicarReglasYAlias (flujo de PDF/foto), acá faltaba
-      // chequear los alias de tipo "neutro" — una fila cuya descripción
-      // matcheaba un alias neutro nunca recibía tipo:'neutro' y quedaba
-      // colgada en "Sin identificar" en vez de marcarse como resuelta.
-      const esNeutroPorAlias = (descripcion) => {
-        const desc = (descripcion || '').toUpperCase()
-        return (userAliases || []).some(a => a.tipo === 'neutro' && desc.includes(a.alias))
-      }
+      const esNeutroPorAlias = (descripcion) =>
+        !!buscarAliases((descripcion || '').toUpperCase(), userAliases).neutro
 
       const rowsNeedingClassification = rows.filter(r => !r.cat || r.cat === 'A Identificar')
       let enriched
@@ -1215,7 +1222,7 @@ export default function Dashboard() {
 
         const applyAliases = (cat, subcat, descripcion) => {
           const desc = (descripcion || '').toUpperCase()
-          const match = (userAliases || []).find(a => a.tipo === 'categoria' && desc.includes(a.alias))
+          const match = buscarAliases(desc, userAliases).categoria
           if (match) return { cat: match.valor, subcat: (cat || '').toLowerCase() === (match.valor || '').toLowerCase() ? subcat : null }
           // Personal siempre sin subcategoria — evita inventar "Peluqueria", "Varios", etc.
           if ((cat || '').toLowerCase() === 'personal') return { cat, subcat: null }
@@ -1727,25 +1734,20 @@ export default function Dashboard() {
       // categoría, pero los alias de hijo/neutro aplican SIEMPRE: la regla
       // aprendida no guarda hijo, y antes lo pisaba (un gasto con regla de
       // categoría nunca recibía su hijo/a por alias).
+      const { categoria: catAlias, hijo: hijoAlias, neutro: neutroAlias, split: splitAlias } = buscarAliases(descUpper, aliasesList)
       if (ruleMatch) {
         updated.categoria_sugerida = ruleMatch.categoria
         updated.subcategoria_sugerida = ruleMatch.subcategoria
-      } else {
-        const catAlias = (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias))
-        if (catAlias) {
-          const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
-          updated.categoria_sugerida = cat
-          updated.subcategoria_sugerida = subcat || null
-        }
+      } else if (catAlias) {
+        const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
+        updated.categoria_sugerida = cat
+        updated.subcategoria_sugerida = subcat || null
       }
-      const hijoAlias = (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias))
-      const neutroAlias = (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias))
       if (hijoAlias) updated.hijo = hijoAlias.valor
       if (neutroAlias) updated.tipo = 'neutro'
       // Regla "dividir con hijo/a" (ej. OSDE → 50% Amelia): el gasto se parte
       // en dos movimientos reales, así gráficos, totales y detalle por hijo
       // cierran solos sin lógica especial en ningún otro lado.
-      const splitAlias = (aliasesList || []).find(a => a.tipo === 'split' && descUpper.includes(a.alias))
       const montoNum = Number(updated.monto) || 0
       if (splitAlias && updated.tipo !== 'ingreso' && montoNum > 0) {
         const [hijoNombre, pctStr] = String(splitAlias.valor || '').split(':')
