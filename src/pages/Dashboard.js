@@ -2884,6 +2884,19 @@ export default function Dashboard() {
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
+              // Este widget vive en una columna angosta: con varias series
+              // elegidas, el tooltip de recharts se hacía más ancho que la card
+              // y quedaba cortado (los montos no se leían completos). Se le da
+              // un ancho máximo con salto de línea, y NO se lo deja salir del
+              // área del gráfico — así recharts lo reubica solo (lo pasa al
+              // otro lado del punto) cuando el punto está pegado al borde,
+              // en vez de dibujarlo fuera de la pantalla.
+              const tooltipAngosto = {
+                wrapperStyle: { maxWidth: '170px', zIndex: 20 },
+                contentStyle: { fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '10px', padding: '6px 8px', maxWidth: '170px', whiteSpace: 'normal', lineHeight: 1.35 },
+                labelStyle: { color: txtClr, fontWeight: '600', marginBottom: '2px' },
+                itemStyle: { color: txtClr, whiteSpace: 'normal', padding: '1px 0' },
+              }
               // La selección nunca queda vacía: si lo único elegido es lo que se
               // está por sacar, el click no hace nada — siempre hay algo para
               // mostrar (el default es "Total", igual que el viejo gráfico de
@@ -3003,12 +3016,9 @@ export default function Dashboard() {
                         <XAxis dataKey="mes" tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} />
                         <YAxis tickFormatter={abrev} tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} width={40} />
                         <Tooltip
+                          {...tooltipAngosto}
                           formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
-                          contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', maxWidth: '220px', whiteSpace: 'normal' }}
-                          labelStyle={{ color: txtClr, fontWeight: '600' }}
-                          itemStyle={{ color: txtClr, whiteSpace: 'normal' }}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-                          allowEscapeViewBox={{ x: true, y: true }}
                         />
                         <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
@@ -3025,12 +3035,9 @@ export default function Dashboard() {
                           <XAxis dataKey="mes" tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} />
                           <YAxis tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} tickFormatter={v => `$${new Intl.NumberFormat('es-AR', {maximumFractionDigits: 0}).format(v)}`} width={60} />
                           <Tooltip
+                            {...tooltipAngosto}
                             formatter={(value, key) => [`$ ${formatMontoFull(value)}`, seleccion.find(s => s.key === key)?.label || key]}
                             labelFormatter={(l) => l}
-                            contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', maxWidth: '220px', whiteSpace: 'normal' }}
-                            labelStyle={{ color: txtClr, fontWeight: '600' }}
-                            itemStyle={{ color: txtClr, whiteSpace: 'normal' }}
-                            allowEscapeViewBox={{ x: true, y: true }}
                           />
                           {seleccion.map(s => (
                             <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2.5, fill: s.color }} />
