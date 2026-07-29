@@ -2948,10 +2948,11 @@ export default function Dashboard() {
                         <YAxis tickFormatter={abrev} tick={{ fontSize: 9, fill: txtClr, fontFamily: '"Montserrat", sans-serif' }} axisLine={false} tickLine={false} width={40} />
                         <Tooltip
                           formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
-                          contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
+                          contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', maxWidth: '220px', whiteSpace: 'normal' }}
                           labelStyle={{ color: txtClr, fontWeight: '600' }}
-                          itemStyle={{ color: txtClr }}
+                          itemStyle={{ color: txtClr, whiteSpace: 'normal' }}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+                          allowEscapeViewBox={{ x: true, y: true }}
                         />
                         <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
@@ -2970,9 +2971,10 @@ export default function Dashboard() {
                           <Tooltip
                             formatter={(value, key) => [`$ ${formatMontoFull(value)}`, seleccion.find(s => s.key === key)?.label || key]}
                             labelFormatter={(l) => l}
-                            contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px' }}
+                            contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: bgClr, border: `1px solid ${borderClr}`, fontSize: '11px', maxWidth: '220px', whiteSpace: 'normal' }}
                             labelStyle={{ color: txtClr, fontWeight: '600' }}
-                            itemStyle={{ color: txtClr }}
+                            itemStyle={{ color: txtClr, whiteSpace: 'normal' }}
+                            allowEscapeViewBox={{ x: true, y: true }}
                           />
                           {seleccion.map(s => (
                             <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 2.5, fill: s.color }} />
