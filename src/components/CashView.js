@@ -355,7 +355,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             )
           })
         })}
-        {grupoRowExpandible('alquiler', '🏠', 'Alquiler / Expensas', actual.alquiler)}
+        {grupoRowExpandible('alquiler', '🏠', 'Vivienda', actual.alquiler)}
         {grupoRowExpandible('debitos', '🏦', 'Débitos automáticos', actual.debitosAutomaticos)}
         {grupoRowExpandible('transferencias', '🔁', 'Transferencias', actual.transferencias)}
         {grupoRowExpandible('suscripciones', '📱', 'Suscripciones', actual.suscripciones)}
