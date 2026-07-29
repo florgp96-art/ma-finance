@@ -2925,17 +2925,35 @@ export default function Dashboard() {
               // siempre de INGRESO — el desplegable solo ofrece las que aplican al
               // switch actual, para no mezclar opciones que no tienen sentido del
               // otro lado. "Por cuenta" sí queda disponible en los dos modos.
+              // Las subcategorías van agrupadas DEBAJO de su categoría y con
+              // sangría, mostrando solo su propio nombre: antes iban todas
+              // juntas en otro bloque y cada una repetía el nombre de la
+              // categoría ("Casa › Gas", "Casa › Luz", "Casa › Expensas"...),
+              // lo que hacía la lista larga y difícil de barrer con la vista.
+              const opcionesGasto = [
+                ...categoriasConTx.flatMap(c => [
+                  { key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) },
+                  ...subcatsConTx
+                    .filter(s => s.categoria === c)
+                    .map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: subcategoria, sangria: true })),
+                ]),
+                // Una subcategoría cuya categoría no quedó en la lista (no
+                // debería pasar, salen del mismo cálculo) igual se ofrece, con
+                // el nombre completo para que no quede colgada sin contexto.
+                ...subcatsConTx
+                  .filter(s => !categoriasConTx.includes(s.categoria))
+                  .map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
+                ...(hijosConTx.length > 0 ? [{ separador: true }] : []),
+                ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
+              ]
               const opciones = [
                 { key: 'total', label: 'Total', icon: '📊' },
                 ...(evolucionTipo === 'gasto'
-                  ? [
-                      ...categoriasConTx.map(c => ({ key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) })),
-                      ...subcatsConTx.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: `${categoria} › ${subcategoria}`, icon: '·' })),
-                      ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
-                    ]
+                  ? opcionesGasto
                   : ingresosConTx.map(t => ({ key: `ingreso:${t}`, label: t, icon: resolveCategoryIcon(t, { customIcons, isIncome: true }) }))),
                 // Por cuenta — disponible en gastos e ingresos por igual, para no
                 // perder esa forma de mirar la evolución al elegir otras.
+                ...(cuentasConTx.length > 0 ? [{ separador: true }] : []),
                 ...cuentasConTx.map(c => ({ key: `cuenta:${c}`, label: c, icon: '💳' })),
               ]
               // Con solo "Total" elegido, barras (se lee mejor un total por mes) con
@@ -2977,15 +2995,16 @@ export default function Dashboard() {
                     {evolDropdownOpen && (
                       <div className="hide-scroll"
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
-                        {opciones.map(op => {
+                        {opciones.map((op, i) => {
+                          if (op.separador) return <div key={`sep-${i}`} style={{ borderTop: `1px solid ${borderClr}`, margin: '4px 0' }} />
                           const activo = sidebarCatEvol.includes(op.key)
                           return (
                             <button key={op.key} type="button" onClick={() => toggleClave(op.key)}
-                              style={{ width: '100%', textAlign: 'left', padding: '7px 12px', background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}>
+                              style={{ width: '100%', textAlign: 'left', padding: op.sangria ? '5px 12px 5px 30px' : '7px 12px', background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: op.sangria ? '11px' : '12px', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}>
                               <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : borderClr}`, background: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
                                 {activo ? '✓' : ''}
                               </span>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.icon} {op.label}</span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.icon ? `${op.icon} ` : ''}{op.label}</span>
                             </button>
                           )
                         })}
