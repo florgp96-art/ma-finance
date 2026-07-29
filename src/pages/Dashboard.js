@@ -1153,16 +1153,29 @@ export default function Dashboard() {
         })
       }
 
+      // A diferencia de aplicarReglasYAlias (flujo de PDF/foto), acá faltaba
+      // chequear los alias de tipo "neutro" — una fila cuya descripción
+      // matcheaba un alias neutro nunca recibía tipo:'neutro' y quedaba
+      // colgada en "Sin identificar" en vez de marcarse como resuelta.
+      const esNeutroPorAlias = (descripcion) => {
+        const desc = (descripcion || '').toUpperCase()
+        return (userAliases || []).some(a => a.tipo === 'neutro' && desc.includes(a.alias))
+      }
+
       const rowsNeedingClassification = rows.filter(r => !r.cat || r.cat === 'A Identificar')
       let enriched
 
       if (rowsNeedingClassification.length === 0) {
         // Excel ya tiene todas las categorías — no llamar a Claude
-        enriched = rows.map(r => ({
-          ...r,
-          nombre: r.descripcion,
-          estado: r.tipo === 'neutro' || (r.cat && r.cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
-        }))
+        enriched = rows.map(r => {
+          const tipo = esNeutroPorAlias(r.descripcion || r.notas) ? 'neutro' : r.tipo
+          return {
+            ...r,
+            tipo,
+            nombre: r.descripcion,
+            estado: tipo === 'neutro' || (r.cat && r.cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
+          }
+        })
       } else {
         const totalBatches = Math.ceil(rowsNeedingClassification.length / 30)
         const timerMax = Math.max(20, Math.min(120, totalBatches * 5))
@@ -1211,20 +1224,22 @@ export default function Dashboard() {
 
         let clIdx = 0
         enriched = rows.map(r => {
+          const tipo = esNeutroPorAlias(r.descripcion || r.notas) ? 'neutro' : r.tipo
           if (!r.cat || r.cat === 'A Identificar') {
             const cl = Array.isArray(classifications) ? classifications[clIdx++] : null
             const { cat, subcat } = applyAliases(cl?.categoria || null, cl?.subcategoria || null, r.descripcion || r.notas)
             return {
               ...r,
+              tipo,
               cat, subcat,
               hijo: r.hijo || cl?.hijo || null,
               nombre: cl?.nombre || r.descripcion,
-              estado: r.tipo === 'neutro' || (cat && cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
+              estado: tipo === 'neutro' || (cat && cat !== 'A Identificar') ? 'identificado' : 'a_identificar'
             }
           }
           // Filas con cat del Excel: aplicar aliases igual
           const { cat, subcat } = applyAliases(r.cat, r.subcat, r.descripcion || r.notas)
-          return { ...r, cat, subcat, nombre: r.descripcion, estado: 'identificado' }
+          return { ...r, tipo, cat, subcat, nombre: r.descripcion, estado: 'identificado' }
         })
       }
       setExcelPreview(enriched)
