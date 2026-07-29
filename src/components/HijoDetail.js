@@ -320,11 +320,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   if (transactions.length === 0) return (
     <div style={{ textAlign: 'center', padding: '56px 0', color: darkMode ? '#aaa' : '#888' }}>
       <p style={{ fontSize: '40px', marginBottom: '12px' }}>👧</p>
-      <p style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 6px' }}>
+      <p style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0 }}>
         Sin gastos registrados para {hijoNombre}
-      </p>
-      <p style={{ fontSize: '14px', margin: 0 }}>
-        Los gastos con child_id de {hijoNombre} aparecerán acá.
       </p>
     </div>
   )

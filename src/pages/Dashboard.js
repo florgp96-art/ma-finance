@@ -85,14 +85,33 @@ const addMonths = (fechaISO, n) => {
 // página es una consulta separada con su propio LIMIT/OFFSET.
 const fetchAllTxPages = async (buildQuery) => {
   const PAGE = 1000
-  let all = []
-  let page = 0
+  const first = await buildQuery().range(0, PAGE - 1)
+  const firstData = first.data || []
+  if (firstData.length < PAGE) return firstData
+  // Hay más de una página. En vez de pedir la 2da, 3ra, etc. una por una
+  // (esperando el round-trip de cada una antes de pedir la siguiente), se
+  // piden de a varias en paralelo por tanda — con historiales largos
+  // (miles de movimientos, algo común con años de uso) esto baja bastante
+  // el tiempo total de carga, sobre todo en conexiones de celular donde la
+  // latencia por request pesa más que el volumen de datos en sí.
+  let all = firstData
+  let page = 1
+  const BATCH = 4
   while (true) {
-    const { data } = await buildQuery().range(page * PAGE, (page + 1) * PAGE - 1)
-    if (!data || data.length === 0) break
-    all = all.concat(data)
-    if (data.length < PAGE) break
-    page++
+    const pageStart = page
+    const batchPages = Array.from({ length: BATCH }, (_, i) => pageStart + i)
+    const results = await Promise.all(
+      batchPages.map(p => buildQuery().range(p * PAGE, (p + 1) * PAGE - 1))
+    )
+    let stop = false
+    for (const r of results) {
+      const data = r.data || []
+      if (data.length === 0) { stop = true; break }
+      all = all.concat(data)
+      if (data.length < PAGE) { stop = true; break }
+    }
+    if (stop) break
+    page += BATCH
   }
   return all
 }
@@ -115,9 +134,6 @@ export default function Dashboard() {
   const [showTutorial, setShowTutorial] = useState(false)
   const [tutorialStep, setTutorialStep] = useState(0)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email ?? null))
-  }, [])
 
   // Plan gratis/premium — determina límites (cuentas, análisis con IA) y si
   // se puede usar el asistente. `is_legacy` son usuarios de antes del
@@ -152,7 +168,6 @@ export default function Dashboard() {
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
   const [editAccount, setEditAccount] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [hoveredAccount, setHoveredAccount] = useState(null)
 
   const [showReportBug, setShowReportBug] = useState(false)
   const [reportBugText, setReportBugText] = useState('')
@@ -292,6 +307,12 @@ export default function Dashboard() {
   const [excelPreview, setExcelPreview] = useState(null)
   const updateExcelPreviewRow = (index, changes) =>
     setExcelPreview(prev => prev.map((r, i) => i === index ? { ...r, ...changes } : r))
+  // Filas ya parseadas de un extracto bancario (Movimiento + Débito/Crédito),
+  // esperando que el usuario elija a qué cuenta real corresponden — sin esto,
+  // resolveAccount (en handleImportarExcel) las mandaba todas a "Efectivo" por
+  // default, ya que este formato no trae MODO_PAGO propio.
+  const [excelBankPendingRows, setExcelBankPendingRows] = useState(null)
+  const [excelNuevaCuenta, setExcelNuevaCuenta] = useState(null)
   const [excelDupReview, setExcelDupReview] = useState(null)
   const [excelDupSelections, setExcelDupSelections] = useState(new Set())
   const [excelDragOver, setExcelDragOver] = useState(false)
@@ -471,12 +492,16 @@ export default function Dashboard() {
   useEffect(() => {
     // No leer localStorage acá antes de saber qué usuario está logueado — ver
     // el comentario sobre la filtración entre cuentas del widget de Ahorros.
+    // Depende de currentUserId (ya resuelto una sola vez en el efecto
+    // principal de mount) en vez de pedir su propio supabase.auth.getUser() —
+    // uno menos de los tantos round-trips de auth que se disparaban juntos
+    // al abrir la app.
+    if (!currentUserId) return
     setVencPagados(new Set())
     const mes = new Date().toISOString().slice(0, 7)
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
+    ;(async () => {
       const { data: row } = await supabase.from('user_rules').select('nombre_asignado')
-        .eq('user_id', user.id).eq('texto_original', '__venc_pagados__').maybeSingle()
+        .eq('user_id', currentUserId).eq('texto_original', '__venc_pagados__').maybeSingle()
       if (row?.nombre_asignado) {
         try {
           const parsed = JSON.parse(row.nombre_asignado)
@@ -484,11 +509,11 @@ export default function Dashboard() {
         } catch {}
       }
       try {
-        const stored = localStorage.getItem(`venc_pagados_${user.id}_${mes}`)
+        const stored = localStorage.getItem(`venc_pagados_${currentUserId}_${mes}`)
         if (stored) setVencPagados(new Set(JSON.parse(stored)))
       } catch {}
-    })
-  }, [])
+    })()
+  }, [currentUserId])
 
   // No vaciar accountTransactions acá: alimenta los widgets del costado
   // (Evolución, Cuotas pendientes), que deben seguir mostrando datos de
@@ -512,10 +537,18 @@ export default function Dashboard() {
   }, [dolarRates])
 
   useEffect(() => {
-    fetchAccounts(); fetchCategorias(); fetchChildren(); fetchUserAliases(); fetchRepartoRules(); fetchExchangeRates(); fetchDolarRates(); fetchCustomIcons()
+    // exchange_rates y dolarapi.com no dependen del usuario logueado — se
+    // piden ya mismo en paralelo, sin esperar a resolver el user.
+    fetchExchangeRates(); fetchDolarRates()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        // Un solo getUser() para todo el mount, en vez de que cada fetchXxx
+        // pida el suyo por separado (eran ~6 llamadas de red concurrentes a
+        // la API de auth, apenas para saber quién sos — bastante peso extra
+        // en una conexión de celular).
+        fetchAccounts(user.id); fetchCategorias(user.id); fetchChildren(user.id); fetchUserAliases(user.id); fetchRepartoRules(user.id); fetchCustomIcons(user.id)
         setCurrentUserId(user.id)
+        setUserEmail(user.email ?? null)
         fetchPlan(user.id)
         // Limpiar las claves viejas sin scope de usuario (bug de filtración
         // entre cuentas en dispositivos compartidos) para que no queden dando
@@ -678,10 +711,10 @@ export default function Dashboard() {
     return () => { clearInterval(msgInterval.current); clearInterval(timerInterval.current) }
   }, [step])
 
-  const fetchCategorias = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden')
+  const fetchCategorias = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data: cats } = await supabase.from('categories').select('*').or(`user_id.eq.${uid},es_sistema.eq.true`).order('orden')
     const catIds = (cats || []).map(c => c.id)
     const { data: subcats } = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
@@ -690,37 +723,37 @@ export default function Dashboard() {
     setSubcategoriasDB(subcats || [])
   }
 
-  const fetchChildren = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('children').select('id, nombre').eq('user_id', user.id).order('nombre')
+  const fetchChildren = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('children').select('id, nombre').eq('user_id', uid).order('nombre')
     setChildrenDB(data || [])
   }
 
-  const fetchUserAliases = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('user_aliases').select('*').eq('user_id', user.id).order('alias')
+  const fetchUserAliases = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('user_aliases').select('*').eq('user_id', uid).order('alias')
     setUserAliases(data || [])
   }
 
-  const fetchRepartoRules = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const fetchRepartoRules = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
     const { data } = await supabase.from('reparto_rules')
       .select('*, categories(nombre), subcategories(nombre)')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .order('created_at', { ascending: false })
     setRepartoRules(data || [])
   }
 
-  const fetchCustomIcons = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const fetchCustomIcons = async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
     const [{ data: catIcons }, { data: childIcons }, { data: ruleIcons }] = await Promise.all([
-      supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', user.id),
-      supabase.from('children').select('nombre, icono').eq('user_id', user.id).not('icono', 'is', null),
-      supabase.from('user_rules').select('texto_original, nombre_asignado').eq('user_id', user.id).like('texto_original', '__icon__%')
+      supabase.from('user_category_icons').select('category_id, icono, categories(nombre)').eq('user_id', uid),
+      supabase.from('children').select('nombre, icono').eq('user_id', uid).not('icono', 'is', null),
+      supabase.from('user_rules').select('texto_original, nombre_asignado').eq('user_id', uid).like('texto_original', '__icon__%')
     ])
     const icons = {}
     if (catIcons) catIcons.filter(r => r.categories?.nombre).forEach(r => { icons[r.categories.nombre] = r.icono })
@@ -850,10 +883,17 @@ export default function Dashboard() {
     setLoading(false)
   }
 
-  const fetchAccounts = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase.from('accounts').select('*').eq('user_id', user.id)
+  // userId opcional: en el mount inicial ya tenemos el user resuelto una sola
+  // vez más arriba y se lo pasamos directo acá, para no hacer 6+ llamadas en
+  // paralelo a supabase.auth.getUser() (cada una un round-trip de red contra
+  // el servidor de auth) apenas se abre la app — eso es buena parte de por
+  // qué tardaba tanto en mobile. El resto de los call sites (después de
+  // crear/editar/borrar algo) no pasan userId y siguen andando igual que
+  // antes, resolviendo el user acá adentro.
+  const fetchAccounts = useCallback(async (userId) => {
+    const uid = userId || (await supabase.auth.getUser()).data.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('accounts').select('*').eq('user_id', uid)
     setAccounts(data || [])
     if (data && data.length > 0) {
       setSelectedAccount(prev => prev === null ? 'all' : prev)
@@ -961,8 +1001,22 @@ export default function Dashboard() {
           MONTOARS: 'MONTO_ARS', MONTOUSD: 'MONTO_USD',
           CATEGORIA: 'CATEGORIA', SUBCATEGORIA: 'SUBCATEGORIA',
           HIJO: 'HIJO', MODOPAGO: 'MODO_PAGO',
+          MOVIMIENTO: 'MOVIMIENTO', DETALLE: 'MOVIMIENTO', CONCEPTO: 'MOVIMIENTO',
+          DEBITO: 'DEBITO', CREDITO: 'CREDITO',
         }
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: null }).map(row => {
+        // Un extracto bancario exportado a Excel (ej. Banco Galicia) trae varias
+        // filas de encabezado ("Banco Galicia - Caja Ahorro Pesos", "Nro. de
+        // Cuenta: ...", etc.) ANTES de la fila real de columnas — sheet_to_json
+        // sin "range" toma la fila 1 como encabezado a ciegas, así que esas
+        // filas de metadata se leían como si fueran los nombres de columna y
+        // toda la tabla real quedaba mal interpretada (0 filas válidas). Se
+        // busca la fila que realmente tiene "FECHA" como columna y se arranca
+        // a leer desde ahí.
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false })
+        const headerRowIdx = aoa.findIndex(r =>
+          Array.isArray(r) && r.some(c => typeof c === 'string' && normKey(c) === 'FECHA')
+        )
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: null, range: headerRowIdx > 0 ? headerRowIdx : 0 }).map(row => {
           const norm = {}
           Object.keys(row).forEach(k => { norm[HEADER_ALIASES[normKey(k)] || k.trim().toUpperCase()] = row[k] })
           return norm
@@ -974,10 +1028,29 @@ export default function Dashboard() {
           else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
           return parseFloat(s) || 0
         }
+        // Extracto de banco (Movimiento + Débito/Crédito en vez de la plantilla
+        // propia con Descripción + Monto): se arma la misma forma interna de
+        // fila que ya consume el resto del flujo (clasificación automática por
+        // historial + IA, revisión, importación), así no hace falta que el
+        // usuario reordene nada a mano.
+        const esFormatoBanco = rows.some(row => row && row['MOVIMIENTO'] != null && (row['DEBITO'] != null || row['CREDITO'] != null))
+        // Primera fila de metadata (ej. "Banco Galicia - Caja Ahorro Pesos") como
+        // nombre sugerido de cuenta, igual que "tarjeta_detectada" en el import de
+        // PDF — para poder resaltar la cuenta que coincide o sugerir el nombre al
+        // crear una nueva, en vez de mostrar una lista pelada para elegir a ciegas.
+        const nombreDetectado = esFormatoBanco && typeof aoa[0]?.[0] === 'string' ? aoa[0][0].trim() : null
         const parsed = rows
-          .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD']))
+          .filter(row => row && (row['FECHA'] || row['DESCRIPCION'] || row['MONTO_ARS'] || row['MONTO_USD'] || row['MOVIMIENTO']))
           .map(row => {
             const fechaOriginal = parseExcelDate(row['FECHA'])
+            if (esFormatoBanco) {
+              const debito = toNum(row['DEBITO'])
+              const credito = toNum(row['CREDITO'])
+              const descripcion = String(row['MOVIMIENTO'] || '').replace(/\s*\n\s*/g, ' - ').replace(/\s{2,}/g, ' ').trim().replace(/\s*-\s*$/, '')
+              const tipo = debito !== 0 ? 'gasto' : 'ingreso'
+              const monto = Math.abs(debito !== 0 ? debito : credito)
+              return { fecha: fechaOriginal, monto, moneda: 'ARS', monto_ars: monto, monto_usd: 0, descripcion, notas: descripcion, modo_pago: '', cat: null, subcat: null, hijo: null, tipo, cuota_numero: 1, cuotas_total: 1 }
+            }
             const monto_ars = toNum(row['MONTO_ARS'])
             const monto_usd = toNum(row['MONTO_USD'])
             const descripcion = String(row['DESCRIPCION'] || '').trim()
@@ -995,7 +1068,7 @@ export default function Dashboard() {
             return { fecha, monto, moneda, monto_ars: Math.abs(monto_ars), monto_usd: Math.abs(monto_usd), descripcion, notas: descripcion, modo_pago, cat, subcat, hijo, tipo, cuota_numero, cuotas_total }
           })
           .filter(r => r.fecha && r.monto > 0)
-        resolve(parsed)
+        resolve({ rows: parsed, esFormatoBanco, nombreDetectado })
       } catch (err) { reject(err) }
     }
     reader.onerror = reject
@@ -1007,13 +1080,52 @@ export default function Dashboard() {
     setLoadingExcel(true)
     setExcelBackgroundMode(false)
     try {
-      const rows = await parsearExcel(excelFile)
+      const { rows, esFormatoBanco, nombreDetectado } = await parsearExcel(excelFile)
       if (rows.length === 0) {
         showToast('No se encontraron filas válidas en la hoja GASTOS.', 'error')
         setLoadingExcel(false)
         return
       }
+      if (esFormatoBanco) {
+        // Un extracto bancario es siempre de UNA sola cuenta real — hay que
+        // preguntar cuál antes de seguir (ver comentario de excelBankPendingRows).
+        setExcelBankPendingRows({ rows, nombreDetectado })
+        setLoadingExcel(false)
+        return
+      }
+      await clasificarYPrevisualizarExcel(rows)
+    } catch (err) {
+      showToast('Error procesando el archivo: ' + err.message, 'error')
+      setLoadingExcel(false)
+    }
+  }
 
+  const handleElegirCuentaExtractoBanco = (nombreCuenta) => {
+    const rows = (excelBankPendingRows?.rows || []).map(r => ({ ...r, modo_pago: nombreCuenta }))
+    setExcelBankPendingRows(null)
+    setExcelNuevaCuenta(null)
+    setLoadingExcel(true)
+    clasificarYPrevisualizarExcel(rows)
+  }
+
+  const crearCuentaParaExtractoBanco = async (e) => {
+    e.preventDefault()
+    if (!excelNuevaCuenta?.nombre?.trim()) return
+    setLoadingExcel(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: account, error } = await supabase.from('accounts')
+      .insert({ user_id: user.id, nombre: excelNuevaCuenta.nombre.trim(), tipo: excelNuevaCuenta.tipo }).select().single()
+    if (error || !account) {
+      showToast('No se pudo crear la cuenta: ' + (error?.message || ''), 'error')
+      setLoadingExcel(false)
+      return
+    }
+    fetchAccounts()
+    handleElegirCuentaExtractoBanco(account.nombre)
+  }
+
+  const clasificarYPrevisualizarExcel = async (rows) => {
+    try {
       // Pre-clasificar usando historial de transacciones ya identificadas (aprende del pasado)
       const { data: { user: userForHistory } } = await supabase.auth.getUser()
       if (userForHistory) {
@@ -1078,7 +1190,7 @@ export default function Dashboard() {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda })),
+            rows: rowsNeedingClassification.map(r => ({ notas: r.notas, descripcion: r.descripcion, monto: r.monto, moneda: r.moneda, tipo: r.tipo })),
             categories: categoriasDB,
             subcategories: subcategoriasDB,
             children: childrenDB,
@@ -3240,7 +3352,7 @@ export default function Dashboard() {
                 // pantallas angostas. Ahora viven arriba de "Resumen General" en
                 // el drawer del sidebar (ver más abajo), donde hay lugar de sobra.
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', zIndex: 1 }}>
-                  <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0 }}>☰</button>
+                  <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', opacity: 0.8, padding: 0, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>☰</button>
                 </div>
               ) : isTablet ? (
                 // maxWidth + wrap: que los chips pasen a segunda fila antes de
@@ -3324,7 +3436,7 @@ export default function Dashboard() {
             />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', ...(isMobile ? {} : { width: isTablet ? '232px' : '272px', flexShrink: 0, alignSelf: 'flex-start' }) }}>
-          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100vh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: 'flex', width: '85vw', maxWidth: '360px', transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: sidebarOpen ? 'auto' : 'none' } : {}) }}>
+          <div className="sidebar-scroll" style={{ ...styles.sidebar, ...(isTablet ? { width: '200px' } : {}), ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', boxSizing: 'border-box', borderRadius: '0 20px 20px 0', overflow: 'hidden', zIndex: 200, display: 'flex', width: '85vw', maxWidth: '360px', transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)', pointerEvents: sidebarOpen ? 'auto' : 'none' } : {}) }}>
              {/* Zona top fija: solo mobile — botón cerrar */}
             {isMobile && (
               <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
@@ -3351,17 +3463,9 @@ export default function Dashboard() {
                 <div key={acc.id}
                   style={{ ...styles.accountCard, ...(selectedAccount?.id === acc.id ? styles.accountCardSelected : {}), position: 'relative', textAlign: 'center' }}
                   onClick={() => { setSelectedAccount(selectedAccount?.id === acc.id ? null : acc); setSidebarOpen(false) }}
-                  onMouseEnter={() => setHoveredAccount(acc.id)}
-                  onMouseLeave={() => setHoveredAccount(null)}
                 >
                   <p style={{ ...styles.accountType, marginBottom: '4px' }}>{accountIcon(acc.tipo)} {tipoLabel(acc.tipo)}</p>
-                  <p
-                    style={{ ...styles.accountName, textDecoration: hoveredAccount === acc.id ? 'underline' : 'none', textDecorationColor: darkMode ? '#9A8A9A' : '#B0A6AA', textUnderlineOffset: '3px' }}
-                    title="Tocar para editar"
-                    onClick={(e) => { e.stopPropagation(); setEditAccount({ ...acc }) }}
-                  >
-                    {acc.nombre}
-                  </p>
+                  <p style={styles.accountName}>{acc.nombre}</p>
                 </div>
               )
 
@@ -3712,17 +3816,14 @@ export default function Dashboard() {
               </div>
             ) : selectedAccount ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <h2 style={styles.sectionTitle}>📊 {selectedAccount.nombre}</h2>
-                  {/* Editar/borrar esta cuenta sin tener que ir al dashboard general — antes
-                      solo se podía desde el lápiz (visible solo al pasar el mouse) del
-                      listado de cuentas del sidebar, inaccesible en mobile. */}
-                  <button
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2
+                    style={{ ...styles.sectionTitle, cursor: 'pointer' }}
+                    title="Tocar para editar o borrar esta cuenta"
                     onClick={() => setEditAccount({ ...selectedAccount })}
-                    title="Editar o borrar esta cuenta"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', opacity: 0.7, padding: '4px' }}>
-                    ✏️
-                  </button>
+                  >
+                    📊 {selectedAccount.nombre}
+                  </h2>
                 </div>
                 <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
               </div>
@@ -3812,7 +3913,7 @@ export default function Dashboard() {
             body: (
               <>
                 <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
-                <p style={{ margin: 0 }}>Para editarla o borrarla, tocá el nombre de la cuenta en el listado de la izquierda.</p>
+                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá su nombre, arriba de todo.</p>
               </>
             )
           },
@@ -4477,7 +4578,75 @@ export default function Dashboard() {
       {showExcel && !excelDupReview && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: excelPreview ? 'min(96vw, 980px)' : '600px' }}>
-            {excelPreview === null ? (
+            {excelPreview === null && excelBankPendingRows ? (
+              <>
+                <h3 style={styles.modalTitle}>¿A qué cuenta pertenece este extracto? 🏦</h3>
+                {excelBankPendingRows.nombreDetectado && (
+                  <p style={{ fontSize: '14px', color: '#666', marginBottom: '4px' }}>
+                    Detectamos: <strong>{excelBankPendingRows.nombreDetectado}</strong>
+                  </p>
+                )}
+                <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '16px' }}>
+                  {excelBankPendingRows.rows.length} movimientos — elegí a qué cuenta tuya corresponden, para no cargarlos por error en otra.
+                </p>
+                {excelNuevaCuenta ? (
+                  <form onSubmit={crearCuentaParaExtractoBanco}>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Nombre de la cuenta</label>
+                      <input style={styles.input} value={excelNuevaCuenta.nombre}
+                        onChange={e => setExcelNuevaCuenta(prev => ({ ...prev, nombre: e.target.value }))} autoFocus required />
+                    </div>
+                    <div style={styles.field}>
+                      <label style={styles.label}>Tipo</label>
+                      <select style={styles.input} value={excelNuevaCuenta.tipo}
+                        onChange={e => setExcelNuevaCuenta(prev => ({ ...prev, tipo: e.target.value }))}>
+                        <option value="debito">🏦 Débito / Cuenta bancaria</option>
+                        <option value="credito">💳 Tarjeta de crédito</option>
+                        <option value="efectivo">💵 Efectivo</option>
+                      </select>
+                    </div>
+                    <div style={styles.modalButtons}>
+                      <button type="button" style={styles.cancelBtn} onClick={() => setExcelNuevaCuenta(null)}>← Atrás</button>
+                      <button type="submit" style={styles.saveBtn} disabled={loadingExcel}>{loadingExcel ? 'Creando...' : 'Crear e importar acá'}</button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {(() => {
+                      const detectado = (excelBankPendingRows.nombreDetectado || '').trim().toLowerCase()
+                      const disponibles = accounts.filter(a => a.tipo !== 'ingreso')
+                      const match = detectado ? disponibles.find(a => {
+                        const n = a.nombre.trim().toLowerCase()
+                        return detectado.includes(n) || n.includes(detectado)
+                      }) : null
+                      const resto = disponibles.filter(a => a.id !== match?.id)
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px', maxHeight: '46vh', overflowY: 'auto' }}>
+                          {match && (
+                            <button style={{ ...styles.selectAccountBtn, border: '2px solid #27AE60' }} onClick={() => handleElegirCuentaExtractoBanco(match.nombre)}>
+                              🏦 {match.nombre}
+                              <span style={{ fontSize: '12px', color: '#27AE60', fontWeight: '600', marginLeft: '8px' }}>✓ Coincide con lo detectado</span>
+                            </button>
+                          )}
+                          {resto.map(acc => (
+                            <button key={acc.id} style={styles.selectAccountBtn} onClick={() => handleElegirCuentaExtractoBanco(acc.nombre)}>
+                              {acc.tipo === 'credito' ? '💳' : acc.tipo === 'efectivo' ? '💵' : '🏦'} {acc.nombre}
+                            </button>
+                          ))}
+                          <button style={{ ...styles.selectAccountBtn, ...styles.selectAccountBtnNew }}
+                            onClick={() => setExcelNuevaCuenta({ nombre: excelBankPendingRows.nombreDetectado || '', tipo: 'debito' })}>
+                            + Crear nueva cuenta
+                          </button>
+                        </div>
+                      )
+                    })()}
+                    <div style={styles.modalButtons}>
+                      <button style={styles.cancelBtn} onClick={() => { setExcelBankPendingRows(null); setExcelFile(null) }}>← Atrás</button>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : excelPreview === null ? (
               <>
                 <h3 style={styles.modalTitle}>Importar Excel 📊</h3>
                 {loadingExcel ? (() => {
@@ -4551,7 +4720,7 @@ export default function Dashboard() {
               <>
                 <h3 style={styles.modalTitle}>Revisá las transacciones ✅</h3>
                 <p style={{ fontSize: '13px', color: '#6e6e73', margin: '-12px 0 16px 0' }}>
-                  {excelPreview.length} filas encontradas · mostrando primeras 10
+                  {excelPreview.length} filas encontradas
                 </p>
                 <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -4563,7 +4732,7 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {excelPreview.slice(0, 10).map((row, i) => (
+                      {excelPreview.map((row, i) => (
                         <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nombre || row.notas || '—'}</td>
@@ -4585,7 +4754,7 @@ export default function Dashboard() {
                             <select
                               value={row.cat || ''}
                               onChange={e => updateExcelPreviewRow(i, { cat: e.target.value || null, subcat: null })}
-                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: row.cat && row.cat !== 'A Identificar' ? 'transparent' : '#fff8e1', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              style={{ ...styles.excelPreviewSelect, backgroundColor: row.cat && row.cat !== 'A Identificar' ? 'transparent' : '#fff8e1', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                               <option value="">❓ Sin identificar</option>
                               {categoriasDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
@@ -4594,7 +4763,7 @@ export default function Dashboard() {
                             <select
                               value={row.subcat || ''}
                               onChange={e => updateExcelPreviewRow(i, { subcat: e.target.value || null })}
-                              style={{ padding: '4px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '11px', backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '130px' }}>
+                              style={{ ...styles.excelPreviewSelect, backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                               <option value="">— Sin subcategoría</option>
                               {subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === row.cat)?.id).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                             </select>
@@ -4846,6 +5015,17 @@ const getStyles = (dark, mobile = false) => {
     emptyStateText: { fontSize: '15px', color: muted, fontWeight: '500' },
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: mobile ? '12px' : '20px', boxSizing: 'border-box' },
     modal: { backgroundColor: panel, borderRadius: mobile ? '14px' : '16px', padding: mobile ? '20px 16px' : '32px', width: '100%', maxWidth: '520px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: mobile ? '95vh' : '90vh', overflowY: 'auto' },
+    // El <select> nativo en iOS/Android dibuja su propia flechita pegada al
+    // borde derecho — con textos largos (nombres de categoría) y poco ancho
+    // (celda de tabla), el texto quedaba pegado justo arriba de esa flecha,
+    // como si se superpusieran. Se resetea el appearance nativo y se dibuja
+    // una propia, con padding-right fijo para que nunca choquen.
+    excelPreviewSelect: {
+      padding: '4px 22px 4px 6px', borderRadius: '6px', border: `1px solid ${border}`,
+      fontSize: '11px', maxWidth: '130px', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '10px',
+    },
     modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },

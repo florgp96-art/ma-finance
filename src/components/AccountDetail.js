@@ -1006,8 +1006,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
+      setFilaExpandida(prev => prev === tx.id ? null : prev)
       return
     }
     const catObj = categories.find(c => c.nombre === editCategoria)
@@ -1073,6 +1074,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
       } : t))
     setEditingTx(null)
+    setFilaExpandida(prev => prev === tx.id ? null : prev)
   }
 
   const startEdit = (tx) => {
@@ -1743,6 +1745,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <div>
                     <p style={detailLabel}>Subcategoría</p>
                     <p style={detailValue}>{tx.subcategories?.nombre || '—'}</p>
+                  </div>
+                )}
+                {/* Antes esto solo se veía entrando a "Editar" — en cuentas con
+                    hijos cargados, había que abrir el formulario de edición
+                    para saber si un gasto ya estaba asignado a alguno. */}
+                {!esIngresoTx && getChildName(tx) && (
+                  <div>
+                    <p style={detailLabel}>Hijo</p>
+                    <p style={detailValue}>👧 {getChildName(tx)}</p>
                   </div>
                 )}
                 {!esIngresoTx && (
@@ -2855,7 +2866,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={styles.stmtHistory}>
           <div
             onClick={() => setStmtCollapsed(c => !c)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
+            style={{ display: 'inline-flex', width: 'fit-content', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: stmtCollapsed ? 0 : '10px' }}>
             <h3 style={{ ...styles.stmtHistoryTitle, margin: 0 }}>
               Extractos cargados ({stmtsConTx.length})
             </h3>
