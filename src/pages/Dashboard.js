@@ -2812,7 +2812,28 @@ export default function Dashboard() {
     })
     const seleccion = sidebarCatEvol.map(key => ({ key, label: labelDeKey(key), color: colorDeKey(key), icon: iconDeKey(key) }))
 
-    return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion }
+    // Calculadora: suma de TODO lo seleccionado en un mes puntual, para poder
+    // preguntarse "¿cuánto me sale por mes esto?" (ej. gastos fijos = elegir
+    // Casa + Servicios + Suscripciones y leer un solo número) sin sacar la
+    // calculadora aparte. Se muestra el mes en curso, salvo que todavía no
+    // tenga nada cargado de lo seleccionado — a principio de mes, o cuando
+    // falta cargar el resumen, un "$0" sería engañoso, así que cae al mes
+    // anterior y lo aclara en pantalla.
+    const mesesEvol = getLast6Months()
+    const totalDeFila = (fila) => sidebarCatEvol.reduce((s, k) => s + (fila?.[k] || 0), 0)
+    const idxActual = evolData.length - 1
+    const idxCalc = (totalDeFila(evolData[idxActual]) > 0 || evolData.length < 2) ? idxActual : idxActual - 1
+    const calculadora = {
+      mes: mesesEvol[idxCalc],
+      mesLabel: evolData[idxCalc]?.mes || '',
+      total: totalDeFila(evolData[idxCalc]),
+      esMesAnterior: idxCalc !== idxActual,
+      // Cuántas series se están sumando: con una sola, el número ya se lee en
+      // el gráfico; el valor agregado real es cuando hay varias.
+      cantidadSeries: sidebarCatEvol.length,
+    }
+
+    return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion, calculadora }
   }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, childrenDB, customIcons])
 
   const sideWidgets = () => (
@@ -2859,7 +2880,7 @@ export default function Dashboard() {
             })()}
 
             {(() => {
-              const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion } = evolucionCategoriaMemo
+              const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion, calculadora } = evolucionCategoriaMemo
               const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
               const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
@@ -2914,8 +2935,8 @@ export default function Dashboard() {
               return (
                 <div style={styles.savingsPanel}>
                   <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    📈 Evolución · últimos 6 meses
-                    <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas)" />
+                    🧮 Calculadora / Evolución semestral
+                    <InfoTooltip darkMode={darkMode} text="Elegí una o varias categorías, subcategorías, hijos o cuentas para sumarlas entre sí y ver cuánto dan por mes. ARS (monedas extranjeras convertidas)." />
                   </h3>
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
@@ -2955,6 +2976,24 @@ export default function Dashboard() {
                             </button>
                           )
                         })}
+                      </div>
+                    )}
+                  </div>
+                  {/* Calculadora: el total sumado de todo lo elegido en un mes.
+                      Con varias series elegidas es el número que no se puede
+                      leer del gráfico (hay que sumar las líneas a ojo). */}
+                  <div style={{ backgroundColor: darkMode ? '#2A232A' : '#F7F5F6', borderRadius: '10px', padding: '10px 12px', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
+                        {calculadora.cantidadSeries > 1 ? `Total de los ${calculadora.cantidadSeries} · ${calculadora.mesLabel}` : `Total · ${calculadora.mesLabel}`}
+                      </span>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#5C4F5C', whiteSpace: 'nowrap' }}>
+                        $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(calculadora.total)}
+                      </span>
+                    </div>
+                    {calculadora.esMesAnterior && (
+                      <div style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginTop: '4px', lineHeight: 1.4 }}>
+                        El mes en curso todavía no tiene movimientos cargados de lo elegido.
                       </div>
                     )}
                   </div>
