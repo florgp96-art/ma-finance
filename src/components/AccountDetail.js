@@ -664,6 +664,11 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [selectedMeses, setSelectedMeses] = useState([])
 const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
+  // En el teléfono la tabla de movimientos se corta a los primeros
+  // MOVIMIENTOS_MOBILE: con 100+ movimientos, para llegar a los widgets de
+  // abajo (calculadora, cuotas, ahorros) había que scrollear la lista entera.
+  // En desktop no aplica: los widgets están en su propia columna al costado.
+  const [verTodosMovimientos, setVerTodosMovimientos] = useState(false)
   const [filtroCuenta, setFiltroCuenta] = useState('')
   const [vistaCuenta, setVistaCuenta] = useState('movimientos')
   const [apagarSortKey, setApagarSortKey] = useState('monto')
@@ -1998,6 +2003,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
   const ellipsisCell = { ...styles.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', wordBreak: 'normal' }
+
+  // Corte de la tabla de movimientos en mobile (ver verTodosMovimientos). El
+  // corte es solo visual: el contador del título, el pie de totales y el
+  // export a CSV siguen usando la lista completa.
+  const MOVIMIENTOS_MOBILE = 10
+  const hayMasMovimientos = isMobile && filasTabla.length > MOVIMIENTOS_MOBILE
+  const filasTablaVisibles = (hayMasMovimientos && !verTodosMovimientos)
+    ? filasTabla.slice(0, MOVIMIENTOS_MOBILE)
+    : filasTabla
 
   // Contar transacciones de cada extracto, ordenados por mes descendente — por
   // vínculo real (statement_id, el mismo campo que liga reconciliarSueltas y que ya
@@ -3524,10 +3538,26 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </tr>
           </thead>
           <tbody>
-            {filasTabla.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
+            {filasTablaVisibles.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
+          {/* Los totales son de TODOS los movimientos, no solo de los que se
+              están mostrando — si el corte de mobile los cambiara, la tabla
+              mentiría sobre cuánto se gastó. */}
           <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} />
         </table>
+        {hayMasMovimientos && (
+          <button
+            onClick={() => setVerTodosMovimientos(v => !v)}
+            style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? '#C0B0C0' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif' }}
+          >
+            {/* Se cuentan FILAS restantes, no transacciones: un gasto dividido
+                entre hijos ocupa una sola fila, así que decir "N transacciones"
+                acá se contradiría con el contador del título. */}
+            {verTodosMovimientos
+              ? '▴ Ver menos'
+              : `▾ Ver ${filasTabla.length - MOVIMIENTOS_MOBILE} más`}
+          </button>
+        )}
         </div>
       </div>
 
