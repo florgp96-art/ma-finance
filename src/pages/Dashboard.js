@@ -1951,7 +1951,9 @@ export default function Dashboard() {
       const accountIds = (ingresosAcc && ingresosAcc.id !== accountId) ? [accountId, ingresosAcc.id] : [accountId]
       const txExistentes = await fetchAllTxPages(() =>
         supabase.from('transactions')
-          .select('id, fecha, monto, moneda, account_id')
+          // nombre/detalle hacen falta para comparar de qué compra se trata: sin
+          // eso, dos compras distintas del mismo monto se marcaban como la misma.
+          .select('id, fecha, monto, moneda, account_id, nombre, detalle')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
@@ -1973,6 +1975,30 @@ export default function Dashboard() {
         return Math.abs(d1 - d2) <= dias * 86400000
       }
 
+      // Este chequeo NO comparaba de qué compra se trataba: con cuenta + moneda +
+      // monto + fecha cercana alcanzaba para marcar algo como "ya cargada", así
+      // que dos compras distintas del mismo monto en la misma semana se
+      // confundían entre sí. En las cuotas era peor: bastaba que existiera
+      // cualquier movimiento de ese monto en el mes de facturación.
+      //
+      // Se compara el nombre normalizado, sacando el sufijo de cuota (el banco lo
+      // escribe distinto en cada cuota de la misma compra) y los caracteres que
+      // no son letras ni números. Se acepta que uno contenga al otro, porque la
+      // IA a veces lee el nombre recortado ("AYNOTDEAD RECOLETA" vs "AYNOTDEAD
+      // RECOLETA CABA"). Si de un lado no hay nombre para comparar, no se usa
+      // este criterio y queda el de antes.
+      const normNombreDup = (s) => stripCuotaSuffix(s || '')
+        .toLowerCase()
+        .replace(/[^0-9a-záéíóúüñ]+/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const mismaCompra = (nombreExistente, nombreNuevo) => {
+        const a = normNombreDup(nombreExistente)
+        const b = normNombreDup(nombreNuevo)
+        if (!a || !b) return true
+        return a === b || a.includes(b) || b.includes(a)
+      }
+
       const dupes = new Set()
       const selec = new Set()
       transacciones.forEach((t, i) => {
@@ -1984,6 +2010,7 @@ export default function Dashboard() {
           if ((e.moneda || 'ARS').trim().toUpperCase() !== (t.moneda || 'ARS').trim().toUpperCase()) return false
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
+          if (!mismaCompra(e.nombre || e.detalle, t.nombre_limpio || t.nombre_original || t.descripcion)) return false
           if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
           // 7 días en vez de 5: al releer un resumen viejo (para tener el
           // historial completo), la fecha que la IA lee para el mismo
