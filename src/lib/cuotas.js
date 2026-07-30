@@ -9,7 +9,13 @@
 // cambia en cada cuota de la MISMA compra real — sin sacarlo, cada cuota ya
 // facturada se cuenta como una compra aparte.
 export const stripCuotaSuffix = (n) => (n || '')
+  // Algunos resúmenes lo escriben en palabras y en medio del nombre, no como
+  // "N/M" al final: "AYNOTDEAD RECOLETA (cuota 1 de 3) 1/3". Sin sacar esa parte
+  // quedaba en el nombre mostrado, y además hacía que la misma compra leída de
+  // otro resumen (que sí usa "N/M") no se reconociera como la misma.
+  .replace(/\(?\s*cuotas?\s+\d+\s+de\s+\d+\s*\)?/gi, ' ')
   .replace(/\s+\d+\/\d+\s*$/, '')
+  .replace(/\s+/g, ' ')
   .trim()
 
 // Además del "N/M" final, se saca un posible prefijo de titular adicional tipo
@@ -27,15 +33,80 @@ export const normalizarNombreCompra = (n) => stripCuotaSuffix(n)
 export const esAlquilerOExpensas = (t) =>
   t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
 
-// IMPORTANTE — la clave NO incluye el mes en que arrancó la compra. Se probó
-// derivarlo de la fecha de cada fila (fecha menos cuota_numero meses) para
-// poder distinguir dos compras distintas con el mismo nombre, pero si las
-// cuotas intermedias de una misma compra real no quedaron con fechas espaciadas
-// exactamente un mes (algo común: resúmenes que no cierran siempre el mismo
-// día, o dos cuotas cargadas con la misma fecha), ese mes salía distinto para
-// cada cuota y partía la compra en varios grupos fantasma — cada uno
-// proyectando sus propias cuotas restantes y multiplicando la deuda mostrada.
-const groupKey = (t) => `${normalizarNombreCompra(t.nombre || t.detalle || '')}|${t.cuotas_total}|${t.account_id}`
+// Las compras se agrupan por CUENTA + CANTIDAD DE CUOTAS + MONTO DE LA CUOTA,
+// no por nombre.
+//
+// El nombre no sirve como identificador: el mismo plan de cuotas viene escrito
+// distinto en cada resumen. Casos reales vistos en producción:
+//   "Perfume Mama CUOTA 3/9"                  vs  "CUOTA 3/9"
+//   "AYNOTDEAD RECOLETA (cuota 1 de 3) 1/3"   vs  "AYNOTDEAD RECOLETA 2/3"
+// Agrupando por nombre, cada variante era una "compra" aparte que proyectaba sus
+// propias cuotas restantes — así el widget listaba como pendientes cuotas que ya
+// estaban cargadas (con el monto exacto), y la deuda futura salía inflada.
+//
+// El monto de la cuota sí es invariante en un plan de cuotas fijas, que es cómo
+// se financia en la práctica. Se admite una tolerancia (ver TOLERANCIA_MONTO)
+// porque entre cuotas puede variar unos centavos por redondeo.
+//
+// Contrapartida asumida: dos compras DISTINTAS en la misma tarjeta, con la misma
+// cantidad de cuotas y exactamente el mismo monto por cuota, se cuentan como
+// una. Es mucho menos frecuente que la inconsistencia de nombres, y el error que
+// causa es acotado (una compra de menos), contra el que causaba lo anterior
+// (cuotas fantasma por cientos de miles de pesos).
+const TOLERANCIA_MONTO = 0.02 // 2%
+
+// PASO 1 — juntar las partes de una misma cuota. Un gasto dividido entre hijos
+// (regla de tipo "split") queda como varias filas reales de la MISMA cuota, y si
+// el reparto no es mitad y mitad esas partes tienen montos distintos: agrupar
+// por monto las separaría en compras diferentes. Las partes comparten cuenta,
+// cantidad de cuotas, número de cuota, fecha y nombre, así que se suman por esa
+// combinación antes de comparar montos.
+function unificarPartesDeCuota(filas) {
+  const porCuota = new Map()
+  filas.forEach(t => {
+    const k = [
+      t.account_id,
+      t.cuotas_total,
+      t.cuota_numero,
+      (t.fecha || '').slice(0, 10),
+      normalizarNombreCompra(t.nombre || t.detalle || ''),
+    ].join('|')
+    const acumulado = porCuota.get(k)
+    if (acumulado) acumulado.monto = Number(acumulado.monto) + Number(t.monto)
+    else porCuota.set(k, { ...t, monto: Number(t.monto) })
+  })
+  return [...porCuota.values()]
+}
+
+// PASO 2 — agrupar las cuotas en compras. Dentro de cada cuenta + cantidad de
+// cuotas, se juntan las que tienen el mismo monto (con tolerancia). Se recorre
+// ordenado por monto para que una serie con variaciones chicas caiga toda junta.
+function agruparPorCompra(filas) {
+  const buckets = new Map()
+  filas.forEach(t => {
+    const k = `${t.account_id}|${t.cuotas_total}`
+    if (!buckets.has(k)) buckets.set(k, [])
+    buckets.get(k).push(t)
+  })
+
+  const grupos = []
+  buckets.forEach(filasBucket => {
+    const ordenadas = [...filasBucket].sort((a, b) => Math.abs(Number(a.monto) || 0) - Math.abs(Number(b.monto) || 0))
+    let actual = null
+    let referencia = 0
+    ordenadas.forEach(t => {
+      const monto = Math.abs(Number(t.monto) || 0)
+      const entraEnElGrupo = actual && referencia > 0 && Math.abs(monto - referencia) <= referencia * TOLERANCIA_MONTO
+      if (!entraEnElGrupo) {
+        actual = []
+        referencia = monto
+        grupos.push(actual)
+      }
+      actual.push(t)
+    })
+  })
+  return grupos
+}
 
 // Reconstruye las compras en cuotas con saldo pendiente. De cada compra
 // devuelve la cuota conocida más reciente (la de número más alto) y cuántas
@@ -47,27 +118,14 @@ export function comprasEnCuotasPendientes(transactions) {
   )
   if (conCuotas.length === 0) return []
 
-  const maxCuotaPorGrupo = {}
-  conCuotas.forEach(t => {
-    const key = groupKey(t)
-    const cn = t.cuota_numero || 0
-    if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
-  })
-
-  // Una compra dividida (regla de tipo "split") queda como varias filas reales
-  // con el mismo número de cuota — hay que sumarlas para recuperar el monto
-  // total de esa cuota, no quedarnos con una sola parte.
-  const latestByPurchase = {}
-  conCuotas.forEach(t => {
-    const key = groupKey(t)
-    if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
-    if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
-    latestByPurchase[key].monto += Number(t.monto)
-  })
-
-  return Object.values(latestByPurchase)
-    .map(t => ({ tx: t, restantes: (t.cuotas_total || 1) - (t.cuota_numero || 1) }))
-    .filter(c => c.restantes > 0)
+  return agruparPorCompra(unificarPartesDeCuota(conCuotas)).map(grupo => {
+    const maxCuota = grupo.reduce((m, t) => Math.max(m, t.cuota_numero || 0), 0)
+    // De la cuota más alta puede haber más de una fila si quedaron dos cargas de
+    // la misma cuota con nombres distintos — se toma una, no se suman (sumarlas
+    // duplicaría el monto de esa cuota).
+    const tx = grupo.find(t => (t.cuota_numero || 0) === maxCuota)
+    return { tx, restantes: (tx.cuotas_total || 1) - maxCuota }
+  }).filter(c => c.restantes > 0)
 }
 
 const mesDe = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
