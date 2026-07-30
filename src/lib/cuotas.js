@@ -78,9 +78,37 @@ function unificarPartesDeCuota(filas) {
   return [...porCuota.values()]
 }
 
+// ¿Los nombres apuntan a la misma compra? Se acepta que uno contenga al otro,
+// porque un resumen puede escribirlo más corto que el otro ("KINDERLAND" vs
+// "KINDERLAND JUGUETES", "FEBO" vs "MERPAGO*FBZAPATFEBO" no, pero "AYRES" sí).
+// Si de un lado no quedó nada para comparar, no se afirma nada.
+function nombresDeLaMismaCompra(a, b) {
+  const x = normalizarNombreCompra(a || '')
+  const y = normalizarNombreCompra(b || '')
+  if (!x || !y) return false
+  return x === y || x.includes(y) || y.includes(x)
+}
+
+const montosDeLaMismaCuota = (a, b) => {
+  const x = Math.abs(Number(a) || 0)
+  const y = Math.abs(Number(b) || 0)
+  if (x === 0 || y === 0) return false
+  return Math.abs(x - y) <= Math.max(x, y) * TOLERANCIA_MONTO
+}
+
 // PASO 2 — agrupar las cuotas en compras. Dentro de cada cuenta + cantidad de
-// cuotas, se juntan las que tienen el mismo monto (con tolerancia). Se recorre
-// ordenado por monto para que una serie con variaciones chicas caiga toda junta.
+// cuotas, dos filas son de la misma compra si coincide EL MONTO **O** EL NOMBRE.
+// Hace falta que sea "o" y no "y", porque en los datos reales fallan los dos por
+// separado:
+//   - Solo por monto: "SILLON 1/3" ($74.500) y "SILLON 2/3" ($80.088) son la
+//     misma compra pero difieren 7,5%; las cuotas de EXPENSAS varían todos los
+//     meses porque es un servicio, no un plan de cuotas fijas.
+//   - Solo por nombre: "matko" / "stanley" / "regalo stanley" son la misma
+//     compra escrita de tres formas que no se parecen en nada.
+// Con "o" se recuperan los dos casos. La contra es que dos compras distintas que
+// caigan en el mismo monto se juntan (visto: SURPIEZASSRL y HIDROLIT, las dos de
+// $16.275). Se asume: ese error deja la deuda futura de menos, mientras que
+// partir una compra la inventaba de más — que es el problema que se reportó.
 function agruparPorCompra(filas) {
   const buckets = new Map()
   filas.forEach(t => {
@@ -91,19 +119,30 @@ function agruparPorCompra(filas) {
 
   const grupos = []
   buckets.forEach(filasBucket => {
-    const ordenadas = [...filasBucket].sort((a, b) => Math.abs(Number(a.monto) || 0) - Math.abs(Number(b.monto) || 0))
-    let actual = null
-    let referencia = 0
-    ordenadas.forEach(t => {
-      const monto = Math.abs(Number(t.monto) || 0)
-      const entraEnElGrupo = actual && referencia > 0 && Math.abs(monto - referencia) <= referencia * TOLERANCIA_MONTO
-      if (!entraEnElGrupo) {
-        actual = []
-        referencia = monto
-        grupos.push(actual)
+    // Union-find sobre las filas del bucket: se van fusionando de a pares y al
+    // final cada raíz es una compra. Hace falta la transitividad — si A junta
+    // con B por monto y B con C por nombre, las tres son la misma compra.
+    const padre = filasBucket.map((_, i) => i)
+    const raiz = (i) => { while (padre[i] !== i) { padre[i] = padre[padre[i]]; i = padre[i] } return i }
+    const unir = (i, j) => { const ri = raiz(i), rj = raiz(j); if (ri !== rj) padre[rj] = ri }
+
+    for (let i = 0; i < filasBucket.length; i++) {
+      for (let j = i + 1; j < filasBucket.length; j++) {
+        const a = filasBucket[i], b = filasBucket[j]
+        if (montosDeLaMismaCuota(a.monto, b.monto) ||
+            nombresDeLaMismaCompra(a.nombre || a.detalle, b.nombre || b.detalle)) {
+          unir(i, j)
+        }
       }
-      actual.push(t)
+    }
+
+    const porRaiz = new Map()
+    filasBucket.forEach((t, i) => {
+      const r = raiz(i)
+      if (!porRaiz.has(r)) porRaiz.set(r, [])
+      porRaiz.get(r).push(t)
     })
+    porRaiz.forEach(g => grupos.push(g))
   })
   return grupos
 }
