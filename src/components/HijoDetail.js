@@ -37,7 +37,13 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   // categoría/subcategoría/cuenta — y categoría se oculta en pantallas angostas
   // (colVisible.categoria) en vez de forzarse siempre visible, que era lo que
   // dejaba todo apretado y la descripción cortada en el celular.
-  const FECHA_PX = 58, MONTO_PX = 106, EXPAND_PX = 28
+  // Si hay movimientos de otro año, formatFechaCorta agrega el año ("28/06/23")
+  // y 58px lo cortan — se ensancha solo en ese caso.
+  const hayFechasDeOtroAnio = useMemo(() => {
+    const anioActual = String(new Date().getFullYear())
+    return (transactions || []).some(t => t.fecha && t.fecha.slice(0, 4) !== anioActual)
+  }, [transactions])
+  const FECHA_PX = hayFechasDeOtroAnio ? 74 : 58, MONTO_PX = 106, EXPAND_PX = 28
   const anchosTexto = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
     colVisible, { descripcion: 1.6, categoria: 1.3, subcategoria: 1, cuenta: 1 }
