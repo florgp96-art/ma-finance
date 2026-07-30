@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
+import { proyectarCuotasFuturas, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -2614,85 +2615,41 @@ export default function Dashboard() {
   // Rules of Hooks) porque antes se recalculaba entero (agrupar, desduplicar sufijos,
   // proyectar) en cada render en el que se mostrara el widget.
   const cuotasPendientesMemo = useMemo(() => {
-    // Alquiler/Expensas no son compras financiadas aunque hayan quedado
-    // cargadas con cuotas — son un gasto fijo recurrente, no algo con
-    // fecha de fin, así que no cuentan para esta proyección.
-    const conCuotas = accountTransactions.filter(t =>
-      t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha &&
-      !(t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre))
-    )
-    if (conCuotas.length === 0) return []
+    // La reconstrucción de las compras a partir de las filas sueltas de cada
+    // cuota vive en src/lib/cuotas.js, compartida con la card "Cuotas
+    // comprometidas a futuro" de CashView — antes cada vista tenía su propia
+    // copia y mostraban totales distintos para lo mismo.
+    const proyectadas = proyectarCuotasFuturas(accountTransactions)
+    if (proyectadas.length === 0) return { periodos: [], mesesOcultos: 0, totalFuturo: 0 }
 
-    const stripCuotaSuffix = n => (n || '')
-      .replace(/\s+\d+\/\d+\s*$/, '')
-      .trim()
-    // Además del "N/M" final, se saca un posible prefijo de titular
-    // adicional tipo "BETTY — " / "FEDERICO — ": la misma compra real a
-    // veces se lee con ese prefijo y a veces sin él según el resumen, y si
-    // no se normaliza queda como dos compras distintas.
-    const normalizarNombreCompra = n => stripCuotaSuffix(n)
-      .replace(/^.+?\s+[—-]\s+/, '')
-      .toLowerCase()
-    // Se agrupa solo por nombre normalizado + cantidad de cuotas + cuenta —
-    // SIN usar la fecha de cada fila para "adivinar" el mes en que arrancó
-    // la compra. Antes se incluía ese mes calculado en la clave para poder
-    // distinguir dos compras distintas con el mismo nombre; el problema es
-    // que si las cuotas intermedias de UNA MISMA compra real no quedaron
-    // con fechas espaciadas exactamente un mes entre sí (algo común: resúmenes
-    // que no cierran siempre el mismo día, o dos cuotas cargadas con la
-    // misma fecha), el mes calculado salía distinto para cada cuota y
-    // partía esa única compra en varios grupos fantasma — cada uno
-    // proyectando sus propias cuotas restantes y multiplicando la deuda
-    // futura mostrada. Agrupando solo por nombre+cuotas+cuenta, y tomando
-    // siempre la cuota de número más alto como la más reciente conocida
-    // (ver maxCuotaPorGrupo), la compra queda unificada en un solo grupo.
-    const groupKey = t => `${normalizarNombreCompra(t.nombre || t.detalle || '')}|${t.cuotas_total}|${t.account_id}`
-    // Una compra dividida (regla de tipo "split") queda como varias filas
-    // reales con el mismo número de cuota — hay que sumarlas para recuperar
-    // el monto total de esa cuota, no quedarnos con una sola parte.
-    const maxCuotaPorGrupo = {}
-    conCuotas.forEach(t => {
-      const key = groupKey(t)
-      const cn = t.cuota_numero || 0
-      if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
-    })
-    const latestByPurchase = {}
-    conCuotas.forEach(t => {
-      const key = groupKey(t)
-      if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
-      if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
-      latestByPurchase[key].monto += Number(t.monto)
-    })
-
-    const today = new Date()
-    const todayPeriod = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`
     const tc = parseFloat(tipoCambio) || 0
     const tcEUR = parseFloat(tipoCambioEUR) || 0
     const byPeriod = {}
 
-    Object.values(latestByPurchase).forEach(t => {
-      const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-      if (remaining <= 0) return
-      const baseDate = new Date(t.fecha + 'T12:00:00')
-      for (let i = 1; i <= remaining; i++) {
-        const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1)
-        const period = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-        if (period < todayPeriod) continue
-        if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
-        const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'EUR' && tcEUR > 0 ? t.monto * tcEUR : t.monto
-        byPeriod[period].total_ars += arsEquiv
-        byPeriod[period].items.push({
-          nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
-          monto: t.monto,
-          moneda: t.moneda || 'ARS',
-          cuotaNum: (t.cuota_numero || 1) + i,
-          cuotasTotal: t.cuotas_total,
-          cuenta: t.accounts?.nombre || ''
-        })
-      }
+    proyectadas.forEach(({ tx: t, mes: period, cuotaNum }) => {
+      if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
+      const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'EUR' && tcEUR > 0 ? t.monto * tcEUR : t.monto
+      byPeriod[period].total_ars += arsEquiv
+      byPeriod[period].items.push({
+        nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
+        monto: t.monto,
+        moneda: t.moneda || 'ARS',
+        cuotaNum,
+        cuotasTotal: t.cuotas_total,
+        cuenta: t.accounts?.nombre || ''
+      })
     })
 
-    return Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).slice(0, 6)
+    // Se listan los próximos 6 meses para que el widget no crezca sin fin, pero
+    // se devuelve aparte el total de TODOS los meses futuros: mostrar solo 6
+    // meses sin aclararlo hacía que los números no cerraran contra la card
+    // "Cuotas comprometidas a futuro", que sí cuenta todo.
+    const todos = Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b))
+    return {
+      periodos: todos.slice(0, 6),
+      mesesOcultos: Math.max(0, todos.length - 6),
+      totalFuturo: todos.reduce((s, [, d]) => s + d.total_ars, 0),
+    }
   }, [accountTransactions, tipoCambio, tipoCambioEUR])
 
   // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
@@ -2863,8 +2820,8 @@ export default function Dashboard() {
     <>
             {/* Widget: Cuotas pendientes */}
             {(() => {
-              const periods = cuotasPendientesMemo
-              if (periods.length === 0) return null
+              const { periodos: periods, mesesOcultos, totalFuturo } = cuotasPendientesMemo
+              if (!periods || periods.length === 0) return null
 
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
               const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
@@ -2898,6 +2855,18 @@ export default function Dashboard() {
                       </div>
                     )
                   })}
+                  {/* El total de todos los meses futuros, aunque arriba solo se
+                      listen los próximos 6: sin esto los meses mostrados no
+                      cerraban contra "Cuotas comprometidas a futuro" y parecía
+                      que un número estaba mal. */}
+                  {mesesOcultos > 0 && (
+                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
+                        Total, con {mesesOcultos} mes{mesesOcultos === 1 ? '' : 'es'} más
+                      </span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C', whiteSpace: 'nowrap' }}>$ {fmt(totalFuturo)}</span>
+                    </div>
+                  )}
                 </div>
               )
             })()}
