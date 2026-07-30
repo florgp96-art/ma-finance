@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel } from './AccountDetail'
-import { proyectarCuotasFuturas, esAlquilerOExpensas } from '../lib/cuotas'
+import { proyectarCuotasFuturas } from '../lib/cuotas'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -133,29 +133,28 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
 
     // Clasifica los movimientos "efectivamente pagados" de un mes en grupos sin
     // superposición entre ellos, siguiendo el mismo modelo de datos que ya usa
-    // la vista de A pagar (pago de tarjeta = transacción tipo "neutro" en una
-    // cuenta de crédito; débito/efectivo = cuentas de ese tipo; alquiler/
-    // expensas se identifica por categoría, sin importar la cuenta; dentro de
-    // una cuenta débito, lo categorizado como "Débitos" son los automáticos de
-    // verdad, y el resto son transferencias comunes).
+    // la vista de A pagar: los grupos se definen SIEMPRE por el tipo de cuenta
+    // de la que salió la plata (pago de tarjeta = "neutro" en una cuenta de
+    // crédito; débito/efectivo = cuentas de ese tipo), nunca por la categoría
+    // del gasto.
+    //
+    // Antes había un grupo aparte de alquiler/expensas que se armaba por
+    // categoría sin importar la cuenta, y por eso se solapaba con los demás: el
+    // alquiler pagado con tarjeta se contaba en su grupo Y adentro del pago del
+    // resumen, y el pagado en efectivo se contaba en su grupo Y en "Efectivo".
+    // Sacarlo elimina toda esa clase de doble conteo: ahora cada gasto cae en un
+    // solo grupo, el del medio de pago con el que realmente se pagó.
     const desgloseDelMes = (mes) => {
       const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
       const tipoCuenta = (t) => accountTipoById.get(t.account_id)
       const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
-      // Igual que suscripciones, tiene que EXCLUIR las cuentas de crédito. Si el
-      // alquiler/las expensas se pagan con tarjeta, ese gasto ya está adentro
-      // del pago del resumen (que se cuenta en `pagos`), así que sumarlo también
-      // acá lo contaba dos veces en el total pagado del mes. Era el único grupo
-      // sin esa guarda: se asumía que esto siempre se paga por transferencia o
-      // efectivo, que es cierto para algunos usuarios pero no para todos.
-      const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t) && tipoCuenta(t) !== 'credito')
-      const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t) && !esAlquilerOExpensas(t))
-      const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t) && !esDebitoAutomatico(t))
+      const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t))
+      const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esSuscripcion(t) && !esDebitoAutomatico(t))
       const suscripciones = txs.filter(t => t.tipo === 'gasto' && esSuscripcion(t) && tipoCuenta(t) !== 'credito')
       const efectivo = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'efectivo' && !esSuscripcion(t))
       const ingresos = txs.filter(t => t.tipo === 'ingreso')
       const sum = (list) => list.reduce((s, t) => s + aArs(t), 0)
-      const todos = [...pagos, ...alquiler, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
+      const todos = [...pagos, ...debitosAutomaticos, ...transferencias, ...suscripciones, ...efectivo]
       const totalPagado = sum(todos)
       const totalPagadoArs = todos.reduce((s, t) => s + (t.moneda === 'ARS' ? Number(t.monto) : 0), 0)
       const totalPagadoUsd = todos.reduce((s, t) => s + (t.moneda === 'USD' ? Number(t.monto) : 0), 0)
@@ -167,7 +166,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       const balanceArs = totalIngresosArs - totalPagadoArs
       const balanceUsd = totalIngresosUsd - totalPagadoUsd
       const balanceEur = totalIngresosEur - totalPagadoEur
-      return { pagos, alquiler, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, totalIngresosArs, totalIngresosUsd, totalIngresosEur, balanceArs, balanceUsd, balanceEur, balance: totalIngresos - totalPagado }
+      return { pagos, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, totalIngresosArs, totalIngresosUsd, totalIngresosEur, balanceArs, balanceUsd, balanceEur, balance: totalIngresos - totalPagado }
     }
 
     const actual = desgloseDelMes(selectedMonth)
@@ -319,12 +318,11 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             )
           })
         })}
-        {grupoRowExpandible('alquiler', '🏠', 'Vivienda', actual.alquiler)}
         {grupoRowExpandible('debitos', '🏦', 'Débitos automáticos', actual.debitosAutomaticos)}
         {grupoRowExpandible('transferencias', '🔁', 'Transferencias', actual.transferencias)}
         {grupoRowExpandible('suscripciones', '📱', 'Suscripciones', actual.suscripciones)}
         {grupoRowExpandible('efectivo', '💵', 'Efectivo', actual.efectivo)}
-        {pagosPorCuenta.size === 0 && actual.alquiler.length === 0 && actual.debitosAutomaticos.length === 0 && actual.transferencias.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
+        {pagosPorCuenta.size === 0 && actual.debitosAutomaticos.length === 0 && actual.transferencias.length === 0 && actual.suscripciones.length === 0 && actual.efectivo.length === 0 && (
           <p style={{ margin: 0, fontSize: '13px', color: muted }}>No hay pagos registrados este mes.</p>
         )}
       </div>
@@ -366,16 +364,17 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       {/* Cuotas comprometidas */}
       {cuotas.compras > 0 && (
         <div style={seccion}>
-          <p style={label}>Cuotas comprometidas a futuro</p>
-          <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
-          {/* "Estimado" solo, sin decir de qué, no explicaba nada: la cantidad
-              de compras es exacta, lo aproximado es el monto — se calcula
-              repitiendo el valor de la última cuota facturada de cada compra,
-              que es lo único que se puede saber hoy de las que vienen. */}
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>
-            Lo que falta pagar de {cuotas.compras} compra{cuotas.compras === 1 ? '' : 's'} en cuotas,
-            calculado con el valor de la última cuota de cada una.
+          {/* La explicación de cómo se calcula va en la "i" del título, no como
+              un renglón de texto abajo del monto: ahí ocupaba dos líneas en la
+              card y competía con el número, que es lo que se viene a mirar. */}
+          <p style={{ ...label, display: 'flex', alignItems: 'center' }}>
+            Cuotas comprometidas a futuro
+            <InfoTooltip
+              darkMode={darkMode}
+              text={`Lo que falta pagar de ${cuotas.compras} compra${cuotas.compras === 1 ? '' : 's'} en cuotas, calculado con el valor de la última cuota de cada una.`}
+            />
           </p>
+          <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
         </div>
       )}
 
