@@ -142,7 +142,13 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
       const tipoCuenta = (t) => accountTipoById.get(t.account_id)
       const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
-      const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t))
+      // Igual que suscripciones, tiene que EXCLUIR las cuentas de crédito. Si el
+      // alquiler/las expensas se pagan con tarjeta, ese gasto ya está adentro
+      // del pago del resumen (que se cuenta en `pagos`), así que sumarlo también
+      // acá lo contaba dos veces en el total pagado del mes. Era el único grupo
+      // sin esa guarda: se asumía que esto siempre se paga por transferencia o
+      // efectivo, que es cierto para algunos usuarios pero no para todos.
+      const alquiler = txs.filter(t => t.tipo === 'gasto' && esAlquilerOExpensas(t) && tipoCuenta(t) !== 'credito')
       const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t) && !esAlquilerOExpensas(t))
       const transferencias = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && !esAlquilerOExpensas(t) && !esSuscripcion(t) && !esDebitoAutomatico(t))
       const suscripciones = txs.filter(t => t.tipo === 'gasto' && esSuscripcion(t) && tipoCuenta(t) !== 'credito')
