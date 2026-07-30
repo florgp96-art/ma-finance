@@ -132,7 +132,17 @@ export const formatMontoFull = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
 
 export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
-export const formatFechaCorta = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) : ''
+
+// Fecha corta para las tablas de movimientos. Se omite el año SOLO si es del año
+// en curso: mezclado con movimientos viejos, "28/06" no dice de qué año es (y en
+// una lista con cosas de 2023 y de hoy eso es directamente confuso). En ese caso
+// se agrega el año en dos dígitos, que entra en el ancho de columna existente.
+export const formatFechaCorta = (f) => {
+  if (!f) return ''
+  const corta = f.slice(8, 10) + '/' + f.slice(5, 7)
+  const esDeEsteAnio = f.slice(0, 4) === String(new Date().getFullYear())
+  return esDeEsteAnio ? corta : corta + '/' + f.slice(2, 4)
+}
 
 // Única fuente de verdad para "categoría de un ingreso": la subcategoría real de la
 // categoría "Ingresos" en la base (categories/subcategories) — la usan por igual el
@@ -626,7 +636,15 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   // angostas se vuelve al ancho compacto, donde cada píxel le hace falta a las
   // columnas de texto.
   const anchoHolgado = tablaWidth >= 900
-  const FECHA_PX = anchoHolgado ? 82 : 62
+  // Cuando hay movimientos de otro año la fecha se muestra con el año
+  // ("28/06/23", ver formatFechaCorta) y no entra en el ancho compacto: se le
+  // dan unos píxeles más, pero solo en ese caso, para no sacarle lugar a las
+  // columnas de texto en la vista normal (todo del año en curso).
+  const hayFechasDeOtroAnio = useMemo(() => {
+    const anioActual = String(new Date().getFullYear())
+    return (transactions || []).some(t => t.fecha && t.fecha.slice(0, 4) !== anioActual)
+  }, [transactions])
+  const FECHA_PX = anchoHolgado ? 82 : (hayFechasDeOtroAnio ? 76 : 62)
   const CUOTAS_PX = anchoHolgado ? 78 : 54
   const MONTO_PX = 112, EXPAND_PX = 28
   // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
