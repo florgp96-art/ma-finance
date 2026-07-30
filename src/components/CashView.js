@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel } from './AccountDetail'
+import { proyectarCuotasFuturas, esAlquilerOExpensas } from '../lib/cuotas'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -123,7 +124,6 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // re-render ajeno (abrir/cerrar un ítem del desglose, hover) no dispare esos 7 barridos
   // de nuevo. Ningún cálculo interno se modificó.
   const { actual, pagosPorCuenta, cuotas, historial } = useMemo(() => {
-    const esAlquilerOExpensas = (t) => t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
     const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
     // "Débito automático" en sentido estricto (algo que se debita solo, tipo
     // seguro/cuota/servicio) es la categoría "Débitos" que el usuario ya puede
@@ -174,57 +174,15 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     })
 
     // Cuotas comprometidas a futuro: para cada compra en cuotas, lo que falta
-    // facturar de acá en adelante. Agrupar por t.nombre/t.detalle "tal cual" no
-    // sirve — esos campos traen pegado el sufijo de cuota del banco (ej.
-    // "Compra 3/12"), que cambia en cada fila de la misma compra real, así que
-    // cada cuota ya facturada terminaba contándose como una "compra" aparte
-    // (confirmado: ver diagnóstico en PR #97). Se agrupa por nombre sin el
-    // sufijo + cuotas_total + cuenta + mes de inicio de la compra (mismo
-    // criterio que ya usa el widget "Cuotas pendientes" de Dashboard.js), y solo
-    // se toma la cuota de mayor número por grupo (la más reciente facturada).
-    const stripCuotaSuffix = (n) => (n || '')
-      .replace(/\s+\d+\/\d+\s*$/, '')
-      .trim()
-    const mesInicioCompra = (t) => {
-      if (!t.fecha) return ''
-      const f = new Date(t.fecha + 'T12:00:00')
-      const d = new Date(f.getFullYear(), f.getMonth() - ((t.cuota_numero || 1) - 1), 1)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    // facturar de acá en adelante. La reconstrucción de las compras a partir de
+    // las filas sueltas de cada cuota vive en src/lib/cuotas.js, compartida con
+    // el widget "Cuotas pendientes" del Dashboard — antes cada vista tenía su
+    // propia copia y mostraban totales distintos para lo mismo.
+    const proyectadas = proyectarCuotasFuturas(transactions)
+    const cuotas = {
+      total: proyectadas.reduce((s, { tx }) => s + aArs(tx), 0),
+      compras: new Set(proyectadas.map(p => p.tx.id)).size,
     }
-    const cuotasComprometidas = () => {
-      // Alquiler/expensas puede quedar cargado con cuotas_total/cuota_numero
-      // (ej. para trackear los meses de un contrato), pero no es una compra
-      // financiada con fecha de fin real — es un gasto fijo recurrente que no
-      // corresponde proyectar acá (además de que ni siquiera está garantizado
-      // que se vaya a pagar cada mes).
-      const conCuotas = transactions.filter(t => (t.cuotas_total || 1) > 1 && !esAlquilerOExpensas(t))
-      const groupKeyCuota = (t) => `${stripCuotaSuffix(t.nombre || t.detalle || '').toLowerCase()}|${t.cuotas_total}|${t.account_id}|${mesInicioCompra(t)}`
-      const maxCuotaPorGrupo = {}
-      conCuotas.forEach(t => {
-        const key = groupKeyCuota(t)
-        const cn = t.cuota_numero || 0
-        if (!maxCuotaPorGrupo[key] || cn > maxCuotaPorGrupo[key]) maxCuotaPorGrupo[key] = cn
-      })
-      // Una compra dividida (regla de tipo "split") queda como varias filas
-      // reales con el mismo número de cuota — hay que sumarlas para recuperar
-      // el monto total de esa cuota, no quedarnos con una sola parte.
-      const latestByPurchase = {}
-      conCuotas.forEach(t => {
-        const key = groupKeyCuota(t)
-        if ((t.cuota_numero || 0) !== maxCuotaPorGrupo[key]) return
-        if (!latestByPurchase[key]) latestByPurchase[key] = { ...t, monto: 0 }
-        latestByPurchase[key].monto += Number(t.monto)
-      })
-      let total = 0, compras = 0
-      Object.values(latestByPurchase).forEach(t => {
-        const remaining = (t.cuotas_total || 1) - (t.cuota_numero || 1)
-        if (remaining <= 0) return
-        total += aArs(t) * remaining
-        compras++
-      })
-      return { total, compras }
-    }
-    const cuotas = cuotasComprometidas()
 
     const historial = getLast6Months().map(m => ({
       mes: m,
@@ -404,7 +362,14 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
         <div style={seccion}>
           <p style={label}>Cuotas comprometidas a futuro</p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>Estimado: {cuotas.compras} compra{cuotas.compras === 1 ? '' : 's'} en cuotas con saldo pendiente de facturar.</p>
+          {/* "Estimado" solo, sin decir de qué, no explicaba nada: la cantidad
+              de compras es exacta, lo aproximado es el monto — se calcula
+              repitiendo el valor de la última cuota facturada de cada compra,
+              que es lo único que se puede saber hoy de las que vienen. */}
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>
+            Lo que falta pagar de {cuotas.compras} compra{cuotas.compras === 1 ? '' : 's'} en cuotas,
+            calculado con el valor de la última cuota de cada una.
+          </p>
         </div>
       )}
 
