@@ -377,6 +377,17 @@ export default function Dashboard() {
   const [sidebarCatEvol, setSidebarCatEvol] = useState(['total'])
   const [evolucionTipo, setEvolucionTipo] = useState('gasto')
   const [evolDropdownOpen, setEvolDropdownOpen] = useState(false)
+  // Categorías con sus subcategorías desplegadas dentro del selector. Arrancan
+  // cerradas para que la lista se pueda barrer de un vistazo (con varias
+  // categorías de muchas subcategorías, abrirlas todas era la lista larga que
+  // había antes). Una categoría con alguna subcategoría YA elegida se muestra
+  // abierta igual, para que lo seleccionado nunca quede escondido.
+  const [evolCatsAbiertas, setEvolCatsAbiertas] = useState(() => new Set())
+  const toggleEvolCat = (cat) => setEvolCatsAbiertas(prev => {
+    const next = new Set(prev)
+    next.has(cat) ? next.delete(cat) : next.add(cat)
+    return next
+  })
   const evolDropdownRef = useRef(null)
   useEffect(() => {
     if (!evolDropdownOpen) return
@@ -2931,12 +2942,13 @@ export default function Dashboard() {
               // categoría ("Casa › Gas", "Casa › Luz", "Casa › Expensas"...),
               // lo que hacía la lista larga y difícil de barrer con la vista.
               const opcionesGasto = [
-                ...categoriasConTx.flatMap(c => [
-                  { key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }) },
-                  ...subcatsConTx
-                    .filter(s => s.categoria === c)
-                    .map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: subcategoria, sangria: true })),
-                ]),
+                ...categoriasConTx.flatMap(c => {
+                  const subs = subcatsConTx.filter(s => s.categoria === c)
+                  return [
+                    { key: `cat:${c}`, label: c, icon: resolveCategoryIcon(c, { customIcons }), catConSubs: subs.length > 0 ? c : null },
+                    ...subs.map(({ categoria, subcategoria }) => ({ key: `sub:${categoria}::${subcategoria}`, label: subcategoria, sangria: true, padre: categoria })),
+                  ]
+                }),
                 // Una subcategoría cuya categoría no quedó en la lista (no
                 // debería pasar, salen del mismo cálculo) igual se ofrece, con
                 // el nombre completo para que no quede colgada sin contexto.
@@ -2946,6 +2958,10 @@ export default function Dashboard() {
                 ...(hijosConTx.length > 0 ? [{ separador: true }] : []),
                 ...hijosConTx.map(h => ({ key: `hijo:${h}`, label: h, icon: customIcons?.[h] || '👧' })),
               ]
+              // Una categoría se considera desplegada si el usuario la abrió, o
+              // si tiene alguna subcategoría elegida — así una selección activa
+              // nunca queda escondida detrás de una flechita cerrada.
+              const catAbierta = (cat) => evolCatsAbiertas.has(cat) || sidebarCatEvol.some(k => k.startsWith(`sub:${cat}::`))
               const opciones = [
                 { key: 'total', label: 'Total', icon: '📊' },
                 ...(evolucionTipo === 'gasto'
@@ -2997,13 +3013,40 @@ export default function Dashboard() {
                         style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
                         {opciones.map((op, i) => {
                           if (op.separador) return <div key={`sep-${i}`} style={{ borderTop: `1px solid ${borderClr}`, margin: '4px 0' }} />
+                          // Una subcategoría se ve si su categoría está desplegada,
+                          // o si está elegida (no esconder una selección activa).
+                          if (op.padre && !catAbierta(op.padre) && !sidebarCatEvol.includes(op.key)) return null
                           const activo = sidebarCatEvol.includes(op.key)
+                          const marca = (
+                            <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : borderClr}`, background: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
+                              {activo ? '✓' : ''}
+                            </span>
+                          )
+                          const filaBase = { background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }
+                          // Categoría con subcategorías: la fila tiene dos acciones
+                          // separadas — elegir la categoría (checkbox + nombre) y
+                          // abrir/cerrar sus subcategorías (la flechita).
+                          if (op.catConSubs) {
+                            const abierta = catAbierta(op.catConSubs)
+                            return (
+                              <div key={op.key} style={{ ...filaBase, display: 'flex', alignItems: 'center' }}>
+                                <button type="button" onClick={() => toggleClave(op.key)}
+                                  style={{ ...filaBase, flex: 1, minWidth: 0, textAlign: 'left', padding: '7px 4px 7px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {marca}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.icon ? `${op.icon} ` : ''}{op.label}</span>
+                                </button>
+                                <button type="button" onClick={() => toggleEvolCat(op.catConSubs)}
+                                  aria-label={`${abierta ? 'Cerrar' : 'Abrir'} subcategorías de ${op.label}`}
+                                  style={{ ...filaBase, padding: '7px 12px', fontSize: '9px', opacity: 0.75, flexShrink: 0 }}>
+                                  {abierta ? '▴' : '▾'}
+                                </button>
+                              </div>
+                            )
+                          }
                           return (
                             <button key={op.key} type="button" onClick={() => toggleClave(op.key)}
-                              style={{ width: '100%', textAlign: 'left', padding: op.sangria ? '5px 12px 5px 30px' : '7px 12px', background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: op.sangria ? '11px' : '12px', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}>
-                              <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : borderClr}`, background: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
-                                {activo ? '✓' : ''}
-                              </span>
+                              style={{ ...filaBase, width: '100%', textAlign: 'left', padding: op.sangria ? '5px 12px 5px 30px' : '7px 12px', fontSize: op.sangria ? '11px' : '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {marca}
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{op.icon ? `${op.icon} ` : ''}{op.label}</span>
                             </button>
                           )
