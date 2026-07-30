@@ -447,10 +447,15 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
+                {/* Ícono en celda de ancho fijo (ver misma leyenda en
+                    AccountDetail): los emojis no miden todos igual, y con el
+                    ícono pegado al nombre en un solo span la columna de
+                    nombres quedaba despareja. */}
                 {catData.map((entry, idx) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                     <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: resolveCategoryColor(entry.name), flexShrink: 0 }} />
-                    <span title={entry.name} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{resolveCategoryIcon(entry.name, { customIcons })} {entry.name}</span>
+                    <span style={{ width: 20, flexShrink: 0, textAlign: 'center', lineHeight: 1 }}>{resolveCategoryIcon(entry.name, { customIcons })}</span>
+                    <span title={entry.name} style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>{entry.name}</span>
                     <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>$ {formatMonto(entry.value)}</span>
                   </div>
                 ))}

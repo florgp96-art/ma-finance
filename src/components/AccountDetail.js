@@ -619,7 +619,16 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   // el resto del ancho medido de la tabla se reparte por peso entre nombre y
   // las columnas de texto opcionales (ver repartirAnchoTexto), en vez de que
   // nombre se lleve todo el sobrante como pasaba con un <col /> sin ancho.
-  const FECHA_PX = 62, CUOTAS_PX = 54, MONTO_PX = 112, EXPAND_PX = 28
+  // Estos anchos estaban calculados para el CONTENIDO ("23/07", "6/6") y no
+  // para el encabezado, así que en desktop los títulos se cortaban ("FEC...",
+  // "CU...") aunque sobrara espacio a lo ancho. Cuando hay lugar se les da el
+  // ancho que necesita el título completo ("FECHA ↕", "CUOTAS ↕"); en pantallas
+  // angostas se vuelve al ancho compacto, donde cada píxel le hace falta a las
+  // columnas de texto.
+  const anchoHolgado = tablaWidth >= 900
+  const FECHA_PX = anchoHolgado ? 82 : 62
+  const CUOTAS_PX = anchoHolgado ? 78 : 54
+  const MONTO_PX = 112, EXPAND_PX = 28
   // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
   // cuenta como "Mastercard Preferred" son tan largos como una categoría —
   // se cortaban con "..." mientras sobraba aire en las demás columnas.
@@ -1192,12 +1201,27 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return sortDir === 'asc' ? ' ↑︎' : ' ↓︎'
   }
 
+  // Vista de cuenta de ingresos: todas las txs son tipo ingreso
+  const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
+
+  // Lo que se ORDENA en la columna Categoría tiene que ser lo que se VE en esa
+  // columna. Antes ordenaba por `children.nombre || tag || categories.nombre`:
+  // una fila asignada a un hijo se ordenaba por el nombre del hijo, que en esa
+  // columna no aparece (el hijo se muestra como chip al lado del nombre), así
+  // que el orden salía aparentemente arbitrario. Este es el mismo valor que
+  // arma la celda en renderTxRow.
+  const etiquetaCategoria = useCallback((t) => (
+    (esVistaIngresos || t.tipo === 'ingreso')
+      ? (t.tag || t.subcategories?.nombre || t.categories?.nombre || '')
+      : (t.categories?.nombre || '')
+  ), [esVistaIngresos])
+
   const sortTx = useCallback((list) => {
     return [...list].sort((a, b) => {
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
-      else if (sortKey === 'categoria') { valA = (a.children?.nombre || a.tag || a.categories?.nombre || '').toLowerCase(); valB = (b.children?.nombre || b.tag || b.categories?.nombre || '').toLowerCase() }
+      else if (sortKey === 'categoria') { valA = etiquetaCategoria(a).toLowerCase(); valB = etiquetaCategoria(b).toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'monto') {
         valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
@@ -1210,10 +1234,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (valA > valB) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [sortKey, sortDir])
+  }, [sortKey, sortDir, etiquetaCategoria])
 
-  // Vista de cuenta de ingresos: todas las txs son tipo ingreso
-  const esVistaIngresos = !allAccounts && account?.tipo === 'ingreso'
 
   // Agrupado por mes (no un renglón por statement): si el mismo mes tiene más de
   // un resumen cargado (ej. se volvió a subir el mismo resumen porque
@@ -3300,10 +3322,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           sobrara espacio a lo ancho — ahora ocupa el espacio disponible
                           de la fila (flex:1) y si de verdad no entra, pasa a una segunda
                           línea en vez de cortarse. */}
+                      {/* El ícono va en su propia celda de ancho fijo, no pegado
+                          al nombre en el mismo texto: los emojis no miden todos
+                          igual (👤 es más angosto que 🧒), así que con todo en
+                          un solo span cada nombre arrancaba en una x distinta y
+                          la columna quedaba despareja. */}
                       {data.map((entry, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                           <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                          <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', flex: '1 1 auto', minWidth: 0, wordBreak: 'break-word' }}>{getChartIcon(entry.name)} {entry.name}</span>
+                          <span style={{ width: 20, flexShrink: 0, textAlign: 'center', lineHeight: 1 }}>{getChartIcon(entry.name)}</span>
+                          <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', flex: '1 1 auto', minWidth: 0, wordBreak: 'break-word' }}>{entry.name}</span>
                           <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap', flexShrink: 0 }}>$ {formatMonto(entry.value)}</span>
                         </div>
                       ))}
