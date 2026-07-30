@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { proyectarCuotasFuturas, stripCuotaSuffix } from '../lib/cuotas'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel, periodoToYearMonth } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -64,14 +64,23 @@ const parseCuotaDesc = (texto) => {
   return { cuota_numero: 1, cuotas_total: 1 }
 }
 
-// Excel: cada fila de una compra en cuotas suele traer la fecha de la compra
-// original repetida, no la del mes que factura esa cuota puntual — se corrige
-// sumando (cuota_numero - 1) meses a esa fecha.
+// Cada fila de una compra en cuotas trae la fecha de la compra original
+// repetida, no la del mes que factura esa cuota puntual — se corrige sumando
+// (cuota_numero - 1) meses a esa fecha. Lo usan las dos importaciones (Excel y
+// PDF/foto).
 const addMonths = (fechaISO, n) => {
   if (!fechaISO || !n) return fechaISO
-  const d = new Date(fechaISO + 'T00:00:00')
-  d.setMonth(d.getMonth() + n)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = fechaISO.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return fechaISO
+  // El día se recorta al último del mes destino: con setMonth, una compra del
+  // 31/01 daba 03/03 (febrero no tiene 31 y JS desborda al mes siguiente), así
+  // que esa cuota se salteaba febrero. Ahora cae el 28/02.
+  const destino = new Date(y, (m - 1) + n, 1)
+  const ultimoDia = new Date(destino.getFullYear(), destino.getMonth() + 1, 0).getDate()
+  destino.setDate(Math.min(d, ultimoDia))
+  // Se arma el string a mano en vez de con toISOString(), que pasa por UTC: en
+  // una zona horaria positiva convertía la medianoche local al día anterior.
+  return `${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, '0')}-${String(destino.getDate()).padStart(2, '0')}`
 }
 
 // Supabase/PostgREST limita a 1000 filas por consulta si no se pagina. Las cuentas con
@@ -2499,54 +2508,32 @@ export default function Dashboard() {
         return
       }
 
-      const fechaResumen = statementData.fecha_facturacion || null
       // En una compra en cuotas, el resumen repite la fecha de la COMPRA ORIGINAL
-      // en cada cuota, no la del mes que factura esa cuota. Hay que corregirlo o
-      // todas las cuotas de la misma compra quedan con la misma fecha: se
-      // acumulan en el mes de la compra (inflándolo y vaciando los meses que
-      // realmente las facturan) y la proyección de "Cuotas pendientes", que se
-      // apoya en esa fecha, calcula mal los meses que faltan.
+      // en cada cuota, no la del mes que factura esa cuota. Si no se corrige,
+      // todas las cuotas quedan con la misma fecha: se acumulan en el mes de la
+      // compra (inflándolo y vaciando los meses que realmente las facturan) y la
+      // proyección de "Cuotas pendientes", que se apoya en esa fecha, calcula mal
+      // los meses que faltan.
       //
-      // Antes esto dependía solo de fecha_facturacion, y un screenshot de
-      // movimientos no la trae (la IA la devuelve null) — así que en ese caso la
-      // corrección no corría y la cuota se guardaba con la fecha de la compra.
-      // Ahora se intenta, en orden: fecha de facturación → período del resumen
-      // ("Agosto 2026") → vencimiento. Y si el resumen no dice nada de eso, se
-      // deriva de la propia cuota sumando (cuota_numero - 1) meses a la fecha de
-      // compra, igual que ya hace la importación por Excel (ver addMonths).
-      const mesFacturacion = (() => {
-        if (fechaResumen) {
-          const parts = fechaResumen.split('/')
-          if (parts.length === 3) {
-            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
-            return { year, mes: parts[1].padStart(2, '0'), dia: parts[0].padStart(2, '0') }
-          }
-        }
-        const delPeriodo = periodoToYearMonth(statementData.periodo)
-        if (delPeriodo) {
-          const [year, mes] = delPeriodo.split('-')
-          return { year, mes, dia: '01' }
-        }
-        const venc = statementData.fecha_vencimiento
-        if (venc && /^\d{4}-\d{2}-\d{2}$/.test(venc)) {
-          const [year, mes, dia] = venc.split('-')
-          return { year, mes, dia }
-        }
-        return null
-      })()
-      // Solo importar las transacciones que el usuario seleccionó en el preview
+      // La fecha se deriva de la propia cuota: fecha de compra + (cuota_numero-1)
+      // meses. Si la cuota 1 es el 15/05, la 2 es el 15/06 y la 3 el 15/07.
+      //
+      // IMPORTANTE: NO se usa la fecha de facturación / el período del resumen
+      // para esto, aunque parezca más "exacto". Al cargar varios resúmenes viejos
+      // para armar el historial, la MISMA cuota puede aparecer en el detalle de
+      // más de un resumen; si la fecha saliera del resumen, cada copia quedaría
+      // con una fecha distinta, el chequeo de duplicados (que para cuotas compara
+      // el mes) no las reconocería entre sí, y terminarían duplicadas. Derivándola
+      // de la compra, la fecha de una cuota es siempre la misma sin importar de
+      // qué resumen se cargó. Es el mismo criterio que ya usa la importación por
+      // Excel (ver addMonths).
       const transaccionesCandidatas = statementData.transacciones
         .filter((_, i) => pdfTxSelections.has(i))
         .map(t => {
           const categoryId = getCategoryId(t.categoria_sugerida)
-          let fechaFinal = t.fecha
-          if (t.cuotas_total > 1) {
-            if (mesFacturacion) {
-              fechaFinal = `${mesFacturacion.year}-${mesFacturacion.mes}-${mesFacturacion.dia}`
-            } else {
-              fechaFinal = addMonths(t.fecha, (t.cuota_numero || 1) - 1)
-            }
-          }
+          const fechaFinal = t.cuotas_total > 1
+            ? addMonths(t.fecha, (t.cuota_numero || 1) - 1)
+            : t.fecha
           const detalleTxLowerC = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           const esDevolucionC = detalleTxLowerC.includes('devoluci') || detalleTxLowerC.includes('dev.imp') || detalleTxLowerC.includes('reintegro')
           const esCreditoC = t.es_credito || esDevolucionC || t.tipo === 'ingreso'
