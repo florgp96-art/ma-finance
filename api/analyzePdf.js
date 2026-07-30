@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   if (!esPremium) {
     if (tuvoPremium) {
       return res.status(402).json({
-        error: 'Tu suscripción Premium terminó. Podés seguir cargando por Excel sin límite, o reactivar Premium para volver a análisis con IA.',
+        error: 'Tu Premium terminó. Podés seguir cargando a mano o por Excel sin límite. Si querés volver a subir resúmenes para que la app los lea, reactivá Premium.',
         code: 'EX_PREMIUM_NO_IA',
       })
     }
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     }
     if (cupoUsado) {
       return res.status(402).json({
-        error: 'Ya usaste tu análisis con IA gratis este mes. Podés seguir cargando por Excel sin límite, o suscribirte a Premium para análisis ilimitados.',
+        error: 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite, o pasar a Premium para subir todos los que quieras.',
         code: 'AI_QUOTA_EXCEEDED',
       })
     }
