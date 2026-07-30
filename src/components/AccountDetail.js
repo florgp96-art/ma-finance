@@ -651,6 +651,10 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   )
   const [editNombre, setEditNombre] = useState('')
   const [editMonto, setEditMonto] = useState('')
+  // La fecha no se podía editar desde la fila: si la IA la leía mal, o una cuota
+  // quedaba en el mes equivocado, no había forma de corregirla sin borrar el
+  // movimiento y cargarlo de nuevo a mano.
+  const [editFecha, setEditFecha] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
@@ -982,6 +986,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const montoCorregido = !isNaN(editMontoNum) && editMontoNum > 0 && Math.abs(editMontoNum - Math.abs(tx.monto)) > 0.001
       ? editMontoNum
       : (tx.monto < 0 ? Math.abs(tx.monto) : undefined)
+    // Fecha editable a mano (ej. corregir una cuota que quedó en el mes
+    // equivocado, o una fecha que la IA leyó mal). Se valida el formato antes de
+    // mandarla a la base; si quedó vacía o inválida, no se toca la original.
+    const fechaOk = (() => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(editFecha)) return false
+      const d = new Date(`${editFecha}T12:00:00`)
+      if (isNaN(d.getTime())) return false
+      // new Date('2026-02-30') NO falla: JS lo desborda al 2 de marzo. Se
+      // verifica que la fecha vuelva a dar el mismo texto, para descartar días
+      // que no existen en ese mes.
+      const vuelta = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return vuelta === editFecha
+    })()
+    const fechaCorregida = fechaOk && editFecha !== normFecha(tx.fecha) ? editFecha : undefined
+    const cambioFecha = fechaCorregida !== undefined ? { fecha: fechaCorregida } : {}
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
     // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
@@ -1001,7 +1020,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         : null
       const catIngresos = categories.find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
       const childIngresoObj = children.find(c => c.nombre === editHijoIngreso)
-      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
+      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...cambioFecha, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
       if (!editTag) {
         // Sin categoría elegida: limpiar el vínculo.
         upd.category_id = null
@@ -1020,7 +1039,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...cambioFecha, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       setFilaExpandida(prev => prev === tx.id ? null : prev)
       return
@@ -1042,6 +1061,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       tag: editTag || null,
       ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
       ...accountChange,
+      ...cambioFecha,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
     if (errUpd) { window.alert('No se pudo guardar el cambio: ' + errUpd.message + '\nProbá de nuevo.'); return }
@@ -1085,6 +1105,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
         ...accountChange,
         ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
+        ...cambioFecha,
         ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
       } : t))
     setEditingTx(null)
@@ -1094,6 +1115,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const startEdit = (tx) => {
     setEditingTx(tx.id)
     setEditNombre(tx.nombre || tx.detalle)
+    // normFecha para que un valor con hora ("2026-07-15T00:00:00") llegue como
+    // "2026-07-15", que es lo único que acepta un <input type="date">.
+    setEditFecha(normFecha(tx.fecha) || '')
     setEditCategoria(tx.categories?.nombre || 'A Identificar')
     setEditSubcategoria(tx.subcategories?.nombre || '')
     setEditCuenta(tx.account_id || '')
@@ -1964,6 +1988,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="number" step="0.01" min="0" value={editMonto}
             onChange={e => setEditMonto(e.target.value)} placeholder="Monto" />
+          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="date" value={editFecha}
+            onChange={e => setEditFecha(e.target.value)} title="Fecha del movimiento" />
           <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
             {(accounts || []).filter(a => esIngresoTx || a.tipo !== 'ingreso').map(a => (
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
@@ -3326,8 +3352,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </ResponsiveContainer>
                     {/* Sin paddingTop en desktop: existía para compensar la
                         alineación de arriba, y ahora que la leyenda va centrada
-                        respecto del donut la corría de más. */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : 0, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '200px', flexGrow: isMobile ? 0 : 1, flexShrink: 0, flexBasis: isMobile ? '100%' : '200px' }}>
+                        respecto del donut la corría de más.
+
+                        flexGrow 0 en desktop (antes 1): la columna se estiraba
+                        hasta ocupar todo el ancho sobrante de la card, y como el
+                        monto va alineado a la derecha, quedaba pegado al borde
+                        con un hueco enorme entre el nombre y el número — muy
+                        visible con nombres cortos ("Personal", "Vitto"). Ahora la
+                        columna mide lo que mide su contenido y queda al lado del
+                        donut; el espacio que sobra queda libre a la derecha. El
+                        nombre igual no se corta: la columna crece con él. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : 0, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '200px', maxWidth: isMobile ? undefined : '340px', flexGrow: 0, flexShrink: 0, flexBasis: isMobile ? '100%' : 'auto' }}>
                       {/* Antes el nombre se truncaba con "..." a los 150px fijos aunque
                           sobrara espacio a lo ancho — ahora ocupa el espacio disponible
                           de la fila (flex:1) y si de verdad no entra, pasa a una segunda
