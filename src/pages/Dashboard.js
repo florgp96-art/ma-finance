@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { proyectarCuotasFuturas, stripCuotaSuffix } from '../lib/cuotas'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel, periodoToYearMonth } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -2500,17 +2500,51 @@ export default function Dashboard() {
       }
 
       const fechaResumen = statementData.fecha_facturacion || null
+      // En una compra en cuotas, el resumen repite la fecha de la COMPRA ORIGINAL
+      // en cada cuota, no la del mes que factura esa cuota. Hay que corregirlo o
+      // todas las cuotas de la misma compra quedan con la misma fecha: se
+      // acumulan en el mes de la compra (inflándolo y vaciando los meses que
+      // realmente las facturan) y la proyección de "Cuotas pendientes", que se
+      // apoya en esa fecha, calcula mal los meses que faltan.
+      //
+      // Antes esto dependía solo de fecha_facturacion, y un screenshot de
+      // movimientos no la trae (la IA la devuelve null) — así que en ese caso la
+      // corrección no corría y la cuota se guardaba con la fecha de la compra.
+      // Ahora se intenta, en orden: fecha de facturación → período del resumen
+      // ("Agosto 2026") → vencimiento. Y si el resumen no dice nada de eso, se
+      // deriva de la propia cuota sumando (cuota_numero - 1) meses a la fecha de
+      // compra, igual que ya hace la importación por Excel (ver addMonths).
+      const mesFacturacion = (() => {
+        if (fechaResumen) {
+          const parts = fechaResumen.split('/')
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
+            return { year, mes: parts[1].padStart(2, '0'), dia: parts[0].padStart(2, '0') }
+          }
+        }
+        const delPeriodo = periodoToYearMonth(statementData.periodo)
+        if (delPeriodo) {
+          const [year, mes] = delPeriodo.split('-')
+          return { year, mes, dia: '01' }
+        }
+        const venc = statementData.fecha_vencimiento
+        if (venc && /^\d{4}-\d{2}-\d{2}$/.test(venc)) {
+          const [year, mes, dia] = venc.split('-')
+          return { year, mes, dia }
+        }
+        return null
+      })()
       // Solo importar las transacciones que el usuario seleccionó en el preview
       const transaccionesCandidatas = statementData.transacciones
         .filter((_, i) => pdfTxSelections.has(i))
         .map(t => {
           const categoryId = getCategoryId(t.categoria_sugerida)
           let fechaFinal = t.fecha
-          if (t.cuotas_total > 1 && fechaResumen) {
-            const parts = fechaResumen.split('/')
-            if (parts.length === 3) {
-              const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
-              fechaFinal = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+          if (t.cuotas_total > 1) {
+            if (mesFacturacion) {
+              fechaFinal = `${mesFacturacion.year}-${mesFacturacion.mes}-${mesFacturacion.dia}`
+            } else {
+              fechaFinal = addMonths(t.fecha, (t.cuota_numero || 1) - 1)
             }
           }
           const detalleTxLowerC = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
