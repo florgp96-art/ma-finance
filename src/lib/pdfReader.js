@@ -92,7 +92,12 @@ const parseAnalyzeResponse = async (response) => {
   if (!response.ok) {
     if (response.status === 402) {
       const body = await response.json().catch(() => ({}))
-      throw new Error(body.error || 'Ya usaste tu análisis con IA gratis este mes.')
+      // Se marca como límite del plan (no como falla técnica) para que quien lo
+      // muestre no le ponga el prefijo "Error procesando el PDF": es un aviso
+      // esperado del plan gratis, y con ese prefijo parecía un bug de la app.
+      const err = new Error(body.error || 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite.')
+      err.esLimitePlan = true
+      throw err
     }
     console.error('Error HTTP:', response.status, await response.text())
     if ([502, 503, 504, 524].includes(response.status)) {

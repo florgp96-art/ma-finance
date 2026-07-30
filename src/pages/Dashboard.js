@@ -1525,7 +1525,7 @@ export default function Dashboard() {
   const handleClickCrearCuenta = () => {
     setConfigOpen(false)
     if (!isPremium && cuentasFacturables.length >= 1) {
-      setShowUpsell('Con el plan gratis podés tener 1 cuenta además de Efectivo. Sumá Premium para agregar todas las que necesites.')
+      setShowUpsell('En el plan gratis podés tener Efectivo y una cuenta más. Con Premium agregás todas las tarjetas y cuentas que necesites.')
       return
     }
     setShowAddAccount(true)
@@ -1540,7 +1540,7 @@ export default function Dashboard() {
       setShowAddAccount(false)
       setLoading(false)
       if (/l[ií]mite de cuentas/i.test(error.message || '')) {
-        setShowUpsell('Con el plan gratis podés tener 1 cuenta además de Efectivo. Sumá Premium para agregar todas las que necesites.')
+        setShowUpsell('En el plan gratis podés tener Efectivo y una cuenta más. Con Premium agregás todas las tarjetas y cuentas que necesites.')
       } else {
         showToast('Error al crear la cuenta: ' + error.message, 'error')
       }
@@ -1627,7 +1627,10 @@ export default function Dashboard() {
           if (!response.ok) {
             if (response.status === 402) {
               const body = await response.json().catch(() => ({}))
-              throw new Error(body.error || 'Ya usaste tu análisis con IA gratis este mes.')
+              // Igual que en pdfReader.js: es un límite del plan, no una falla.
+              const errPlan = new Error(body.error || 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite.')
+              errPlan.esLimitePlan = true
+              throw errPlan
             }
             if ([502, 503, 504, 524].includes(response.status)) {
               throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')
@@ -1886,13 +1889,22 @@ export default function Dashboard() {
         setStep('select_account')
       }
     } catch (err) {
-      showToast('Error procesando el PDF: ' + err.message, 'error')
-      logImportAttempt({
-        tipo: archivo?.type?.startsWith('image/') ? 'imagen' : 'pdf',
-        nombreArchivo: archivo?.name,
-        estado: 'error',
-        errorMensaje: err.message,
-      })
+      // Un límite del plan no es una falla de la app: se muestra tal cual (sin
+      // "Error procesando el PDF" adelante, que lo hacía parecer un bug) y como
+      // aviso en vez de error. Tampoco se loguea como intento fallido: el log
+      // dispara un mail de aviso por cada error, y el paywall haciendo su
+      // trabajo no es algo que haya que ir a revisar.
+      if (err.esLimitePlan) {
+        showToast(err.message, 'warning')
+      } else {
+        showToast('Error procesando el PDF: ' + err.message, 'error')
+        logImportAttempt({
+          tipo: archivo?.type?.startsWith('image/') ? 'imagen' : 'pdf',
+          nombreArchivo: archivo?.name,
+          estado: 'error',
+          errorMensaje: err.message,
+        })
+      }
       setStep('upload')
     }
     setLoading(false)
@@ -4013,34 +4025,38 @@ export default function Dashboard() {
       )}
 
       {showTutorial && (() => {
+        // El tutorial es una bienvenida ("qué podés hacer acá"), no un manual de
+        // dónde está cada botón: la ruta de cada función se descubre sola cuando
+        // hace falta, y lo que conviene mostrar de entrada es el camino corto al
+        // primer resultado útil.
         const steps = [
           {
-            icon: '💰',
-            title: 'Cargar movimientos',
+            icon: '📄',
+            title: 'Cargá tu primer resumen',
             body: (
               <>
-                <p style={{ margin: '0 0 10px' }}>Para cargar un gasto o ingreso a mano, usá el botón <strong>+ Cargar movimiento</strong> del panel de la izquierda.</p>
-                <p style={{ margin: 0 }}>Si tenés el PDF o Excel de un resumen, usá <strong>+ Importar</strong> — subís el archivo y la app arma los movimientos sola, ya clasificados por categoría.</p>
+                <p style={{ margin: '0 0 10px' }}>Tirá acá el <strong>PDF o Excel</strong> del resumen de tu tarjeta y listo: la app lee todos los movimientos y los clasifica sola.</p>
+                <p style={{ margin: 0 }}>También podés cargar un gasto a mano, o sacarle una foto a un ticket.</p>
               </>
             )
           },
           {
-            icon: '🏷️',
-            title: 'Categorías y subcategorías',
+            icon: '📊',
+            title: 'Mirá en qué se te va la plata',
             body: (
               <>
-                <p style={{ margin: '0 0 10px' }}>Andá a <strong>Configuración → Editar categorías</strong> para crear una categoría nueva, cambiarle el nombre, agregarle subcategorías o darle un ícono propio.</p>
-                <p style={{ margin: 0 }}>Ahí mismo podés borrarlas — si tienen movimientos cargados, la app te avisa antes de dejarte borrar.</p>
+                <p style={{ margin: '0 0 10px' }}>Cada gasto queda ordenado por categoría, y si querés, por persona de la casa.</p>
+                <p style={{ margin: 0 }}>La <strong>calculadora</strong> te suma lo que elijas, para responderte cosas como “¿cuánto me sale esto por mes?”.</p>
               </>
             )
           },
           {
-            icon: '💳',
-            title: 'Crear y borrar cuentas',
+            icon: '✨',
+            title: 'Enseñale tus mañas',
             body: (
               <>
-                <p style={{ margin: '0 0 10px' }}>Para agregar una tarjeta o cuenta bancaria nueva, andá a <strong>Configuración → Crear cuenta</strong>.</p>
-                <p style={{ margin: 0 }}>Para editarla o borrarla, entrá a la cuenta y tocá su nombre, arriba de todo.</p>
+                <p style={{ margin: '0 0 10px' }}>Cuando corregís una categoría, la app se lo acuerda para la próxima vez.</p>
+                <p style={{ margin: 0 }}>Todo lo demás —cuentas, categorías, íconos— lo ajustás desde <strong>Configuración</strong> cuando lo necesites.</p>
               </>
             )
           },
@@ -4104,14 +4120,17 @@ export default function Dashboard() {
             <h3 style={styles.modalTitle}>Mi plan 💎</h3>
             {isPremium ? (
               <>
-                <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>
+                <p style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>
                   {plan.is_legacy
-                    ? 'Tenés acceso completo gratis, sin límites.'
+                    ? 'Tenés acceso completo, gratis y para siempre. ¡Gracias por estar desde el principio! 💛'
                     : plan.mp_status === 'paused' && plan.premium_hasta
-                      ? `No pudimos cobrar tu tarjeta. Actualizala en Mercado Pago antes del ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')} para no perder el acceso Premium.`
+                      // Un cobro rechazado necesita decir tres cosas: qué pasó,
+                      // hasta cuándo hay tiempo, y que no se pierde nada cargado
+                      // (el miedo real es "¿desaparecen mis datos?").
+                      ? `No pudimos cobrar tu tarjeta. Si la actualizás en Mercado Pago antes del ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')}, seguís como estás. Si no, pasás al plan gratis — todo lo que cargaste queda intacto.`
                       : plan.premium_hasta
-                        ? `Cancelaste la suscripción, pero mantenés Premium hasta el ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')} (el período que ya pagaste).`
-                        : 'Tenés el plan Premium activo: cuentas, análisis con IA y asistente sin límites.'}
+                        ? `Cancelaste la suscripción. Seguís con Premium hasta el ${new Date(plan.premium_hasta).toLocaleDateString('es-AR')}, porque ese mes ya está pagado. Después pasás al plan gratis y no se borra nada de lo que cargaste.`
+                        : 'Tenés Premium activo: todas las cuentas que quieras y resúmenes sin límite. Se renueva solo cada mes.'}
                 </p>
                 <div style={styles.modalButtons}>
                   <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Cerrar</button>
@@ -4124,16 +4143,27 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px 0' }}>
-                  Plan gratis: 1 cuenta además de Efectivo, y 1 análisis con IA (PDF o foto) por mes. Excel sin límite.
-                </p>
-                <p style={{ fontSize: '14px', color: darkMode ? '#C0B0C0' : '#5C5560', margin: '0 0 20px 0' }}>
-                  Premium: cuentas ilimitadas, análisis con IA ilimitados, y el asistente financiero. $3.999/mes.
-                </p>
+                {/* Antes esto eran dos párrafos con los dos planes metidos en una
+                    línea de comas cada uno ("1 cuenta además de Efectivo, y 1
+                    análisis con IA (PDF o foto) por mes..."): imposible de barrer
+                    con la vista y con jerga nuestra ("análisis con IA") en vez de
+                    lo que el usuario hace ("subir el resumen y que se cargue solo"). */}
+                <p style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px 0' }}>Estás en el plan gratis</p>
+                <ul style={{ margin: '0 0 18px 0', padding: '0 0 0 18px', fontSize: '13px', lineHeight: 1.6, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                  <li>Efectivo y una cuenta más</li>
+                  <li>Cargar a mano o por Excel, sin límite</li>
+                  <li>Un resumen por mes que la app lee sola (PDF o foto)</li>
+                </ul>
+                <p style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px 0' }}>Con Premium, $3.999 por mes</p>
+                <ul style={{ margin: '0 0 20px 0', padding: '0 0 0 18px', fontSize: '13px', lineHeight: 1.6, color: darkMode ? '#C0B0C0' : '#5C5560' }}>
+                  <li>Todas las cuentas y tarjetas que necesites</li>
+                  <li>Todos los resúmenes que quieras, sin tope mensual</li>
+                  <li>Se cancela cuando quieras, desde acá mismo</li>
+                </ul>
                 <div style={styles.modalButtons}>
-                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Cerrar</button>
+                  <button type="button" style={styles.cancelBtn} onClick={() => setShowMiPlan(false)}>Ahora no</button>
                   <button type="button" style={styles.saveBtn} disabled={suscribiendo} onClick={handleSuscribirse}>
-                    {suscribiendo ? 'Redirigiendo...' : 'Suscribirme'}
+                    {suscribiendo ? 'Redirigiendo...' : 'Pasar a Premium'}
                   </button>
                 </div>
               </>
@@ -4145,12 +4175,12 @@ export default function Dashboard() {
       {showUpsell && (
         <div style={styles.overlay}>
           <div style={{...styles.modal, maxWidth: '420px'}}>
-            <h3 style={styles.modalTitle}>Función de Premium 💎</h3>
-            <p style={{ fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>{showUpsell}</p>
+            <h3 style={styles.modalTitle}>Esto viene con Premium 💎</h3>
+            <p style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 20px 0' }}>{showUpsell}</p>
             <div style={styles.modalButtons}>
               <button type="button" style={styles.cancelBtn} onClick={() => setShowUpsell(null)}>Ahora no</button>
               <button type="button" style={styles.saveBtn} disabled={suscribiendo} onClick={() => { setShowUpsell(null); handleSuscribirse() }}>
-                {suscribiendo ? 'Redirigiendo...' : 'Suscribirme'}
+                {suscribiendo ? 'Redirigiendo...' : 'Pasar a Premium'}
               </button>
             </div>
           </div>
