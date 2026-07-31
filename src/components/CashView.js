@@ -371,7 +371,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             Cuotas comprometidas a futuro
             <InfoTooltip
               darkMode={darkMode}
-              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} que ya están cargadas en tus movimientos, con fecha de este mes o de los que vienen. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
+              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} de tus movimientos con fecha de hoy en adelante. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
             />
           </p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>

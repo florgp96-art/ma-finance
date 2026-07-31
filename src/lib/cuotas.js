@@ -279,6 +279,11 @@ export const addMeses = (fechaISO, n) => {
 // No se generan cuotas que caerían en un mes YA PASADO: si la última cuota
 // conocida de una compra es vieja, las siguientes ya se facturaron y lo que falta
 // es cargar ese resumen — inventarlas ahora metería gastos en meses cerrados.
+//
+// El corte acá es por MES y no por día (a diferencia de cuotasFuturasCargadas,
+// que corta en la fecha de hoy): una cuota del 7 cuando estamos a fin de mes ya
+// pasó y no va en un panel de "pendientes", pero el gasto existió igual y el
+// movimiento tiene que estar cargado.
 export function cuotasParaCrear(transactions, hoy = new Date()) {
   const mesActual = mesDe(hoy)
   const yaCargadas = (transactions || []).filter(t =>
@@ -311,15 +316,18 @@ export function cuotasParaCrear(transactions, hoy = new Date()) {
   return aCrear
 }
 
-// Las cuotas futuras que YA están cargadas como movimiento, agrupadas por mes.
-// Esto es lo que muestran las vistas de cuotas: se lee la base, no se calcula
-// nada. Incluye el mes en curso, porque una cuota de este mes que todavía no se
-// pagó también es plata comprometida.
+// Las cuotas que TODAVÍA NO PASARON, ya cargadas como movimiento. Esto es lo que
+// muestran las vistas de cuotas: se lee la base, no se calcula nada.
+//
+// El corte es la fecha de HOY, no el primero del mes: una cuota que ya cayó (la
+// del 7 cuando estamos a fin de mes) es plata que ya se fue, y verla en un panel
+// titulado "pendientes" confunde. Lo facturado y todavía sin pagar es justo lo
+// que muestra la pestaña "A pagar", que es donde corresponde mirarlo.
 export function cuotasFuturasCargadas(transactions, hoy = new Date()) {
-  const mesActual = mesDe(hoy)
+  const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
   return (transactions || []).filter(t =>
     t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 &&
-    t.fecha && t.fecha.slice(0, 7) >= mesActual && !esAlquilerOExpensas(t)
+    t.fecha && t.fecha.slice(0, 10) >= hoyISO && !esAlquilerOExpensas(t)
   )
 }
 

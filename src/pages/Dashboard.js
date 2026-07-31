@@ -2980,7 +2980,7 @@ export default function Dashboard() {
                 <div style={{ ...styles.savingsPanel }}>
                   <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', alignItems: 'center' }}>
                     Cuotas pendientes
-                    <InfoTooltip darkMode={darkMode} text="Son las cuotas que ya están cargadas en tus movimientos con fecha de este mes o de los que vienen. Es la misma información que ves en la tabla de movimientos, no una estimación aparte: cuando importás un resumen, las cuotas que faltan del plan se crean solas como movimientos." />
+                    <InfoTooltip darkMode={darkMode} text="Las cuotas que todavía no pasaron, tomadas de tus movimientos. Es la misma información que ves en la tabla, no una estimación aparte: cuando importás un resumen, las cuotas que faltan del plan se crean solas como movimientos. Una cuota desaparece de acá el día que le toca; lo facturado y todavía sin pagar lo ves en la pestaña A pagar." />
                   </h3>
                   {periods.map(([period, data], pi) => {
                     const expandido = cuotasPendientesExpandido === period
