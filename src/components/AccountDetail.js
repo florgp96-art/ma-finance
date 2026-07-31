@@ -2383,20 +2383,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
   // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
   const statementIdsConTarjetaPropia = new Set(statementsRealesConUsd.map(s => s.id))
-  // Si es una cuota, la fecha es una estimación (mismo día que la compra original, mes
-  // corrido según el número de cuota) que no necesariamente cae del mismo lado del corte
-  // real de la tarjeta — por eso para cuotas se compara por mes exacto contra el mes del
-  // corte (ni el mes anterior ni el siguiente), en vez de por fecha exacta. El resto de los
-  // movimientos sí tiene fecha real, así que se compara exacto. "Ciclo actual" solo
-  // cuenta COMPRAS nuevas (nunca pagos/reintegros: esos ya se atribuyeron a saldar el
-  // statement anterior en calcularEstadoStatement, y no vuelven a contarse acá).
+  // "Ciclo actual" es lo gastado DESPUÉS del último cierre y HASTA HOY: solo compras
+  // nuevas (nunca pagos/reintegros, que ya se atribuyeron a saldar el statement anterior
+  // en calcularEstadoStatement y no vuelven a contarse acá).
+  //
+  // Las cuotas tenían una excepción: se comparaban por mes contra el mes del corte, sin
+  // el tope de hoy ni el del cierre. Tenía sentido cuando la fecha de una cuota era una
+  // estimación que podía caer del lado equivocado del corte real de la tarjeta. Ahora que
+  // las cuotas futuras se crean como movimientos reales (ver cuotasParaCrear), esa
+  // excepción hacía entrar al ciclo abierto cuotas de meses que todavía no llegaron —
+  // y peor, cuotas ya facturadas en el resumen cerrado del mismo mes, que quedaban
+  // contadas dos veces: una en el resumen a pagar y otra en el resumen abierto de la
+  // misma tarjeta. Se compara por fecha, igual que todo lo demás.
   const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
     if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
     const fecha = normFecha(t.fecha)
-    if ((t.cuotas_total || 1) > 1) {
-      const mesTx = fecha.slice(0, 7)
-      return mesTx === (mesCorte || mesActual)
-    }
     return (!ultimoCierre || fecha > ultimoCierre) && fecha <= hoyISO
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
