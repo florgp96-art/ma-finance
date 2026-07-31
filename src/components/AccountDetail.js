@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { esAlquilerOExpensas } from '../lib/cuotas'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -2536,8 +2537,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (!t.fecha || t.fecha < primerDiaMesActual || t.fecha > hoyISO) return false
     const accTipo = accountTipoById.get(t.account_id)
     if (accTipo === 'credito') return false
-    const esAlquilerOExpensas = t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
-    return accTipo === 'debito' || esAlquilerOExpensas
+    return accTipo === 'debito' || esAlquilerOExpensas(t)
   }) : []
   // Antes se excluían directamente los movimientos en USD (dejaban de aportar a
   // la barra de "pagado este mes") — un alquiler pagado en dólares desde una
