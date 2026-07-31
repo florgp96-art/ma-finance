@@ -316,19 +316,32 @@ export function cuotasParaCrear(transactions, hoy = new Date()) {
   return aCrear
 }
 
-// Las cuotas que TODAVÍA NO PASARON, ya cargadas como movimiento. Esto es lo que
+// Las cuotas que TODAVÍA SE DEBEN, ya cargadas como movimiento. Esto es lo que
 // muestran las vistas de cuotas: se lee la base, no se calcula nada.
 //
-// El corte es la fecha de HOY, no el primero del mes: una cuota que ya cayó (la
-// del 7 cuando estamos a fin de mes) es plata que ya se fue, y verla en un panel
-// titulado "pendientes" confunde. Lo facturado y todavía sin pagar es justo lo
-// que muestra la pestaña "A pagar", que es donde corresponde mirarlo.
-export function cuotasFuturasCargadas(transactions, hoy = new Date()) {
+// Una cuota deja de contar cuando se PAGÓ EL RESUMEN que la facturó, no cuando
+// pasó su fecha. Es lo que uno hace con la tarjeta en la mano: si los resúmenes de
+// julio ya están pagados, lo que queda por delante son las cuotas de agosto,
+// aunque estemos a fin de julio y varias cuotas de julio tengan fecha pasada.
+//
+// `statementsPagadas` es el Set de ids de resúmenes sin saldo pendiente (lo calcula
+// calcularStatementsPendientes, la misma función que usa "A pagar", así que las
+// tres vistas coinciden). Si no se pasa, se cae al criterio de fecha.
+//
+// Para una cuota que todavía no fue facturada por ningún resumen (las que la app
+// crea al importar, con fecha de meses que no llegaron) no hay resumen que mirar:
+// ahí sí decide la fecha, porque una cuota vieja que nunca se facturó es historia
+// y no plata que se venga.
+export function cuotasFuturasCargadas(transactions, hoy = new Date(), statementsPagadas = null) {
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
-  return (transactions || []).filter(t =>
-    t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 &&
-    t.fecha && t.fecha.slice(0, 10) >= hoyISO && !esAlquilerOExpensas(t)
-  )
+  return (transactions || []).filter(t => {
+    if (t.tipo !== 'gasto' || (t.cuotas_total || 1) <= 1 || (t.cuota_numero || 0) <= 0) return false
+    if (!t.fecha || esAlquilerOExpensas(t)) return false
+    if (t.statement_id && statementsPagadas) {
+      return !statementsPagadas.has(t.statement_id)
+    }
+    return t.fecha.slice(0, 10) >= hoyISO
+  })
 }
 
 // Proyecta una por una las cuotas que faltan, con el mes en que caería cada
