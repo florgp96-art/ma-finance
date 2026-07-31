@@ -549,8 +549,16 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     // statement_id seteado (al resumen que los contiene) y por eso se excluían
     // acá, aunque sí se contaban en "Resumen mensual" (CashView, que no filtra
     // por statement_id) — de ahí el desfasaje entre "A pagar" y "Resumen mensual".
-    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda !== 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
-    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
+    // Solo cuentan los PAGOS (tipo "neutro"). Los reintegros y devoluciones (tipo
+    // "ingreso") que caen después del cierre no cancelan deuda de este resumen: el
+    // banco los acredita en el SIGUIENTE. Contándolos acá aparecía un sobrepago que
+    // no existía — caso real: un resumen de $2.008.983,71 pagado justo por
+    // $2.008.983,71 mostraba "Sobrepago del resumen anterior: $36.022,84", que era
+    // exactamente una devolución de percepción acreditada once días después del
+    // cierre. Un reintegro anterior al cierre ya viene descontado en el total que
+    // informa el banco, así que tampoco hay que restarlo por separado.
+    const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda !== 'USD' && t.tipo === 'neutro' && enVentana(t))
+    const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && t.tipo === 'neutro' && enVentana(t))
     const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
     const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
     const totalArs = Number(s.total_resumen) || 0
