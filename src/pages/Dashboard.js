@@ -2685,19 +2685,15 @@ export default function Dashboard() {
   // que es una función plana invocada condicionalmente — un hook ahí violaría las
   // Rules of Hooks) porque antes se recalculaba entero (agrupar, desduplicar sufijos,
   // proyectar) en cada render en el que se mostrara el widget.
-  // Resúmenes sin saldo pendiente. Sale de calcularStatementsPendientes, la misma
-  // función que usa "A pagar" y el widget de Vencimientos, para que las tres vistas
-  // no puedan discrepar sobre qué está pagado y qué no.
-  const statementsPagadas = useMemo(() => {
-    const { estadosStatement } = calcularStatementsPendientes({
+  // Resúmenes que todavía se deben: exactamente los que muestra "A pagar"
+  // (statementsRealesConUsd = el último de cada tarjeta con saldo > 0). Sale de
+  // calcularStatementsPendientes, la misma función que usan esa pestaña y el widget
+  // de Vencimientos, para que las cuatro vistas no puedan discrepar sobre qué se debe.
+  const statementsPendientes = useMemo(() => new Set(
+    calcularStatementsPendientes({
       accounts, statements: dashboardStatements, transactions: accountTransactions,
-    })
-    const pagadas = new Set()
-    estadosStatement.forEach((st, id) => {
-      if (Math.round(st.pendienteArs) <= 0 && Math.round(st.pendienteUsd * 100) <= 0) pagadas.add(id)
-    })
-    return pagadas
-  }, [accounts, dashboardStatements, accountTransactions])
+    }).statementsRealesConUsd.map(s => s.id)
+  ), [accounts, dashboardStatements, accountTransactions])
 
   const cuotasPendientesMemo = useMemo(() => {
     // Se leen los MOVIMIENTOS ya cargados, no una proyección calculada al vuelo.
@@ -2706,7 +2702,7 @@ export default function Dashboard() {
     // tabla de movimientos nunca cerraban, y no había forma de saber cuál de los
     // dos estaba bien. Las cuotas que faltan ahora se CREAN como movimientos
     // (ver crearCuotasFaltantes) y de ahí las lee este widget.
-    const futuras = cuotasFuturasCargadas(accountTransactions, new Date(), statementsPagadas)
+    const futuras = cuotasFuturasCargadas(accountTransactions, new Date(), statementsPendientes)
     if (futuras.length === 0) return { periodos: [], mesesOcultos: 0, totalFuturo: 0 }
 
     const tc = parseFloat(tipoCambio) || 0
@@ -2738,7 +2734,7 @@ export default function Dashboard() {
       mesesOcultos: Math.max(0, todos.length - 6),
       totalFuturo: todos.reduce((s, [, d]) => s + d.total_ars, 0),
     }
-  }, [accountTransactions, tipoCambio, tipoCambioEUR, statementsPagadas])
+  }, [accountTransactions, tipoCambio, tipoCambioEUR, statementsPendientes])
 
   // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
   // (gasto) o tag (ingreso) con datos + serie de 6 meses de CADA selección activa —

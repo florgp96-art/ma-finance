@@ -319,27 +319,29 @@ export function cuotasParaCrear(transactions, hoy = new Date()) {
 // Las cuotas que TODAVÍA SE DEBEN, ya cargadas como movimiento. Esto es lo que
 // muestran las vistas de cuotas: se lee la base, no se calcula nada.
 //
-// Una cuota deja de contar cuando se PAGÓ EL RESUMEN que la facturó, no cuando
-// pasó su fecha. Es lo que uno hace con la tarjeta en la mano: si los resúmenes de
-// julio ya están pagados, lo que queda por delante son las cuotas de agosto,
-// aunque estemos a fin de julio y varias cuotas de julio tengan fecha pasada.
+// Cuenta una cuota si pasa alguna de estas dos:
 //
-// `statementsPagadas` es el Set de ids de resúmenes sin saldo pendiente (lo calcula
-// calcularStatementsPendientes, la misma función que usa "A pagar", así que las
-// tres vistas coinciden). Si no se pasa, se cae al criterio de fecha.
+//   a) La facturó un resumen que TODAVÍA SE DEBE (los que muestra "A pagar"). Vale
+//      aunque su fecha ya haya pasado: si el resumen no está pagado, esa cuota es
+//      plata que hay que poner.
+//   b) Ningún resumen la facturó todavía y su fecha no pasó. Son las que la app crea
+//      al importar, con fecha de meses que no llegaron.
 //
-// Para una cuota que todavía no fue facturada por ningún resumen (las que la app
-// crea al importar, con fecha de meses que no llegaron) no hay resumen que mirar:
-// ahí sí decide la fecha, porque una cuota vieja que nunca se facturó es historia
-// y no plata que se venga.
-export function cuotasFuturasCargadas(transactions, hoy = new Date(), statementsPagadas = null) {
+// `statementsPendientes` es el Set de ids de resúmenes con saldo pendiente, calculado
+// con calcularStatementsPendientes — la misma función que usan "A pagar" y el widget
+// de Vencimientos, así que las cuatro vistas no pueden discrepar sobre qué se debe.
+//
+// La lista es de PENDIENTES y no de pagados a propósito. Con el criterio inverso
+// ("mostrar todo lo que no esté marcado como pagado") aparecía el historial completo:
+// los resúmenes viejos no tienen los pagos cargados, así que ninguno figura como
+// pagado y el widget listaba cuotas de enero, febrero y marzo. Partiendo de los
+// pendientes, lo viejo no puede colarse: si no está en esa lista, decide la fecha.
+export function cuotasFuturasCargadas(transactions, hoy = new Date(), statementsPendientes = null) {
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
   return (transactions || []).filter(t => {
     if (t.tipo !== 'gasto' || (t.cuotas_total || 1) <= 1 || (t.cuota_numero || 0) <= 0) return false
     if (!t.fecha || esAlquilerOExpensas(t)) return false
-    if (t.statement_id && statementsPagadas) {
-      return !statementsPagadas.has(t.statement_id)
-    }
+    if (t.statement_id && statementsPendientes?.has(t.statement_id)) return true
     return t.fecha.slice(0, 10) >= hoyISO
   })
 }
