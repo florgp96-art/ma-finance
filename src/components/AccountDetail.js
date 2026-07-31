@@ -125,6 +125,12 @@ export const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','
 // texto de párrafo.
 export const rotuloLabel = { textTransform: 'uppercase', letterSpacing: '0.05em' }
 
+// Nombre visible de cada columna filtrable, para los chips de "filtros activos".
+const ETIQUETA_COLUMNA = {
+  nombre: 'Nombre', categoria: 'Categoría', cuenta: 'Cuenta',
+  subcategoria: 'Subcategoría', cuotas: 'Cuotas',
+}
+
 export const formatMonto = (monto) =>
   new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
 
@@ -701,6 +707,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // En desktop no aplica: los widgets están en su propia columna al costado.
   const [verTodosMovimientos, setVerTodosMovimientos] = useState(false)
   const [filtroCuenta, setFiltroCuenta] = useState('')
+  // Filtro por columna, tipo Excel: hasta ahora la tabla solo se podía ordenar,
+  // así que para ver únicamente (por ejemplo) las compras en cuotas había que
+  // ordenar por esa columna y recorrer la lista a ojo. Cada clave guarda los
+  // valores elegidos de esa columna; array vacío o ausente = mostrar todos.
+  const [filtrosCol, setFiltrosCol] = useState({})
+  // Columna cuyo panel está abierto, y dónde dibujarlo. La posición se calcula
+  // del botón porque el <th> tiene overflow hidden (para el "..." del título) y
+  // un panel absoluto adentro quedaría recortado.
+  const [filtroColAbierto, setFiltroColAbierto] = useState(null)
+  const [filtroColPos, setFiltroColPos] = useState({ x: 0, y: 0 })
+  const [filtroColBusqueda, setFiltroColBusqueda] = useState('')
   const [vistaCuenta, setVistaCuenta] = useState('movimientos')
   const [apagarSortKey, setApagarSortKey] = useState('monto')
   const [apagarSortDir, setApagarSortDir] = useState('desc')
@@ -1258,6 +1275,36 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       : (t.categories?.nombre || '')
   ), [esVistaIngresos])
 
+  // Valor por el que se filtra cada columna. Tiene que ser EXACTAMENTE lo que se
+  // ve en la celda (por eso categoría reusa etiquetaCategoria), o el usuario
+  // elegiría un valor de la lista y la fila no aparecería.
+  //
+  // Cuotas es la excepción a propósito: en la celda dice "2/9", pero filtrar por
+  // "2/9" no sirve para nada — lo útil es ver todas las filas de los planes de 9
+  // cuotas, o todo lo que no es en cuotas.
+  const valorColumna = useCallback((t, key) => {
+    if (key === 'nombre') return t.nombre || t.detalle || '—'
+    if (key === 'categoria') return etiquetaCategoria(t) || '—'
+    if (key === 'cuenta') return t.accounts?.nombre || '—'
+    if (key === 'subcategoria') return (t.tipo === 'ingreso' || esVistaIngresos) ? '—' : (t.subcategories?.nombre || '—')
+    if (key === 'cuotas') return (t.cuotas_total || 1) > 1 ? `${t.cuotas_total} cuotas` : 'Sin cuotas'
+    return ''
+  }, [etiquetaCategoria, esVistaIngresos])
+
+  const columnasFiltrables = useMemo(
+    () => ['nombre', 'categoria', 'cuenta', 'subcategoria', 'cuotas'], [])
+
+  // Sin clave = columna sin filtrar (muestra todo). Array vacío = el usuario
+  // destildó todo, y ahí no se muestra nada: son dos estados distintos, y
+  // representar los dos con [] hacía que al destildar el último valor volviera a
+  // aparecer la tabla entera.
+  const pasaFiltrosCol = useCallback((t) => columnasFiltrables.every(k => {
+    const elegidos = filtrosCol[k]
+    return !elegidos || elegidos.includes(valorColumna(t, k))
+  }), [columnasFiltrables, filtrosCol, valorColumna])
+
+  const columnasFiltradas = columnasFiltrables.filter(k => Array.isArray(filtrosCol[k]))
+
   const sortTx = useCallback((list) => {
     return [...list].sort((a, b) => {
       let valA, valB
@@ -1654,7 +1701,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const sinIdentificar = txNoNeutras
     .filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
     .sort((a, b) => (a.nombre || a.detalle || '').toLowerCase().localeCompare((b.nombre || b.detalle || '').toLowerCase(), 'es'))
-  const identificadas = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
+  // Sin el filtro por columna aplicado: es de acá que sale la lista de valores
+  // que ofrece cada panel. Si saliera de la lista ya filtrada, al elegir una
+  // categoría desaparecerían todas las demás opciones y no habría forma de
+  // agregar una segunda sin limpiar el filtro.
+  const identificadasSinFiltroCol = sortTx(txNoNeutras.filter(t => t.estado !== 'a_identificar' && t.categories?.nombre !== 'A Identificar' && matchSearch(t)))
+  const identificadas = identificadasSinFiltroCol.filter(pasaFiltrosCol)
 
   // Los gastos divididos con hijos por alias de tipo "split" se guardan como 2
   // transacciones reales separadas, para que totales, gráficos y "a pagar" por
@@ -1707,10 +1759,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     filasTabla.push({ tipo: 'grupo', grupo, expandido: enEdicion || expandedSplits.has(grupo.key) })
   })
 
-    return { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla }
-  }, [transactions, selectedMeses, filtroCuenta, matchSearch, sortTx, editingTx, expandedSplits])
+    return { txFiltradas, txNeutras, sinIdentificar, identificadas, identificadasSinFiltroCol, filasTabla }
+  }, [transactions, selectedMeses, filtroCuenta, matchSearch, sortTx, editingTx, expandedSplits, pasaFiltrosCol])
 
-  const { txFiltradas, txNeutras, sinIdentificar, identificadas, filasTabla } = tablaMemo
+  const { txFiltradas, txNeutras, sinIdentificar, identificadas, identificadasSinFiltroCol, filasTabla } = tablaMemo
 
   // Fila de movimiento con columnas progresivas (fecha/nombre/monto siempre
   // visibles; categoría → cuenta → subcategoría → cuotas se agregan con más
@@ -1920,7 +1972,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       const s = String(val ?? '')
       return `"${s.replace(/"/g, '""')}"`
     }
-    const txParaExportar = txFiltradas.filter(matchSearch)
+    // Se exporta lo que se está viendo: si hay filtros de columna puestos, el CSV
+    // los respeta (sin ellos el archivo traía filas que la tabla no mostraba).
+    const txParaExportar = txFiltradas.filter(matchSearch).filter(pasaFiltrosCol)
     const rows = [
       ['Fecha', 'Nombre', 'Categoría', 'Subcategoría', 'Moneda', 'Monto', 'Tipo', 'Cuotas'],
       ...txParaExportar.map(t => [
@@ -2065,6 +2119,129 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
     </th>
   )
+
+  // Encabezado de la tabla de movimientos: ordena al clickear el título y filtra
+  // por el embudo. El embudo no puede estar dentro del área que ordena, porque
+  // abrir el filtro reordenaría la tabla por debajo.
+  const thFiltrable = (label, key, align = undefined) => {
+    const activo = Array.isArray(filtrosCol[key])
+    return (
+      <th style={{ ...styles.thSortable, cursor: 'default', ...(align ? { textAlign: align } : {}) }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', maxWidth: '100%' }}>
+          <span
+            onClick={() => handleSort(key)}
+            style={{ cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
+          </span>
+          {columnasFiltrables.includes(key) && (
+            <button
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setFiltroColPos({ x: r.left, y: r.bottom + 4 })
+                setFiltroColBusqueda('')
+                setFiltroColAbierto(prev => prev === key ? null : key)
+              }}
+              title={activo ? `Filtrando por ${label}` : `Filtrar por ${label}`}
+              style={{
+                background: activo ? (darkMode ? '#4A3F4A' : '#E8E0E8') : 'none',
+                border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '1px 3px',
+                fontSize: '9px', lineHeight: 1, flexShrink: 0,
+                color: activo ? (darkMode ? '#E8D8E8' : '#5C4F5C') : (darkMode ? '#5A4A5A' : '#bbb'),
+              }}
+            >
+              ▼
+            </button>
+          )}
+        </span>
+      </th>
+    )
+  }
+
+  // Panel de valores de una columna. Es position fixed y no un hijo del <th>
+  // porque ese th recorta lo que se desborda (necesita el "..." del título).
+  const renderPanelFiltro = () => {
+    const key = filtroColAbierto
+    if (!key) return null
+    const elegidos = filtrosCol[key]
+    const valores = [...new Set(identificadasSinFiltroCol.map(t => valorColumna(t, key)))]
+      .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
+    const q = norm(filtroColBusqueda)
+    const visibles = q ? valores.filter(v => norm(v).includes(q)) : valores
+    const limpiar = () => setFiltrosCol(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    // Si quedan elegidos TODOS los valores de la columna, el filtro no filtra
+    // nada: se borra, así no queda un chip prendido que no hace nada.
+    const setSel = (nuevos) => nuevos.length === valores.length
+      ? limpiar()
+      : setFiltrosCol(prev => ({ ...prev, [key]: nuevos }))
+    const fondo = darkMode ? '#241F24' : 'white'
+    const borde = darkMode ? '#3A333A' : '#E2DDE0'
+    const texto = darkMode ? '#F0EDEC' : '#1d1d1f'
+    return (
+      <>
+        {/* Capa para cerrar al clickear afuera, sin listeners globales */}
+        <div onClick={() => setFiltroColAbierto(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+        <div style={{
+          position: 'fixed', left: Math.min(filtroColPos.x, Math.max(8, window.innerWidth - 268)),
+          top: filtroColPos.y, zIndex: 999, width: '260px', maxHeight: '340px',
+          display: 'flex', flexDirection: 'column',
+          background: fondo, border: `1px solid ${borde}`, borderRadius: '10px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: '8px',
+          fontFamily: '"Montserrat", sans-serif',
+        }}>
+          {valores.length > 8 && (
+            <input
+              autoFocus
+              value={filtroColBusqueda}
+              onChange={(e) => setFiltroColBusqueda(e.target.value)}
+              placeholder="Buscar…"
+              style={{ ...styles.editInput, marginBottom: '6px' }}
+            />
+          )}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+            {/* Con una búsqueda escrita, "Todos" significa "solo los que
+                coinciden" — es la forma rápida de quedarse con un subconjunto
+                sin tildar de a uno. Sin búsqueda, saca el filtro. */}
+            <button onClick={() => q ? setSel(visibles) : limpiar()} style={styles.filtroColAccion}>Todos</button>
+            <button onClick={() => setFiltrosCol(prev => ({ ...prev, [key]: [] }))} style={styles.filtroColAccion}>Ninguno</button>
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {visibles.length === 0 && (
+              <p style={{ margin: '6px 4px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                Nada que coincida.
+              </p>
+            )}
+            {visibles.map(v => {
+              // Sin selección, la columna muestra todo: la casilla arranca
+              // marcada, como en un filtro de Excel recién abierto.
+              const marcado = !elegidos || elegidos.includes(v)
+              return (
+                <label key={v} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 4px', fontSize: '12px', color: texto, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={marcado}
+                    onChange={() => {
+                      // Al destildar por primera vez hay que materializar la
+                      // lista completa menos este valor: hasta ahora la columna
+                      // no tenía filtro, no una selección de todos.
+                      const base = elegidos || valores
+                      setSel(marcado ? base.filter(x => x !== v) : [...base, v])
+                    }}
+                    style={{ accentColor: '#5C4F5C', flexShrink: 0 }}
+                  />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      </>
+    )
+  }
 
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
@@ -2678,6 +2855,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
   return (
     <div>
+      {renderPanelFiltro()}
       {mostrarTabAPagar && !soloAPagar && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
           {[{ key: 'movimientos', label: '🫧 Movimientos' }, { key: 'apagar', label: '📌 A pagar' }].map(t => (
@@ -3604,6 +3782,31 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </button>
           )}
         </div>
+        {/* Filtros de columna activos. Sin esto, un filtro puesto en una columna
+            que después se oculta por ancho de pantalla dejaría la tabla recortada
+            sin ninguna pista de por qué. */}
+        {columnasFiltradas.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginBottom: '12px' }}>
+            {columnasFiltradas.map(k => (
+              <span key={k} style={styles.filtroColChip}>
+                {ETIQUETA_COLUMNA[k]}: {filtrosCol[k].length === 0
+                  ? 'nada seleccionado'
+                  : (filtrosCol[k].length <= 2 ? filtrosCol[k].join(', ') : `${filtrosCol[k].length} valores`)}
+                <button
+                  onClick={() => setFiltrosCol(prev => { const next = { ...prev }; delete next[k]; return next })}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '13px', lineHeight: 1, color: 'inherit' }}
+                  title="Quitar este filtro"
+                >×</button>
+              </span>
+            ))}
+            <button
+              onClick={() => setFiltrosCol({})}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }}
+            >
+              Limpiar todo
+            </button>
+          </div>
+        )}
         <div ref={tablaRef} style={{ width: '100%' }}>
         <table style={{...styles.table, tableLayout: 'fixed'}}>
           <colgroup>
@@ -3619,11 +3822,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <thead>
             <tr>
               {thSortable('Fecha', 'fecha')}
-              {thSortable('Nombre', 'nombre')}
-              {colVisible.categoria && thSortable('Categoría', 'categoria')}
-              {colVisible.cuenta && thSortable('Cuenta', 'cuenta')}
-              {colVisible.subcategoria && thSortable('Subcategoría', 'subcategoria')}
-              {colVisible.cuotas && thSortable('Cuotas', 'cuotas')}
+              {thFiltrable('Nombre', 'nombre')}
+              {colVisible.categoria && thFiltrable('Categoría', 'categoria')}
+              {colVisible.cuenta && thFiltrable('Cuenta', 'cuenta')}
+              {colVisible.subcategoria && thFiltrable('Subcategoría', 'subcategoria')}
+              {colVisible.cuotas && thFiltrable('Cuotas', 'cuotas')}
               {thSortable('Monto', 'monto', false, undefined, 'right')}
               <th style={styles.th}></th>
             </tr>
@@ -3631,9 +3834,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           <tbody>
             {filasTablaVisibles.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
           </tbody>
-          {/* Los totales son de TODOS los movimientos, no solo de los que se
-              están mostrando — si el corte de mobile los cambiara, la tabla
-              mentiría sobre cuánto se gastó. */}
+          {/* Los totales son de todos los movimientos que pasan los filtros, no
+              solo de las filas visibles — el corte de mobile no los cambia, si no
+              la tabla mentiría sobre cuánto se gastó. Un filtro de columna sí los
+              cambia, a propósito: sirve para saber cuánto suma lo filtrado. */}
           <TotalesFooter txs={identificadas} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} />
         </table>
         {hayMasMovimientos && (
@@ -3907,6 +4111,16 @@ const getStyles = (dark, mobile) => {
       overflow: 'hidden', textOverflow: 'ellipsis'
     },
     sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
+    filtroColAccion: {
+      flex: 1, padding: '4px 6px', borderRadius: '6px', border: `1px solid ${hdrBorder}`,
+      background: 'none', cursor: 'pointer', fontSize: '11px', color: muted,
+      fontFamily: '"Montserrat", sans-serif',
+    },
+    filtroColChip: {
+      display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px',
+      borderRadius: '999px', border: `1px solid ${p}`, background: dark ? '#2E262E' : '#F4EFF4',
+      fontSize: '11px', color: txt, fontFamily: '"Montserrat", sans-serif',
+    },
     td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt, overflowWrap: 'break-word', wordBreak: 'break-word' },
     tr: { transition: 'background 0.1s' },
     trUnknown: { backgroundColor: dark ? '#201E10' : '#fffbf0' },
