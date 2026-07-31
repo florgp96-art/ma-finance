@@ -45,15 +45,20 @@ export const esAlquilerOExpensas = (t) =>
 // estaban cargadas (con el monto exacto), y la deuda futura salía inflada.
 //
 // El monto de la cuota sí es invariante en un plan de cuotas fijas, que es cómo
-// se financia en la práctica. Se admite una tolerancia (ver TOLERANCIA_MONTO)
-// porque entre cuotas puede variar unos centavos por redondeo.
+// se financia en la práctica. La única diferencia admitida son CENTAVOS de
+// redondeo: cuando el total no es divisible, el banco ajusta la última cuota
+// ($221.000 en 3 → 73.666,67 / 73.666,67 / 73.666,66). Si dos filas difieren en
+// más que eso, son compras distintas y no hay que unirlas.
+//
+// Antes la tolerancia era del 2%, y a esa distancia entran compras que no tienen
+// nada que ver: MUNECOS $57.800 y Norte Sport $58.333,34 (0,9%), ROPA $41.837 y
+// UTN $42.587,68 (1,76%). Cada fusión de esas hacía que la compra nueva pareciera
+// completa y el widget dejara de avisar sus cuotas.
 //
 // Contrapartida asumida: dos compras DISTINTAS en la misma tarjeta, con la misma
-// cantidad de cuotas y exactamente el mismo monto por cuota, se cuentan como
-// una. Es mucho menos frecuente que la inconsistencia de nombres, y el error que
-// causa es acotado (una compra de menos), contra el que causaba lo anterior
-// (cuotas fantasma por cientos de miles de pesos).
-const TOLERANCIA_MONTO = 0.02 // 2%
+// cantidad de cuotas, arrancadas el mismo mes y con el mismo monto por cuota, se
+// cuentan como una. Es mucho menos frecuente que la inconsistencia de nombres.
+const TOLERANCIA_MONTO_PESOS = 1
 
 // PASO 1 — juntar las partes de una misma cuota. Un gasto dividido entre hijos
 // (regla de tipo "split") queda como varias filas reales de la MISMA cuota, y si
@@ -78,14 +83,28 @@ function unificarPartesDeCuota(filas) {
   return [...porCuota.values()]
 }
 
+// Nombres que no identifican nada: son lo que queda cuando el resumen no trae
+// comercio y solo dice que es una cuota. Usarlos para unir es peor que no tener
+// nombre — "CUOTA" está contenido en "KIT CUOTA", en "TOALLITAS CUOTA" y en
+// cualquier otra, así que pegaría todas las compras de la tarjeta entre sí.
+const NOMBRES_SIN_INFO = new Set([
+  'cuota', 'cuotas', 'compra', 'compras', 'pago', 'pagos', 'consumo', 'consumos',
+])
+const nombreIdentifica = (n) => {
+  const x = normalizarNombreCompra(n || '')
+  // Dos letras no alcanzan para afirmar nada por contención, y un nombre que es
+  // solo números es un código de operación, no un comercio.
+  return x.length >= 3 && !NOMBRES_SIN_INFO.has(x) && !/^\d+$/.test(x)
+}
+
 // ¿Los nombres apuntan a la misma compra? Se acepta que uno contenga al otro,
 // porque un resumen puede escribirlo más corto que el otro ("KINDERLAND" vs
 // "KINDERLAND JUGUETES", "FEBO" vs "MERPAGO*FBZAPATFEBO" no, pero "AYRES" sí).
 // Si de un lado no quedó nada para comparar, no se afirma nada.
 function nombresDeLaMismaCompra(a, b) {
-  const x = normalizarNombreCompra(a || '')
-  const y = normalizarNombreCompra(b || '')
-  if (!x || !y) return false
+  if (!nombreIdentifica(a) || !nombreIdentifica(b)) return false
+  const x = normalizarNombreCompra(a)
+  const y = normalizarNombreCompra(b)
   return x === y || x.includes(y) || y.includes(x)
 }
 
@@ -108,44 +127,54 @@ function mesAncla(t) {
 // anterior y la cadena las une igual.
 const TOLERANCIA_MESES_ANCLA = 2
 
-// Dos compras distintas de la misma tarjeta y la misma cantidad de cuotas
-// pueden coincidir en el monto (dentro del 2%) o en el nombre, y así se estaban
-// fusionando aunque estuvieran separadas por más de un año. Casos reales:
+// Dos compras distintas de la misma tarjeta y la misma cantidad de cuotas se
+// fusionaban aunque estuvieran separadas por más de un año, porque coincidían en
+// el monto o en el nombre. Casos reales:
 //   MUNECOS $57.800 (ene-2025)   vs  Norte Sport Palo Hockey $58.333,34 (jul-2026)
-//   ROPA $41.837 (nov-2025)      vs  UTN $42.587,68 (may-2026)
 //   COTO (feb-2025)              vs  COTO (feb-2026), mismo nombre
 // El efecto era el peor posible: la compra nueva quedaba "completa" porque las
 // cuotas de la vieja llenaban los números que faltaban, y el widget dejaba de
 // avisar cuotas que sí se vienen. Exigir que el mes ancla coincida las separa.
-function anclasCompatibles(a, b) {
+//
+// `margen` en meses: 0 pide que arranquen exactamente el mismo mes.
+function anclasCompatibles(a, b, margen) {
   const ma = mesAncla(a), mb = mesAncla(b)
   // Sin fecha no se puede afirmar que sean de compras distintas: no bloquea la
   // unión, que sigue decidiéndose por monto o nombre.
   if (ma === null || mb === null) return true
-  return Math.abs(ma - mb) <= TOLERANCIA_MESES_ANCLA
+  return Math.abs(ma - mb) <= margen
 }
 
 const montosDeLaMismaCuota = (a, b) => {
   const x = Math.abs(Number(a) || 0)
   const y = Math.abs(Number(b) || 0)
   if (x === 0 || y === 0) return false
-  return Math.abs(x - y) <= Math.max(x, y) * TOLERANCIA_MONTO
+  return Math.abs(x - y) <= TOLERANCIA_MONTO_PESOS
 }
 
 // PASO 2 — agrupar las cuotas en compras. Dentro de cada cuenta + cantidad de
-// cuotas, dos filas son de la misma compra si arrancan en el MISMO MES (ver
-// anclasCompatibles) **y** además coincide EL MONTO **O** EL NOMBRE.
-// Hace falta que sea "o" y no "y", porque en los datos reales fallan los dos por
+// cuotas, dos filas son de la misma compra si pasa UNA de estas dos:
+//
+//   a) MISMO MONTO (salvo centavos de redondeo) y arrancaron a dos meses o menos
+//      una de la otra. El margen de dos meses es para los datos viejos, donde la
+//      fecha de la cuota la puso el resumen que la facturó y no la compra.
+//
+//   b) MISMO NOMBRE (o uno contiene al otro) y arrancaron EXACTAMENTE el mismo
+//      mes. Acá el margen tiene que ser cero: hay cuatro compras distintas
+//      llamadas "ROPA" en la misma tarjeta, todas en 3 cuotas, dos de ellas a un
+//      mes de distancia (jul-2025 $53.000 y ago-2025 $120.984,01). Con margen las
+//      unía y quedaba una sola compra con el monto de otra.
+//
+// Hacen falta las dos vías, porque en los datos reales fallan las dos por
 // separado:
 //   - Solo por monto: "SILLON 1/3" ($74.500) y "SILLON 2/3" ($80.088) son la
-//     misma compra pero difieren 7,5%; las cuotas de EXPENSAS varían todos los
-//     meses porque es un servicio, no un plan de cuotas fijas.
+//     misma compra, pero le descontaron algo en la primera cuota.
 //   - Solo por nombre: "matko" / "stanley" / "regalo stanley" son la misma
 //     compra escrita de tres formas que no se parecen en nada.
-// Con "o" se recuperan los dos casos. La contra es que dos compras distintas que
-// caigan en el mismo monto se juntan (visto: SURPIEZASSRL y HIDROLIT, las dos de
-// $16.275). Se asume: ese error deja la deuda futura de menos, mientras que
-// partir una compra la inventaba de más — que es el problema que se reportó.
+//
+// Contrapartida asumida: dos compras distintas, mismo mes, mismo monto exacto y
+// misma cantidad de cuotas se cuentan como una. Ese error deja la deuda futura de
+// menos; partir una compra la inventaba de más, que es el problema que se reportó.
 function agruparPorCompra(filas) {
   const buckets = new Map()
   filas.forEach(t => {
@@ -166,11 +195,11 @@ function agruparPorCompra(filas) {
     for (let i = 0; i < filasBucket.length; i++) {
       for (let j = i + 1; j < filasBucket.length; j++) {
         const a = filasBucket[i], b = filasBucket[j]
-        if (!anclasCompatibles(a, b)) continue
-        if (montosDeLaMismaCuota(a.monto, b.monto) ||
-            nombresDeLaMismaCompra(a.nombre || a.detalle, b.nombre || b.detalle)) {
-          unir(i, j)
-        }
+        const porMonto = montosDeLaMismaCuota(a.monto, b.monto) &&
+          anclasCompatibles(a, b, TOLERANCIA_MESES_ANCLA)
+        const porNombre = nombresDeLaMismaCompra(a.nombre || a.detalle, b.nombre || b.detalle) &&
+          anclasCompatibles(a, b, 0)
+        if (porMonto || porNombre) unir(i, j)
       }
     }
 
