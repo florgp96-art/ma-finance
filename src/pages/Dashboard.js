@@ -201,6 +201,13 @@ export default function Dashboard() {
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [step, setStep] = useState('upload')
   const [statementData, setStatementData] = useState(null)
+  // ¿Lo que se subió es el resumen de la tarjeta, o una captura de los movimientos
+  // que todavía no cerraron? Antes no se preguntaba: la importación de tarjeta creaba
+  // SIEMPRE una ficha de resumen con el total y el vencimiento que leyera la IA. Una
+  // captura de los movimientos del home banking terminaba registrada como un resumen
+  // real, y ese monto aparecía en "Te falta pagar" con fecha de vencimiento, cuando en
+  // realidad el resumen todavía no había cerrado.
+  const [esResumenCerrado, setEsResumenCerrado] = useState(true)
   const [newAccountForUpload, setNewAccountForUpload] = useState({ nombre: '', tipo: 'credito' })
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
@@ -1627,6 +1634,7 @@ export default function Dashboard() {
     setArchivo(null)
     setStep('upload')
     setStatementData(null)
+    setEsResumenCerrado(true)
     setTargetAccount(null)
     setSepararAdicionales(null)
     setNewAccountForUpload({ nombre: '', tipo: 'credito' })
@@ -1896,6 +1904,10 @@ export default function Dashboard() {
         transaccionesDetectadas: result.transacciones?.length ?? null,
       })
       setStatementData(result)
+      // Un resumen cerrado siempre trae fecha de vencimiento; una captura de
+      // movimientos, no. Es la señal más confiable para adivinar de qué se trata —
+      // y queda a la vista para que el usuario la corrija antes de guardar.
+      setEsResumenCerrado(!!parseFechaArgentina(result.fecha_vencimiento))
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
 
       // Guardar contexto detectado si hay algo nuevo
@@ -2499,8 +2511,12 @@ export default function Dashboard() {
     } else {
       // Tarjeta de crédito — flujo normal
       const account = targetAccount
-      const { data: existing } = await supabase.from('statements')
-        .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
+      // Con una captura de movimientos no se crea ninguna ficha de resumen, así que
+      // tampoco hay que chequear si ya existe una del mismo período ni borrarla.
+      const { data: existing } = esResumenCerrado
+        ? await supabase.from('statements')
+            .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
+        : { data: null }
       if (existing) {
         // Si el extracto existente no tiene transacciones, es el resto de un
         // intento que falló a mitad de camino: se limpia y se reintenta.
@@ -2516,15 +2532,21 @@ export default function Dashboard() {
         }
       }
 
-      const { data: statement, error: errStmt } = await supabase.from('statements').insert({
-        user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
-      periodo: statementData.periodo, fecha_desde: null,
-        fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
-        fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
-        total_resumen: statementData.total_pesos,
-        total_dolares: statementData.total_dolares ?? null, estado: 'completo'
-      }).select().single()
-      if (errStmt || !statement) {
+      // Solo un resumen cerrado genera ficha (con su total y su vencimiento, que es lo
+      // que después aparece en "Te falta pagar"). Los movimientos de una captura entran
+      // sueltos: caen en el "Resumen abierto" de la tarjeta por fecha, y se vinculan
+      // solos cuando se cargue el resumen real que los facture.
+      const { data: statement, error: errStmt } = esResumenCerrado
+        ? await supabase.from('statements').insert({
+            user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
+            periodo: statementData.periodo, fecha_desde: null,
+            fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
+            fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
+            total_resumen: statementData.total_pesos,
+            total_dolares: statementData.total_dolares ?? null, estado: 'completo'
+          }).select().single()
+        : { data: null, error: null }
+      if (esResumenCerrado && (errStmt || !statement)) {
         showToast(`Error creando el extracto: ${errStmt?.message || 'desconocido'}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta (statement): ${errStmt?.message || 'desconocido'}` })
         setLoading(false)
@@ -2561,7 +2583,7 @@ export default function Dashboard() {
           const esDevolucionC = detalleTxLowerC.includes('devoluci') || detalleTxLowerC.includes('dev.imp') || detalleTxLowerC.includes('reintegro')
           const esCreditoC = t.es_credito || esDevolucionC || t.tipo === 'ingreso'
           return {
-            user_id: user.id, account_id: account.id, statement_id: statement.id,
+            user_id: user.id, account_id: account.id, statement_id: statement?.id || null,
             fecha: fechaFinal,
             nombre: t.nombre_limpio !== t.nombre_original ? t.nombre_limpio : null,
             detalle: t.nombre_original,
@@ -2601,7 +2623,7 @@ export default function Dashboard() {
 
       if (transacciones.length === 0) {
         showToast(`Todas las transacciones de este resumen ya estaban cargadas (${omitidasTarjeta} duplicadas omitidas).`, 'error')
-        await supabase.from('statements').delete().eq('id', statement.id)
+        if (statement) await supabase.from('statements').delete().eq('id', statement.id)
         setLoading(false)
         return
       }
@@ -2611,7 +2633,7 @@ export default function Dashboard() {
         showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
         // Dejar el estado limpio para que el reintento no quede bloqueado
-        await supabase.from('statements').delete().eq('id', statement.id)
+        if (statement) await supabase.from('statements').delete().eq('id', statement.id)
         setLoading(false)
         return
       }
@@ -2628,7 +2650,12 @@ export default function Dashboard() {
       // sin resumen todavía; una vez que llega el PDF real, ese propósito ya se cumplió.
       // Si no se limpia, la tarjeta "Ciclo actual" sigue apareciendo (aunque en $0) en vez
       // de desaparecer, y el próximo ciclo abierto quedaría mal acotado por una fecha vieja.
-      await supabase.from('accounts').update({ ciclo_actual_desde: null }).eq('id', account.id)
+      // Solo cuando llegó el resumen REAL: con una captura de movimientos el ciclo
+      // abierto sigue vivo, y borrar el "Contando desde" dejaría el próximo ciclo mal
+      // acotado justo cuando todavía hace falta para trackear lo no facturado.
+      if (esResumenCerrado) {
+        await supabase.from('accounts').update({ ciclo_actual_desde: null }).eq('id', account.id)
+      }
 
       // Preparar paso identificar — deduplicar por detalle
       const sinId = (inserted || []).filter(t => t.estado === 'a_identificar')
@@ -4609,14 +4636,57 @@ export default function Dashboard() {
                         {totalARS > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(totalARS)}</span></div>}
                         {totalUSD > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total USD</span><span style={styles.previewStatValue}>U$S {formatMontoFull(totalUSD)}</span></div>}
                         {totalEURprev > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total EUR</span><span style={styles.previewStatValue}>€ {formatMontoFull(totalEURprev)}</span></div>}
-                      </> : <>
+                      </> : esResumenCerrado ? <>
                         <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(statementData.total_pesos)}</span></div>
                         {statementData.fecha_vencimiento && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Vencimiento</span><span style={styles.previewStatValue}>{statementData.fecha_vencimiento}</span></div>}
+                      </> : <>
+                        {/* En una carga parcial el total y el vencimiento que leyó la IA no
+                            son de un resumen cerrado: mostrar la suma de lo seleccionado,
+                            igual que en un extracto bancario, y no un vencimiento que no existe. */}
+                        {totalARS > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total ARS</span><span style={styles.previewStatValue}>$ {formatMonto(totalARS)}</span></div>}
+                        {totalUSD > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total USD</span><span style={styles.previewStatValue}>U$S {formatMontoFull(totalUSD)}</span></div>}
+                        {totalEURprev > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total EUR</span><span style={styles.previewStatValue}>€ {formatMontoFull(totalEURprev)}</span></div>}
                       </>}
                       <div style={styles.previewStat}><span style={styles.previewStatLabel}>Seleccionadas</span><span style={styles.previewStatValue}>{pdfTxSelections.size} / {statementData.transacciones.length}</span></div>
                     </div>
                   )
                 })()}
+                {/* Resumen cerrado vs carga parcial. La app adivina por la fecha de
+                    vencimiento (un resumen cerrado siempre la trae, una captura de los
+                    movimientos no) y lo deja acá para confirmar: de esto depende que el
+                    monto entre en "Te falta pagar" con vencimiento, o quede como gasto
+                    todavía no facturado. */}
+                {statementData?.tipo_documento !== 'banco' && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <p style={{ margin: '0 0 6px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                      ¿Qué estás cargando?
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {[
+                        { v: true,  label: '📄 El resumen de la tarjeta', hint: 'Ya cerró y tiene fecha de vencimiento' },
+                        { v: false, label: '🧾 Carga parcial', hint: 'Movimientos que todavía no cerraron' },
+                      ].map(opt => (
+                        <button key={String(opt.v)} type="button" onClick={() => setEsResumenCerrado(opt.v)}
+                          style={{
+                            flex: '1 1 200px', textAlign: 'left', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer',
+                            fontFamily: '"Montserrat", sans-serif',
+                            border: esResumenCerrado === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                            background: esResumenCerrado === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                            color: darkMode ? '#F0EDEC' : '#1d1d1f',
+                          }}>
+                          <span style={{ display: 'block', fontSize: '12px', fontWeight: esResumenCerrado === opt.v ? '600' : '500' }}>{opt.label}</span>
+                          <span style={{ display: 'block', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginTop: '2px' }}>{opt.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {!esResumenCerrado && (
+                      <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#4a9e7a', lineHeight: 1.4 }}>
+                        Los movimientos se cargan igual, pero sin darlos por facturados: van a aparecer
+                        en el resumen abierto de la tarjeta, y se vinculan solos cuando cargues el resumen real.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
                   <span>{pdfTxDuplicadas.size > 0 ? 'Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.' : ''}</span>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
