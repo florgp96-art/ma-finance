@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
 import { cuotasFuturasCargadas } from '../lib/cuotas'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
@@ -183,7 +183,15 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     // misma función que usa el widget "Cuotas pendientes" del Dashboard, así que
     // los dos números y la tabla de movimientos no pueden discrepar. Las cuotas
     // que faltan del plan se crean como movimientos al importar el resumen.
-    const futuras = cuotasFuturasCargadas(transactions)
+    // Mismo criterio que el widget del Dashboard: una cuota deja de contar cuando
+    // se pagó el resumen que la facturó. El set de resúmenes pagados sale de
+    // calcularStatementsPendientes, la misma función que usa "A pagar".
+    const { estadosStatement } = calcularStatementsPendientes({ accounts, statements, transactions })
+    const pagadas = new Set()
+    estadosStatement.forEach((st, id) => {
+      if (Math.round(st.pendienteArs) <= 0 && Math.round(st.pendienteUsd * 100) <= 0) pagadas.add(id)
+    })
+    const futuras = cuotasFuturasCargadas(transactions, new Date(), pagadas)
     const cuotas = {
       total: futuras.reduce((s, tx) => s + aArs(tx), 0),
       compras: futuras.length,
@@ -196,7 +204,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     }))
 
     return { actual, pagosPorCuenta, cuotas, historial }
-  }, [transactions, accountTipoById, selectedMonth, aArs])
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
@@ -371,7 +379,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             Cuotas comprometidas a futuro
             <InfoTooltip
               darkMode={darkMode}
-              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} de tus movimientos con fecha de hoy en adelante. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
+              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} de tus movimientos que todavía se deben: una deja de contar cuando pagás el resumen que la facturó. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
             />
           </p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>
