@@ -478,7 +478,10 @@ const DIAS_CIERRE_A_VENCIMIENTO = 7
 const restarDiasISO = (fechaISO, dias) => {
   const d = new Date(fechaISO + 'T00:00:00')
   d.setDate(d.getDate() - dias)
-  return d.toISOString().slice(0, 10)
+  // El string se arma a mano y no con toISOString(), que convierte a UTC: la
+  // medianoche local de una zona con offset positivo (ej. España, UTC+2) cae el
+  // día anterior en UTC, así que ahí restaba un día de más.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 // Las fechas que llegan de la DB/PDF a veces traen espacios o caracteres de más (ej. un
 // parseo con espacios sobrantes) — eso rompe en silencio cualquier comparación de string
