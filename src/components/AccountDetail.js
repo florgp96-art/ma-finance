@@ -129,7 +129,7 @@ export const rotuloLabel = { textTransform: 'uppercase', letterSpacing: '0.05em'
 // Nombre visible de cada columna filtrable, para los chips de "filtros activos".
 const ETIQUETA_COLUMNA = {
   nombre: 'Nombre', categoria: 'Categoría', cuenta: 'Cuenta',
-  subcategoria: 'Subcategoría', cuotas: 'Cuotas',
+  subcategoria: 'Subcategoría', cuotas: 'Cuotas', moneda: 'Moneda',
 }
 
 export const formatMonto = (monto) =>
@@ -553,13 +553,22 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && (t.tipo === 'neutro' || t.tipo === 'ingreso') && enVentana(t))
     const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
     const totalPagosUsd = pagosUsd.reduce((sum, t) => sum + Number(t.monto), 0)
-    const pendienteArsSinClamp = (Number(s.total_resumen) || 0) - totalPagosArs
-    const pendienteUsdSinClamp = totalUsdLinkedDe(s) - totalPagosUsd
+    const totalArs = Number(s.total_resumen) || 0
+    const totalUsd = totalUsdLinkedDe(s)
+    const pendienteArsSinClamp = totalArs - totalPagosArs
+    const pendienteUsdSinClamp = totalUsd - totalPagosUsd
+    // Un total NEGATIVO es un saldo a favor que informó el banco en el resumen, no
+    // plata que el usuario pagó de más. Sin este chequeo, un resumen con
+    // total_dolares = -20,65 (saldo a favor en dólares, algo común cuando el mes
+    // anterior se pagó de más o hubo un reintegro) mostraba "Sobrepago del resumen
+    // anterior: U$S 20,65" aunque no se hubiera hecho ningún pago: el excedente
+    // salía de la resta 0 − (−20,65). Solo se habla de sobrepago cuando había una
+    // deuda real y los pagos la superaron.
     return {
       pendienteArs: Math.max(0, pendienteArsSinClamp),
-      excedenteArs: Math.max(0, -pendienteArsSinClamp),
+      excedenteArs: totalArs > 0 ? Math.max(0, -pendienteArsSinClamp) : 0,
       pendienteUsd: Math.max(0, pendienteUsdSinClamp),
-      excedenteUsd: Math.max(0, -pendienteUsdSinClamp),
+      excedenteUsd: totalUsd > 0 ? Math.max(0, -pendienteUsdSinClamp) : 0,
       totalPagosArs, totalPagosUsd,
     }
   }
@@ -1316,11 +1325,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     if (key === 'cuenta') return t.accounts?.nombre || '—'
     if (key === 'subcategoria') return (t.tipo === 'ingreso' || esVistaIngresos) ? '—' : (t.subcategories?.nombre || '—')
     if (key === 'cuotas') return (t.cuotas_total || 1) > 1 ? `${t.cuotas_total} cuotas` : 'Sin cuotas'
+    // La moneda no tiene columna propia: se filtra desde el encabezado de Monto,
+    // que es donde se ve. Sin dato se asume pesos, igual que en el resto de la app.
+    if (key === 'moneda') return t.moneda || 'ARS'
     return ''
   }, [etiquetaCategoria, esVistaIngresos])
 
   const columnasFiltrables = useMemo(
-    () => ['nombre', 'categoria', 'cuenta', 'subcategoria', 'cuotas'], [])
+    () => ['nombre', 'categoria', 'cuenta', 'subcategoria', 'cuotas', 'moneda'], [])
 
   // Sin clave = columna sin filtrar (muestra todo). Array vacío = el usuario
   // destildó todo, y ahí no se muestra nada: son dos estados distintos, y
@@ -2186,8 +2198,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Encabezado de la tabla de movimientos: ordena al clickear el título y filtra
   // por el embudo. El embudo no puede estar dentro del área que ordena, porque
   // abrir el filtro reordenaría la tabla por debajo.
-  const thFiltrable = (label, key, align = undefined) => {
-    const activo = Array.isArray(filtrosCol[key])
+  // `filtroKey` distinto de `key` para la columna Monto: ordena por monto pero
+  // filtra por moneda, que es el dato que se ve ahí y no tiene columna propia.
+  const thFiltrable = (label, key, align = undefined, filtroKey = key) => {
+    const activo = Array.isArray(filtrosCol[filtroKey])
     return (
       <th style={{ ...styles.thSortable, cursor: 'default', ...(align ? { textAlign: align } : {}) }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', maxWidth: '100%' }}>
@@ -2197,15 +2211,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           >
             {label}<span style={styles.sortIcon}>{sortIcon(key)}</span>
           </span>
-          {columnasFiltrables.includes(key) && (
+          {columnasFiltrables.includes(filtroKey) && (
             <button
               onClick={(e) => {
                 const r = e.currentTarget.getBoundingClientRect()
                 setFiltroColPos({ x: r.left, y: r.bottom + 4 })
                 setFiltroColBusqueda('')
-                setFiltroColAbierto(prev => prev === key ? null : key)
+                setFiltroColAbierto(prev => prev === filtroKey ? null : filtroKey)
               }}
-              title={activo ? `Filtrando por ${label}` : `Filtrar por ${label}`}
+              title={activo ? `Filtrando por ${ETIQUETA_COLUMNA[filtroKey] || label}` : `Filtrar por ${ETIQUETA_COLUMNA[filtroKey] || label}`}
               style={{
                 background: activo ? (darkMode ? '#4A3F4A' : '#E8E0E8') : 'none',
                 border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '1px 3px',
@@ -2765,10 +2779,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       }}>
         <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
           <div>
-            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Resumen abierto' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</p>
+            {/* La aclaración de qué es un resumen abierto va en la "i" del título y no
+                como un renglón de texto debajo: ocupaba una línea entera en cada
+                tarjeta, repetida en todas, y competía con el monto que se viene a
+                mirar. Mismo criterio que el resto de las explicaciones de la app. */}
+            <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center' }}>
+              <span>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Resumen abierto' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</span>
+              {s._virtual && (
+                <span onClick={e => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+                  <InfoTooltip darkMode={darkMode} text="Todavía no facturado: son los gastos que hiciste después del último cierre de esta tarjeta. Se van a incluir en el próximo resumen, así que no suman a lo que te falta pagar hoy." />
+                </span>
+              )}
+            </p>
             {s._virtual && (
               <>
-                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#4a9e7a' }}>Todavía no facturado · se incluye en el próximo resumen</p>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Contando desde
                   <input type="date" value={s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : '')} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
@@ -3890,7 +3914,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {colVisible.cuenta && thFiltrable('Cuenta', 'cuenta')}
               {colVisible.subcategoria && thFiltrable('Subcategoría', 'subcategoria')}
               {colVisible.cuotas && thFiltrable('Cuotas', 'cuotas')}
-              {thSortable('Monto', 'monto', false, undefined, 'right')}
+              {thFiltrable('Monto', 'monto', 'right', 'moneda')}
               <th style={styles.th}></th>
             </tr>
           </thead>
