@@ -183,15 +183,15 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     // misma función que usa el widget "Cuotas pendientes" del Dashboard, así que
     // los dos números y la tabla de movimientos no pueden discrepar. Las cuotas
     // que faltan del plan se crean como movimientos al importar el resumen.
-    // Mismo criterio que el widget del Dashboard: una cuota deja de contar cuando
-    // se pagó el resumen que la facturó. El set de resúmenes pagados sale de
-    // calcularStatementsPendientes, la misma función que usa "A pagar".
-    const { estadosStatement } = calcularStatementsPendientes({ accounts, statements, transactions })
-    const pagadas = new Set()
-    estadosStatement.forEach((st, id) => {
-      if (Math.round(st.pendienteArs) <= 0 && Math.round(st.pendienteUsd * 100) <= 0) pagadas.add(id)
-    })
-    const futuras = cuotasFuturasCargadas(transactions, new Date(), pagadas)
+    // Mismo criterio que el widget del Dashboard: cuenta la cuota que facturó un
+    // resumen todavía impago, más la que ningún resumen facturó y cuya fecha no pasó.
+    // La lista de pendientes sale de calcularStatementsPendientes, la misma función
+    // que usa "A pagar".
+    const pendientes = new Set(
+      calcularStatementsPendientes({ accounts, statements, transactions })
+        .statementsRealesConUsd.map(s => s.id)
+    )
+    const futuras = cuotasFuturasCargadas(transactions, new Date(), pendientes)
     const cuotas = {
       total: futuras.reduce((s, tx) => s + aArs(tx), 0),
       compras: futuras.length,
