@@ -679,6 +679,11 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   // quedaba en el mes equivocado, no había forma de corregirla sin borrar el
   // movimiento y cargarlo de nuevo a mano.
   const [editFecha, setEditFecha] = useState('')
+  // Cuotas editables: un movimiento que se leyó como cuota sin serlo (o al revés)
+  // solo se podía arreglar por SQL. Se guardan como texto para que el campo pueda
+  // quedar vacío mientras se escribe, sin que un '' se convierta en 0.
+  const [editCuotaNum, setEditCuotaNum] = useState('')
+  const [editCuotasTotal, setEditCuotasTotal] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
   const [editTag, setEditTag] = useState('')
@@ -1036,6 +1041,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     })()
     const fechaCorregida = fechaOk && editFecha !== normFecha(tx.fecha) ? editFecha : undefined
     const cambioFecha = fechaCorregida !== undefined ? { fecha: fechaCorregida } : {}
+    // Cuotas editables. El caso que lo motivó: una compra de una sola vez que el
+    // resumen (o la IA) leyó como "3/3", y que quedaba contaminando el widget de
+    // cuotas pendientes sin forma de arreglarla desde la app.
+    // Poner el total en 1 la saca de cuotas; el número se acota al total para que
+    // no queden estados imposibles tipo "cuota 5 de 3".
+    const cambioCuotas = (() => {
+      const total = Math.trunc(Number(editCuotasTotal))
+      if (!Number.isFinite(total) || total < 1 || total > 120) return {}
+      const numPedido = Math.trunc(Number(editCuotaNum))
+      const num = total === 1
+        ? 1
+        : (Number.isFinite(numPedido) ? Math.min(Math.max(numPedido, 1), total) : 1)
+      if (total === (tx.cuotas_total || 1) && num === (tx.cuota_numero || 1)) return {}
+      return { cuotas_total: total, cuota_numero: num }
+    })()
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
     // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
@@ -1055,7 +1075,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         : null
       const catIngresos = categories.find(c => c.nombre === 'Ingresos' && (c.tipo || 'gasto') === 'ingreso')
       const childIngresoObj = children.find(c => c.nombre === editHijoIngreso)
-      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...cambioFecha, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
+      const upd = { nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, estado: 'identificado', ...accountChange, ...cambioFecha, ...cambioCuotas, ...(tx.tipo !== 'ingreso' ? { tipo: 'ingreso' } : {}) }
       if (!editTag) {
         // Sin categoría elegida: limpiar el vínculo.
         upd.category_id = null
@@ -1074,7 +1094,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
       setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
         ? prev.filter(t => t.id !== tx.id)
-        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...cambioFecha, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
+        : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...cambioFecha, ...cambioCuotas, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
       setFilaExpandida(prev => prev === tx.id ? null : prev)
       return
@@ -1097,6 +1117,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       ...(vuelveAGasto ? { tipo: 'gasto' } : {}),
       ...accountChange,
       ...cambioFecha,
+      ...cambioCuotas,
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
     if (errUpd) { window.alert('No se pudo guardar el cambio: ' + errUpd.message + '\nProbá de nuevo.'); return }
@@ -1141,6 +1162,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         ...accountChange,
         ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}),
         ...cambioFecha,
+        ...cambioCuotas,
         ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
       } : t))
     setEditingTx(null)
@@ -1172,6 +1194,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
     setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
     setEditMonto(String(Math.abs(Number(tx.monto)) || ''))
+    setEditCuotasTotal(String(tx.cuotas_total || 1))
+    setEditCuotaNum(String(tx.cuota_numero || 1))
   }
 
   // Acción manual "Dividir gasto" (D3 Parte 2): reemplaza el viejo botón fijo
@@ -2062,6 +2086,41 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             onChange={e => setEditMonto(e.target.value)} placeholder="Monto" />
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="date" value={editFecha}
             onChange={e => setEditFecha(e.target.value)} title="Fecha del movimiento" />
+          {/* Cuotas. Va acá y no escondido en otra pantalla porque el error típico
+              es justo este: una compra de una sola vez leída como "3/3", que
+              después aparece en el widget de cuotas pendientes. */}
+          {!esIngresoTx && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, whiteSpace: 'nowrap' }}>Cuota</span>
+              <input
+                style={{ ...styles.editInput, width: '58px', boxSizing: 'border-box', textAlign: 'center' }}
+                type="number" min="1" step="1" value={editCuotaNum}
+                onChange={e => setEditCuotaNum(e.target.value)}
+                disabled={Math.trunc(Number(editCuotasTotal)) === 1}
+                title="Número de cuota"
+              />
+              <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>de</span>
+              <input
+                style={{ ...styles.editInput, width: '58px', boxSizing: 'border-box', textAlign: 'center' }}
+                type="number" min="1" step="1" value={editCuotasTotal}
+                onChange={e => setEditCuotasTotal(e.target.value)}
+                title="Cantidad total de cuotas del plan"
+              />
+              <button
+                type="button"
+                onClick={() => { setEditCuotasTotal('1'); setEditCuotaNum('1') }}
+                style={{
+                  marginLeft: 'auto', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer',
+                  fontSize: '11px', fontFamily: '"Montserrat", sans-serif',
+                  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
+                  color: darkMode ? '#C0B0C0' : '#5C4F5C', whiteSpace: 'nowrap',
+                }}
+                title="Marcar como un solo pago, no en cuotas"
+              >
+                No fue en cuotas
+              </button>
+            </div>
+          )}
           <select style={selStyle} value={editCuenta} onChange={e => setEditCuenta(e.target.value)}>
             {(accounts || []).filter(a => esIngresoTx || a.tipo !== 'ingreso').map(a => (
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
