@@ -236,7 +236,7 @@ export default function Dashboard() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '' })
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1' })
   // Ingreso/Neutro suelen tener una sola categoría real (ej. "Ingresos"), lo
   // que hacía el selector de Categoría redundante: había que elegir la única
   // opción solo para desbloquear Subcategoría, que es donde está la elección
@@ -876,8 +876,19 @@ export default function Dashboard() {
       child_id: efectivo.hijo ? (childrenDB.find(c => c.nombre === efectivo.hijo)?.id || null) : null,
       estado: catObj ? 'identificado' : 'a_identificar',
       es_manual: true,
-      cuotas_total: 1,
-      cuota_numero: 1,
+      // Solo un gasto puede ir en cuotas. Se acota igual que en la edición de la
+      // fila (AccountDetail): total entre 1 y 120, y el número nunca por encima
+      // del total, para que no queden estados imposibles tipo "cuota 5 de 3".
+      ...(() => {
+        if (tipoMovimiento !== 'gasto') return { cuotas_total: 1, cuota_numero: 1 }
+        const total = Math.trunc(Number(efectivo.cuotasTotal))
+        if (!Number.isFinite(total) || total < 1 || total > 120) return { cuotas_total: 1, cuota_numero: 1 }
+        const num = Math.trunc(Number(efectivo.cuotaNum))
+        return {
+          cuotas_total: total,
+          cuota_numero: total === 1 ? 1 : (Number.isFinite(num) ? Math.min(Math.max(num, 1), total) : 1),
+        }
+      })(),
       // TC congelado al momento de cargar el movimiento — el equivalente en ARS de
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
@@ -890,7 +901,7 @@ export default function Dashboard() {
       return
     }
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuenta: cuentaEfectivoId })
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
     if (tipoMovimiento === 'ingreso') {
@@ -5070,6 +5081,30 @@ export default function Dashboard() {
                   {tipoMovimiento === 'ingreso' && (
                     <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
                   )}
+                </div>
+              )}
+              {/* Cuotas. Antes este formulario guardaba TODO como 1 de 1, sin
+                  forma de decir lo contrario: una cuota cargada a mano quedaba
+                  como un gasto suelto, el widget de cuotas seguía proyectándola
+                  como faltante y el mismo gasto aparecía dos veces (una en los
+                  movimientos, otra como cuota a vencer). */}
+              {tipoMovimiento === 'gasto' && (
+                <div style={styles.field}>
+                  <label style={styles.label}>¿Es en cuotas? <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: '#8e8e93', whiteSpace: 'nowrap' }}>Cuota</span>
+                    <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
+                      type="number" min="1" step="1" value={efectivo.cuotaNum}
+                      onChange={e => setEfectivo({...efectivo, cuotaNum: e.target.value})}
+                      disabled={Math.trunc(Number(efectivo.cuotasTotal)) <= 1} />
+                    <span style={{ fontSize: '13px', color: '#8e8e93' }}>de</span>
+                    <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
+                      type="number" min="1" step="1" value={efectivo.cuotasTotal}
+                      onChange={e => setEfectivo({...efectivo, cuotasTotal: e.target.value})} />
+                  </div>
+                  <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>
+                    Dejalo en 1 de 1 si fue un pago único. La fecha de arriba es la de ESTA cuota.
+                  </p>
                 </div>
               )}
               {tipoMovimiento !== 'ingreso' && (
