@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel } from './AccountDetail'
-import { proyectarCuotasFuturas } from '../lib/cuotas'
+import { cuotasFuturasCargadas } from '../lib/cuotas'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -178,15 +178,15 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       pagosPorCuenta.set(p.account_id, list)
     })
 
-    // Cuotas comprometidas a futuro: para cada compra en cuotas, lo que falta
-    // facturar de acá en adelante. La reconstrucción de las compras a partir de
-    // las filas sueltas de cada cuota vive en src/lib/cuotas.js, compartida con
-    // el widget "Cuotas pendientes" del Dashboard — antes cada vista tenía su
-    // propia copia y mostraban totales distintos para lo mismo.
-    const proyectadas = proyectarCuotasFuturas(transactions)
+    // Cuotas comprometidas a futuro: las cuotas YA CARGADAS como movimiento con
+    // fecha de este mes en adelante. Se lee la base, no se proyecta nada — es la
+    // misma función que usa el widget "Cuotas pendientes" del Dashboard, así que
+    // los dos números y la tabla de movimientos no pueden discrepar. Las cuotas
+    // que faltan del plan se crean como movimientos al importar el resumen.
+    const futuras = cuotasFuturasCargadas(transactions)
     const cuotas = {
-      total: proyectadas.reduce((s, { tx }) => s + aArs(tx), 0),
-      compras: new Set(proyectadas.map(p => p.tx.id)).size,
+      total: futuras.reduce((s, tx) => s + aArs(tx), 0),
+      compras: futuras.length,
     }
 
     const historial = getLast6Months().map(m => ({
@@ -371,7 +371,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             Cuotas comprometidas a futuro
             <InfoTooltip
               darkMode={darkMode}
-              text={`Lo que falta pagar de ${cuotas.compras} compra${cuotas.compras === 1 ? '' : 's'} en cuotas, calculado con el valor de la última cuota de cada una.`}
+              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} que ya están cargadas en tus movimientos, con fecha de este mes o de los que vienen. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
             />
           </p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>

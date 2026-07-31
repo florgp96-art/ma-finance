@@ -236,6 +236,82 @@ export function comprasEnCuotasPendientes(transactions) {
 
 const mesDe = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
+// Suma meses a una fecha YYYY-MM-DD recortando el día al último del mes destino:
+// el 31/01 más un mes da 28/02, no 03/03 (con setMonth, JS desborda al mes
+// siguiente y esa cuota se salteaba febrero). El string se arma a mano y no con
+// toISOString(), que pasa por UTC y corre un día en zonas de offset positivo.
+//
+// Cada cuota se calcula SIEMPRE desde la fecha de la compra, nunca desde la
+// cuota anterior: así una compra del 31/01 vuelve al 31 en marzo en vez de
+// quedar arrastrando el 28 para siempre.
+export const addMeses = (fechaISO, n) => {
+  if (!fechaISO) return fechaISO
+  const [y, m, d] = fechaISO.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return fechaISO
+  if (!n) return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const destino = new Date(y, (m - 1) + n, 1)
+  const ultimoDia = new Date(destino.getFullYear(), destino.getMonth() + 1, 0).getDate()
+  destino.setDate(Math.min(d, ultimoDia))
+  return `${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, '0')}-${String(destino.getDate()).padStart(2, '0')}`
+}
+
+// Las cuotas de una compra financiada que TODAVÍA NO EXISTEN como movimiento,
+// listas para crearse. Devuelve, por cada una, la fila que sirve de molde (para
+// copiar cuenta, categoría, subcategoría, hijo y moneda) más la fecha y el
+// número que le corresponden.
+//
+// El único criterio de la app para "qué cuotas se vienen" tiene que ser ESTO:
+// se crean los movimientos y después todas las vistas leen movimientos. Antes el
+// widget mostraba una proyección calculada al vuelo que no existía en ninguna
+// parte, así que el total del widget y el de los movimientos nunca cerraban.
+//
+// No se generan cuotas que caerían en un mes YA PASADO: si la última cuota
+// conocida de una compra es vieja, las siguientes ya se facturaron y lo que falta
+// es cargar ese resumen — inventarlas ahora metería gastos en meses cerrados.
+export function cuotasParaCrear(transactions, hoy = new Date()) {
+  const mesActual = mesDe(hoy)
+  const yaCargadas = (transactions || []).filter(t =>
+    t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 && t.fecha)
+
+  // Una cuota ya existe si en la misma cuenta hay una fila del mismo plan, con el
+  // mismo número, monto parecido y fecha cercana. La ventana de fechas es amplia
+  // porque los datos viejos tienen la fecha del resumen que facturó la cuota y no
+  // la derivada de la compra: sin eso se crearía una segunda copia de algo que sí
+  // está cargado.
+  const existe = (accountId, cuotasTotal, cuotaNum, monto, fechaISO) =>
+    yaCargadas.some(t =>
+      t.account_id === accountId &&
+      (t.cuotas_total || 1) === cuotasTotal &&
+      (t.cuota_numero || 0) === cuotaNum &&
+      montosDeLaMismaCuota(t.monto, monto) &&
+      Math.abs(new Date(t.fecha + 'T12:00:00') - new Date(fechaISO + 'T12:00:00')) <= 45 * 86400000
+    )
+
+  const aCrear = []
+  comprasEnCuotasPendientes(transactions).forEach(({ tx, restantes }) => {
+    for (let i = 1; i <= restantes; i++) {
+      const fecha = addMeses(tx.fecha, i)
+      if (fecha.slice(0, 7) < mesActual) continue
+      const cuotaNum = (tx.cuota_numero || 1) + i
+      if (existe(tx.account_id, tx.cuotas_total || 1, cuotaNum, tx.monto, fecha)) continue
+      aCrear.push({ molde: tx, fecha, cuotaNum, cuotasTotal: tx.cuotas_total || 1, monto: tx.monto })
+    }
+  })
+  return aCrear
+}
+
+// Las cuotas futuras que YA están cargadas como movimiento, agrupadas por mes.
+// Esto es lo que muestran las vistas de cuotas: se lee la base, no se calcula
+// nada. Incluye el mes en curso, porque una cuota de este mes que todavía no se
+// pagó también es plata comprometida.
+export function cuotasFuturasCargadas(transactions, hoy = new Date()) {
+  const mesActual = mesDe(hoy)
+  return (transactions || []).filter(t =>
+    t.tipo === 'gasto' && (t.cuotas_total || 1) > 1 && (t.cuota_numero || 0) > 0 &&
+    t.fecha && t.fecha.slice(0, 7) >= mesActual && !esAlquilerOExpensas(t)
+  )
+}
+
 // Proyecta una por una las cuotas que faltan, con el mes en que caería cada
 // una. Se saltean las que caerían en un mes YA PASADO: si la última cuota
 // conocida de una compra es vieja, las siguientes probablemente ya se

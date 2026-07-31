@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
-import { proyectarCuotasFuturas, stripCuotaSuffix } from '../lib/cuotas'
+import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
@@ -190,11 +190,13 @@ export default function Dashboard() {
   const [showAddServicio, setShowAddServicio] = useState(false)
   const [cuotasPendientesExpandido, setCuotasPendientesExpandido] = useState(null)
   const toastTimeoutRef = useRef(null)
-  const showToast = (msg, type = 'success') => {
+  // useCallback con identidad estable: lo usan hooks memoizados (ej.
+  // crearCuotasFaltantes), y si cambiara en cada render los invalidaría a todos.
+  const showToast = useCallback((msg, type = 'success') => {
     clearTimeout(toastTimeoutRef.current)
     setToast({ msg, type })
     toastTimeoutRef.current = setTimeout(() => setToast(null), type === 'error' ? 12000 : 3500)
-  }
+  }, [])
   const [showUpload, setShowUpload] = useState(false)
   const [uploadDragOver, setUploadDragOver] = useState(false)
   const [step, setStep] = useState('upload')
@@ -1416,7 +1418,10 @@ export default function Dashboard() {
       const toInsertConReparto = aplicarReglasReparto(toInsert, repartoRules)
       await supabase.from('transactions').insert(toInsertConReparto)
       const omitidas = exactDupes.length
-      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}`)
+      // Las cuotas que faltan del plan se crean como movimientos reales, así el
+      // widget de cuotas y la tabla muestran lo mismo (ver crearCuotasFaltantes).
+      const cuotasCreadas = await generarCuotasTrasImportar()
+      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} duplicadas exactas omitidas.` : ''}${cuotasCreadas > 0 ? ` Se agregaron ${cuotasCreadas} cuotas futuras.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -1463,7 +1468,8 @@ export default function Dashboard() {
       const toInsertConReparto = aplicarReglasReparto(toInsert, repartoRules)
       await supabase.from('transactions').insert(toInsertConReparto)
       const omitidas = exactDupes.length + (potentialDupes.length - selectedDupes.length)
-      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}`)
+      const cuotasCreadas = await generarCuotasTrasImportar()
+      showToast(`${toInsertConReparto.length} transacciones importadas.${omitidas > 0 ? ` ${omitidas} omitidas.` : ''}${cuotasCreadas > 0 ? ` Se agregaron ${cuotasCreadas} cuotas futuras.` : ''}`)
       setShowExcel(false); setExcelFile(null); setExcelPreview(null); setExcelDupReview(null)
       setRefreshKey(k => k + 1); fetchAccounts()
     } catch (err) {
@@ -2232,6 +2238,12 @@ export default function Dashboard() {
     setShowUpload(false)
     fetchAccounts()
     setRefreshKey(k => k + 1)
+    // Salida única del flujo de PDF/foto (la usan finalizarCarga y avanzarContexto):
+    // acá se crean como movimientos reales las cuotas que falten del plan, para que
+    // el widget de cuotas y la tabla de movimientos digan lo mismo.
+    generarCuotasTrasImportar().then(n => {
+      if (n > 0) showToast(`Se agregaron ${n} cuota${n === 1 ? '' : 's'} futura${n === 1 ? '' : 's'} a tus movimientos.`)
+    })
   }
 
   const handleConfirmTransactions = async () => {
@@ -2674,18 +2686,21 @@ export default function Dashboard() {
   // Rules of Hooks) porque antes se recalculaba entero (agrupar, desduplicar sufijos,
   // proyectar) en cada render en el que se mostrara el widget.
   const cuotasPendientesMemo = useMemo(() => {
-    // La reconstrucción de las compras a partir de las filas sueltas de cada
-    // cuota vive en src/lib/cuotas.js, compartida con la card "Cuotas
-    // comprometidas a futuro" de CashView — antes cada vista tenía su propia
-    // copia y mostraban totales distintos para lo mismo.
-    const proyectadas = proyectarCuotasFuturas(accountTransactions)
-    if (proyectadas.length === 0) return { periodos: [], mesesOcultos: 0, totalFuturo: 0 }
+    // Se leen los MOVIMIENTOS ya cargados, no una proyección calculada al vuelo.
+    // Antes esto proyectaba las cuotas restantes de cada compra, así que listaba
+    // cuotas que no existían en ninguna parte: el total del widget y el de la
+    // tabla de movimientos nunca cerraban, y no había forma de saber cuál de los
+    // dos estaba bien. Las cuotas que faltan ahora se CREAN como movimientos
+    // (ver crearCuotasFaltantes) y de ahí las lee este widget.
+    const futuras = cuotasFuturasCargadas(accountTransactions)
+    if (futuras.length === 0) return { periodos: [], mesesOcultos: 0, totalFuturo: 0 }
 
     const tc = parseFloat(tipoCambio) || 0
     const tcEUR = parseFloat(tipoCambioEUR) || 0
     const byPeriod = {}
 
-    proyectadas.forEach(({ tx: t, mes: period, cuotaNum }) => {
+    futuras.forEach(t => {
+      const period = t.fecha.slice(0, 7)
       if (!byPeriod[period]) byPeriod[period] = { items: [], total_ars: 0 }
       const arsEquiv = t.moneda === 'USD' && tc > 0 ? t.monto * tc : t.moneda === 'EUR' && tcEUR > 0 ? t.monto * tcEUR : t.monto
       byPeriod[period].total_ars += arsEquiv
@@ -2693,7 +2708,7 @@ export default function Dashboard() {
         nombre: stripCuotaSuffix(t.nombre || t.detalle || 'Sin nombre'),
         monto: t.monto,
         moneda: t.moneda || 'ARS',
-        cuotaNum,
+        cuotaNum: t.cuota_numero,
         cuotasTotal: t.cuotas_total,
         cuenta: t.accounts?.nombre || ''
       })
@@ -2875,12 +2890,88 @@ export default function Dashboard() {
     return { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion, calculadora }
   }, [accountTransactions, sidebarCatEvol, evolucionTipo, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, childrenDB, customIcons])
 
+  // Cuotas de una compra financiada que todavía no existen como movimiento: se
+  // crean de verdad en la base, con la fecha derivada de la compra (una por mes),
+  // copiando de la cuota conocida la cuenta, categoría, subcategoría, hijo y
+  // moneda. Es lo que hace que el widget de cuotas y la tabla de movimientos
+  // muestren el mismo número: hay una sola fuente de verdad, los movimientos.
+  //
+  // Se llama al terminar cada importación (así el cliente no tiene que hacer
+  // nada) y también a mano desde el widget, para completar las compras que ya
+  // estaban cargadas de antes.
+  const cuotasFaltantesMemo = useMemo(() => cuotasParaCrear(accountTransactions), [accountTransactions])
+  const [creandoCuotas, setCreandoCuotas] = useState(false)
+
+  const crearCuotasFaltantes = useCallback(async (transacciones, { silencioso = false } = {}) => {
+    const faltantes = cuotasParaCrear(transacciones)
+    if (faltantes.length === 0) {
+      if (!silencioso) showToast('No hay cuotas para crear: están todas cargadas.', 'success')
+      return 0
+    }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return 0
+    const filas = faltantes.map(({ molde: m, fecha, cuotaNum, cuotasTotal, monto }) => ({
+      user_id: user.id,
+      account_id: m.account_id,
+      fecha,
+      // El nombre lleva el número de ESTA cuota, no el de la que sirvió de molde.
+      nombre: `${stripCuotaSuffix(m.nombre || m.detalle || 'Cuota')} ${cuotaNum}/${cuotasTotal}`,
+      detalle: m.detalle || null,
+      monto,
+      moneda: m.moneda || 'ARS',
+      tipo: 'gasto',
+      category_id: m.category_id || null,
+      subcategory_id: m.subcategory_id || null,
+      cuotas_total: cuotasTotal,
+      cuota_numero: cuotaNum,
+      estado: m.category_id ? 'identificado' : 'a_identificar',
+      es_manual: true,
+      tag: m.tag || null,
+      child_id: m.child_id || null,
+      fx_rate: m.fx_rate || null,
+      // A propósito sin statement_id: esta cuota no pertenece a ningún resumen
+      // todavía. Cuando llegue el resumen que la factura, la detección de
+      // duplicados la reconoce (mismo plan, mismo número, mismo monto y fecha
+      // derivada igual) y no se carga dos veces.
+    }))
+    const { error } = await supabase.from('transactions').insert(filas)
+    if (error) {
+      console.error('crearCuotasFaltantes', error)
+      if (!silencioso) showToast('No se pudieron crear las cuotas: ' + error.message, 'error')
+      return 0
+    }
+    setRefreshKey(k => k + 1)
+    if (!silencioso) {
+      showToast(`Listo: ${filas.length} cuota${filas.length === 1 ? '' : 's'} agregada${filas.length === 1 ? '' : 's'} a tus movimientos.`, 'success')
+    }
+    return filas.length
+  }, [showToast])
+
+  // Se corre al terminar una importación: relee los movimientos de todas las
+  // cuentas (los recién insertados todavía no están en accountTransactions) y
+  // crea las cuotas que falten. Silencioso — el aviso va en el toast del import.
+  const generarCuotasTrasImportar = useCallback(async () => {
+    const ids = (accounts || []).map(a => a.id)
+    if (ids.length === 0) return 0
+    const txs = await fetchAllTxPages(() =>
+      supabase.from('transactions')
+        .select('*, categories(nombre), subcategories(nombre), accounts(nombre)')
+        .in('account_id', ids)
+        .order('fecha', { ascending: false }).order('id', { ascending: true })
+    )
+    return crearCuotasFaltantes(txs, { silencioso: true })
+  }, [accounts, crearCuotasFaltantes])
+
   const sideWidgets = () => (
     <>
             {/* Widget: Cuotas pendientes */}
             {(() => {
               const { periodos: periods, mesesOcultos, totalFuturo } = cuotasPendientesMemo
-              if (!periods || periods.length === 0) return null
+              const faltan = cuotasFaltantesMemo.length
+              // El widget se muestra igual sin cuotas futuras cargadas si hay
+              // alguna por crear: si no, el aviso quedaría escondido justo en el
+              // caso en que hace falta.
+              if ((!periods || periods.length === 0) && faltan === 0) return null
 
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
               const txtClr = darkMode ? '#F0EDEC' : '#1d1d1f'
@@ -2889,7 +2980,7 @@ export default function Dashboard() {
                 <div style={{ ...styles.savingsPanel }}>
                   <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', alignItems: 'center' }}>
                     Cuotas pendientes
-                    <InfoTooltip darkMode={darkMode} text="Es una proyección de lo que falta pagar de tus compras en cuotas — no son movimientos ya cargados. Cada mes tenés que cargar el resumen real de la tarjeta para que ese pago quede registrado; no lo generamos solos." />
+                    <InfoTooltip darkMode={darkMode} text="Son las cuotas que ya están cargadas en tus movimientos con fecha de este mes o de los que vienen. Es la misma información que ves en la tabla de movimientos, no una estimación aparte: cuando importás un resumen, las cuotas que faltan del plan se crean solas como movimientos." />
                   </h3>
                   {periods.map(([period, data], pi) => {
                     const expandido = cuotasPendientesExpandido === period
@@ -2924,6 +3015,30 @@ export default function Dashboard() {
                         Total, con {mesesOcultos} mes{mesesOcultos === 1 ? '' : 'es'} más
                       </span>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#5C4F5C', whiteSpace: 'nowrap' }}>$ {fmt(totalFuturo)}</span>
+                    </div>
+                  )}
+                  {/* Compras cargadas antes de que la app generara las cuotas
+                      sola: acá se completan de una vez. Después de esto el widget
+                      y los movimientos muestran lo mismo siempre. */}
+                  {faltan > 0 && (
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                      <p style={{ margin: '0 0 8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', lineHeight: 1.4 }}>
+                        {faltan === 1
+                          ? 'Hay 1 cuota de tus compras que todavía no está cargada como movimiento.'
+                          : `Hay ${faltan} cuotas de tus compras que todavía no están cargadas como movimientos.`}
+                      </p>
+                      <button
+                        onClick={() => { setCreandoCuotas(true); crearCuotasFaltantes(accountTransactions).finally(() => setCreandoCuotas(false)) }}
+                        disabled={creandoCuotas}
+                        style={{
+                          width: '100%', padding: '8px', borderRadius: '8px', cursor: creandoCuotas ? 'default' : 'pointer',
+                          border: `1.5px solid ${darkMode ? '#8C7B8C' : '#5C4F5C'}`, background: 'transparent',
+                          color: darkMode ? '#E8D8E8' : '#5C4F5C', fontSize: '12px', fontWeight: '500',
+                          fontFamily: '"Montserrat", sans-serif', opacity: creandoCuotas ? 0.6 : 1,
+                        }}
+                      >
+                        {creandoCuotas ? 'Creando…' : `Agregar ${faltan === 1 ? 'la cuota' : 'las cuotas'} a mis movimientos`}
+                      </button>
                     </div>
                   )}
                 </div>
