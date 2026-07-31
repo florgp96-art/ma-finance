@@ -89,6 +89,42 @@ function nombresDeLaMismaCompra(a, b) {
   return x === y || x.includes(y) || y.includes(x)
 }
 
+// Mes en que caería la CUOTA 1 de la compra a la que pertenece esta fila:
+// fecha de la fila menos (nº de cuota − 1) meses. Es el único dato que no
+// depende de cómo el banco escribió el nombre ni de cuánto salió cada cuota, y
+// dos filas de la misma compra tienen que coincidir en él.
+function mesAncla(t) {
+  if (!t.fecha) return null
+  const d = new Date(t.fecha + 'T12:00:00')
+  if (isNaN(d.getTime())) return null
+  return d.getFullYear() * 12 + d.getMonth() - ((t.cuota_numero || 1) - 1)
+}
+
+// Cuánto puede diferir el mes ancla de dos filas de la misma compra. No es 0
+// porque hay datos viejos donde la fecha de la cuota la puso el resumen que la
+// facturó y no la compra: ahí el ancla se corre un mes o dos según el día de
+// cierre. Con la unión transitiva alcanza de sobra — en una compra cargada de
+// golpe con todas las cuotas en la misma fecha, cada cuota queda a un mes de la
+// anterior y la cadena las une igual.
+const TOLERANCIA_MESES_ANCLA = 2
+
+// Dos compras distintas de la misma tarjeta y la misma cantidad de cuotas
+// pueden coincidir en el monto (dentro del 2%) o en el nombre, y así se estaban
+// fusionando aunque estuvieran separadas por más de un año. Casos reales:
+//   MUNECOS $57.800 (ene-2025)   vs  Norte Sport Palo Hockey $58.333,34 (jul-2026)
+//   ROPA $41.837 (nov-2025)      vs  UTN $42.587,68 (may-2026)
+//   COTO (feb-2025)              vs  COTO (feb-2026), mismo nombre
+// El efecto era el peor posible: la compra nueva quedaba "completa" porque las
+// cuotas de la vieja llenaban los números que faltaban, y el widget dejaba de
+// avisar cuotas que sí se vienen. Exigir que el mes ancla coincida las separa.
+function anclasCompatibles(a, b) {
+  const ma = mesAncla(a), mb = mesAncla(b)
+  // Sin fecha no se puede afirmar que sean de compras distintas: no bloquea la
+  // unión, que sigue decidiéndose por monto o nombre.
+  if (ma === null || mb === null) return true
+  return Math.abs(ma - mb) <= TOLERANCIA_MESES_ANCLA
+}
+
 const montosDeLaMismaCuota = (a, b) => {
   const x = Math.abs(Number(a) || 0)
   const y = Math.abs(Number(b) || 0)
@@ -97,7 +133,8 @@ const montosDeLaMismaCuota = (a, b) => {
 }
 
 // PASO 2 — agrupar las cuotas en compras. Dentro de cada cuenta + cantidad de
-// cuotas, dos filas son de la misma compra si coincide EL MONTO **O** EL NOMBRE.
+// cuotas, dos filas son de la misma compra si arrancan en el MISMO MES (ver
+// anclasCompatibles) **y** además coincide EL MONTO **O** EL NOMBRE.
 // Hace falta que sea "o" y no "y", porque en los datos reales fallan los dos por
 // separado:
 //   - Solo por monto: "SILLON 1/3" ($74.500) y "SILLON 2/3" ($80.088) son la
@@ -129,6 +166,7 @@ function agruparPorCompra(filas) {
     for (let i = 0; i < filasBucket.length; i++) {
       for (let j = i + 1; j < filasBucket.length; j++) {
         const a = filasBucket[i], b = filasBucket[j]
+        if (!anclasCompatibles(a, b)) continue
         if (montosDeLaMismaCuota(a.monto, b.monto) ||
             nombresDeLaMismaCompra(a.nombre || a.detalle, b.nombre || b.detalle)) {
           unir(i, j)
