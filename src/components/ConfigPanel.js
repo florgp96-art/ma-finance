@@ -868,7 +868,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
             {reglasTab === 'reparto' && (<>
             <p style={{ fontSize: '13px', color: '#6e6e73', margin: '0 0 12px 0' }}>
-              Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras (ej. "Comida → vos 50%, Amelia 25%, Vitto 25%"). Se aplican solas a cada gasto nuevo que matchee, sin importar cómo lo cargues — para dividir un gasto puntual ya cargado, usá el botón 🔀 en su fila.
+              Repartí gastos de una categoría entre vos y tus hijos, en las proporciones que quieras — por ejemplo, la mitad para vos y el resto dividido entre ellos. Se aplican solas a cada gasto nuevo que matchee, sin importar cómo lo cargues; para dividir un gasto puntual ya cargado, usá el botón 🔀 en su fila.
             </p>
             <div className="hide-scroll" style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '16px' }}>
               {(repartoRules || []).length === 0 ? (
