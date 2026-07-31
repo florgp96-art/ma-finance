@@ -30,8 +30,19 @@ export const normalizarNombreCompra = (n) => stripCuotaSuffix(n)
 // para trackear los meses de un contrato), pero no es una compra financiada con
 // fecha de fin real: es un gasto fijo recurrente que no corresponde proyectar
 // (y que ni siquiera está garantizado que se pague todos los meses).
-export const esAlquilerOExpensas = (t) =>
-  t.categories?.nombre === 'Casa' && ['Alquiler', 'Expensas'].includes(t.subcategories?.nombre)
+//
+// Se reconoce por el NOMBRE de la subcategoría y no por un id, porque cada
+// usuario tiene sus propias categorías: las que vienen por defecto se llaman así,
+// pero alguien puede renombrarlas o armar las suyas. Por eso no se exige que la
+// categoría padre sea "Casa" — con que la subcategoría diga alquiler o expensas
+// alcanza, aunque el usuario la haya puesto bajo "Vivienda" o "Fijos". Es más
+// tolerante que atarlo a un nombre exacto de categoría, que dejaba de aplicar en
+// silencio en cuanto el cliente no usaba las categorías por defecto.
+const SUBCATS_GASTO_FIJO = ['alquiler', 'expensas']
+export const esAlquilerOExpensas = (t) => {
+  const sub = (t.subcategories?.nombre || '').trim().toLowerCase()
+  return SUBCATS_GASTO_FIJO.includes(sub)
+}
 
 // Las compras se agrupan por CUENTA + CANTIDAD DE CUOTAS + MONTO DE LA CUOTA,
 // no por nombre.
