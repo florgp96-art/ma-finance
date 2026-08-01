@@ -3260,7 +3260,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   ? `Todos (${mesesDisponibles.length}) ▾`
                   : selectedMeses.length === 1
                     ? `${mesLabel(selectedMeses[0])} ▾`
-                    : `${selectedMeses.length} meses ▾`}
+                    : (selectedMeses.length === 0 ? 'Ningún mes ▾' : `${selectedMeses.length} meses ▾`)}
             </button>
             {mesDropdownOpen && (
               <div
@@ -3610,7 +3610,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             if (!hayAlgunGrafico) return null
             const periodoLabelChart = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
               : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
-              : `${selectedMeses.length} meses`
+              : (selectedMeses.length === 0 ? 'ningún mes' : `${selectedMeses.length} meses`)
             const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
