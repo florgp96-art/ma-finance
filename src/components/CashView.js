@@ -124,6 +124,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // re-render ajeno (abrir/cerrar un ítem del desglose, hover) no dispare esos 7 barridos
   // de nuevo. Ningún cálculo interno se modificó.
   const { actual, pagosPorCuenta, cuotas, historial } = useMemo(() => {
+    const ahora = new Date()
+    const hoyISO = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
     const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
     // "Débito automático" en sentido estricto (algo que se debita solo, tipo
     // seguro/cuota/servicio) es la categoría "Débitos" que el usuario ya puede
@@ -144,8 +146,18 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     // resumen, y el pagado en efectivo se contaba en su grupo Y en "Efectivo".
     // Sacarlo elimina toda esa clase de doble conteo: ahora cada gasto cae en un
     // solo grupo, el del medio de pago con el que realmente se pagó.
+    // "Efectivamente pagado" es lo que YA pasó: se corta en la fecha de hoy, no en el
+    // mes. Antes filtraba solo por mes, y desde que la app crea las cuotas futuras como
+    // movimientos reales eso contaba como pagado algo que todavía no ocurrió — el mes en
+    // curso mostraba "Total efectivamente pagado" con la cuota del 5 estando a día 1, y
+    // el balance de caja quedaba en rojo por plata que no salió.
+    // En los meses ya cerrados la condición no cambia nada, porque todas sus fechas son
+    // anteriores a hoy.
     const desgloseDelMes = (mes) => {
-      const txs = transactions.filter(t => normFecha(t.fecha).slice(0, 7) === mes)
+      const txs = transactions.filter(t => {
+        const f = normFecha(t.fecha)
+        return f.slice(0, 7) === mes && f <= hoyISO
+      })
       const tipoCuenta = (t) => accountTipoById.get(t.account_id)
       const pagos = txs.filter(t => t.tipo === 'neutro' && tipoCuenta(t) === 'credito')
       const debitosAutomaticos = txs.filter(t => t.tipo === 'gasto' && tipoCuenta(t) === 'debito' && esDebitoAutomatico(t))
