@@ -557,6 +557,10 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     // exactamente una devolución de percepción acreditada once días después del
     // cierre. Un reintegro anterior al cierre ya viene descontado en el total que
     // informa el banco, así que tampoco hay que restarlo por separado.
+    // LIMITACIÓN conocida: un pago de tarjeta hecho en EUROS se suma acá como si
+    // fuera en pesos (esta función no recibe el TC del euro; convertirlo pide
+    // cambiarle la firma y a todos los que la llaman). Pagar el resumen en euros no
+    // es un caso real hoy: los pagos salen de cuentas en pesos o en dólares.
     const pagosArs = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda !== 'USD' && t.tipo === 'neutro' && enVentana(t))
     const pagosUsd = (transactions || []).filter(t => t.account_id === s.account_id && t.moneda === 'USD' && t.tipo === 'neutro' && enVentana(t))
     const totalPagosArs = pagosArs.reduce((sum, t) => sum + Number(t.monto), 0)
@@ -2449,7 +2453,22 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const excedenteArs = estadoUltimo?.excedenteArs || 0
     const excedenteUsd = estadoUltimo?.excedenteUsd || 0
     if (compras.length === 0 && !cicloDesdeManual && excedenteArs === 0 && excedenteUsd === 0) return null
-    const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+    // El euro se convierte a pesos, no se suma como si fuera peso. Antes este total
+    // agarraba todo lo que no fuera USD y lo sumaba tal cual, así que una compra en
+    // euros en el ciclo abierto entraba con su número pelado (200 € contaban como
+    // $200). El total "bruto" que alimenta la barra de pagado —el MISMO gasto,
+    // calculado unas líneas más abajo— sí lo convertía: el resumen abierto y la barra
+    // se contradecían entre sí para la misma compra.
+    const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => {
+      const monto = Number(t.monto) || 0
+      if (t.moneda !== 'EUR') return sum + monto
+      const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+      if (tcTx <= 0) {
+        if (process.env.NODE_ENV !== 'production') console.warn('ciclo actual: sin TC para convertir movimiento EUR', t.id, t.fecha)
+        return sum
+      }
+      return sum + monto * tcTx
+    }, 0)
     const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
     return {
       id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
