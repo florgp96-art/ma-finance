@@ -368,7 +368,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                 ? `Todos (${mesesDisponibles.length}) ▾`
                 : selectedMeses.length === 1
                   ? `${mesLabel(selectedMeses[0])} ▾`
-                  : `${selectedMeses.length} meses ▾`}
+                  : (selectedMeses.length === 0 ? 'Ningún mes ▾' : `${selectedMeses.length} meses ▾`)}
           </button>
           {mesDropdownOpen && (
             <div
@@ -437,7 +437,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
         const periodoLabel = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
           : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
           : selectedMeses.length === 0 ? 'todos los meses'
-          : `${selectedMeses.length} meses`
+          : (selectedMeses.length === 0 ? 'ningún mes' : `${selectedMeses.length} meses`)
         const monedaLabel = (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)' : 'ARS'
         return (
         <div style={s.card}>
@@ -513,7 +513,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
         const periodoLabelCuota = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
           : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
           : selectedMeses.length === 0 ? 'todos los meses'
-          : `${selectedMeses.length} meses`
+          : (selectedMeses.length === 0 ? 'ningún mes' : `${selectedMeses.length} meses`)
         return (
         <div style={s.card}>
           <h3 style={{ ...s.cardTitle, display: 'flex', alignItems: 'center' }}>
