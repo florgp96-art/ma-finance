@@ -112,7 +112,7 @@ ${exText}
 
   return `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
 
-{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"hijo":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"titular":"GALLO PROT FLORENCIA"}]}
+{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_cierre":"09/07/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"hijo":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"titular":"GALLO PROT FLORENCIA"}]}
 
 ═══════════════════════════════
 CAMPO contexto_detectado:
@@ -162,6 +162,7 @@ CAMPO tipo POR TRANSACCIÓN:
 ═══════════════════════════════
 REGLAS GENERALES:
 ═══════════════════════════════
+- proximo_cierre y proximo_vencimiento: MUCHOS resúmenes de tarjeta traen, además del cierre y el vencimiento actual, las fechas del ciclo SIGUIENTE (en una banda tipo "Ciclo de facturación", o como "Próximo cierre" / "Próximo vencimiento"). Si están, devolvelas. Si el resumen no las muestra, devolvé null en las dos: NUNCA las calcules ni las estimes sumando un mes, porque los ciclos no caen siempre el mismo día y una fecha inventada hace que la app dé por facturado un gasto que todavía no lo está.
 - periodo: en resúmenes de tarjeta es el mes del CIERRE del resumen (el mes de fecha_facturacion), NO el mes de las compras — el resumen que cierra en junio trae compras de mayo y su periodo es "Junio". En extractos bancarios es el mes de los movimientos.
 - SÍ incluir "SU PAGO", "Gracias por su pago" y pagos al resumen de tarjeta (en extractos de tarjeta): son pagos hechos hacia la tarjeta, no un gasto ni un ingreso — van con tipo: "neutro" (categoria_sugerida: "A Identificar" si no hay una mejor)
 - nombre_limpio: nombre legible. Si es críptico, dejarlo igual al original.

@@ -2536,16 +2536,36 @@ export default function Dashboard() {
       // que después aparece en "Te falta pagar"). Los movimientos de una captura entran
       // sueltos: caen en el "Resumen abierto" de la tarjeta por fecha, y se vinculan
       // solos cuando se cargue el resumen real que los facture.
-      const { data: statement, error: errStmt } = esResumenCerrado
-        ? await supabase.from('statements').insert({
-            user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
-            periodo: statementData.periodo, fecha_desde: null,
-            fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
-            fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
-            total_resumen: statementData.total_pesos,
-            total_dolares: statementData.total_dolares ?? null, estado: 'completo'
-          }).select().single()
+      // Muchos resúmenes traen, además del cierre y el vencimiento propios, las fechas
+      // del ciclo SIGUIENTE ("Próximo cierre" / "Próximo vencimiento"). Cuando están se
+      // guardan: con eso la app sabe cuándo cierra el ciclo abierto en vez de tener que
+      // adivinarlo. Cuando el resumen no las trae, la IA devuelve null y queda como
+      // antes — no se estiman sumando un mes, porque los ciclos no caen siempre el
+      // mismo día y una fecha inventada daría por facturado algo que todavía no lo está.
+      const camposStatement = {
+        user_id: user.id, account_id: account.id, nombre_archivo: archivo.name,
+        periodo: statementData.periodo, fecha_desde: null,
+        fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion),
+        fecha_vencimiento: parseFechaArgentina(statementData.fecha_vencimiento),
+        total_resumen: statementData.total_pesos,
+        total_dolares: statementData.total_dolares ?? null, estado: 'completo',
+      }
+      const camposProximoCiclo = {
+        proximo_cierre: parseFechaArgentina(statementData.proximo_cierre),
+        proximo_vencimiento: parseFechaArgentina(statementData.proximo_vencimiento),
+      }
+      let { data: statement, error: errStmt } = esResumenCerrado
+        ? await supabase.from('statements').insert({ ...camposStatement, ...camposProximoCiclo }).select().single()
         : { data: null, error: null }
+      // Si las columnas del próximo ciclo todavía no existen en la base (la migración
+      // se corre aparte), se reintenta sin ellas: que falte un dato opcional no puede
+      // hacer que la importación entera falle.
+      if (errStmt && /proximo_(cierre|vencimiento)/.test(errStmt.message || '')) {
+        console.warn('statements sin columnas de próximo ciclo — se guarda sin ellas')
+        const retry = await supabase.from('statements').insert(camposStatement).select().single()
+        statement = retry.data
+        errStmt = retry.error
+      }
       if (esResumenCerrado && (errStmt || !statement)) {
         showToast(`Error creando el extracto: ${errStmt?.message || 'desconocido'}`, 'error')
         logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta (statement): ${errStmt?.message || 'desconocido'}` })
@@ -2971,12 +2991,20 @@ export default function Dashboard() {
       // duplicados la reconoce (mismo plan, mismo número, mismo monto y fecha
       // derivada igual) y no se carga dos veces.
     }))
-    const { error } = await supabase.from('transactions').insert(filas)
+    // Se piden de vuelta las filas insertadas con sus joins y se agregan a
+    // accountTransactions en el momento. Sin esto el widget quedaba mostrando el
+    // aviso y el botón después de crear las cuotas: accountTransactions se llena con
+    // un fetch propio que escucha [accounts] y NO el refreshKey, así que bumpear el
+    // refreshKey no lo actualizaba y el botón parecía no hacer nada.
+    const { data: insertadas, error } = await supabase.from('transactions')
+      .insert(filas)
+      .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
     if (error) {
       console.error('crearCuotasFaltantes', error)
       if (!silencioso) showToast('No se pudieron crear las cuotas: ' + error.message, 'error')
       return 0
     }
+    if (insertadas?.length) setAccountTransactions(prev => [...prev, ...insertadas])
     setRefreshKey(k => k + 1)
     if (!silencioso) {
       showToast(`Listo: ${filas.length} cuota${filas.length === 1 ? '' : 's'} agregada${filas.length === 1 ? '' : 's'} a tus movimientos.`, 'success')
