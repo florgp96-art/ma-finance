@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { mesLabel, formatMonto, formatMontoFull, formatFechaCorta, TotalesFooter, tcDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
+import { mesLabel, formatMonto, formatMontoFull, formatFechaCorta, TotalesFooter, tcDeMovimiento, tcEURDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
 
 const getLast6Months = () => {
   const months = []
@@ -189,12 +189,13 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
     const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
 
-    const getTCEURForMonth = (ym) => {
-      const mesActual = new Date().toISOString().slice(0, 7)
-      if (ym === mesActual) return tcEUR
-      if (tcMapEUR?.[ym]) return Number(tcMapEUR[ym])
-      return tcEUR
-    }
+    // El TC del euro sale de tcEURDeMovimiento, la función compartida que ya usa el
+    // resto de la app. Acá había una copia local con dos problemas: calculaba el mes
+    // actual con toISOString(), que en Argentina adelanta el mes las últimas tres
+    // horas del último día (y ahí elegía el TC equivocado), y no miraba nada más que
+    // el mes — así el equivalente en pesos de un gasto en euros podía dar distinto
+    // en la vista de un hijo que en el resto de las pantallas.
+    const tcEURDe = (t) => tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR) || tcEUR
 
     // Bubble chart data agrupado por categoría — USD/EUR convertidos al TC del
     // mes de cada movimiento (según el tipo de dólar elegido), nunca el TC de
@@ -203,7 +204,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     filteredTx.forEach(t => {
       const cat = t.categories?.nombre || 'A Identificar'
       if (!catMap[cat]) catMap[cat] = { value: 0, originalARS: 0, originalUSD: 0, originalEUR: 0 }
-      catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * getTCEURForMonth(t.fecha?.slice(0, 7)) : t.monto
+      catMap[cat].value += t.moneda === 'USD' ? t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc) : t.moneda === 'EUR' ? t.monto * tcEURDe(t) : t.monto
       if (t.moneda === 'ARS') catMap[cat].originalARS += t.monto
       else if (t.moneda === 'EUR') catMap[cat].originalEUR += t.monto
       else catMap[cat].originalUSD += t.monto
@@ -214,7 +215,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
 
     const totalEnArs = (txs) => txs.reduce((s, t) => {
       if (t.moneda === 'USD') return s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc)
-      if (t.moneda === 'EUR') return s + t.monto * getTCEURForMonth(t.fecha?.slice(0, 7))
+      if (t.moneda === 'EUR') return s + t.monto * tcEURDe(t)
       return s + t.monto
     }, 0)
 
@@ -231,7 +232,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     // USD/EUR convertidos al TC del mes de cada movimiento, nunca el de hoy.
     const totalEnArsDelMes = (txs, ym) => txs.reduce((s, t) => {
       if (t.moneda === 'USD') return s + t.monto * (tcDeMovimiento(t, tcMap, tipoCambio) || tc)
-      if (t.moneda === 'EUR') return s + t.monto * getTCEURForMonth(ym)
+      if (t.moneda === 'EUR') return s + t.monto * tcEURDe(t)
       return s + t.monto
     }, 0)
     const last6 = getLast6Months()
@@ -246,7 +247,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     })
 
     return { mesesDisponibles, filteredTx, filasTabla, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData }
-  }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR])
+  }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR, tipoCambioEUR])
 
   const startEdit = (tx) => {
     setEditingTx(tx.id)
