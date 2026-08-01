@@ -641,7 +641,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               ))}
             </div>
             {catTab === 'iconos' && (<>
-            <p style={{ fontSize: '12px', color: '#8e8e93', margin: '0 0 8px 0' }}>Tocá una fila para cambiar su ícono</p>
+            <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '0 0 8px 0' }}>Tocá una fila para cambiar su ícono</p>
             <div className="hide-scroll" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '8px' }}>
             {[
               ...(categoriasDB || []).map(c => ({ nombre: c.nombre, tipo: 'cat' })),
@@ -660,8 +660,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   >
                     <span style={{ fontSize: '22px', width: '28px', textAlign: 'center' }}>{currentIcon}</span>
                     <span style={{ flex: 1, fontSize: '14px', color: txt, fontFamily: '"Montserrat", sans-serif' }}>{nombre}</span>
-                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: '#8e8e93' }}>custom</span>}
-                    {!isEditing && <span style={{ fontSize: '12px', color: '#8e8e93' }}>✏️</span>}
+                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>custom</span>}
+                    {!isEditing && <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>✏️</span>}
                   </div>
                   {isEditing && (
                     <div style={{ paddingLeft: '38px' }}>
@@ -688,7 +688,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                             Reset
                           </button>
                         )}
-                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, color: '#8e8e93', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, color: darkMode ? '#9A8A9A' : '#8e8e93', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
                           ✕
                         </button>
                       </div>
@@ -1017,7 +1017,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 )}
               </div>
               {repartoSeleccion.length > 0 && sumaRepartoValida && (
-                <p style={{ margin: 0, fontSize: '12px', color: '#8e8e93' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
                   Vista previa para un gasto de $10.000: {repartoSeleccion.map(sel => `${sel.tipo === 'yo' ? 'vos' : sel.nombre} $${Math.round(10000 * (parseFloat(sel.porcentaje) || 0) / 100).toLocaleString('es-AR')}`).join(', ')}
                 </p>
               )}

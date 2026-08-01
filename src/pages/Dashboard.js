@@ -3544,7 +3544,7 @@ export default function Dashboard() {
           const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
           const fmtMonto = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v))
           const manualActivo = tcManual?.enabled && tcManual?.valor
-          const monedasTituloStyle = { fontSize: '10px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }
+          const monedasTituloStyle = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700 }
           const monedasResumen = rateActivo && eurValor
             ? `USD $${fmtMonto(rateActivo)} · EUR $${fmtMonto(eurValor)}`
             : rateActivo ? `USD $${fmtMonto(rateActivo)}`
@@ -3557,7 +3557,7 @@ export default function Dashboard() {
           const monedasPanel = (
             <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '210px' }}>
               <div>
-                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Dólar</p>
+                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Dólar</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '6px 0' }}>
                   {['blue','mep','oficial','tarjeta'].map(t => (
                     <button key={t} type="button" onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
@@ -3574,22 +3574,22 @@ export default function Dashboard() {
                 </div>
                 {rateActivo ? (
                   <div>
-                    <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>U$S 1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(rateActivo)}</strong></p>
+                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>U$S 1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(rateActivo)}</strong></p>
                     {rateVivo && <p style={{ margin: '2px 0 0', fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                   </div>
                 ) : (
-                  <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>Cargando...</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Cargando...</p>
                 )}
               </div>
               <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: '10px' }}>
-                <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Euro</p>
+                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Euro</p>
                 {eurValor ? (
                   <div style={{ marginTop: '6px' }}>
-                    <p style={{ margin: 0, fontSize: '11px', color: '#8e8e93' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
+                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
                     {dolarRates.eur && <p style={{ margin: '2px 0 0', fontSize: '9px', color: '#2ba36e' }}>● en vivo · prom.</p>}
                   </div>
                 ) : (
-                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#8e8e93' }}>Cargando...</p>
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>Cargando...</p>
                 )}
               </div>
             </div>
@@ -3647,7 +3647,7 @@ export default function Dashboard() {
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
-                  <p style={{ fontSize: '10px', color: '#8e8e93', margin: 0 }}>día {v.dia}</p>
+                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: 0 }}>día {v.dia}</p>
                 </div>
                 <div style={{
                   width: '16px', height: '16px', borderRadius: '5px', flexShrink: 0,
@@ -3672,7 +3672,7 @@ export default function Dashboard() {
                 disabled={vencList.length === 0}
                 style={{ width: '100%', textAlign: 'left', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '5px', cursor: vencList.length === 0 ? 'default' : 'pointer', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }}>
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                  <span style={{ fontSize: '10px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</span>
+                  <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</span>
                   {vencList.length > 0 && <span style={{ fontSize: '9px', opacity: 0.6, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{vencExpanded ? '▴' : '▾'}</span>}
                 </span>
                 <span style={{ fontSize: '13px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
@@ -3697,7 +3697,7 @@ export default function Dashboard() {
     <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar'); setSidebarOpen(false) }}
       style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '8px 10px', cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}>
       <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
-        <span style={{ fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
+        <span style={{ fontSize: '9px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
         {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
       </p>
     </div>
@@ -3726,7 +3726,7 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
                   <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
-                    <p style={{ margin: 0, fontSize: '9px', color: '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
+                    <p style={{ margin: 0, fontSize: '9px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
                     <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? '#8e8e93' : pendientes.length > 0 ? '#c07a2b' : '#2ba36e' }}>
                       {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                     </p>
@@ -4732,7 +4732,7 @@ export default function Dashboard() {
                     )}
                   </div>
                 )}
-                <div style={{ fontSize: '12px', color: '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
+                <div style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
                   <span>{pdfTxDuplicadas.size > 0 ? 'Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.' : ''}</span>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                     <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: darkMode ? '#3A2F4A' : '#f0ebfa', border: `1px solid ${darkMode ? '#5C4F8C' : '#c9b8f0'}`, borderRadius: '6px', color: '#7c5cbf', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Seleccionar todo</button>
@@ -4759,7 +4759,7 @@ export default function Dashboard() {
                           <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {t.nombre_limpio || t.nombre_original}
                             {t.nombre_limpio === t.nombre_original && t.tipo !== 'neutro' && <span style={{ textDecoration: 'none' }}>❓</span>}
-                            {isDupe && <span style={{ textDecoration: 'none', fontSize: '10px', color: '#8e8e93', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px' }}>ya cargada</span>}
+                            {isDupe && <span style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px' }}>ya cargada</span>}
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                         </div>
@@ -4793,7 +4793,7 @@ export default function Dashboard() {
             {step === 'identificar' && txActual && (
               <>
                 <h3 style={styles.modalTitle}>¿Qué es este gasto? 🔍</h3>
-                <p style={{fontSize: '13px', color: '#8e8e93', margin: '-8px 0 20px 0'}}>
+                <p style={{fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '-8px 0 20px 0'}}>
                   {txIdentificarIdx + 1} de {txSinIdentificar.length} sin identificar
                 </p>
 
@@ -4854,7 +4854,7 @@ export default function Dashboard() {
                   </div>
                   <button
                     onClick={() => handleMarcarNeutro(txActual.id)}
-                    style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid #C4B8C4', background: 'none', color: '#8e8e93', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer' }}>
+                    style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid #C4B8C4', background: 'none', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer' }}>
                     ↩ Es neutro (pago, transferencia, etc.)
                   </button>
                 </div>
@@ -5101,7 +5101,7 @@ export default function Dashboard() {
                       </div>
                       <p style={styles.timerText}>{excelTimer}s restantes</p>
                       {excelBackgroundMode && (
-                        <p style={{ fontSize: '12px', color: '#8e8e93', marginTop: '8px', textAlign: 'center' }}>
+                        <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginTop: '8px', textAlign: 'center' }}>
                           🔄 Esto está tardando más de lo esperado. El procesamiento continúa en segundo plano...
                         </p>
                       )}
@@ -5241,7 +5241,7 @@ export default function Dashboard() {
             </div>
 
             <form onSubmit={handleGuardarMovimiento}>
-              <p style={{fontSize:'12px', color:'#8e8e93', margin:'0 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
+              <p style={{fontSize:'12px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin:'0 0 16px 0'}}>Los campos con <span style={{color:'#c0392b'}}>*</span> son obligatorios</p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Fecha <span style={{color:'#c0392b'}}>*</span></label>
@@ -5273,7 +5273,7 @@ export default function Dashboard() {
               <div style={styles.field}>
                 <label style={styles.label}>
                   Cuenta <span style={{color:'#c0392b'}}>*</span>
-                  {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color:'#8e8e93', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
+                  {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
                 </label>
                 <select style={styles.input}
                   value={efectivo.cuenta || (tipoMovimiento === 'ingreso' ? (accounts.find(a => a.tipo === 'ingreso')?.id || '') : (cuentaEfectivoId || ''))}
@@ -5289,7 +5289,7 @@ export default function Dashboard() {
               <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
                 {categoriasDelTipoMovimiento.length > 1 && (
                   <div style={styles.field}>
-                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93'}}>(opcional)</span></label>
                     <select style={styles.input} value={efectivo.categoria}
                       onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
                       <option value="">— Elegir —</option>
@@ -5298,7 +5298,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={styles.field}>
-                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.subcategoria}
                     onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
                     disabled={!efectivo.categoria}>
@@ -5312,14 +5312,14 @@ export default function Dashboard() {
               </div>
               {childrenDB.length > 0 && (tipoMovimiento !== 'ingreso' || cuotaAlimentariaActiva) && (
                 <div style={styles.field}>
-                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
                     onChange={e => setEfectivo({...efectivo, hijo: e.target.value})}>
                     <option value="">— Ninguno —</option>
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                   {tipoMovimiento === 'ingreso' && (
-                    <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
+                    <p style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
                   )}
                 </div>
               )}
@@ -5330,26 +5330,26 @@ export default function Dashboard() {
                   movimientos, otra como cuota a vencer). */}
               {tipoMovimiento === 'gasto' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>¿Es en cuotas? <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <label style={styles.label}>¿Es en cuotas? <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93'}}>(opcional)</span></label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: '#8e8e93', whiteSpace: 'nowrap' }}>Cuota</span>
+                    <span style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', whiteSpace: 'nowrap' }}>Cuota</span>
                     <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
                       type="number" min="1" step="1" value={efectivo.cuotaNum}
                       onChange={e => setEfectivo({...efectivo, cuotaNum: e.target.value})}
                       disabled={Math.trunc(Number(efectivo.cuotasTotal)) <= 1} />
-                    <span style={{ fontSize: '13px', color: '#8e8e93' }}>de</span>
+                    <span style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>de</span>
                     <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
                       type="number" min="1" step="1" value={efectivo.cuotasTotal}
                       onChange={e => setEfectivo({...efectivo, cuotasTotal: e.target.value})} />
                   </div>
-                  <p style={{fontSize:'11px', color:'#8e8e93', margin:'4px 0 0'}}>
+                  <p style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin:'4px 0 0'}}>
                     Dejalo en 1 de 1 si fue un pago único. La fecha de arriba es la de ESTA cuota.
                   </p>
                 </div>
               )}
               {tipoMovimiento !== 'ingreso' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>Nota <span style={{fontSize:'11px', color:'#8e8e93'}}>(opcional)</span></label>
+                  <label style={styles.label}>Nota <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#8e8e93'}}>(opcional)</span></label>
                   <input style={styles.input} type="text" value={efectivo.nota}
                     onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
                     placeholder="Detalles adicionales..." />

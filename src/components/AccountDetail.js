@@ -2080,7 +2080,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return (
       <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 2px' }}>
-          <span style={{ fontSize: '12px', color: '#8e8e93' }}>
+          <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </span>
           {/* Tipo (gasto/ingreso): reemplaza el atajo viejo de elegir la categoría
@@ -2831,7 +2831,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   placeholder="negativo si es a favor"
                   style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                 <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
               </span>
             ) : (
               (s.total_usd !== 0 || s.total_dolares) && (
@@ -3330,7 +3330,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Total Ingresos unificado (ARS)</p>
                 <p style={styles.summaryValue}>$ {formatMonto(ingresosEquivARS)}</p>
-                <p style={{ fontSize: '10px', color: '#8e8e93', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
+                <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
               </div>
             )}
 
@@ -3538,7 +3538,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       <input type="number" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
                         style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                       <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
                     </span>
                   </>
                 ) : (
@@ -3578,7 +3578,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <input type="number" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
                 placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
               <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8e8e93', fontSize: '13px' }}>✕</button>
+              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
             </div>
           ) : (
             <button onClick={() => setShowAddMes(true)} style={{ marginTop: '8px', background: 'none', border: 'none', cursor: 'pointer', color: BAR_COLOR, fontSize: '12px', padding: '4px 2px', textAlign: 'left' }}>+ Agregar mes</button>
@@ -3590,7 +3590,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ textAlign: 'center', padding: '48px 24px' }}>
           <p style={{ fontSize: '32px', marginBottom: '12px' }}>💰</p>
           <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
-          <p style={{ fontSize: '13px', color: '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
+          <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
         </div>
       )}
 
@@ -3737,10 +3737,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             )
           })()}
           {selectedMeses.length > 0 && displayChartData.length === 0 && !esVistaIngresos && (
-            <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
+            <p style={{color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
           {selectedMeses.length > 0 && displayChartData.length === 0 && esVistaIngresos && (
-            <p style={{color:'#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
+            <p style={{color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
           )}
         </div>
       )}
@@ -4067,7 +4067,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
-            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
+            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
             <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
               {opcionesParticipantesReparto.map(op => {
@@ -4126,7 +4126,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
               🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
             </h3>
-            <p style={{ fontSize: '13px', color: '#8e8e93', margin: '0 0 20px' }}>
+            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '0 0 20px' }}>
               {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
