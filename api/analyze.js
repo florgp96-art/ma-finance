@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!checkRateLimit(`analyze:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`analyze:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const { pdfText, cardName, userRules, incomeExamples, categories, subcategories, children, aliases } = req.body
   if (!pdfText || typeof pdfText !== 'string') return res.status(400).json({ error: 'Missing pdfText' })

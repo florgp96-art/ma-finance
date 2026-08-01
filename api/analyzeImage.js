@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!checkRateLimit(`analyzeImage:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`analyzeImage:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const { imageBase64, mediaType, cardName, userRules } = req.body
   if (!imageBase64 || typeof imageBase64 !== 'string') return res.status(400).json({ error: 'Missing imageBase64' })

@@ -67,7 +67,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!checkRateLimit(`logImport:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`logImport:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
 
   const { tipo, nombreArchivo, estado, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas } = req.body
   if (!tipo || !estado || (estado !== 'exito' && estado !== 'error')) {
