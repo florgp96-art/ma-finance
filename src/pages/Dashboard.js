@@ -2049,7 +2049,24 @@ export default function Dashboard() {
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
           if (!montoMatch) return false
           if (!mismaCompra(e.nombre || e.detalle, t.nombre_limpio || t.nombre_original || t.descripcion)) return false
-          if (esCuota && billingMes) return e.fecha?.slice(0, 7) === billingMes
+          // Cuotas: la fila que ya está cargada puede estar fechada de dos formas
+          // distintas y las dos tienen que reconocerse, o se carga la misma cuota dos
+          // veces.
+          //  - Por el MES DEL RESUMEN que la facturó (datos viejos, cargados antes de
+          //    que la fecha se derivara de la compra).
+          //  - Derivada de la compra, que es como la fechan hoy tanto la importación
+          //    como las cuotas que la app crea sola (ver cuotasParaCrear). Ese mes
+          //    puede ser UNO MENOS que el del resumen, porque el banco factura la
+          //    cuota al mes siguiente de la compra: Norte Sport comprado el 29/06 tiene
+          //    su cuota 2 derivada al 29/07, y la factura el resumen que cierra el
+          //    08/08. Comparando solo contra billingMes esa cuota no se reconocía y
+          //    entraba duplicada.
+          // Se aceptan las dos, con la misma ventana de 45 días que usa cuotasParaCrear.
+          if (esCuota) {
+            const mesExistente = e.fecha?.slice(0, 7)
+            if (billingMes && mesExistente === billingMes) return true
+            return fechaCercana(e.fecha, addMonths(t.fecha, (t.cuota_numero || 1) - 1), 45)
+          }
           // 7 días en vez de 5: al releer un resumen viejo (para tener el
           // historial completo), la fecha que la IA lee para el mismo
           // movimiento puede correrse un par de días respecto de la carga
