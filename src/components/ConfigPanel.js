@@ -1,4 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { matchRepartoRule, aplicarReglaReparto } from '../lib/repartoRules'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountDetail'
 
@@ -123,6 +124,61 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     setNewReparto({ categoria: '', subcategoria: '', textoMatch: '' })
     setRepartoSeleccion([])
     fetchRepartoRules()
+  }
+
+  // Aplicar una regla de reparto a lo que YA está cargado. Hasta ahora las reglas
+  // solo actuaban sobre los movimientos que entraban después de crearlas, así que
+  // alguien creaba su primera regla, no pasaba nada visible, y no había forma de
+  // arreglarlo desde la app. La fecha "desde" es del usuario a propósito: casi nadie
+  // quiere reescribir años de historial, y sin poder elegirla la única opción sería
+  // "todo o nada".
+  const [repartoDesde, setRepartoDesde] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-01-01`
+  })
+  const [aplicandoReparto, setAplicandoReparto] = useState(null)
+
+  const handleAplicarRepartoExistentes = async (regla) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(repartoDesde)) { showToast('Elegí desde qué fecha aplicarla.', 'error'); return }
+    setAplicandoReparto(regla.id)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      let q = supabase.from('transactions')
+        .select('id, nombre, detalle, monto, category_id, subcategory_id, tipo, reparto')
+        .eq('user_id', user.id)
+        .eq('tipo', 'gasto')
+        .eq('category_id', regla.category_id)
+        .gte('fecha', repartoDesde)
+        .gt('monto', 0)
+      if (regla.subcategory_id) q = q.eq('subcategory_id', regla.subcategory_id)
+      const { data: candidatas, error } = await q
+      if (error) { showToast('No se pudieron leer los movimientos: ' + error.message, 'error'); return }
+      // El match final lo hace matchRepartoRule, la MISMA función que usan las
+      // importaciones — así lo que se aplica al historial es idéntico a lo que se
+      // va a aplicar a lo que entre de ahora en más (incluido el texto del comercio,
+      // que no se puede filtrar del todo en la query).
+      const aTocar = (candidatas || []).filter(t => matchRepartoRule(t, [regla]))
+      if (aTocar.length === 0) { showToast('No hay movimientos que coincidan desde esa fecha.'); return }
+      // Los que ya tienen un reparto puesto a mano no se pisan.
+      const sinReparto = aTocar.filter(t => !t.reparto)
+      const pisados = aTocar.length - sinReparto.length
+      if (sinReparto.length === 0) {
+        showToast(`Los ${aTocar.length} movimientos que coinciden ya tienen un reparto propio: no se tocó ninguno.`)
+        return
+      }
+      let ok = 0
+      for (const t of sinReparto) {
+        const conReparto = aplicarReglaReparto(t, regla)
+        if (!conReparto.reparto) continue
+        const { error: e2 } = await supabase.from('transactions')
+          .update({ reparto: conReparto.reparto }).eq('id', t.id).eq('user_id', user.id)
+        if (!e2) ok++
+      }
+      showToast(`Regla aplicada a ${ok} movimiento${ok === 1 ? '' : 's'}.${pisados > 0 ? ` ${pisados} ya tenía${pisados === 1 ? '' : 'n'} un reparto propio y no se tocó.` : ''}`)
+      onRefresh?.()
+    } finally {
+      setAplicandoReparto(null)
+    }
   }
 
   const handleDeleteReparto = async (id) => {
@@ -876,9 +932,29 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {repartoRules.map(r => (
-                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
-                      <span style={{ fontSize: '13px', color: txt }}>{describirReparto(r)}</span>
-                      <button style={s.actionBtn} onClick={() => handleDeleteReparto(r.id)}>🗑️</button>
+                    <div key={r.id} style={{ padding: '10px 12px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '13px', color: txt }}>{describirReparto(r)}</span>
+                        <button style={s.actionBtn} onClick={() => handleDeleteReparto(r.id)}>🗑️</button>
+                      </div>
+                      {/* Una regla recién creada no toca nada de lo ya cargado: sin esto
+                          había que rehacer el reparto a mano fila por fila. */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Aplicarla a lo ya cargado desde</span>
+                        <input
+                          type="date"
+                          value={repartoDesde}
+                          onChange={e => setRepartoDesde(e.target.value)}
+                          style={{ fontSize: '12px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#241F24' : 'white', color: txt, colorScheme: darkMode ? 'dark' : 'light' }}
+                        />
+                        <button
+                          onClick={() => handleAplicarRepartoExistentes(r)}
+                          disabled={aplicandoReparto === r.id}
+                          style={{ padding: '4px 10px', borderRadius: '6px', border: `1px solid ${darkMode ? '#8C7B8C' : '#5C4F5C'}`, background: 'none', cursor: aplicandoReparto === r.id ? 'default' : 'pointer', fontSize: '11px', color: darkMode ? '#E8D8E8' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif', opacity: aplicandoReparto === r.id ? 0.6 : 1 }}
+                        >
+                          {aplicandoReparto === r.id ? 'Aplicando…' : 'Aplicar'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
