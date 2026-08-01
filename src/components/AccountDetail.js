@@ -727,10 +727,9 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [selectedMeses, setSelectedMeses] = useState([])
 const [equivEnUSD, setEquivEnUSD] = useState(false)
   const [showNeutros, setShowNeutros] = useState(false)
-  // En el teléfono la tabla de movimientos se corta a los primeros
-  // MOVIMIENTOS_MOBILE: con 100+ movimientos, para llegar a los widgets de
-  // abajo (calculadora, cuotas, ahorros) había que scrollear la lista entera.
-  // En desktop no aplica: los widgets están en su propia columna al costado.
+  // La tabla de movimientos se corta a los primeros MOVIMIENTOS_VISIBLES, con un
+  // botón para ver el resto: con 100+ movimientos había que scrollear la lista
+  // entera para llegar a cualquier cosa.
   const [verTodosMovimientos, setVerTodosMovimientos] = useState(false)
   const [filtroCuenta, setFiltroCuenta] = useState('')
   // Filtro por columna, tipo Excel: hasta ahora la tabla solo se podía ordenar,
@@ -2332,13 +2331,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const styles = getStyles(darkMode, isMobile)
   const ellipsisCell = { ...styles.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', wordBreak: 'normal' }
 
-  // Corte de la tabla de movimientos en mobile (ver verTodosMovimientos). El
-  // corte es solo visual: el contador del título, el pie de totales y el
-  // export a CSV siguen usando la lista completa.
-  const MOVIMIENTOS_MOBILE = 10
-  const hayMasMovimientos = isMobile && filasTabla.length > MOVIMIENTOS_MOBILE
+  // Corte de la tabla de movimientos (ver verTodosMovimientos). El corte es solo
+  // visual: el contador del título, el pie de totales y el export a CSV siguen
+  // usando la lista completa.
+  //
+  // Antes aplicaba solo en mobile. También hace falta en computadora: con 100+
+  // movimientos hay que scrollear la tabla entera para llegar a cualquier cosa que
+  // esté abajo.
+  const MOVIMIENTOS_VISIBLES = 10
+  const hayMasMovimientos = filasTabla.length > MOVIMIENTOS_VISIBLES
   const filasTablaVisibles = (hayMasMovimientos && !verTodosMovimientos)
-    ? filasTabla.slice(0, MOVIMIENTOS_MOBILE)
+    ? filasTabla.slice(0, MOVIMIENTOS_VISIBLES)
     : filasTabla
 
   // Contar transacciones de cada extracto, ordenados por mes descendente — por
@@ -3945,7 +3948,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 acá se contradiría con el contador del título. */}
             {verTodosMovimientos
               ? '▴ Ver menos'
-              : `▾ Ver ${filasTabla.length - MOVIMIENTOS_MOBILE} más`}
+              : `▾ Ver ${filasTabla.length - MOVIMIENTOS_VISIBLES} más`}
           </button>
         )}
         </div>

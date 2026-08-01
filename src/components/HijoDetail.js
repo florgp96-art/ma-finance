@@ -51,6 +51,12 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const [editNombre, setEditNombre] = useState('')
   const [editCategoria, setEditCategoria] = useState('')
   const [editSubcategoria, setEditSubcategoria] = useState('')
+  // La tabla se corta a los primeros MOVIMIENTOS_VISIBLES con un botón para ver el
+  // resto, igual que la tabla de movimientos de una cuenta. El corte es solo visual:
+  // el contador del título, el pie de totales y el reporte siguen usando la lista
+  // completa.
+  const MOVIMIENTOS_VISIBLES = 10
+  const [verTodos, setVerTodos] = useState(false)
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
@@ -294,6 +300,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     if (valA > valB) return sortDir === 'asc' ? 1 : -1
     return 0
   }), [filasTabla, sortKey, sortDir])
+  const hayMas = sortedTx.length > MOVIMIENTOS_VISIBLES
+  const filasVisibles = (hayMas && !verTodos) ? sortedTx.slice(0, MOVIMIENTOS_VISIBLES) : sortedTx
 
   // Reporte por persona (D3 Parte 4): exporta exactamente lo que se ve en la
   // tabla de abajo — ya incluye tanto los gastos con child_id/tag directo como
@@ -599,7 +607,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                 </tr>
               </thead>
               <tbody>
-                {sortedTx.map((t, i) => {
+                {filasVisibles.map((t, i) => {
                   const isEditing = editingTx === t.id
                   const expandido = filaExpandida === t.id
                   const ellipsisTd = { padding: '9px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
@@ -692,6 +700,14 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
               </tbody>
               <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} />
             </table>
+            {hayMas && (
+              <button
+                onClick={() => setVerTodos(v => !v)}
+                style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? '#C0B0C0' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif' }}
+              >
+                {verTodos ? '▴ Ver menos' : `▾ Ver ${sortedTx.length - MOVIMIENTOS_VISIBLES} más`}
+              </button>
+            )}
           </div>
         )}
       </div>
