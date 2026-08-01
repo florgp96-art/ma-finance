@@ -1,29 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit } from './_lib/rateLimit.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const rateLimitMap = new Map()
-
-function checkRateLimit(ip) {
-  const now = Date.now()
-  const windowMs = 60 * 1000
-  const limit = 30
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  const entry = rateLimitMap.get(ip)
-  if (now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-  if (entry.count >= limit) return false
-  entry.count++
-  return true
-}
 
 // Notificación de Mercado Pago sobre cambios en una suscripción (preapproval).
 // No confiamos en el estado que venga en el body de la notificación: siempre
@@ -38,7 +20,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
-  if (!checkRateLimit(ip)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`mp-webhook:${ip}`, 30)) return res.status(429).json({ error: 'Too many requests' })
 
   const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET
   if (webhookSecret && req.query?.secret !== webhookSecret) {

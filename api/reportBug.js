@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!checkRateLimit(`reportBug:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`reportBug:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const { mensaje, pagina } = req.body
   if (!mensaje || typeof mensaje !== 'string' || !mensaje.trim()) {

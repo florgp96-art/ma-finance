@@ -102,7 +102,7 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  if (!checkRateLimit(`classifyRows:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit(`classifyRows:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
 
   const { rows, categories, subcategories, children, aliases } = req.body
   if (!rows || rows.length === 0) return res.status(400).json({ error: 'No rows provided' })

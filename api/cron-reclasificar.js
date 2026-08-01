@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  if (!checkRateLimit('cron-reclasificar', 10)) return res.status(429).json({ error: 'Too many requests' })
+  if (!await checkRateLimit('cron-reclasificar', 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const supabase = createClient(
     process.env.REACT_APP_SUPABASE_URL,
