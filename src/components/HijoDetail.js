@@ -161,7 +161,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   // de "gastos" se modificó — lo único nuevo es separar los ingresos (ej. cuota
   // alimenticia que se cobra, ahora que un ingreso también puede llevar child_id)
   // para que no se mezclen con los gastos en los totales/categorías de siempre.
-  const { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData } = useMemo(() => {
+  const { mesesDisponibles, filteredTx, filasTabla, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData } = useMemo(() => {
     const mesesDisponibles = [...new Set(transactions.map(t => t.fecha?.slice(0, 7)).filter(Boolean))].sort().reverse()
     const gastoTx = transactions.filter(t => t.tipo !== 'ingreso')
     const ingresoTx = transactions.filter(t => t.tipo === 'ingreso')
@@ -173,6 +173,12 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       ? ingresoTx.filter(t => selectedMeses.includes(t.fecha?.slice(0, 7)))
       : ingresoTx
 
+    // La TABLA lista gastos e ingresos juntos; los totales por moneda, el donut y
+    // las categorías siguen contando solo gastos (mezclarlos daría un "gasto por
+    // categoría" con plata que entró). Antes la tabla se armaba solo con gastoTx, así
+    // que la cuota alimentaria que se cobra se sumaba en la tarjeta de arriba pero no
+    // aparecía en ninguna lista: se veía como si el movimiento no existiera.
+    const filasTabla = [...filteredTx, ...filteredIngresoTx]
     const totalARS = filteredTx.filter(t => t.moneda === 'ARS').reduce((s, t) => s + t.monto, 0)
     const totalUSD = filteredTx.filter(t => t.moneda === 'USD').reduce((s, t) => s + t.monto, 0)
     const totalEUR = filteredTx.filter(t => t.moneda === 'EUR').reduce((s, t) => s + t.monto, 0)
@@ -233,7 +239,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       }
     })
 
-    return { mesesDisponibles, filteredTx, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData }
+    return { mesesDisponibles, filteredTx, filasTabla, totalARS, totalUSD, totalEUR, catData, cuotaResumen, cuotaMonthlyData }
   }, [transactions, selectedMeses, tcMap, tipoCambio, tc, tcEUR, tcMapEUR])
 
   const startEdit = (tx) => {
@@ -278,7 +284,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     else { setSortKey(key); setSortDir(key === 'fecha' ? 'desc' : 'asc') }
   }
   const sortIcon = (key) => sortKey !== key ? ' ↕︎' : (sortDir === 'asc' ? ' ↑︎' : ' ↓︎')
-  const sortedTx = useMemo(() => [...filteredTx].sort((a, b) => {
+  const sortedTx = useMemo(() => [...filasTabla].sort((a, b) => {
     let valA, valB
     if (sortKey === 'fecha') { valA = a.fecha || ''; valB = b.fecha || '' }
     else if (sortKey === 'descripcion') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
@@ -287,7 +293,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     if (valA < valB) return sortDir === 'asc' ? -1 : 1
     if (valA > valB) return sortDir === 'asc' ? 1 : -1
     return 0
-  }), [filteredTx, sortKey, sortDir])
+  }), [filasTabla, sortKey, sortDir])
 
   // Reporte por persona (D3 Parte 4): exporta exactamente lo que se ve en la
   // tabla de abajo — ya incluye tanto los gastos con child_id/tag directo como
@@ -684,7 +690,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                   )
                 })}
               </tbody>
-              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} signed={false} />
+              <TotalesFooter txs={sortedTx} tcMap={tcMap} tipoCambio={tipoCambio} tcMapEUR={tcMapEUR} tipoCambioEUR={tipoCambioEUR} darkMode={darkMode} colSpan={numColsTabla} />
             </table>
           </div>
         )}
