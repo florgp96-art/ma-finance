@@ -94,6 +94,87 @@ function detectarCuotasInconsistentes(txs) {
   return hallazgos
 }
 
+// Chequeos de coherencia interna de una fila. A diferencia de los dos de arriba
+// (que buscan datos imposibles), estos buscan estados que la app no debería poder
+// generar: si aparecen, hay un bug de importación, de generación de cuotas o de
+// edición. Nacieron de una auditoría a mano donde salieron siete problemas y esta
+// auditoría automática no habría detectado ninguno, porque todos eran
+// contradicciones internas y no montos repetidos.
+function detectarFilasIncoherentes(txs, hoyISO) {
+  const hallazgos = []
+  const resumen = (t) => `"${t.detalle || t.nombre || '(sin nombre)'}" del ${t.fecha}`
+
+  for (const t of txs) {
+    const total = t.cuotas_total || 1
+    const nro = t.cuota_numero || 1
+
+    // "Cuota 5 de 3" no existe. Sale de una edición a mano sin validar o de una
+    // lectura mal parseada del resumen.
+    if (total > 1 && nro > total) {
+      hallazgos.push(`Cuota imposible (${nro} de ${total}): ${resumen(t)}`)
+    }
+    // Un plan de una sola cuota con número distinto de 1 es lo mismo al revés.
+    if (total === 1 && nro !== 1) {
+      hallazgos.push(`Sin cuotas pero con número de cuota ${nro}: ${resumen(t)}`)
+    }
+    // Un movimiento en moneda extranjera sin TC congelado se convierte a cero en
+    // silencio en cualquier vista que no tenga el TC del mes: desaparece del total
+    // sin avisar, que es peor que mostrarlo mal.
+    if ((t.moneda === 'USD' || t.moneda === 'EUR') && !t.fx_rate) {
+      hallazgos.push(`En ${t.moneda} sin tipo de cambio guardado (puede sumar 0): ${resumen(t)}`)
+    }
+    // Las partes de un reparto tienen que caber en el monto de la fila. Si suman
+    // más, alguna vista va a mostrar más plata de la que se gastó.
+    const partes = t.reparto?.participantes
+    if (Array.isArray(partes) && partes.length > 0) {
+      const suma = partes.reduce((acc, p) => acc + Math.abs(Number(p.monto) || 0), 0)
+      const monto = Math.abs(Number(t.monto) || 0)
+      if (suma > monto + 1) {
+        hallazgos.push(`Reparto que suma más que el gasto (${suma.toFixed(0)} de ${monto.toFixed(0)}): ${resumen(t)}`)
+      }
+    }
+    // Fecha muy adelante: las cuotas futuras que genera la app son legítimas, pero
+    // un gasto suelto con fecha del año que viene es un error de lectura del
+    // resumen (año mal parseado) y ensucia todos los totales futuros.
+    if (t.fecha && t.fecha > hoyISO && total === 1) {
+      hallazgos.push(`Gasto suelto con fecha futura: ${resumen(t)}`)
+    }
+  }
+  return hallazgos
+}
+
+// Dos filas para el MISMO número de cuota de la misma compra: es el duplicado que
+// el chequeo de arriba no ve, porque las dos copias suelen tener fechas distintas
+// (una con la fecha del resumen que la facturó y otra derivada de la compra).
+function detectarCuotaRepetida(txs) {
+  const porCompra = new Map()
+  for (const t of txs) {
+    if (t.tipo !== 'gasto' || (t.cuotas_total || 1) <= 1 || !t.fecha) continue
+    // Misma cuenta + mismo plan + mismo monto al peso: la clave que usa la app para
+    // reconstruir una compra (ver src/lib/cuotas.js).
+    const key = `${t.account_id}|${t.cuotas_total}|${Math.round(Math.abs(Number(t.monto) || 0))}|${t.moneda || 'ARS'}`
+    if (!porCompra.has(key)) porCompra.set(key, [])
+    porCompra.get(key).push(t)
+  }
+  const hallazgos = []
+  for (const [, filas] of porCompra) {
+    const porNumero = new Map()
+    for (const t of filas) {
+      const nro = t.cuota_numero || 1
+      if (!porNumero.has(nro)) porNumero.set(nro, [])
+      porNumero.get(nro).push(t)
+    }
+    for (const [nro, repetidas] of porNumero) {
+      if (repetidas.length <= 1) continue
+      const t = repetidas[0]
+      hallazgos.push(
+        `Cuota ${nro}/${t.cuotas_total} cargada ${repetidas.length} veces (${Math.abs(Number(t.monto) || 0).toFixed(0)} ${t.moneda || 'ARS'}): ${repetidas.map(r => r.fecha).join(' y ')}`
+      )
+    }
+  }
+  return hallazgos
+}
+
 export default async function handler(req, res) {
   if (!secretsMatch(req.headers['authorization'], `Bearer ${process.env.CRON_SECRET}`)) {
     return res.status(401).json({ error: 'Unauthorized' })
@@ -106,12 +187,15 @@ export default async function handler(req, res) {
 
   const { data: txs, error } = await supabaseAdmin
     .from('transactions')
-    .select('id, user_id, account_id, fecha, monto, moneda, tipo, detalle, cuotas_total, cuota_numero, es_manual, accounts(nombre)')
+    .select('id, user_id, account_id, fecha, nombre, monto, moneda, tipo, detalle, cuotas_total, cuota_numero, es_manual, fx_rate, reparto, accounts(nombre)')
 
   if (error) {
     console.error('Error leyendo transacciones para auditoría:', error.message)
     return res.status(500).json({ error: error.message })
   }
+
+  const ahora = new Date()
+  const hoyISO = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
 
   const porUsuario = new Map()
   for (const t of txs || []) {
@@ -124,6 +208,8 @@ export default async function handler(req, res) {
     const hallazgos = [
       ...detectarDuplicados(userTxs),
       ...detectarCuotasInconsistentes(userTxs),
+      ...detectarCuotaRepetida(userTxs),
+      ...detectarFilasIncoherentes(userTxs, hoyISO),
     ]
     if (hallazgos.length > 0) reportePorUsuario.push({ userId, hallazgos })
   }
