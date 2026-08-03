@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { esAlquilerOExpensas, addMeses } from '../lib/cuotas'
+import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -904,14 +904,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       return idx > 0 ? list[idx - 1].cierre : restarDiasISO(cierre, DIAS_CICLO_APROX)
     }
 
-    // Una cuota se carga con una fecha estimada (mismo día que la compra original, mes
-    // corrido según el número de cuota) que no necesariamente coincide con la fecha real
-    // de facturación de ningún resumen puntual — por eso, igual que en perteneceCicloActual,
-    // para cuotas se compara por mes exacto contra el mes de cierre del resumen, no por
-    // fecha exacta ni por la ventana de días de los demás movimientos.
+    // Una cuota se carga con una fecha derivada (mismo día que la compra original, mes
+    // corrido según el número de cuota) que no coincide con la fecha real de
+    // facturación de ningún resumen puntual — para cuotas se compara el MES contra el
+    // mes de cierre del resumen, nunca el día ni la ventana de días de los demás
+    // movimientos. La regla vive en cuotaEnCiclo (lib/cuotas.js), compartida con
+    // perteneceCicloActual: acá la ventana es un solo mes, así que el desde es el mes
+    // anterior al del cierre.
     const perteneceAlCierre = (t, cierre, desde) => {
+      if (esCuota(t)) return cuotaEnCiclo(t, addMeses(cierre, -1), cierre)
       const fecha = normFecha(t.fecha)
-      if ((t.cuotas_total || 1) > 1) return fecha.slice(0, 7) === cierre.slice(0, 7)
       return cierre >= fecha && fecha > desde
     }
 
@@ -2438,32 +2440,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // nuevas (nunca pagos/reintegros, que ya se atribuyeron a saldar el statement anterior
   // en calcularEstadoStatement y no vuelven a contarse acá).
   //
-  // Las cuotas se topean por MES y el resto de los movimientos por día.
+  // Las cuotas se ubican por MES y el resto de los movimientos por día.
   //
-  // Una cuota es una unidad mensual: el día que lleva es el de la compra original
-  // arrastrado mes a mes (ver addMeses en lib/cuotas.js), no una fecha de facturación
-  // ni de vencimiento. Con el tope en hoy, las cuotas del mes en curso aparecían en
-  // "A pagar" de a una por día según qué día habías comprado — la cuota de una compra
-  // del 2 estaba desde el día 2 y la de una del 28 recién el 28, aunque el banco las
-  // factura a las dos en el mismo ciclo. Arrancado el mes, están todas.
+  // Toda la regla de las cuotas vive en cuotaEnCiclo (lib/cuotas.js), que es la misma
+  // que usa reconciliarSueltas para ligar una cuota a su resumen: se compara el mes y
+  // nunca el día, en los dos extremos del ciclo. El día de una cuota es el de la compra
+  // original arrastrado mes a mes, así que no dice nada sobre en qué resumen cae — la
+  // cuota de agosto la factura el resumen de agosto, cierre el 9 o el 20.
   //
-  // Esa excepción por mes ya había existido y se sacó porque metía al ciclo abierto
-  // cuotas ya facturadas en el resumen cerrado del mismo mes, contadas dos veces. No
-  // puede volver a pasar: una cuota que un resumen cargado ya facturó queda afuera de
-  // acá por statement_id (ver itemsPorStatement, y reconciliarSueltas, que liga cada
-  // cuota al resumen cuyo cierre cae en su mismo mes). El tope de hoy nunca fue lo que
-  // protegía de eso — solo escondía el mes en curso.
+  // El tope del ciclo abierto es el mes en CURSO (hoyISO, del que solo se mira el mes):
+  // de ahí en adelante ya son cuotas de meses que no llegaron y viven en el widget de
+  // "Cuotas pendientes", no acá.
   //
-  // Para todo lo demás el tope sigue siendo hoy: un gasto suelto con fecha futura es
+  // No hay doble conteo con un resumen que ya facturó la cuota: esa queda afuera por
+  // statement_id (ver itemsPorStatement y reconciliarSueltas), no por la fecha.
+  //
+  // Para todo lo demás el tope sigue siendo el día: un gasto suelto con fecha futura es
   // un dato anómalo (la auditoría semanal lo reporta como tal), no algo para sumar.
   const perteneceCicloActual = (t, ultimoCierre, hasta = null) => {
     if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
     const fecha = normFecha(t.fecha)
+    if (esCuota(t)) return cuotaEnCiclo(t, ultimoCierre, hasta || hoyISO)
     if (ultimoCierre && fecha <= ultimoCierre) return false
-    // Tope explícito: el cierre real del ciclo. Vale para todo, cuotas incluidas — una
-    // cuota fechada después del cierre la factura el ciclo SIGUIENTE, no este.
     if (hasta) return fecha <= hasta
-    if ((t.cuotas_total || 1) > 1) return fecha.slice(0, 7) <= mesActual
     return fecha <= hoyISO
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen

@@ -247,6 +247,31 @@ export function comprasEnCuotasPendientes(transactions) {
 
 const mesDe = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
+export const esCuota = (t) => (t.cuotas_total || 1) > 1
+
+// ¿Esta cuota la factura un ciclo que va (desde, hasta]?
+//
+// SE COMPARA SOLO POR MES, en los dos extremos. El día que lleva una cuota es el de la
+// compra original arrastrado mes a mes por addMeses: es una etiqueta de mes, no una
+// fecha real de nada. Preguntarle a una cuota fechada el 28 de agosto si cae antes o
+// después de un cierre del 20 de agosto no significa nada — la cuota de agosto la
+// factura el resumen de agosto igual, cierre el 9, el 20 o el 28. Una compra de julio
+// en tres cuotas se paga en julio, agosto y septiembre, y ningún día de cierre corre
+// una de esas cuotas al mes siguiente.
+//
+// Es el mismo criterio con el que reconciliarSueltas (AccountDetail.js) liga cada cuota
+// al resumen cuyo cierre cae en su mismo mes, y de ahí sale la convención de toda la
+// app: el mes de una cuota es el mes de CIERRE del resumen que la factura.
+//
+// `hasta` en null = el ciclo todavía abierto; el tope lo pone quien llama (el mes en
+// curso, porque de ahí en adelante ya son cuotas futuras y viven en el widget).
+export function cuotaEnCiclo(t, desdeISO, hastaISO) {
+  const mes = (t.fecha || '').slice(0, 7)
+  if (!mes) return false
+  if (desdeISO && mes <= desdeISO.slice(0, 7)) return false
+  return !hastaISO || mes <= hastaISO.slice(0, 7)
+}
+
 // Suma meses a una fecha YYYY-MM-DD recortando el día al último del mes destino:
 // el 31/01 más un mes da 28/02, no 03/03 (con setMonth, JS desborda al mes
 // siguiente y esa cuota se salteaba febrero). El string se arma a mano y no con
