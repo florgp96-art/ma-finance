@@ -1,6 +1,7 @@
 # ma-finance — estado y trabajo pendiente
 
-> Documento de traspaso. Escrito al cerrar la sesión del 1 de agosto de 2026.
+> Documento de traspaso. Escrito al cerrar la sesión del 1 de agosto de 2026,
+> actualizado el 3 de agosto.
 > Para arrancar una sesión nueva: leé este archivo y seguí desde la sección 2.
 
 ---
@@ -24,7 +25,7 @@ Vercel). Todo trabajo sobre la base se entrega como SQL para que el dueño lo co
 
 ## 1. Dos migraciones de base sin correr
 
-### a) Fechas del próximo ciclo de la tarjeta
+### a) Fechas del próximo ciclo de la tarjeta — **subió de prioridad el 3 de agosto**
 
 ```sql
 alter table statements add column if not exists proximo_cierre date;
@@ -33,8 +34,28 @@ alter table statements add column if not exists proximo_vencimiento date;
 
 Muchos resúmenes traen, además de su propio cierre y vencimiento, las fechas del ciclo
 siguiente ("Próximo cierre 13-Ago-26 / Próximo vencimiento 21-Ago-26"). El prompt de la
-IA ya las lee y `api/analyzePdf.js` ya las guarda. Sin las columnas el insert se
-reintenta sin ellas y no falla nada, pero el dato se pierde.
+IA ya las lee y el guardado vive en `handleGuardar` de `src/pages/Dashboard.js`. Sin las
+columnas el insert se reintenta sin ellas y no falla nada.
+
+Ya no es solo "se pierde un dato opcional": desde el corte de ciclo (#285) esta fecha es
+**lo que decide si un resumen que ya cerró suma a "Te falta pagar"**. Sin ella la app
+estima el cierre corriendo un mes, y una fecha estimada avisa pero nunca suma — así que
+mientras la migración no esté, una tarjeta que ya cortó sigue sin entrar en el número
+grande. Ver `cicloAbiertoDe` en `src/components/AccountDetail.js`.
+
+Para chequear si ya está corrida:
+
+```sql
+select column_name from information_schema.columns
+where table_name = 'statements' and column_name like 'proximo_%';
+```
+
+Y para ver cuántos resúmenes tienen efectivamente el dato (solo lo van a tener los
+importados después de la migración):
+
+```sql
+select count(*) total, count(proximo_cierre) con_proximo_cierre from statements;
+```
 
 ### b) Rate limit compartido — **esta es la que más conviene**
 
@@ -166,6 +187,18 @@ dos meses o menos y coincide el monto (±$1, solo centavos de redondeo), **o** s
 exactamente el mismo mes y coincide el nombre. Exporta `cuotasParaCrear` (las que faltan
 crear), `cuotasFuturasCargadas` (las que todavía se deben) y `addMeses`.
 
+**Una cuota es una unidad MENSUAL, y todos los cortes van por mes.** El día que lleva una
+cuota es el de la compra original arrastrado mes a mes por `addMeses`, no una fecha de
+facturación ni de vencimiento: compararlo contra hoy no significa nada. El mes en curso
+es deuda de este ciclo y se ve en "A pagar"; el widget de cuotas arranca en el mes
+siguiente. Sin huecos ni solapamiento. Si te tienta comparar `fecha` con `hoyISO` en algo
+que tenga `cuotas_total > 1`, casi seguro está mal.
+
+**Y si un resumen cargado facturó la cuota, decide ese resumen, no la fecha.** Pendiente
+si el resumen debe, no pendiente si ya se pagó. El saldo se mira **por moneda**: un
+resumen puede estar pagado en pesos y seguir debiendo dólares, y con eso marcaba como
+impagas todas las cuotas en pesos de la tarjeta.
+
 **Fechas de cuotas:** la cuota N se fecha **derivando de la compra**,
 `compra + (N−1) meses`, nunca de la fecha del resumen — si no, cargar resúmenes viejos
 para armar historial genera duplicados. El día se recorta al último del mes destino
@@ -222,9 +255,29 @@ misma cuota cargada dos veces. **No detecta bugs de código, solo síntomas en l
 
 ---
 
-## 5. Qué se hizo el 1 de agosto de 2026 (26 PRs, #257 a #282)
+## 5. Qué se hizo
 
 Para no volver a proponer algo que ya está hecho.
+
+### 3 de agosto de 2026 (#284, #285)
+
+**El corte de ciclo, que no existía.** El "Resumen abierto" iba del último cierre conocido
+hasta HOY, sin techo, y lo único que lo cerraba era importar el PDF siguiente: si no
+llegaba, el ciclo tragaba compras para siempre y mezclaba lo ya facturado con lo que no.
+Como un resumen abierto está excluido de "Te falta pagar" por diseño, la pantalla llegó a
+mostrar $ 0 con millones vencidos. Ahora el ciclo tiene techo (`cicloAbiertoDe`), y si ya
+cerró sin PDF la tarjeta se parte en dos tramos, con los pagos posteriores achicando el
+cerrado. Suma a "Te falta pagar" solo si el cierre lo informó el banco.
+
+**Las cuotas pasaron a cortarse por mes** en los dos lados, y un resumen ya pagado da de
+baja sus cuotas en el acto (ver sección 4). Antes el mes en curso no desaparecía del
+widget: se derretía día a día según qué día habías comprado.
+
+**Primeros tests reales del proyecto**: `src/lib/cuotas.test.js` y
+`src/components/AccountDetail.test.js`. Se sacó `src/App.test.js`, el de ejemplo de CRA,
+que fallaba siempre y dejaba la suite en rojo.
+
+### 1 de agosto de 2026 (26 PRs, #257 a #282)
 
 **Cuotas — el hilo largo.** Una sola fuente de verdad: los movimientos. Las cuotas futuras
 se crean solas al importar un resumen, y el widget y la card de Caja leen la base en vez de
