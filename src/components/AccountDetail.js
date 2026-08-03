@@ -516,13 +516,30 @@ export const cierreDe = (s) => {
 // migra aparte —, se estima corriendo un mes el último cierre. La estimación sirve
 // para AVISAR que el ciclo ya tendría que haber cerrado, nunca para dar por facturada
 // plata: viaja marcada con `estimado` y quien la usa decide qué hacer con ella.
-export const cicloAbiertoDe = (ultimoReal, ultimoCierre) => {
-  const cierreReal = normFecha(ultimoReal?.proximo_cierre)
-  if (cierreReal) {
-    return { cierre: cierreReal, vencimiento: normFecha(ultimoReal?.proximo_vencimiento) || null, estimado: false }
+//
+// Precedencia: primero lo que el usuario cargó a mano en la cuenta, después el PDF,
+// después la estimación. Lo manual va PRIMERO porque el dato del PDF se vuelve viejo
+// solo: la fecha de cierre se cambia desde el home banking cuando uno quiere, y el
+// resumen anterior queda informando un próximo cierre que ya no va a pasar (caso real:
+// el PDF de julio de la Mastercard decía 27-Ago y la tarjeta terminó cerrando el
+// 30-Jul). Un dato que el usuario corrigió mirando su banco vale más que un PDF viejo.
+//
+// Una fecha de cierre que no sea POSTERIOR al último cierre conocido ya quedó atrás y
+// se descarta, sea de donde sea: si no, al importar el resumen que cierra ese ciclo, el
+// override manual seguiría apuntando a una fecha ya pasada y el ciclo nuevo arrancaría
+// dado por cerrado.
+export const cicloAbiertoDe = (ultimoReal, ultimoCierre, manual = null) => {
+  const sirve = (f) => f && (!ultimoCierre || f > ultimoCierre)
+  const cierreManual = normFecha(manual?.proximo_cierre)
+  if (sirve(cierreManual)) {
+    return { cierre: cierreManual, vencimiento: normFecha(manual?.proximo_vencimiento) || null, origen: 'manual' }
+  }
+  const cierrePdf = normFecha(ultimoReal?.proximo_cierre)
+  if (sirve(cierrePdf)) {
+    return { cierre: cierrePdf, vencimiento: normFecha(ultimoReal?.proximo_vencimiento) || null, origen: 'pdf' }
   }
   if (!ultimoCierre) return null
-  return { cierre: addMeses(ultimoCierre, 1), vencimiento: null, estimado: true }
+  return { cierre: addMeses(ultimoCierre, 1), vencimiento: null, origen: 'estimado' }
 }
 
 // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
@@ -785,6 +802,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return next
   })
   const [cicloDesdeOverride, setCicloDesdeOverride] = useState({})
+  const [cierreManualOverride, setCierreManualOverride] = useState({})
   const [catGeneralSeleccionada, setCatGeneralSeleccionada] = useState(null)
   const [hijoGeneralSeleccionado, setHijoGeneralSeleccionado] = useState(null)
   // "Gastos del mes por categoría" mezcla filas de categoría y de hijo en una
@@ -810,6 +828,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     clearTimeout(cicloDesdeTimers.current[accountId])
     cicloDesdeTimers.current[accountId] = setTimeout(async () => {
       await supabase.from('accounts').update({ ciclo_actual_desde: fecha || null }).eq('id', accountId)
+      onAccountsChanged?.()
+    }, 800)
+  }
+
+  // Cierre y vencimiento del ciclo abierto, puestos a mano. Existen porque la fecha que
+  // trae el PDF SE PUEDE VOLVER VIEJA: el cierre de una tarjeta se cambia desde el home
+  // banking cuando uno quiere, y a partir de ahí el resumen anterior informa un próximo
+  // cierre que ya no va a pasar. Caso real: el resumen de julio de la Mastercard decía
+  // "próximo cierre 27-Ago" y después se movió la fecha de cobro a cerrar el 30-Jul —
+  // 28 días de diferencia, con la tarjeta ya cerrada y la app creyendo que faltaban
+  // tres semanas. Lo que se carga acá le gana al PDF (ver cicloAbiertoDe).
+  const cierreManualTimers = useRef({})
+  const guardarCierreManual = (accountId, campos) => {
+    setCierreManualOverride(prev => ({ ...prev, [accountId]: { ...(prev[accountId] || {}), ...campos } }))
+    clearTimeout(cierreManualTimers.current[accountId])
+    cierreManualTimers.current[accountId] = setTimeout(async () => {
+      const { error } = await supabase.from('accounts').update(campos).eq('id', accountId)
+      // Las columnas se agregan con una migración aparte: si todavía no están, el
+      // cambio vive en memoria hasta recargar en vez de romper la pantalla.
+      if (error && /proximo_(cierre|vencimiento)/.test(error.message || '')) {
+        console.warn('accounts sin columnas de próximo ciclo — el cierre manual no se guarda')
+        return
+      }
       onAccountsChanged?.()
     }, 800)
   }
@@ -2523,13 +2564,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // sea un ciclo de 27 días y otro de 50. Partiendo por la estimación, esa tarjeta
     // habría dado el ciclo por cerrado el 8 de agosto, 19 días antes de que cerrara de
     // verdad, mostrando un resumen que no existe. Con fecha estimada se avisa y nada más.
-    const ciclo = cicloAbiertoDe(ultimoReal, ultimoCierre)
-    if (!(ciclo && !ciclo.estimado && hoyISO > ciclo.cierre)) {
+    const manual = cierreManualOverride[a.id] !== undefined
+      ? { ...a, ...cierreManualOverride[a.id] }
+      : a
+    const ciclo = cicloAbiertoDe(ultimoReal, ultimoCierre, manual)
+    // El cierre y el vencimiento se editan en el tramo cuyo _cierraEl ES el ciclo que
+    // decide todo esto (_editableCierre), y en uno solo: partida la tarjeta en dos,
+    // repetir el selector daría a entender que cada tramo tiene su propia fecha.
+    const datosCierre = {
+      _cierraEl: ciclo?.cierre || null, _venceEl: ciclo?.vencimiento || null,
+      _cierreOrigen: ciclo ? ciclo.origen : 'estimado', _editableCierre: true,
+    }
+    if (!(ciclo && ciclo.origen !== 'estimado' && hoyISO > ciclo.cierre)) {
       const abierto = tramo(ultimoCierre, null, {
         id: `sin-resumen-${a.id}`,
         cicloDesde: cicloDesdeManual, _editableDesde: true,
         _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
-        _cierraEl: ciclo?.cierre || null, _cierreEstimado: ciclo ? ciclo.estimado : true,
+        ...datosCierre,
       })
       // El "Contando desde" manual mantiene viva la tarjeta aunque no haya nada cargado:
       // es la señal de que el usuario está trackeando ese ciclo a mano.
@@ -2538,17 +2589,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const cerrado = tramo(ultimoCierre, ciclo.cierre, {
       id: `cerrado-sin-pdf-${a.id}`, _cerradoSinPdf: true,
       cicloDesde: cicloDesdeManual, _editableDesde: true,
-      _cierraEl: ciclo.cierre, _cierreEstimado: ciclo.estimado,
+      ...datosCierre,
       fecha_hasta: ciclo.cierre,
-      // Sin fecha del banco no se inventa un vencimiento: la tarjeta queda agrupada con
-      // las que todavía no vencieron, avisando nomás.
-      fecha_vencimiento: ciclo.estimado ? null : ciclo.vencimiento,
+      fecha_vencimiento: ciclo.vencimiento,
       _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
     })
     const abierto = tramo(ciclo.cierre, null, {
       id: `sin-resumen-${a.id}`,
-      // El cierre del ciclo que sigue a este ya no lo informó nadie: se estima.
-      _cierraEl: addMeses(ciclo.cierre, 1), _cierreEstimado: true,
+      // El cierre del ciclo que sigue a este no lo informó nadie todavía: se estima, y
+      // no se edita acá — lo editable es el cierre del ciclo de arriba.
+      _cierraEl: addMeses(ciclo.cierre, 1), _venceEl: null,
+      _cierreOrigen: 'estimado', _editableCierre: false,
     })
     const visibles = [cerrado, abierto].filter(tieneAlgo)
     if (visibles.length === 0) return cicloDesdeManual ? [abierto] : []
@@ -2566,7 +2617,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // justamente el bug de mostrar $ 0 cuando se deben millones. Un ciclo con fecha de
   // cierre estimada nunca llega hasta acá (no se parte, ver virtualesAPagar): el número
   // grande no se apoya jamás en una fecha que calculó la app.
-  const esExigible = (s) => !s._virtual || (s._cerradoSinPdf && !s._cierreEstimado)
+  const esExigible = (s) => !s._virtual || (s._cerradoSinPdf && s._cierreOrigen !== 'estimado')
   // "Próximos vencimientos" = lo virtual que todavía NO es exigible.
   const statementsSinResumen = virtualesAPagar.filter(s => !esExigible(s))
   // statementsRealesConUsd (total pendiente ya neteado de pagos, USD incluido) sale
@@ -2864,7 +2915,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen,
     }
-  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName])
+  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, cierreManualOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName])
 
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
@@ -2884,6 +2935,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const apagarSortIcon = (key) => apagarSortKey !== key ? ' ↕︎' : (apagarSortDir === 'asc' ? ' ↑︎' : ' ↓︎')
   const mostrarMovimientos = !soloAPagar && (vistaCuenta === 'movimientos' || !mostrarTabAPagar)
   const vistaApagarActiva = soloAPagar || vistaCuenta === 'apagar'
+
+  // Los <input type="date"> chiquitos de las tarjetas de "A pagar" (contando desde,
+  // cierre y vencimiento del ciclo) comparten estilo: son la misma clase de control.
+  const estiloInputFecha = {
+    fontSize: '12px', padding: '2px 6px', borderRadius: '6px',
+    border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+    backgroundColor: darkMode ? '#1C1A1C' : 'white',
+    color: darkMode ? '#F0EDEC' : '#1d1d1f',
+    colorScheme: darkMode ? 'dark' : 'light',
+  }
 
   // Una tarjeta de "A pagar": fecha siempre en formato relativo (la
   // absoluta queda de tooltip), y con un estilo rojo destacado cuando ya
@@ -2918,19 +2979,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </p>
             {/* Cuándo cierra este ciclo. Antes no se decía en ninguna parte: el resumen
                 abierto era un monto que crecía sin que se supiera hasta cuándo.
-                Con fecha estimada nunca se afirma que cerró ni se da una fecha como
-                cierta — los ciclos reales no son mensuales y la estimación puede errarle
-                por semanas (ver el comentario en virtualesAPagar). Se avisa y se pide el
-                resumen, que es lo único accionable. */}
-            {s._virtual && s._cierraEl && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73' }}>
-                {s._cerradoSinPdf
-                  ? `Cerró el ${formatFechaCorta(s._cierraEl)}${s.fecha_vencimiento ? ` · vence el ${formatFechaCorta(s.fecha_vencimiento)}` : ''}`
-                  : !s._cierreEstimado
-                    ? `Cierra el ${formatFechaCorta(s._cierraEl)}`
-                    : s._cierraEl < hoyISO
-                      ? 'Ya tendría que haber cerrado · cargá el resumen para saber la fecha exacta'
-                      : `Cierra alrededor del ${formatFechaCorta(s._cierraEl)} (estimado)`}
+                Se puede corregir a mano porque el dato del PDF se vuelve viejo solo — la
+                fecha de cierre se cambia desde el home banking, y el resumen anterior
+                queda informando un cierre que ya no va a pasar (ver cicloAbiertoDe). De
+                dónde salió la fecha se aclara siempre: una estimación no se puede
+                confundir con un dato del banco. */}
+            {s._virtual && s._editableCierre && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                {s._cerradoSinPdf ? 'Cerró el' : 'Cierra el'}
+                <input type="date" value={s._cierraEl || ''} onClick={e => e.stopPropagation()}
+                  onChange={e => guardarCierreManual(s.account_id, { proximo_cierre: e.target.value || null })}
+                  style={estiloInputFecha} />
+                y vence el
+                <input type="date" value={s._venceEl || ''} onClick={e => e.stopPropagation()}
+                  onChange={e => guardarCierreManual(s.account_id, { proximo_vencimiento: e.target.value || null })}
+                  style={estiloInputFecha} />
+                {s._cierreOrigen === 'estimado'
+                  ? '(estimado — corregilo si no es así)'
+                  : s._cierreOrigen === 'pdf' ? '(del resumen)' : '(a mano)'}
+              </p>
+            )}
+            {s._virtual && !s._editableCierre && s._cierraEl && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
+                Cierra alrededor del {formatFechaCorta(s._cierraEl)} (estimado)
               </p>
             )}
             {/* El "Contando desde" manual acota el ciclo entero de la cuenta, así que va
@@ -2941,7 +3012,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Contando desde
                   <input type="date" value={s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : '')} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
-                    style={{ fontSize: '12px', padding: '2px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : 'white', color: darkMode ? '#F0EDEC' : '#1d1d1f', colorScheme: darkMode ? 'dark' : 'light' }} />
+                    style={estiloInputFecha} />
                   {!s.cicloDesde && '(auto)'}
                 </p>
               </>

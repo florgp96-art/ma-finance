@@ -55,6 +55,23 @@ La Mastercard va 27 días de un ciclo y **50 del siguiente**. Estimar "un mes" l
 19 días: la app habría dado ese ciclo por cerrado el 8 de agosto y mostrado un resumen que
 no existe. De ahí la regla: **con fecha estimada se avisa, nunca se afirma que cerró.**
 
+### c) Cierre del ciclo cargado a mano
+
+```sql
+alter table accounts add column if not exists proximo_cierre date;
+alter table accounts add column if not exists proximo_vencimiento date;
+```
+
+**El `proximo_cierre` de un PDF se vuelve viejo solo.** La fecha de cierre se cambia desde
+el home banking cuando uno quiere, y a partir de ahí el resumen anterior informa un
+próximo cierre que ya no va a pasar. Pasó con la Mastercard: el PDF de julio decía 27-Ago
+y después se movió la fecha de cobro a cerrar el **30-Jul** — 28 días de diferencia, con la
+tarjeta ya cerrada y la app creyendo que faltaban tres semanas.
+
+Por eso el cierre se puede corregir a mano en la tarjeta de "A pagar", y lo cargado ahí le
+gana al PDF (ver `cicloAbiertoDe`). Sin estas columnas el cambio vive en memoria hasta
+recargar la página y no se guarda; el resto de la app funciona igual.
+
 Para chequear si ya está corrida:
 
 ```sql
