@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { esAlquilerOExpensas } from '../lib/cuotas'
+import { esAlquilerOExpensas, addMeses } from '../lib/cuotas'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -497,6 +497,32 @@ export const cierreDe = (s) => {
   const venc = normFecha(s.fecha_vencimiento)
   if (hasta && (!venc || hasta < venc)) return hasta
   return venc ? restarDiasISO(venc, DIAS_CIERRE_A_VENCIMIENTO) : null
+}
+
+// Cuándo cierra el ciclo que está abierto AHORA en una tarjeta, y cuándo vence.
+//
+// Hasta acá la app no tenía ninguna noción de "corte por fecha": el ciclo abierto iba
+// del último cierre conocido hasta HOY, sin techo, y lo único que lo cerraba era
+// importar el PDF del resumen siguiente. Si ese PDF no llegaba, el ciclo seguía
+// tragando compras para siempre y mezclaba en un solo monto lo que el banco ya facturó
+// con lo que todavía no.
+//
+// El dato bueno es el del banco: muchos resúmenes traen, además de su propio cierre,
+// las fechas del ciclo siguiente ("Próximo cierre 13-Ago-26 / Próximo vencimiento
+// 21-Ago-26"), y se guardan al importar. Hay que usar ese y no calcularlo, porque los
+// ciclos no caen siempre el mismo día del mes.
+//
+// Si el resumen no las trajo — o las columnas todavía no existen en la base, que se
+// migra aparte —, se estima corriendo un mes el último cierre. La estimación sirve
+// para AVISAR que el ciclo ya tendría que haber cerrado, nunca para dar por facturada
+// plata: viaja marcada con `estimado` y quien la usa decide qué hacer con ella.
+export const cicloAbiertoDe = (ultimoReal, ultimoCierre) => {
+  const cierreReal = normFecha(ultimoReal?.proximo_cierre)
+  if (cierreReal) {
+    return { cierre: cierreReal, vencimiento: normFecha(ultimoReal?.proximo_vencimiento) || null, estimado: false }
+  }
+  if (!ultimoCierre) return null
+  return { cierre: addMeses(ultimoCierre, 1), vencimiento: null, estimado: true }
 }
 
 // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
@@ -2430,10 +2456,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   //
   // Para todo lo demás el tope sigue siendo hoy: un gasto suelto con fecha futura es
   // un dato anómalo (la auditoría semanal lo reporta como tal), no algo para sumar.
-  const perteneceCicloActual = (t, ultimoCierre) => {
+  const perteneceCicloActual = (t, ultimoCierre, hasta = null) => {
     if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
     const fecha = normFecha(t.fecha)
     if (ultimoCierre && fecha <= ultimoCierre) return false
+    // Tope explícito: el cierre real del ciclo. Vale para todo, cuotas incluidas — una
+    // cuota fechada después del cierre la factura el ciclo SIGUIENTE, no este.
+    if (hasta) return fecha <= hasta
     if ((t.cuotas_total || 1) > 1) return fecha.slice(0, 7) <= mesActual
     return fecha <= hoyISO
   }
@@ -2442,7 +2471,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
   // de esa cuenta — si no, cualquier carga vieja por Excel (que nunca tiene statement_id)
   // se sumaría como si fuera de este mes.
-  const statementsSinResumen = cuentasCreditoAPagar.map(a => {
+  const virtualesAPagar = cuentasCreditoAPagar.flatMap(a => {
     const propios = statementsPorCuenta.get(a.id) || []
     const ultimoReal = propios.length > 0 ? propios[propios.length - 1] : null
     const ultimoCierreAuto = ultimoReal ? cierreDe(ultimoReal) : null
@@ -2450,25 +2479,90 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
-    const compras = transactions.filter(t =>
-      (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) &&
-      t.account_id === a.id && perteneceCicloActual(t, ultimoCierre)
-    )
     // Excedente informativo del último resumen real, si quedó pagado de más: no se
     // arrastra ni se resta de nada, solo se muestra como nota en "Ciclo actual".
     const estadoUltimo = ultimoReal ? estadosStatement.get(ultimoReal.id) : null
     const excedenteArs = estadoUltimo?.excedenteArs || 0
     const excedenteUsd = estadoUltimo?.excedenteUsd || 0
-    if (compras.length === 0 && !cicloDesdeManual && excedenteArs === 0 && excedenteUsd === 0) return null
-    const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
-    const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
-    return {
-      id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
-      total_resumen: total, total_usd: totalUsd, _virtual: true,
-      cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre,
-      _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
+
+    // Un tramo del ciclo: (desde, hasta]. Con `hasta` en null llega hasta hoy (o hasta
+    // fin de mes para las cuotas, ver perteneceCicloActual).
+    const tramo = (desde, hasta, extra) => {
+      const compras = transactions.filter(t =>
+        (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) &&
+        t.account_id === a.id && perteneceCicloActual(t, desde, hasta)
+      )
+      const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      // Un tramo YA CERRADO se paga: los pagos posteriores a su cierre lo achican,
+      // exactamente igual que en calcularEstadoStatement para un resumen real. Sin
+      // esto, pagar la tarjeta antes de cargar el PDF dejaba la deuda entera en pantalla.
+      const pagos = hasta
+        ? transactions.filter(t => t.account_id === a.id && t.tipo === 'neutro' && normFecha(t.fecha) > hasta)
+        : []
+      const pagosArs = pagos.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      const pagosUsd = pagos.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      return {
+        account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
+        total_resumen: Math.max(0, total - pagosArs), total_usd: Math.max(0, totalUsd - pagosUsd),
+        _virtual: true, _comprasCount: compras.length,
+        _pagosPosterioresArs: pagosArs, _pagosPosterioresUsd: pagosUsd,
+        cicloDesde: null, cicloDesdeEfectivo: desde,
+        _excedenteArs: 0, _excedenteUsd: 0,
+        ...extra,
+      }
     }
-  }).filter(Boolean)
+    const tieneAlgo = (s) => s._comprasCount > 0 || s._excedenteArs > 0 || s._excedenteUsd > 0
+
+    // ¿El ciclo que sigue al último resumen cargado ya cerró en el banco? Si cerró y el
+    // PDF todavía no se cargó, esa plata no es "lo que se está acumulando": ya está
+    // facturada y tiene vencimiento. Se parte en dos tramos para no mezclarlas.
+    const ciclo = cicloAbiertoDe(ultimoReal, ultimoCierre)
+    if (!(ciclo && hoyISO > ciclo.cierre)) {
+      const abierto = tramo(ultimoCierre, null, {
+        id: `sin-resumen-${a.id}`,
+        cicloDesde: cicloDesdeManual, _editableDesde: true,
+        _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
+        _cierraEl: ciclo?.cierre || null, _cierreEstimado: ciclo ? ciclo.estimado : true,
+      })
+      // El "Contando desde" manual mantiene viva la tarjeta aunque no haya nada cargado:
+      // es la señal de que el usuario está trackeando ese ciclo a mano.
+      return (tieneAlgo(abierto) || cicloDesdeManual) ? [abierto] : []
+    }
+    const cerrado = tramo(ultimoCierre, ciclo.cierre, {
+      id: `cerrado-sin-pdf-${a.id}`, _cerradoSinPdf: true,
+      cicloDesde: cicloDesdeManual, _editableDesde: true,
+      _cierraEl: ciclo.cierre, _cierreEstimado: ciclo.estimado,
+      fecha_hasta: ciclo.cierre,
+      // Sin fecha del banco no se inventa un vencimiento: la tarjeta queda agrupada con
+      // las que todavía no vencieron, avisando nomás.
+      fecha_vencimiento: ciclo.estimado ? null : ciclo.vencimiento,
+      _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
+    })
+    const abierto = tramo(ciclo.cierre, null, {
+      id: `sin-resumen-${a.id}`,
+      // El cierre del ciclo que sigue a este ya no lo informó nadie: se estima.
+      _cierraEl: addMeses(ciclo.cierre, 1), _cierreEstimado: true,
+    })
+    const visibles = [cerrado, abierto].filter(tieneAlgo)
+    if (visibles.length === 0) return cicloDesdeManual ? [abierto] : []
+    // Si el tramo cerrado no quedó a la vista (nada cargado en esa ventana), el selector
+    // manual tiene que seguir estando en el tramo que sí se muestra.
+    if (!visibles.some(s => s._editableDesde)) {
+      visibles[0]._editableDesde = true
+      visibles[0].cicloDesde = cicloDesdeManual
+    }
+    return visibles
+  })
+  // Lo exigible: los resúmenes reales, más un ciclo que el banco YA CERRÓ en una fecha
+  // que informó ÉL MISMO (proximo_cierre), aunque el PDF todavía no esté cargado — esa
+  // plata ya está facturada y tiene vencimiento, esconderla de "Te falta pagar" es
+  // justamente el bug de mostrar $ 0 cuando se deben millones. Si la fecha de cierre la
+  // estimó la app, no suma: se avisa en "Próximos vencimientos" y nada más. El número
+  // grande no se apoya nunca en una fecha inventada.
+  const esExigible = (s) => !s._virtual || (s._cerradoSinPdf && !s._cierreEstimado)
+  // "Próximos vencimientos" = lo virtual que todavía NO es exigible.
+  const statementsSinResumen = virtualesAPagar.filter(s => !esExigible(s))
   // statementsRealesConUsd (total pendiente ya neteado de pagos, USD incluido) sale
   // directo de calcularStatementsPendientes, arriba — ver ese comentario para el
   // detalle de cómo se calcula el total en pesos/USD y los pagos posteriores.
@@ -2477,7 +2571,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // vencimiento ascendente, y por último las que ni siquiera tienen fecha
   // (el "ciclo actual" en curso, que no es urgente todavía).
   const statementsAPagar = mostrarTabAPagar
-    ? [...statementsSinResumen, ...statementsRealesConUsd]
+    ? [...virtualesAPagar, ...statementsRealesConUsd]
         .sort((a, b) => {
           const diasA = diasRestantesDe(a), diasB = diasRestantesDe(b)
           const grupoDe = (d) => d === null ? 2 : d < 0 ? 0 : 1
@@ -2487,10 +2581,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           return a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
         })
     : []
-  // "Te falta pagar" es únicamente lo YA facturado (resúmenes reales, con
-  // vencimiento real) — un resumen abierto ("Ciclo actual") todavía no venció, no es
-  // deuda exigible este mes: se muestra aparte, en "Próximos vencimientos", y no suma acá.
-  const statementsFacturados = statementsAPagar.filter(s => !s._virtual)
+  // "Te falta pagar" es únicamente lo YA FACTURADO: los resúmenes reales, más un ciclo
+  // que el banco ya cerró en una fecha que informó él mismo aunque falte cargar el PDF
+  // (ver esExigible). Un resumen todavía abierto no venció, no es deuda exigible este
+  // mes: se muestra aparte, en "Próximos vencimientos", y no suma acá.
+  const statementsFacturados = statementsAPagar.filter(esExigible)
   const statementsVencidas = statementsFacturados.filter(s => diasRestantesDe(s) < 0)
   const statementsNoVencidas = statementsFacturados.filter(s => !(diasRestantesDe(s) < 0))
   // Cálculo BOTTOM-UP (regla A): la suma de lo pendiente de cada obligación YA
@@ -2806,14 +2901,28 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 tarjeta, repetida en todas, y competía con el monto que se viene a
                 mirar. Mismo criterio que el resto de las explicaciones de la app. */}
             <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center' }}>
-              <span>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._virtual ? 'Resumen abierto' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</span>
+              <span>{tarjetaExpandida ? '▾' : '▸'} {nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}{s._cerradoSinPdf ? 'Resumen cerrado · falta cargar el PDF' : s._virtual ? 'Resumen abierto' : (s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || ''))}</span>
               {s._virtual && (
                 <span onClick={e => e.stopPropagation()} style={{ display: 'inline-flex' }}>
-                  <InfoTooltip darkMode={darkMode} text="Todavía no facturado: son los gastos que hiciste después del último cierre de esta tarjeta. Se van a incluir en el próximo resumen, así que no suman a lo que te falta pagar hoy." />
+                  <InfoTooltip darkMode={darkMode} text={s._cerradoSinPdf
+                    ? 'Esta tarjeta ya cerró y todavía no cargaste el resumen. El monto sale de los movimientos que tenés cargados de ese ciclo, así que puede diferir un poco del total que informe el banco: subí el PDF y queda exacto.'
+                    : 'Todavía no facturado: son los gastos que hiciste después del último cierre de esta tarjeta. Se van a incluir en el próximo resumen, así que no suman a lo que te falta pagar hoy.'} />
                 </span>
               )}
             </p>
-            {s._virtual && (
+            {/* Cuándo cierra este ciclo. Antes no se decía en ninguna parte: el resumen
+                abierto era un monto que crecía sin que se supiera hasta cuándo. */}
+            {s._virtual && s._cierraEl && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73' }}>
+                {s._cerradoSinPdf ? 'Cerró el' : 'Cierra el'} {formatFechaCorta(s._cierraEl)}
+                {s._cierreEstimado ? ' (estimado)' : ''}
+                {s._cerradoSinPdf && s.fecha_vencimiento ? ` · vence el ${formatFechaCorta(s.fecha_vencimiento)}` : ''}
+              </p>
+            )}
+            {/* El "Contando desde" manual acota el ciclo entero de la cuenta, así que va
+                en el primer tramo y uno solo: con la tarjeta partida en dos, repetir el
+                selector daba a entender que se puede mover cada tramo por separado. */}
+            {s._virtual && s._editableDesde && (
               <>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Contando desde
@@ -3013,7 +3122,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsFacturados.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
-                  const label = `${nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}${s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}`
+                  // El ciclo ya cerrado sin PDF cargado se marca como tal: su monto sale
+                  // de los movimientos, no del total que informó el banco.
+                  const label = `${nombreCuenta ? `💳 ${nombreCuenta} · ` : ''}${s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')}${s._cerradoSinPdf ? ' · falta el PDF' : ''}`
                   const saldada = Math.round(s.total_resumen) <= 0 && Math.round(s.total_usd * 100) <= 0
                   return (
                     <div key={s.id} style={{ padding: '5px 0' }}>
