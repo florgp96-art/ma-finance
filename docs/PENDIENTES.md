@@ -188,11 +188,20 @@ exactamente el mismo mes y coincide el nombre. Exporta `cuotasParaCrear` (las qu
 crear), `cuotasFuturasCargadas` (las que todavía se deben) y `addMeses`.
 
 **Una cuota es una unidad MENSUAL, y todos los cortes van por mes.** El día que lleva una
-cuota es el de la compra original arrastrado mes a mes por `addMeses`, no una fecha de
-facturación ni de vencimiento: compararlo contra hoy no significa nada. El mes en curso
-es deuda de este ciclo y se ve en "A pagar"; el widget de cuotas arranca en el mes
-siguiente. Sin huecos ni solapamiento. Si te tienta comparar `fecha` con `hoyISO` en algo
-que tenga `cuotas_total > 1`, casi seguro está mal.
+cuota es el de la compra original arrastrado mes a mes por `addMeses`: es una etiqueta de
+mes, no una fecha real de nada. **Nunca compares el día de una cuota contra nada** — ni
+contra hoy, ni contra el cierre de la tarjeta. Una compra de julio en tres cuotas se paga
+en julio, agosto y septiembre, y que la tarjeta cierre el 9 o el 20 no corre ninguna de
+esas cuotas al mes siguiente: la cuota de agosto la factura el resumen de agosto.
+
+La regla vive en **`cuotaEnCiclo` (`src/lib/cuotas.js`)** y la usan los dos lugares que
+ubican una cuota en un ciclo: `perteneceCicloActual` y `perteneceAlCierre`
+(reconciliarSueltas). Si necesitás la regla en un tercer lado, llamá a esa función; no la
+vuelvas a escribir. De ahí sale la convención de toda la app: **el mes de una cuota es el
+mes de CIERRE del resumen que la factura.**
+
+El mes en curso es deuda de este ciclo y se ve en "A pagar"; el widget de cuotas arranca
+en el mes siguiente. Sin huecos ni solapamiento.
 
 **Y si un resumen cargado facturó la cuota, decide ese resumen, no la fecha.** Pendiente
 si el resumen debe, no pendiente si ya se pagó. El saldo se mira **por moneda**: un

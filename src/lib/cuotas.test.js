@@ -1,4 +1,4 @@
-import { cuotasFuturasCargadas } from './cuotas'
+import { cuotasFuturasCargadas, cuotaEnCiclo } from './cuotas'
 
 // Las reglas de "qué cuota todavía se debe" ya se rompieron varias veces al tocar
 // otra cosa. Se fijan acá para que un cambio futuro tenga que romper un test.
@@ -33,6 +33,45 @@ describe('cuotasFuturasCargadas — el corte es por mes, no por día', () => {
   test('alquiler y expensas nunca cuentan como cuota', () => {
     const txs = [cuota({ id: 'alq', fecha: '2026-09-05', subcategories: { nombre: 'Alquiler' } })]
     expect(cuotasFuturasCargadas(txs, HOY, new Map())).toEqual([])
+  })
+})
+
+describe('cuotaEnCiclo — el día de cierre no mueve una cuota de mes', () => {
+  // Compra de julio en 3 cuotas: julio, agosto y septiembre. La cuota de agosto la
+  // factura el resumen de agosto, cierre la tarjeta el 9 o el 20.
+  const cuotaAgosto = { fecha: '2026-08-28' }
+
+  test('la cuota de agosto entra en el ciclo que cierra en agosto, cierre el 9', () => {
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-07-09', '2026-08-09')).toBe(true)
+  })
+
+  test('...y también si esa tarjeta cierra el 20', () => {
+    // Con comparación por día, el 28 caía después del 20 y se iba al ciclo siguiente.
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-07-20', '2026-08-20')).toBe(true)
+  })
+
+  test('...y también si cierra el 1, antes que cualquier día de compra', () => {
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-07-01', '2026-08-01')).toBe(true)
+  })
+
+  test('no entra en el ciclo que cierra en septiembre', () => {
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-08-09', '2026-09-09')).toBe(false)
+  })
+
+  test('no entra en el ciclo que cierra en julio, ni con el día a favor', () => {
+    expect(cuotaEnCiclo({ fecha: '2026-07-02' }, '2026-06-09', '2026-07-09')).toBe(true)
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-06-09', '2026-07-09')).toBe(false)
+  })
+
+  test('ciclo abierto: cuenta hasta el mes del tope, sin mirar el día', () => {
+    // hasta = hoy (3 de agosto): la cuota del 28 de agosto igual cuenta, es de este mes.
+    expect(cuotaEnCiclo(cuotaAgosto, '2026-07-09', '2026-08-03')).toBe(true)
+    // La de septiembre no: es de un mes que no llegó.
+    expect(cuotaEnCiclo({ fecha: '2026-09-28' }, '2026-07-09', '2026-08-03')).toBe(false)
+  })
+
+  test('un hueco largo sin resúmenes no hace desaparecer las cuotas del medio', () => {
+    expect(cuotaEnCiclo({ fecha: '2026-07-28' }, '2026-06-09', '2026-08-03')).toBe(true)
   })
 })
 
