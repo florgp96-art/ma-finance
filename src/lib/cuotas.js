@@ -316,6 +316,16 @@ export function cuotasParaCrear(transactions, hoy = new Date()) {
   return aCrear
 }
 
+// ¿Este resumen todavía debe algo EN LA MONEDA de la cuota? Un resumen puede estar
+// pagado en pesos y seguir debiendo dólares (caso real: Visa con $ 0 y U$S 3,03
+// pendientes). Mirando solo "¿el resumen debe algo?" las cuotas en pesos de esa
+// tarjeta seguían figurando como pendientes por culpa de tres dólares.
+// EUR no tiene bucket propio, igual que en calcularEstadoStatement: va con los pesos.
+const resumenDebeEnMoneda = (saldo, moneda) => {
+  if (!saldo) return false
+  return moneda === 'USD' ? Math.round(saldo.usd * 100) > 0 : Math.round(saldo.ars) > 0
+}
+
 // Las cuotas que TODAVÍA SE DEBEN, ya cargadas como movimiento. Esto es lo que
 // muestran las vistas de cuotas: se lee la base, no se calcula nada.
 //
@@ -323,26 +333,39 @@ export function cuotasParaCrear(transactions, hoy = new Date()) {
 //
 //   a) La facturó un resumen que TODAVÍA SE DEBE (los que muestra "A pagar"). Vale
 //      aunque su fecha ya haya pasado: si el resumen no está pagado, esa cuota es
-//      plata que hay que poner.
-//   b) Ningún resumen la facturó todavía y su fecha no pasó. Son las que la app crea
-//      al importar, con fecha de meses que no llegaron.
+//      plata que hay que poner. Y al revés: si ese resumen YA SE PAGÓ, la cuota deja
+//      de ser pendiente en el acto, sin importar qué día lleve encima. Antes acá se
+//      caía a la regla de fecha, así que una cuota de agosto facturada en un resumen
+//      de agosto ya pagado seguía apareciendo como pendiente hasta que llegara su día.
+//   b) Ningún resumen cargado la facturó, y cae en un MES POSTERIOR al actual.
 //
-// `statementsPendientes` es el Set de ids de resúmenes con saldo pendiente, calculado
-// con calcularStatementsPendientes — la misma función que usan "A pagar" y el widget
-// de Vencimientos, así que las cuatro vistas no pueden discrepar sobre qué se debe.
+// El corte es por MES y no por día a propósito. Una cuota es una unidad mensual: el
+// día que lleva es el de la compra original arrastrado mes a mes (ver addMeses), no
+// una fecha de facturación ni de vencimiento. Comparándolo contra hoy, las cuotas del
+// mes en curso se iban del widget de a una por día según qué día habías comprado —
+// dos cuotas del mismo mes tratadas distinto por un número que no significa nada.
+// Las del mes actual ya son deuda de este ciclo: se ven en "A pagar", no acá.
+//
+// `saldoPorResumen` es el Map id → { ars, usd } de lo que todavía se debe de cada
+// resumen, calculado con calcularStatementsPendientes — la misma función que usan
+// "A pagar" y el widget de Vencimientos, así que las cuatro vistas no pueden
+// discrepar sobre qué se debe.
 //
 // La lista es de PENDIENTES y no de pagados a propósito. Con el criterio inverso
 // ("mostrar todo lo que no esté marcado como pagado") aparecía el historial completo:
 // los resúmenes viejos no tienen los pagos cargados, así que ninguno figura como
 // pagado y el widget listaba cuotas de enero, febrero y marzo. Partiendo de los
-// pendientes, lo viejo no puede colarse: si no está en esa lista, decide la fecha.
-export function cuotasFuturasCargadas(transactions, hoy = new Date(), statementsPendientes = null) {
-  const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+// pendientes, lo viejo no puede colarse: si no está en ese Map, ya se saldó.
+export function cuotasFuturasCargadas(transactions, hoy = new Date(), saldoPorResumen = null) {
+  const mesActual = mesDe(hoy)
   return (transactions || []).filter(t => {
     if (t.tipo !== 'gasto' || (t.cuotas_total || 1) <= 1 || (t.cuota_numero || 0) <= 0) return false
     if (!t.fecha || esAlquilerOExpensas(t)) return false
-    if (t.statement_id && statementsPendientes?.has(t.statement_id)) return true
-    return t.fecha.slice(0, 10) >= hoyISO
+    // Si un resumen cargado la facturó, decide el resumen y no se mira la fecha.
+    if (t.statement_id && saldoPorResumen) {
+      return resumenDebeEnMoneda(saldoPorResumen.get(t.statement_id), t.moneda)
+    }
+    return t.fecha.slice(0, 7) > mesActual
   })
 }
 

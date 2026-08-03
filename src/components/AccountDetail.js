@@ -2412,18 +2412,30 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // nuevas (nunca pagos/reintegros, que ya se atribuyeron a saldar el statement anterior
   // en calcularEstadoStatement y no vuelven a contarse acá).
   //
-  // Las cuotas tenían una excepción: se comparaban por mes contra el mes del corte, sin
-  // el tope de hoy ni el del cierre. Tenía sentido cuando la fecha de una cuota era una
-  // estimación que podía caer del lado equivocado del corte real de la tarjeta. Ahora que
-  // las cuotas futuras se crean como movimientos reales (ver cuotasParaCrear), esa
-  // excepción hacía entrar al ciclo abierto cuotas de meses que todavía no llegaron —
-  // y peor, cuotas ya facturadas en el resumen cerrado del mismo mes, que quedaban
-  // contadas dos veces: una en el resumen a pagar y otra en el resumen abierto de la
-  // misma tarjeta. Se compara por fecha, igual que todo lo demás.
-  const perteneceCicloActual = (t, ultimoCierre, mesCorte) => {
+  // Las cuotas se topean por MES y el resto de los movimientos por día.
+  //
+  // Una cuota es una unidad mensual: el día que lleva es el de la compra original
+  // arrastrado mes a mes (ver addMeses en lib/cuotas.js), no una fecha de facturación
+  // ni de vencimiento. Con el tope en hoy, las cuotas del mes en curso aparecían en
+  // "A pagar" de a una por día según qué día habías comprado — la cuota de una compra
+  // del 2 estaba desde el día 2 y la de una del 28 recién el 28, aunque el banco las
+  // factura a las dos en el mismo ciclo. Arrancado el mes, están todas.
+  //
+  // Esa excepción por mes ya había existido y se sacó porque metía al ciclo abierto
+  // cuotas ya facturadas en el resumen cerrado del mismo mes, contadas dos veces. No
+  // puede volver a pasar: una cuota que un resumen cargado ya facturó queda afuera de
+  // acá por statement_id (ver itemsPorStatement, y reconciliarSueltas, que liga cada
+  // cuota al resumen cuyo cierre cae en su mismo mes). El tope de hoy nunca fue lo que
+  // protegía de eso — solo escondía el mes en curso.
+  //
+  // Para todo lo demás el tope sigue siendo hoy: un gasto suelto con fecha futura es
+  // un dato anómalo (la auditoría semanal lo reporta como tal), no algo para sumar.
+  const perteneceCicloActual = (t, ultimoCierre) => {
     if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
     const fecha = normFecha(t.fecha)
-    return (!ultimoCierre || fecha > ultimoCierre) && fecha <= hoyISO
+    if (ultimoCierre && fecha <= ultimoCierre) return false
+    if ((t.cuotas_total || 1) > 1) return fecha.slice(0, 7) <= mesActual
+    return fecha <= hoyISO
   }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
@@ -2438,10 +2450,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
-    const mesCorte = ultimoCierre ? ultimoCierre.slice(0, 7) : null
     const compras = transactions.filter(t =>
       (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) &&
-      t.account_id === a.id && perteneceCicloActual(t, ultimoCierre, mesCorte)
+      t.account_id === a.id && perteneceCicloActual(t, ultimoCierre)
     )
     // Excedente informativo del último resumen real, si quedó pagado de más: no se
     // arrastra ni se resta de nada, solo se muestra como nota en "Ciclo actual".
@@ -2454,7 +2465,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return {
       id: `sin-resumen-${a.id}`, account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
       total_resumen: total, total_usd: totalUsd, _virtual: true,
-      cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre, mesCorte,
+      cicloDesde: cicloDesdeManual, cicloDesdeEfectivo: ultimoCierre,
       _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
     }
   }).filter(Boolean)
@@ -2495,7 +2506,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalProximoResumenUsd = statementsSinResumen.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
     const items = transactions.filter(t => s._virtual
-      ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo, s.mesCorte))
+      ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo))
       : (t.statement_id === s.id && t.tipo !== 'neutro'))
     return [...items].sort((a, b) => {
       let valA, valB
