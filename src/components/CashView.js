@@ -190,20 +190,21 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       pagosPorCuenta.set(p.account_id, list)
     })
 
-    // Cuotas comprometidas a futuro: las cuotas YA CARGADAS como movimiento con
-    // fecha de este mes en adelante. Se lee la base, no se proyecta nada — es la
-    // misma función que usa el widget "Cuotas pendientes" del Dashboard, así que
-    // los dos números y la tabla de movimientos no pueden discrepar. Las cuotas
-    // que faltan del plan se crean como movimientos al importar el resumen.
-    // Mismo criterio que el widget del Dashboard: cuenta la cuota que facturó un
-    // resumen todavía impago, más la que ningún resumen facturó y cuya fecha no pasó.
-    // La lista de pendientes sale de calcularStatementsPendientes, la misma función
-    // que usa "A pagar".
-    const pendientes = new Set(
+    // Cuotas comprometidas a futuro: las cuotas YA CARGADAS como movimiento de los
+    // meses que VIENEN (el mes en curso ya es deuda de este ciclo y se ve en "A
+    // pagar"). Se lee la base, no se proyecta nada — es la misma función que usa el
+    // widget "Cuotas pendientes" del Dashboard, así que los dos números y la tabla de
+    // movimientos no pueden discrepar. Las cuotas que faltan del plan se crean como
+    // movimientos al importar el resumen.
+    // Mismo criterio que el widget del Dashboard: si un resumen cargado la facturó,
+    // decide ese resumen (si ya se pagó, la cuota deja de ser pendiente); si no la
+    // facturó ninguno, decide el mes. El saldo por resumen sale de
+    // calcularStatementsPendientes, la misma función que usa "A pagar".
+    const saldoPorResumen = new Map(
       calcularStatementsPendientes({ accounts, statements, transactions })
-        .statementsRealesConUsd.map(s => s.id)
+        .statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
     )
-    const futuras = cuotasFuturasCargadas(transactions, new Date(), pendientes)
+    const futuras = cuotasFuturasCargadas(transactions, new Date(), saldoPorResumen)
     const cuotas = {
       total: futuras.reduce((s, tx) => s + aArs(tx), 0),
       compras: futuras.length,
@@ -391,7 +392,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             Cuotas comprometidas a futuro
             <InfoTooltip
               darkMode={darkMode}
-              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} de tus movimientos que todavía se deben: una deja de contar cuando pagás el resumen que la facturó. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
+              text={`Suma de ${cuotas.compras} cuota${cuotas.compras === 1 ? '' : 's'} de tus movimientos de los meses que vienen. Las del mes en curso no cuentan acá: ya son deuda de este ciclo y se ven en "A pagar". Una cuota también deja de contar apenas pagás el resumen que la facturó. Es lo mismo que muestra el widget "Cuotas pendientes" y lo mismo que ves en la tabla de movimientos.`}
             />
           </p>
           <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: txt }}>$ {formatMonto(cuotas.total)}</p>

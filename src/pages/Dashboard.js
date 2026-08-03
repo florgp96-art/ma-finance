@@ -2753,10 +2753,13 @@ export default function Dashboard() {
   // (statementsRealesConUsd = el último de cada tarjeta con saldo > 0). Sale de
   // calcularStatementsPendientes, la misma función que usan esa pestaña y el widget
   // de Vencimientos, para que las cuatro vistas no puedan discrepar sobre qué se debe.
-  const statementsPendientes = useMemo(() => new Set(
+  // Se guarda el saldo POR MONEDA y no solo el id: un resumen puede estar pagado en
+  // pesos y seguir debiendo dólares, y las cuotas en pesos de esa tarjeta ya no son
+  // pendientes aunque el resumen no esté saldado del todo.
+  const saldoPorResumen = useMemo(() => new Map(
     calcularStatementsPendientes({
       accounts, statements: dashboardStatements, transactions: accountTransactions,
-    }).statementsRealesConUsd.map(s => s.id)
+    }).statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
   ), [accounts, dashboardStatements, accountTransactions])
 
   const cuotasPendientesMemo = useMemo(() => {
@@ -2766,7 +2769,7 @@ export default function Dashboard() {
     // tabla de movimientos nunca cerraban, y no había forma de saber cuál de los
     // dos estaba bien. Las cuotas que faltan ahora se CREAN como movimientos
     // (ver crearCuotasFaltantes) y de ahí las lee este widget.
-    const futuras = cuotasFuturasCargadas(accountTransactions, new Date(), statementsPendientes)
+    const futuras = cuotasFuturasCargadas(accountTransactions, new Date(), saldoPorResumen)
     if (futuras.length === 0) return { periodos: [], mesesOcultos: 0, totalFuturo: 0 }
 
     const tc = parseFloat(tipoCambio) || 0
@@ -2798,7 +2801,7 @@ export default function Dashboard() {
       mesesOcultos: Math.max(0, todos.length - 6),
       totalFuturo: todos.reduce((s, [, d]) => s + d.total_ars, 0),
     }
-  }, [accountTransactions, tipoCambio, tipoCambioEUR, statementsPendientes])
+  }, [accountTransactions, tipoCambio, tipoCambioEUR, saldoPorResumen])
 
   // Evolución por categoría (sidebar): opciones de categoría/subcategoría/hijo
   // (gasto) o tag (ingreso) con datos + serie de 6 meses de CADA selección activa —
@@ -3062,7 +3065,7 @@ export default function Dashboard() {
                 <div style={{ ...styles.savingsPanel }}>
                   <h3 style={{ ...styles.savingsPanelTitle, display: 'flex', alignItems: 'center' }}>
                     Cuotas pendientes
-                    <InfoTooltip darkMode={darkMode} text="Las cuotas que todavía se deben, tomadas de tus movimientos. Es la misma información que ves en la tabla, no una estimación aparte: cuando importás un resumen, las cuotas que faltan del plan se crean solas como movimientos. Una cuota desaparece de acá cuando pagás el resumen que la facturó, no cuando pasa su fecha." />
+                    <InfoTooltip darkMode={darkMode} text="Las cuotas de los meses que vienen, tomadas de tus movimientos. Las del mes en curso no están acá: ya son deuda de este ciclo y las ves en 'A pagar'. Es la misma información que la tabla, no una estimación aparte: cuando importás un resumen, las cuotas que faltan del plan se crean solas como movimientos. Y si el resumen que facturó una cuota ya está pagado, esa cuota desaparece en el acto." />
                   </h3>
                   {periods.map(([period, data], pi) => {
                     const expandido = cuotasPendientesExpandido === period
