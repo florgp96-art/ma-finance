@@ -38,10 +38,22 @@ IA ya las lee y el guardado vive en `handleGuardar` de `src/pages/Dashboard.js`.
 columnas el insert se reintenta sin ellas y no falla nada.
 
 Ya no es solo "se pierde un dato opcional": desde el corte de ciclo (#285) esta fecha es
-**lo que decide si un resumen que ya cerró suma a "Te falta pagar"**. Sin ella la app
-estima el cierre corriendo un mes, y una fecha estimada avisa pero nunca suma — así que
-mientras la migración no esté, una tarjeta que ya cortó sigue sin entrar en el número
-grande. Ver `cicloAbiertoDe` en `src/components/AccountDetail.js`.
+**lo único con lo que la app puede saber que un ciclo cerró**. Sin ella no parte el ciclo
+ni suma nada a "Te falta pagar" — se limita a avisar con una estimación. Ver
+`cicloAbiertoDe` en `src/components/AccountDetail.js`.
+
+**Los ciclos de tarjeta NO son mensuales, y por eso no se pueden estimar.** Fechas reales
+de los resúmenes de julio de 2026:
+
+| Tarjeta | Cierre anterior | Cierre actual | Próximo cierre | Próximo vencimiento |
+| --- | --- | --- | --- | --- |
+| Visa Galicia | 18-Jun | 16-Jul | 13-Ago | 21-Ago |
+| Mastercard Galicia | 11-Jun | 08-Jul | **27-Ago** | 04-Sep |
+| Mercado Pago | — | ~21-Jul | 18-Ago | 24-Ago |
+
+La Mastercard va 27 días de un ciclo y **50 del siguiente**. Estimar "un mes" le erra por
+19 días: la app habría dado ese ciclo por cerrado el 8 de agosto y mostrado un resumen que
+no existe. De ahí la regla: **con fecha estimada se avisa, nunca se afirma que cerró.**
 
 Para chequear si ya está corrida:
 

@@ -2516,8 +2516,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // ¿El ciclo que sigue al último resumen cargado ya cerró en el banco? Si cerró y el
     // PDF todavía no se cargó, esa plata no es "lo que se está acumulando": ya está
     // facturada y tiene vencimiento. Se parte en dos tramos para no mezclarlas.
+    //
+    // SOLO se parte con la fecha que informó el banco. Estimar "un mes después del
+    // último cierre" no alcanza para afirmar que un ciclo cerró, porque los ciclos
+    // reales no son mensuales: en la Mastercard Galicia, 11-Jun → 08-Jul → 27-Ago, o
+    // sea un ciclo de 27 días y otro de 50. Partiendo por la estimación, esa tarjeta
+    // habría dado el ciclo por cerrado el 8 de agosto, 19 días antes de que cerrara de
+    // verdad, mostrando un resumen que no existe. Con fecha estimada se avisa y nada más.
     const ciclo = cicloAbiertoDe(ultimoReal, ultimoCierre)
-    if (!(ciclo && hoyISO > ciclo.cierre)) {
+    if (!(ciclo && !ciclo.estimado && hoyISO > ciclo.cierre)) {
       const abierto = tramo(ultimoCierre, null, {
         id: `sin-resumen-${a.id}`,
         cicloDesde: cicloDesdeManual, _editableDesde: true,
@@ -2556,9 +2563,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // Lo exigible: los resúmenes reales, más un ciclo que el banco YA CERRÓ en una fecha
   // que informó ÉL MISMO (proximo_cierre), aunque el PDF todavía no esté cargado — esa
   // plata ya está facturada y tiene vencimiento, esconderla de "Te falta pagar" es
-  // justamente el bug de mostrar $ 0 cuando se deben millones. Si la fecha de cierre la
-  // estimó la app, no suma: se avisa en "Próximos vencimientos" y nada más. El número
-  // grande no se apoya nunca en una fecha inventada.
+  // justamente el bug de mostrar $ 0 cuando se deben millones. Un ciclo con fecha de
+  // cierre estimada nunca llega hasta acá (no se parte, ver virtualesAPagar): el número
+  // grande no se apoya jamás en una fecha que calculó la app.
   const esExigible = (s) => !s._virtual || (s._cerradoSinPdf && !s._cierreEstimado)
   // "Próximos vencimientos" = lo virtual que todavía NO es exigible.
   const statementsSinResumen = virtualesAPagar.filter(s => !esExigible(s))
@@ -2910,12 +2917,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               )}
             </p>
             {/* Cuándo cierra este ciclo. Antes no se decía en ninguna parte: el resumen
-                abierto era un monto que crecía sin que se supiera hasta cuándo. */}
+                abierto era un monto que crecía sin que se supiera hasta cuándo.
+                Con fecha estimada nunca se afirma que cerró ni se da una fecha como
+                cierta — los ciclos reales no son mensuales y la estimación puede errarle
+                por semanas (ver el comentario en virtualesAPagar). Se avisa y se pide el
+                resumen, que es lo único accionable. */}
             {s._virtual && s._cierraEl && (
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73' }}>
-                {s._cerradoSinPdf ? 'Cerró el' : 'Cierra el'} {formatFechaCorta(s._cierraEl)}
-                {s._cierreEstimado ? ' (estimado)' : ''}
-                {s._cerradoSinPdf && s.fecha_vencimiento ? ` · vence el ${formatFechaCorta(s.fecha_vencimiento)}` : ''}
+                {s._cerradoSinPdf
+                  ? `Cerró el ${formatFechaCorta(s._cierraEl)}${s.fecha_vencimiento ? ` · vence el ${formatFechaCorta(s.fecha_vencimiento)}` : ''}`
+                  : !s._cierreEstimado
+                    ? `Cierra el ${formatFechaCorta(s._cierraEl)}`
+                    : s._cierraEl < hoyISO
+                      ? 'Ya tendría que haber cerrado · cargá el resumen para saber la fecha exacta'
+                      : `Cierra alrededor del ${formatFechaCorta(s._cierraEl)} (estimado)`}
               </p>
             )}
             {/* El "Contando desde" manual acota el ciclo entero de la cuenta, así que va
