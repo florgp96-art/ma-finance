@@ -627,7 +627,24 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   cuentasCreditoAPagar.forEach(a => {
     const propios = statementsPorCuenta.get(a.id) || []
     propios.forEach((s, i) => {
-      const cierreSiguiente = i < propios.length - 1 ? cierreDe(propios[i + 1]) : null
+      // La ventana de pagos de un resumen termina donde empieza el siguiente. Para el
+      // ÚLTIMO resumen cargado no hay uno siguiente, pero sí puede haber un cierre
+      // conocido (cargado a mano, o informado por el propio resumen): un pago hecho
+      // después de ESE cierre ya paga el ciclo nuevo, no este.
+      //
+      // Sin ese tope la ventana quedaba abierta para siempre y el último resumen se
+      // quedaba con todos los pagos posteriores. Con el ciclo partido en dos, eso
+      // contaba el mismo pago dos veces: como "sobrepago" del resumen viejo y como pago
+      // del ciclo ya cerrado. Caso real: un pago parcial de $ 1.500.000 hecho en agosto
+      // para bajar el ciclo que cerró el 30 de julio aparecía además como "Sobrepago del
+      // resumen anterior: $ 1.500.000", cuando no había sobrado nada.
+      //
+      // Solo con fecha real: una estimación no alcanza para decidir a qué ciclo se
+      // imputa un pago, igual que no alcanza para dar un ciclo por cerrado.
+      const ciclo = i === propios.length - 1 ? cicloAbiertoDe(s, cierreDe(s), a) : null
+      const cierreSiguiente = i < propios.length - 1
+        ? cierreDe(propios[i + 1])
+        : (ciclo && ciclo.origen !== 'estimado' ? ciclo.cierre : null)
       estadosStatement.set(s.id, calcularEstadoStatement(s, cierreSiguiente))
     })
   })
@@ -3016,6 +3033,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   {!s.cicloDesde && '(auto)'}
                 </p>
               </>
+            )}
+            {/* El tramo abierto de una tarjeta partida en dos no tiene selector propio
+                (el "Contando desde" acota el ciclo entero, ver _editableDesde), pero sí
+                tiene que decir desde cuándo cuenta: sin eso las dos tarjetas de la misma
+                cuenta se leen como la misma cosa repetida en vez de como dos períodos
+                consecutivos. */}
+            {s._virtual && !s._editableDesde && s.cicloDesdeEfectivo && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
+                Contando desde el {formatFechaCorta(restarDiasISO(s.cicloDesdeEfectivo, -1))}
+              </p>
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
