@@ -203,6 +203,13 @@ Con un signup nuevo de verdad, verificar de punta a punta que llega el mail a
 
 ## 4. Lo que hay que saber antes de tocar código
 
+**Lo que cierra la ventana de pagos de un resumen no es una fecha, es llegar al total.**
+Un resumen se paga hasta cubrir lo que informó el banco; un peso pagado por encima de ese
+total ya no es de él, está pagando el ciclo siguiente. Eso baja en cascada por los ciclos
+que vienen (`repartirPagos` en `AccountDetail.js`), y recién lo que sobra después de
+cubrirlos a todos es plata a favor. Si en algún lado te tienta restar "todos los pagos
+posteriores a tal fecha", casi seguro estás contando el mismo pago dos veces.
+
 **El patrón que ya rompió seis veces: la misma regla escrita en dos lugares, una
 actualizada y la otra no.** Casos vividos: matcheo de alias en Excel vs PDF, proyección de
 cuotas en CashView vs Dashboard, detección de duplicados, corrección de fechas de cuotas,

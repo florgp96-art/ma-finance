@@ -542,6 +542,30 @@ export const cicloAbiertoDe = (ultimoReal, ultimoCierre, manual = null) => {
   return { cierre: addMeses(ultimoCierre, 1), vencimiento: null, origen: 'estimado' }
 }
 
+// CASCADA DE PAGOS. Reparte plata ya pagada entre obligaciones consecutivas, en orden:
+// cada una se queda solo con lo que necesita para cubrirse y le pasa el resto a la que
+// sigue. Lo que sobra al final es plata a favor de verdad.
+//
+// Es la regla que decide hasta dónde llega un pago: lo que corta la ventana de pagos de
+// un resumen no es una fecha, es llegar al total que informó el banco. Un peso pagado
+// por encima de ese total ya no es de ese resumen — está pagando el ciclo siguiente.
+//
+// Sin esto, el último resumen cargado se quedaba con todos los pagos posteriores para
+// siempre (su ventana no tenía tope) y además cada ciclo se restaba por su cuenta los
+// pagos posteriores a su cierre: el mismo pago contado dos veces. Caso real: un pago
+// parcial de $ 1.500.000 hecho en agosto para bajar el ciclo que cerró el 30 de julio
+// se restaba de ese ciclo y ADEMÁS figuraba como "Sobrepago del resumen anterior:
+// $ 1.500.000", cuando no había sobrado nada.
+export const repartirPagos = (disponible, totales) => {
+  let restante = Math.max(0, disponible || 0)
+  const aplicados = totales.map(total => {
+    const aplicado = Math.min(restante, Math.max(0, total || 0))
+    restante -= aplicado
+    return aplicado
+  })
+  return { aplicados, restante }
+}
+
 // Cuántos días faltan (negativo = ya venció) para el vencimiento de un
 // resumen. null si no tiene fecha de vencimiento (ej. "Ciclo actual").
 export const diasRestantesDe = (s) => {
@@ -613,8 +637,12 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     // total_dolares = -20,65 (saldo a favor en dólares, algo común cuando el mes
     // anterior se pagó de más o hubo un reintegro) mostraba "Sobrepago del resumen
     // anterior: U$S 20,65" aunque no se hubiera hecho ningún pago: el excedente
-    // salía de la resta 0 − (−20,65). Solo se habla de sobrepago cuando había una
-    // deuda real y los pagos la superaron.
+    // salía de la resta 0 − (−20,65). Solo hay plata sobrante cuando había una deuda
+    // real y los pagos la superaron.
+    //
+    // `excedente` es la plata pagada POR ENCIMA del total que informó el banco. No es
+    // un sobrepago: es lo que ya está pagando el ciclo siguiente. Quien lo consume
+    // (virtualesAPagar) lo baja en cascada por los ciclos que vienen después.
     return {
       pendienteArs: Math.max(0, pendienteArsSinClamp),
       excedenteArs: totalArs > 0 ? Math.max(0, -pendienteArsSinClamp) : 0,
@@ -627,24 +655,13 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   cuentasCreditoAPagar.forEach(a => {
     const propios = statementsPorCuenta.get(a.id) || []
     propios.forEach((s, i) => {
-      // La ventana de pagos de un resumen termina donde empieza el siguiente. Para el
-      // ÚLTIMO resumen cargado no hay uno siguiente, pero sí puede haber un cierre
-      // conocido (cargado a mano, o informado por el propio resumen): un pago hecho
-      // después de ESE cierre ya paga el ciclo nuevo, no este.
-      //
-      // Sin ese tope la ventana quedaba abierta para siempre y el último resumen se
-      // quedaba con todos los pagos posteriores. Con el ciclo partido en dos, eso
-      // contaba el mismo pago dos veces: como "sobrepago" del resumen viejo y como pago
-      // del ciclo ya cerrado. Caso real: un pago parcial de $ 1.500.000 hecho en agosto
-      // para bajar el ciclo que cerró el 30 de julio aparecía además como "Sobrepago del
-      // resumen anterior: $ 1.500.000", cuando no había sobrado nada.
-      //
-      // Solo con fecha real: una estimación no alcanza para decidir a qué ciclo se
-      // imputa un pago, igual que no alcanza para dar un ciclo por cerrado.
-      const ciclo = i === propios.length - 1 ? cicloAbiertoDe(s, cierreDe(s), a) : null
-      const cierreSiguiente = i < propios.length - 1
-        ? cierreDe(propios[i + 1])
-        : (ciclo && ciclo.origen !== 'estimado' ? ciclo.cierre : null)
+      // Lo que corta la ventana de pagos de un resumen NO es una fecha: es llegar al
+      // total que informó el banco. Un resumen se paga hasta cubrirlo, y la plata que se
+      // pagó por encima de ese total ya no es de él — está pagando lo que sigue (ver
+      // excedente, que baja en cascada a los ciclos siguientes en virtualesAPagar).
+      // Por eso el último resumen no necesita un tope de fecha: nunca se puede quedar
+      // con más plata de la que decía su PDF.
+      const cierreSiguiente = i < propios.length - 1 ? cierreDe(propios[i + 1]) : null
       estadosStatement.set(s.id, calcularEstadoStatement(s, cierreSiguiente))
     })
   })
@@ -2536,11 +2553,30 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // Se usa el corte más reciente entre el detectado (último resumen cargado) y el
     // manual (por si el auto no aplica, ej. cuenta que carga casi todo por Excel).
     const ultimoCierre = [ultimoCierreAuto, cicloDesdeManual].filter(Boolean).sort().pop() || null
-    // Excedente informativo del último resumen real, si quedó pagado de más: no se
-    // arrastra ni se resta de nada, solo se muestra como nota en "Ciclo actual".
+    // CASCADA DE PAGOS. Un resumen se paga hasta cubrir el total que informó el banco;
+    // lo que se pagó por encima de ese total no es un sobrepago, es plata que ya está
+    // pagando el ciclo siguiente. Ese sobrante baja de un ciclo al que le sigue, en
+    // orden, y cada uno se queda solo con lo que necesita para cubrirse.
+    //
+    // Antes cada tramo se restaba por su cuenta TODOS los pagos posteriores a su cierre.
+    // Como el último resumen real también se los quedaba (su ventana no tenía tope), el
+    // mismo pago se contaba dos veces: caso real, un pago parcial de $ 1.500.000 hecho
+    // en agosto para bajar el ciclo que cerró el 30 de julio se restaba del ciclo
+    // cerrado y ADEMÁS figuraba como "Sobrepago del resumen anterior: $ 1.500.000".
+    //
+    // El sobrante baja por los tramos en orden: primero el ciclo ya cerrado, después el
+    // que sigue abierto (ver aplicarCascada).
     const estadoUltimo = ultimoReal ? estadosStatement.get(ultimoReal.id) : null
-    const excedenteArs = estadoUltimo?.excedenteArs || 0
-    const excedenteUsd = estadoUltimo?.excedenteUsd || 0
+    let sobranteArs = estadoUltimo?.excedenteArs || 0
+    let sobranteUsd = estadoUltimo?.excedenteUsd || 0
+    // Sin ningún resumen real cargado no hay de dónde sacar un sobrante, pero los pagos
+    // sueltos posteriores al corte igual pagan lo que se viene acumulando.
+    if (!ultimoReal) {
+      const pagos = transactions.filter(t => t.account_id === a.id && t.tipo === 'neutro' &&
+        (!ultimoCierre || normFecha(t.fecha) > ultimoCierre))
+      sobranteArs = pagos.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      sobranteUsd = pagos.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+    }
 
     // Un tramo del ciclo: (desde, hasta]. Con `hasta` en null llega hasta hoy (o hasta
     // fin de mes para las cuotas, ver perteneceCicloActual).
@@ -2551,23 +2587,30 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )
       const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
       const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
-      // Un tramo YA CERRADO se paga: los pagos posteriores a su cierre lo achican,
-      // exactamente igual que en calcularEstadoStatement para un resumen real. Sin
-      // esto, pagar la tarjeta antes de cargar el PDF dejaba la deuda entera en pantalla.
-      const pagos = hasta
-        ? transactions.filter(t => t.account_id === a.id && t.tipo === 'neutro' && normFecha(t.fecha) > hasta)
-        : []
-      const pagosArs = pagos.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
-      const pagosUsd = pagos.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
       return {
         account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
-        total_resumen: Math.max(0, total - pagosArs), total_usd: Math.max(0, totalUsd - pagosUsd),
+        total_resumen: total, total_usd: totalUsd,
         _virtual: true, _comprasCount: compras.length,
-        _pagosPosterioresArs: pagosArs, _pagosPosterioresUsd: pagosUsd,
+        _pagosPosterioresArs: 0, _pagosPosterioresUsd: 0,
         cicloDesde: null, cicloDesdeEfectivo: desde,
         _excedenteArs: 0, _excedenteUsd: 0,
         ...extra,
       }
+    }
+    // Baja la cascada por los tramos en orden (primero el ciclo ya cerrado, después el
+    // que sigue abierto) y anota en el último lo que quedó realmente a favor.
+    const aplicarCascada = (tramos) => {
+      const ars = repartirPagos(sobranteArs, tramos.map(t => t.total_resumen))
+      const usd = repartirPagos(sobranteUsd, tramos.map(t => t.total_usd))
+      tramos.forEach((t, i) => {
+        t._pagosPosterioresArs = ars.aplicados[i]
+        t._pagosPosterioresUsd = usd.aplicados[i]
+        t.total_resumen -= ars.aplicados[i]
+        t.total_usd -= usd.aplicados[i]
+      })
+      const ultimo = tramos[tramos.length - 1]
+      if (ultimo) { ultimo._excedenteArs = ars.restante; ultimo._excedenteUsd = usd.restante }
+      return tramos
     }
     const tieneAlgo = (s) => s._comprasCount > 0 || s._excedenteArs > 0 || s._excedenteUsd > 0
 
@@ -2593,12 +2636,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       _cierreOrigen: ciclo ? ciclo.origen : 'estimado', _editableCierre: true,
     }
     if (!(ciclo && ciclo.origen !== 'estimado' && hoyISO > ciclo.cierre)) {
-      const abierto = tramo(ultimoCierre, null, {
+      const [abierto] = aplicarCascada([tramo(ultimoCierre, null, {
         id: `sin-resumen-${a.id}`,
         cicloDesde: cicloDesdeManual, _editableDesde: true,
-        _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
         ...datosCierre,
-      })
+      })])
       // El "Contando desde" manual mantiene viva la tarjeta aunque no haya nada cargado:
       // es la señal de que el usuario está trackeando ese ciclo a mano.
       return (tieneAlgo(abierto) || cicloDesdeManual) ? [abierto] : []
@@ -2609,7 +2651,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       ...datosCierre,
       fecha_hasta: ciclo.cierre,
       fecha_vencimiento: ciclo.vencimiento,
-      _excedenteArs: excedenteArs, _excedenteUsd: excedenteUsd,
     })
     const abierto = tramo(ciclo.cierre, null, {
       id: `sin-resumen-${a.id}`,
@@ -2618,6 +2659,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       _cierraEl: addMeses(ciclo.cierre, 1), _venceEl: null,
       _cierreOrigen: 'estimado', _editableCierre: false,
     })
+    aplicarCascada([cerrado, abierto])
     const visibles = [cerrado, abierto].filter(tieneAlgo)
     if (visibles.length === 0) return cicloDesdeManual ? [abierto] : []
     // Si el tramo cerrado no quedó a la vista (nada cargado en esa ventana), el selector
@@ -3093,12 +3135,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 por completo) se aclara que es de ese resumen anterior. */}
             {s._excedenteArs > 0 && (
               <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
-                {s._virtual ? 'Sobrepago del resumen anterior' : 'A favor'}: $ {formatMonto(s._excedenteArs)}{!s._virtual ? ' (según resumen)' : ''}
+                {s._virtual ? 'Te queda a favor' : 'A favor'}: $ {formatMonto(s._excedenteArs)}{!s._virtual ? ' (según resumen)' : ''}
               </p>
             )}
             {s._excedenteUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
-                {s._virtual ? 'Sobrepago del resumen anterior' : 'A favor'}: U$S {formatMontoFull(s._excedenteUsd)}{!s._virtual ? ' (según resumen)' : ''}
+                {s._virtual ? 'Te queda a favor' : 'A favor'}: U$S {formatMontoFull(s._excedenteUsd)}{!s._virtual ? ' (según resumen)' : ''}
               </p>
             )}
             {diasRestantes !== null && (
@@ -3251,7 +3293,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </div>
                       {(s._excedenteArs > 0 || s._excedenteUsd > 0) && (
                         <div style={{ fontSize: '11px', color: '#4a9e7a' }}>
-                          Sobrepago del resumen anterior{s._excedenteArs > 0 ? `: $ ${formatMonto(s._excedenteArs)}` : ''}{s._excedenteUsd > 0 ? ` ${s._excedenteArs > 0 ? '+ ' : ': '}U$S ${formatMontoFull(s._excedenteUsd)}` : ''}
+                          Te queda a favor{s._excedenteArs > 0 ? `: $ ${formatMonto(s._excedenteArs)}` : ''}{s._excedenteUsd > 0 ? ` ${s._excedenteArs > 0 ? '+ ' : ': '}U$S ${formatMontoFull(s._excedenteUsd)}` : ''}
                         </div>
                       )}
                     </div>
