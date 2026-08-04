@@ -2,7 +2,44 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos } = require('./AccountDetail')
+
+describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
+  test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
+    // Caso real: $ 1.500.000 pagados de más sobre el resumen de julio no son sobrepago,
+    // están pagando el ciclo que cerró el 30 de julio.
+    expect(repartirPagos(1500000, [900000])).toEqual({ aplicados: [900000], restante: 600000 })
+  })
+
+  test('cada tramo se queda solo con lo que necesita, en orden', () => {
+    expect(repartirPagos(1500000, [900000, 2000000])).toEqual({
+      aplicados: [900000, 600000], restante: 0,
+    })
+  })
+
+  test('si no alcanza, el primero se lleva todo y el resto queda impago', () => {
+    expect(repartirPagos(500000, [900000, 2000000])).toEqual({
+      aplicados: [500000, 0], restante: 0,
+    })
+  })
+
+  test('lo que sobra después de cubrir todo sí es plata a favor', () => {
+    expect(repartirPagos(1500000, [100000, 200000])).toEqual({
+      aplicados: [100000, 200000], restante: 1200000,
+    })
+  })
+
+  test('sin pagos no se aplica nada y nada queda a favor', () => {
+    expect(repartirPagos(0, [900000])).toEqual({ aplicados: [0], restante: 0 })
+    expect(repartirPagos(null, [900000])).toEqual({ aplicados: [0], restante: 0 })
+  })
+
+  test('un total negativo no devuelve plata al pozo', () => {
+    // Un saldo a favor que informó el banco viene como total negativo: no puede
+    // aumentar lo disponible para pagar el ciclo siguiente.
+    expect(repartirPagos(1000, [-500, 800])).toEqual({ aplicados: [0, 800], restante: 200 })
+  })
+})
 
 describe('cicloAbiertoDe — cuándo cierra el ciclo abierto', () => {
   test('usa la fecha que informó el banco cuando está', () => {
