@@ -1029,7 +1029,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // tenía ese límite inferior y había ligado movimientos viejos que no correspondían —
   // se detectan igual (por fecha, no por cómo se generaron) y se sueltan.
   const DIAS_CICLO_APROX = 40
-  const reconciliarSueltas = async (txs, stmts) => {
+  // cuentaIds: las cuentas cuyos resúmenes se pidieron en este fetch. Sin ese dato no se
+  // puede distinguir "este resumen no existe" de "no lo consulté" (ver desligar).
+  const reconciliarSueltas = async (txs, stmts, cuentaIds) => {
+    const cuentasEnScope = new Set(cuentaIds || [])
     const statementsPorCuenta = new Map()
     stmts.forEach(st => {
       if (!cierreDe(st)) return
@@ -1086,7 +1089,16 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     txs.forEach(t => {
       if (!t.statement_id || esPagoOReintegro(t) || !t.fecha) return
       const st = stmts.find(s => s.id === t.statement_id)
-      const cierre = st && cierreDe(st)
+      // Un movimiento que apunta a un resumen que YA NO EXISTE (borrado desde "Total
+      // facturado por resumen", que se lleva todos los resúmenes de ese mes) quedaba
+      // colgado para siempre: no salía en el detalle de ningún resumen, y esta misma
+      // función lo salteaba justamente porque no encontraba el resumen del que colgaba.
+      // Se suelta, y así vuelve a engancharse al ciclo que le corresponde.
+      // Solo dentro del alcance consultado: la vista Ingresos trae movimientos de todas
+      // las cuentas pero resúmenes de una sola, y ahí "no está" significa "no se
+      // consultó", no "no existe".
+      if (!st) { if (cuentasEnScope.has(t.account_id)) desligar.push(t); return }
+      const cierre = cierreDe(st)
       if (!cierre) return
       const desde = ventanaDe(t.account_id, cierre)
       if (!perteneceAlCierre(t, cierre, desde)) desligar.push(t)
@@ -1134,7 +1146,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const subcatRes = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
       : { data: [] }
-    await reconciliarSueltas(txs, stmtRes.data || [])
+    await reconciliarSueltas(txs, stmtRes.data || [], [account.id])
     setTransactions(txs)
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
@@ -1170,7 +1182,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const subcatRes = catIds.length > 0
       ? await supabase.from('subcategories').select('*').in('category_id', catIds).order('nombre')
       : { data: [] }
-    await reconciliarSueltas(txs, stmtRes.data || [])
+    await reconciliarSueltas(txs, stmtRes.data || [], accountIds)
     setTransactions(txs)
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
@@ -1650,8 +1662,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setShowAddMes(false)
   }
 
+  // OJO: se lleva TODOS los resúmenes de ese mes, no uno — la fila lo dice cuando hay
+  // más de uno ("N resúmenes cargados"). Para sacar solo un repetido está el botón del
+  // aviso de "A pagar" (borrarResumenRepetido), que nunca toca el que se está usando.
   const eliminarMesFacturado = async (barMes) => {
+    // Soltar los movimientos ANTES de borrar: si no, quedan apuntando a un resumen que
+    // ya no existe, fuera del detalle de todo resumen.
+    await supabase.from('transactions').update({ statement_id: null }).in('statement_id', barMes.statementIds)
     await supabase.from('statements').delete().in('id', barMes.statementIds)
+    setTransactions(prev => prev.map(t => barMes.statementIds.includes(t.statement_id) ? { ...t, statement_id: null } : t))
     setStatements(prev => prev.filter(s => !barMes.statementIds.includes(s.id)))
     setConfirmDeleteMes(null)
   }
