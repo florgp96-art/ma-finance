@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -113,5 +113,57 @@ describe('cicloAbiertoDe — el dato del PDF se vuelve viejo y lo manual le gana
     expect(cicloAbiertoDe({ proximo_cierre: '2026-07-01' }, '2026-07-30')).toEqual({
       cierre: '2026-08-30', vencimiento: null, origen: 'estimado',
     })
+  })
+})
+
+describe('compararStatements — cuál es "el último resumen" de una tarjeta', () => {
+  const stmt = (id, extra) => ({ id, fecha_vencimiento: '2026-08-22', fecha_hasta: '2026-08-15', ...extra })
+
+  test('manda la fecha de cierre', () => {
+    const julio = stmt('a', { fecha_hasta: '2026-07-15', fecha_vencimiento: '2026-07-22' })
+    const agosto = stmt('b')
+    expect([agosto, julio].sort(compararStatements).map(s => s.id)).toEqual(['a', 'b'])
+  })
+
+  test('empatados en el cierre, el último es el que tiene saldo', () => {
+    // Caso real: dos resúmenes cargados para el mismo cierre de Visa Galicia, uno con
+    // $ 917.929 y otro vacío. Ordenando solo por cierre, cuál ganaba dependía del orden
+    // en que Postgres devolviera las filas: la tarjeta mostraba $ 917.929 al abrirla y
+    // $ 0 en el dashboard, en el mismo momento.
+    const vacio = stmt('z-vacio', { total_resumen: 0, total_dolares: 0 })
+    const conSaldo = stmt('a-con-saldo', { total_resumen: 917929, total_dolares: null })
+    expect([vacio, conSaldo].sort(compararStatements).map(s => s.id)).toEqual(['z-vacio', 'a-con-saldo'])
+    expect([conSaldo, vacio].sort(compararStatements).map(s => s.id)).toEqual(['z-vacio', 'a-con-saldo'])
+  })
+
+  test('empatados también en el saldo, decide el id — nunca el azar', () => {
+    const uno = stmt('aaa', { total_resumen: 1000 })
+    const otro = stmt('bbb', { total_resumen: 1000 })
+    expect([otro, uno].sort(compararStatements).map(s => s.id)).toEqual(['aaa', 'bbb'])
+    expect([uno, otro].sort(compararStatements).map(s => s.id)).toEqual(['aaa', 'bbb'])
+  })
+})
+
+describe('calcularStatementsPendientes — un resumen repetido no puede tapar la deuda', () => {
+  const cuenta = { id: 'visa', nombre: 'Visa Galicia', tipo: 'credito' }
+  const vacio = { id: 'z-vacio', account_id: 'visa', periodo: 'Agosto 2026', fecha_hasta: '2026-08-15', fecha_vencimiento: '2026-08-22', total_resumen: 0, total_dolares: 128.02 }
+  const conSaldo = { id: 'a-con-saldo', account_id: 'visa', periodo: 'Agosto 2026', fecha_hasta: '2026-08-15', fecha_vencimiento: '2026-08-22', total_resumen: 917929, total_dolares: 138.20 }
+
+  test('el resultado no depende del orden en que llegaron las filas', () => {
+    const enUnOrden = calcularStatementsPendientes({ accounts: [cuenta], statements: [vacio, conSaldo], transactions: [] })
+    const enElOtro = calcularStatementsPendientes({ accounts: [cuenta], statements: [conSaldo, vacio], transactions: [] })
+    expect(enUnOrden.statementsRealesConUsd.map(s => s.id)).toEqual(['a-con-saldo'])
+    expect(enElOtro.statementsRealesConUsd.map(s => s.id)).toEqual(['a-con-saldo'])
+    expect(enUnOrden.statementsRealesConUsd[0].total_resumen).toBe(917929)
+  })
+
+  test('avisa que ese ciclo tiene más de un resumen cargado', () => {
+    const { cuentasConResumenRepetido } = calcularStatementsPendientes({ accounts: [cuenta], statements: [vacio, conSaldo], transactions: [] })
+    expect(cuentasConResumenRepetido).toEqual([{ account_id: 'visa', nombre: 'Visa Galicia', cierre: '2026-08-15', cantidad: 2 }])
+  })
+
+  test('sin repetidos no avisa nada', () => {
+    const { cuentasConResumenRepetido } = calcularStatementsPendientes({ accounts: [cuenta], statements: [conSaldo], transactions: [] })
+    expect(cuentasConResumenRepetido).toEqual([])
   })
 })

@@ -92,7 +92,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             .in('account_id', accountIds)
             .order('fecha', { ascending: false }).order('id', { ascending: true })
         ),
-        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
+        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
       ])
       setTransactions(txs)
       setStatements(stmtRes.data || [])

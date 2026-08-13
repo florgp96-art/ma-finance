@@ -574,6 +574,33 @@ export const diasRestantesDe = (s) => {
   return Math.ceil((fecha - new Date()) / (1000 * 60 * 60 * 24))
 }
 
+// Cuánto saldo declara un resumen, sumando las dos monedas. Solo se usa para
+// desempatar (ver compararStatements): no es plata comparable entre sí, es "este
+// resumen dice algo" contra "este resumen está vacío".
+const saldoDeclaradoDe = (s) => Math.abs(Number(s.total_resumen) || 0) + Math.abs(Number(s.total_dolares) || 0)
+
+// Orden canónico de los resúmenes de UNA cuenta: por fecha de cierre, y el último
+// de la lista es "el último resumen" — el que la app muestra en "A pagar", el que
+// define el ciclo abierto y el que absorbe el saldo impago de los anteriores.
+//
+// El desempate NO es un detalle: dos resúmenes de la misma cuenta pueden terminar
+// con el mismo cierre (el mismo PDF importado dos veces, un mes agregado a mano
+// además del PDF, o un total puesto a mano — que deja los repetidos en 0, ver
+// guardarTotalFacturadoMes). Ordenando solo por cierre, ese empate quedaba a merced
+// del orden en que Postgres devolvió las filas, que NO está garantizado y cambia de
+// una consulta a otra: la MISMA tarjeta mostraba $ 917.929 al abrirla (consulta con
+// .eq de una sola cuenta) y $ 0 en el dashboard (consulta con .in de todas), porque
+// cada vista se quedaba con un resumen distinto como "el último" y el otro
+// desaparecía junto con su deuda.
+//
+// Empatados, gana el que tiene saldo declarado: un resumen vacío o vaciado nunca
+// puede tapar una deuda real. Y si los dos declaran lo mismo, decide el id, que es
+// estable entre consultas.
+export const compararStatements = (s1, s2) =>
+  (cierreDe(s1) || '').localeCompare(cierreDe(s2) || '') ||
+  (saldoDeclaradoDe(s1) - saldoDeclaradoDe(s2)) ||
+  String(s1.id).localeCompare(String(s2.id))
+
 // Resúmenes REALES de tarjeta de crédito que todavía tienen saldo pendiente
 // (el mismo criterio que "A pagar": solo el último resumen de cada cuenta, y
 // solo mientras le quede algo por pagar en alguna moneda — ver esVisible más
@@ -587,9 +614,20 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   cuentasCreditoAPagar.forEach(a => {
     const propios = (statements || [])
       .filter(st => st.account_id === a.id && st.fecha_vencimiento && cierreDe(st))
-      .sort((s1, s2) => cierreDe(s1).localeCompare(cierreDe(s2)))
+      .sort(compararStatements)
     statementsPorCuenta.set(a.id, propios)
   })
+  // Cuentas donde el ciclo que se está mostrando tiene más de un resumen cargado con
+  // el mismo cierre. La app se queda con uno solo (el que tiene saldo) — avisarlo es
+  // la diferencia entre "falta plata en la cuenta" y "cargaste el resumen dos veces".
+  const cuentasConResumenRepetido = cuentasCreditoAPagar.map(a => {
+    const propios = statementsPorCuenta.get(a.id) || []
+    const ultimo = propios[propios.length - 1]
+    if (!ultimo) return null
+    const cierre = cierreDe(ultimo)
+    const cantidad = propios.filter(s => cierreDe(s) === cierre).length
+    return cantidad > 1 ? { account_id: a.id, nombre: a.nombre, cierre, cantidad } : null
+  }).filter(Boolean)
   const esUltimoDeCuenta = (s) => {
     const propios = statementsPorCuenta.get(s.account_id) || []
     return propios.length > 0 && propios[propios.length - 1].id === s.id
@@ -685,7 +723,7 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
         _excedenteUsd: st.excedenteUsd,
       }
     })
-  return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd }
+  return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido }
 }
 
 export const mesLabel = (yearMonth) => {
@@ -916,11 +954,29 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   useEffect(() => { setFiltroCuenta('') }, [account, allAccounts])
   useEffect(() => { setVistaCuenta('movimientos') }, [account, allAccounts])
 
+  // Qué hay que traer depende de QUÉ cuentas se están mirando, no de los datos de esas
+  // cuentas: los movimientos y resúmenes no cambian porque a una tarjeta le corrijan la
+  // fecha de cierre. Atado a la identidad del array `accounts`, sí cambiaba: guardar
+  // cualquier campo de una cuenta hace que Dashboard vuelva a pedir las cuentas
+  // (fetchAccounts) y devuelva un array nuevo, y eso disparaba de nuevo el fetch
+  // completo — con setLoading(true) de por medio, o sea la pantalla entera reemplazada
+  // por "Cargando datos..." en mitad de la edición. Desde el teléfono, donde el selector
+  // de fecha dispara un onChange por cada vuelta de la rueda, se veía como que la página
+  // se recargaba sola a cada número que se tocaba, perdiendo el foco del input.
+  // El tipo de cuenta sí entra en la clave: decide qué se consulta (ver esCuentaIngresos),
+  // y se lee de la lista fresca porque `account` es el objeto que quedó seleccionado y no
+  // se renueva al guardar.
+  const tipoCuentaActual = !allAccounts && account
+    ? ((accounts || []).find(a => a.id === account.id) || account).tipo
+    : null
+  const fetchKey = allAccounts
+    ? `all:${(accounts || []).map(a => a.id).sort().join(',')}`
+    : `one:${account?.id || ''}:${tipoCuentaActual || ''}`
   useEffect(() => {
     if (allAccounts && accounts && accounts.length > 0) fetchAllData()
     else if (account) fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, accounts, allAccounts, refreshKey])
+  }, [fetchKey, allAccounts, refreshKey])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -964,15 +1020,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // se detectan igual (por fecha, no por cómo se generaron) y se sueltan.
   const DIAS_CICLO_APROX = 40
   const reconciliarSueltas = async (txs, stmts) => {
-    const cierresPorCuenta = new Map()
+    const statementsPorCuenta = new Map()
     stmts.forEach(st => {
-      const cierre = cierreDe(st)
-      if (!cierre) return
-      const list = cierresPorCuenta.get(st.account_id) || []
-      list.push({ id: st.id, cierre })
-      cierresPorCuenta.set(st.account_id, list)
+      if (!cierreDe(st)) return
+      const list = statementsPorCuenta.get(st.account_id) || []
+      list.push(st)
+      statementsPorCuenta.set(st.account_id, list)
     })
-    cierresPorCuenta.forEach(list => list.sort((a, b) => a.cierre.localeCompare(b.cierre)))
+    // Un cierre = un destino. Si hay dos resúmenes cargados con el mismo cierre (ver
+    // compararStatements), los movimientos van al que la app muestra — el último del
+    // empate —: ligarlos al otro dejaba al resumen visible sin sus propios ítems, y el
+    // vínculo se reescribía en la base cada vez que se abría una pantalla distinta.
+    const cierresPorCuenta = new Map()
+    statementsPorCuenta.forEach((list, accountId) => {
+      const porCierre = new Map()
+      ;[...list].sort(compararStatements).forEach(st => porCierre.set(cierreDe(st), { id: st.id, cierre: cierreDe(st) }))
+      cierresPorCuenta.set(accountId, [...porCierre.values()])
+    })
     const ventanaDe = (accountId, cierre) => {
       const list = cierresPorCuenta.get(accountId) || []
       const idx = list.findIndex(c => c.cierre === cierre)
@@ -1045,10 +1109,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         return q.order('fecha', { ascending: false }).order('id', { ascending: true })
       }),
       supabase.from('categories').select('*').or(`user_id.eq.${user.id},es_sistema.eq.true`).order('orden'),
+      // El .order('id') no es decorativo: dos resúmenes con la misma fecha_hasta salían
+      // en el orden que quisiera Postgres, y ese orden se filtra hasta "cuál es el
+      // último resumen de la tarjeta" (ver compararStatements). Consultado de a una
+      // cuenta (.eq) podía dar distinto que consultado de a todas (.in), y la misma
+      // tarjeta mostraba dos deudas distintas según desde qué pantalla se la mirara.
       supabase.from('statements')
         .select('*')
         .eq('account_id', account.id)
-        .order('fecha_hasta', { ascending: true }),
+        .order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
     ])
     const cats = catRes.data || []
     const catIds = cats.map(c => c.id)
@@ -1084,7 +1153,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       supabase.from('statements')
         .select('*')
         .in('account_id', accountIds)
-        .order('fecha_hasta', { ascending: true }),
+        .order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
     ])
     const cats = catRes.data || []
     const catIds = cats.map(c => c.id)
@@ -2503,9 +2572,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // El cálculo en sí vive en calcularStatementsPendientes (arriba, exportado): es la
   // MISMA función que usa el widget de Vencimientos en Dashboard.js, así nunca pueden
   // desalinearse entre sí.
-  const { cuentasCreditoAPagar, statementsPorCuenta, estadosStatement, statementsRealesConUsd } = mostrarTabAPagar
+  const { cuentasCreditoAPagar, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido } = mostrarTabAPagar
     ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions })
-    : { cuentasCreditoAPagar: [], statementsPorCuenta: new Map(), estadosStatement: new Map(), statementsRealesConUsd: [] }
+    : { cuentasCreditoAPagar: [], statementsPorCuenta: new Map(), estadosStatement: new Map(), statementsRealesConUsd: [], cuentasConResumenRepetido: [] }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
@@ -2973,6 +3042,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
       statementsVencidas, statementsNoVencidas,
       itemsPorStatement, categoriasResumen,
+      cuentasConResumenRepetido,
     }
   }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, cierreManualOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName])
 
@@ -2985,6 +3055,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     gastosCategoriaEHijoGeneral, gastosCategoriaEHijoGeneralUsd, gastosCategoriaEHijoSubtotalArs,
     statementsVencidas, statementsNoVencidas,
     itemsPorStatement, categoriasResumen,
+    cuentasConResumenRepetido,
   } = apagarMemo
 
   const handleApagarSort = (key) => {
@@ -3004,6 +3075,23 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     color: darkMode ? '#F0EDEC' : '#1d1d1f',
     colorScheme: darkMode ? 'dark' : 'light',
   }
+
+  // Un <input type="date"> a medio completar reporta value = "" en CADA tecla, hasta que
+  // los tres segmentos (día, mes, año) están puestos. Guardando ese "" en el acto se
+  // borraba la fecha y el input volvía a pintarse vacío en mitad del tipeo, pisando los
+  // segmentos ya escritos: escribir la fecha a mano era imposible. El vaciado real
+  // (querer sacar la fecha) se guarda recién cuando el campo pierde el foco.
+  const propsInputFecha = (valorActual, guardar) => ({
+    type: 'date',
+    value: valorActual || '',
+    onClick: e => e.stopPropagation(),
+    onChange: e => { if (e.target.value) guardar(e.target.value) },
+    // Vaciar de verdad (borrar la fecha) sí se guarda, pero solo al salir del campo y
+    // solo si quedó realmente vacío: badInput es una fecha a medio escribir, que se
+    // abandonó sin terminar, y esa no puede borrar lo que había guardado.
+    onBlur: e => { if (!e.target.value && !e.target.validity?.badInput && valorActual) guardar(null) },
+    style: estiloInputFecha,
+  })
 
   // Una tarjeta de "A pagar": fecha siempre en formato relativo (la
   // absoluta queda de tooltip), y con un estilo rojo destacado cuando ya
@@ -3046,13 +3134,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             {s._virtual && s._editableCierre && (
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 {s._cerradoSinPdf ? 'Cerró el' : 'Cierra el'}
-                <input type="date" value={s._cierraEl || ''} onClick={e => e.stopPropagation()}
-                  onChange={e => guardarCierreManual(s.account_id, { proximo_cierre: e.target.value || null })}
-                  style={estiloInputFecha} />
+                <input {...propsInputFecha(s._cierraEl, v => guardarCierreManual(s.account_id, { proximo_cierre: v }))} />
                 y vence el
-                <input type="date" value={s._venceEl || ''} onClick={e => e.stopPropagation()}
-                  onChange={e => guardarCierreManual(s.account_id, { proximo_vencimiento: e.target.value || null })}
-                  style={estiloInputFecha} />
+                <input {...propsInputFecha(s._venceEl, v => guardarCierreManual(s.account_id, { proximo_vencimiento: v }))} />
                 {s._cierreOrigen === 'estimado'
                   ? '(estimado — corregilo si no es así)'
                   : s._cierreOrigen === 'pdf' ? '(del resumen)' : '(a mano)'}
@@ -3070,8 +3154,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Contando desde
-                  <input type="date" value={s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : '')} onClick={e => e.stopPropagation()} onChange={e => guardarCicloDesde(s.account_id, e.target.value)}
-                    style={estiloInputFecha} />
+                  <input {...propsInputFecha(
+                    s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : ''),
+                    v => guardarCicloDesde(s.account_id, v),
+                  )} />
                   {!s.cicloDesde && '(auto)'}
                 </p>
               </>
@@ -3261,6 +3347,20 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={{ height: '8px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pctPagadoBarra}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
+            </div>
+          )}
+          {/* Dos resúmenes cargados para el mismo cierre: la app se queda con uno solo
+              (el que tiene saldo, ver compararStatements) y el otro no se muestra en
+              ninguna parte. Sin este aviso, el resumen que quedó afuera era plata que
+              desaparecía de la pantalla sin explicación. */}
+          {cuentasConResumenRepetido.length > 0 && (
+            <div style={{ marginBottom: '20px', padding: '12px 14px', borderRadius: '12px', backgroundColor: darkMode ? '#3A2323' : '#FBEAEA', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}`, fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+              {cuentasConResumenRepetido.map(c => (
+                <p key={c.account_id} style={{ margin: '2px 0' }}>
+                  ⚠️ {c.nombre ? `${c.nombre}: ` : ''}hay {c.cantidad} resúmenes cargados con el mismo cierre ({formatFechaCorta(c.cierre)}).
+                  Se está usando el que tiene saldo — revisá si el resumen quedó cargado dos veces.
+                </p>
+              ))}
             </div>
           )}
           {/* Bottom-up (regla A): lista cada obligación YA FACTURADA en pantalla con su

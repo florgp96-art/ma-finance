@@ -698,10 +698,15 @@ export default function Dashboard() {
   // fetch de todas las cuentas); quedan levemente desactualizados mientras se
   // trabaja en una cuenta puntual, un costo aceptable para widgets de
   // tendencia de 6 meses.
+  // Por lo mismo se dispara con la LISTA de ids y no con la identidad del array:
+  // fetchAccounts devuelve un array nuevo cada vez que se guarda cualquier campo de
+  // una cuenta (ej. corregir a mano el cierre de una tarjeta en "A pagar"), y atado a
+  // la identidad eso repetía todo este fetch — miles de movimientos — a cada tecla.
+  const accountIdsKey = useMemo(() => accounts.map(a => a.id).sort().join(','), [accounts])
   useEffect(() => {
-    if (accounts.length === 0) return
+    if (!accountIdsKey) return
     const fetchGlobalWidgetsData = async () => {
-      const accountIds = accounts.map(a => a.id)
+      const accountIds = accountIdsKey.split(',')
       const [txs, stmtRes] = await Promise.all([
         fetchAllTxPages(() =>
           supabase.from('transactions')
@@ -709,13 +714,13 @@ export default function Dashboard() {
             .in('account_id', accountIds)
             .order('fecha', { ascending: false }).order('id', { ascending: true })
         ),
-        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }),
+        supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
       ])
       setAccountTransactions(txs)
       setDashboardStatements(stmtRes.data || [])
     }
     fetchGlobalWidgetsData()
-  }, [accounts])
+  }, [accountIdsKey])
 
 
   useEffect(() => {
