@@ -620,13 +620,19 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   // Cuentas donde el ciclo que se está mostrando tiene más de un resumen cargado con
   // el mismo cierre. La app se queda con uno solo (el que tiene saldo) — avisarlo es
   // la diferencia entre "falta plata en la cuenta" y "cargaste el resumen dos veces".
+  // Van los resúmenes enteros y no solo la cuenta: para poder elegir cuál borrar hay
+  // que poder ver qué dice cada uno, si no es pedirle al usuario que adivine.
   const cuentasConResumenRepetido = cuentasCreditoAPagar.map(a => {
     const propios = statementsPorCuenta.get(a.id) || []
-    const ultimo = propios[propios.length - 1]
-    if (!ultimo) return null
-    const cierre = cierreDe(ultimo)
-    const cantidad = propios.filter(s => cierreDe(s) === cierre).length
-    return cantidad > 1 ? { account_id: a.id, nombre: a.nombre, cierre, cantidad } : null
+    const enUso = propios[propios.length - 1]
+    if (!enUso) return null
+    const cierre = cierreDe(enUso)
+    const delCierre = propios.filter(s => cierreDe(s) === cierre)
+    if (delCierre.length < 2) return null
+    return {
+      account_id: a.id, nombre: a.nombre, cierre, cantidad: delCierre.length,
+      enUso, ignorados: delCierre.filter(s => s.id !== enUso.id),
+    }
   }).filter(Boolean)
   const esUltimoDeCuenta = (s) => {
     const propios = statementsPorCuenta.get(s.account_id) || []
@@ -831,6 +837,10 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [editBarMoneda, setEditBarMoneda] = useState('ARS')
   const [editBarPeriodo, setEditBarPeriodo] = useState('')
   const [confirmDeleteMes, setConfirmDeleteMes] = useState(null)
+  // Qué cuenta está esperando confirmación para borrar su resumen repetido, y cuál
+  // está borrándose ahora (el borrado rehace el fetch, así que tarda lo suyo).
+  const [confirmBorrarRepetido, setConfirmBorrarRepetido] = useState(null)
+  const [borrandoRepetido, setBorrandoRepetido] = useState(null)
   const [showAddMes, setShowAddMes] = useState(false)
   const [nuevoMes, setNuevoMes] = useState({ periodo: '', valor: '', moneda: 'ARS' })
   const [editUsdStatementId, setEditUsdStatementId] = useState(null)
@@ -1644,6 +1654,38 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     await supabase.from('statements').delete().in('id', barMes.statementIds)
     setStatements(prev => prev.filter(s => !barMes.statementIds.includes(s.id)))
     setConfirmDeleteMes(null)
+  }
+
+  // Borra los resúmenes repetidos de un ciclo — los que la app ya está ignorando,
+  // nunca el que se está mostrando (ver cuentasConResumenRepetido).
+  //
+  // Los movimientos que colgaban del repetido se sueltan ANTES de borrarlo: si se
+  // borrara el resumen a secas, quedarían apuntando a una fila que ya no existe, no
+  // aparecerían en el detalle de ningún resumen y la reconciliación tampoco los
+  // rescataría (no encuentra el resumen, ver reconciliarSueltas). Sueltos, el fetch
+  // siguiente los engancha solos al resumen que quedó, que es el mismo ciclo.
+  const borrarResumenRepetido = async (repetido) => {
+    const ids = repetido.ignorados.map(s => s.id)
+    if (ids.length === 0) return
+    setBorrandoRepetido(repetido.account_id)
+    const { error: errorSoltar } = await supabase.from('transactions').update({ statement_id: null }).in('statement_id', ids)
+    if (errorSoltar) {
+      setBorrandoRepetido(null)
+      window.alert('No se pudo borrar el resumen repetido: ' + errorSoltar.message)
+      return
+    }
+    const { error } = await supabase.from('statements').delete().in('id', ids)
+    if (error) {
+      setBorrandoRepetido(null)
+      window.alert('No se pudo borrar el resumen repetido: ' + error.message)
+      return
+    }
+    setConfirmBorrarRepetido(null)
+    // Refetch completo y no un filtro del estado local: recién ahí corre la
+    // reconciliación que devuelve los movimientos sueltos al resumen que quedó.
+    if (allAccounts && accounts && accounts.length > 0) await fetchAllData()
+    else if (account) await fetchData()
+    setBorrandoRepetido(null)
   }
 
   // Corrección manual del total en dólares de un resumen de tarjeta (columna
@@ -3356,10 +3398,43 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           {cuentasConResumenRepetido.length > 0 && (
             <div style={{ marginBottom: '20px', padding: '12px 14px', borderRadius: '12px', backgroundColor: darkMode ? '#3A2323' : '#FBEAEA', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}`, fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
               {cuentasConResumenRepetido.map(c => (
-                <p key={c.account_id} style={{ margin: '2px 0' }}>
-                  ⚠️ {c.nombre ? `${c.nombre}: ` : ''}hay {c.cantidad} resúmenes cargados con el mismo cierre ({formatFechaCorta(c.cierre)}).
-                  Se está usando el que tiene saldo — revisá si el resumen quedó cargado dos veces.
-                </p>
+                <div key={c.account_id} style={{ margin: '2px 0' }}>
+                  <p style={{ margin: 0 }}>
+                    ⚠️ {c.nombre ? `${c.nombre}: ` : ''}hay {c.cantidad} resúmenes cargados con el mismo cierre ({formatFechaCorta(c.cierre)}).
+                  </p>
+                  {/* Qué dice cada uno, para poder decidir: borrar un resumen sin ver su
+                      monto es borrar a ciegas. El que se usa va marcado, y los que se
+                      van a borrar son siempre los otros. */}
+                  <div style={{ margin: '8px 0 0', paddingLeft: '18px' }}>
+                    {[{ s: c.enUso, enUso: true }, ...c.ignorados.map(s => ({ s, enUso: false }))].map(({ s, enUso }) => (
+                      <p key={s.id} style={{ margin: '2px 0', opacity: enUso ? 1 : 0.75 }}>
+                        {enUso ? '✅' : '🚫'} {s.periodo || mesLabel(s.fecha_hasta?.slice(0, 7) || '')} · {[
+                          `$ ${formatMonto(Number(s.total_resumen) || 0)}`,
+                          s.total_dolares ? `U$S ${formatMontoFull(Number(s.total_dolares))}` : null,
+                        ].filter(Boolean).join(' + ')} · vence {formatFechaCorta(normFecha(s.fecha_vencimiento))}
+                        {enUso ? ' — el que se está usando' : ' — ignorado'}
+                      </p>
+                    ))}
+                  </div>
+                  {confirmBorrarRepetido === c.account_id ? (
+                    <div style={{ margin: '10px 0 0', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span>¿Borrar {c.ignorados.length === 1 ? 'el resumen ignorado' : `los ${c.ignorados.length} resúmenes ignorados`}?</span>
+                      <button onClick={() => borrarResumenRepetido(c)} disabled={borrandoRepetido === c.account_id}
+                        style={{ padding: '4px 10px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>
+                        {borrandoRepetido === c.account_id ? 'Borrando...' : 'Sí, borrar'}
+                      </button>
+                      <button onClick={() => setConfirmBorrarRepetido(null)} disabled={borrandoRepetido === c.account_id}
+                        style={{ padding: '4px 10px', background: 'none', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', color: 'inherit', fontFamily: '"Montserrat", sans-serif' }}>
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmBorrarRepetido(c.account_id)}
+                      style={{ margin: '10px 0 0', padding: '4px 10px', background: 'none', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', color: 'inherit', fontFamily: '"Montserrat", sans-serif' }}>
+                      🗑 Borrar el repetido
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}

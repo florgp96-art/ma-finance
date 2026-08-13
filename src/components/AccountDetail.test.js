@@ -159,7 +159,14 @@ describe('calcularStatementsPendientes — un resumen repetido no puede tapar la
 
   test('avisa que ese ciclo tiene más de un resumen cargado', () => {
     const { cuentasConResumenRepetido } = calcularStatementsPendientes({ accounts: [cuenta], statements: [vacio, conSaldo], transactions: [] })
-    expect(cuentasConResumenRepetido).toEqual([{ account_id: 'visa', nombre: 'Visa Galicia', cierre: '2026-08-15', cantidad: 2 }])
+    expect(cuentasConResumenRepetido).toHaveLength(1)
+    expect(cuentasConResumenRepetido[0]).toMatchObject({ account_id: 'visa', nombre: 'Visa Galicia', cierre: '2026-08-15', cantidad: 2 })
+  })
+
+  test('lo que se ofrece borrar es siempre el ignorado, nunca el que se está usando', () => {
+    const [repetido] = calcularStatementsPendientes({ accounts: [cuenta], statements: [vacio, conSaldo], transactions: [] }).cuentasConResumenRepetido
+    expect(repetido.enUso.id).toBe('a-con-saldo')
+    expect(repetido.ignorados.map(s => s.id)).toEqual(['z-vacio'])
   })
 
   test('sin repetidos no avisa nada', () => {
