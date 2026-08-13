@@ -1912,10 +1912,22 @@ export default function Dashboard() {
         transaccionesDetectadas: result.transacciones?.length ?? null,
       })
       setStatementData(result)
-      // Un resumen cerrado siempre trae fecha de vencimiento; una captura de
-      // movimientos, no. Es la señal más confiable para adivinar de qué se trata —
-      // y queda a la vista para que el usuario la corrija antes de guardar.
-      setEsResumenCerrado(!!parseFechaArgentina(result.fecha_vencimiento))
+      // Un resumen cerrado siempre trae fecha de vencimiento; una captura de movimientos,
+      // no. Pero una captura de la app del banco SÍ suele traerla —muestra el total y el
+      // vencimiento del ciclo en curso—, y ahí esta adivinanza daba "resumen cerrado" y
+      // creaba una ficha con datos a medio facturar. Es el caso real de cargar primero
+      // una captura y después el resumen completo: dos fichas del mismo ciclo.
+      // El desempate es el CIERRE: un resumen cerrado cerró en el pasado, y lo que
+      // muestra la app del banco a mitad de ciclo cierra más adelante. Con un cierre
+      // todavía por venir no hay resumen cerrado que valga.
+      // Sigue siendo una adivinanza y queda a la vista para corregirla antes de guardar,
+      // pero ahora falla del lado seguro: como carga parcial no se inventa un
+      // vencimiento ni entra en "Te falta pagar".
+      const vencimientoLeido = parseFechaArgentina(result.fecha_vencimiento)
+      const cierreLeido = parseFechaArgentina(result.fecha_facturacion)
+      const hoy = new Date()
+      const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+      setEsResumenCerrado(!!vencimientoLeido && (!cierreLeido || cierreLeido <= hoyISO))
       setNewAccountForUpload({ nombre: result.tarjeta_detectada || '', tipo: 'credito' })
 
       // Guardar contexto detectado si hay algo nuevo
