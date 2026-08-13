@@ -837,6 +837,10 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [editBarMoneda, setEditBarMoneda] = useState('ARS')
   const [editBarPeriodo, setEditBarPeriodo] = useState('')
   const [confirmDeleteMes, setConfirmDeleteMes] = useState(null)
+  // Mes desplegado en "Total facturado por resumen" (solo tiene sentido cuando ese mes
+  // tiene más de una ficha cargada), y qué ficha suelta está esperando confirmación.
+  const [mesDesplegado, setMesDesplegado] = useState(null)
+  const [confirmDeleteResumen, setConfirmDeleteResumen] = useState(null)
   // Qué cuenta está esperando confirmación para borrar su resumen repetido, y cuál
   // está borrándose ahora (el borrado rehace el fetch, así que tarda lo suyo).
   const [confirmBorrarRepetido, setConfirmBorrarRepetido] = useState(null)
@@ -1594,12 +1598,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       // (ARS con preferencia, como antes) y la lista de abajo muestra ambos.
       const montoArs = Number(s.total_resumen) || 0
       const montoUsd = Number(s.total_dolares) || 0
-      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', totalArs: 0, totalUsd: 0, statementIds: [] }
+      const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', totalArs: 0, totalUsd: 0, statementIds: [], resumenes: [] }
       if (montoArs >= prev.totalArs) prev.totalArs = montoArs
       if (montoUsd >= prev.totalUsd) prev.totalUsd = montoUsd
       prev.total = prev.totalArs > 0 ? prev.totalArs : prev.totalUsd
       prev.moneda = prev.totalArs > 0 ? 'ARS' : 'USD'
       prev.statementIds.push(s.id)
+      // Las fichas enteras y no solo los ids: cuando el mes tiene más de una, hay que
+      // poder ver qué dice cada una (cierre y total) para saber cuál sobra.
+      prev.resumenes.push(s)
       map.set(mes, prev)
     })
     return [...map.values()].sort((a, b) => {
@@ -1662,9 +1669,26 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     setShowAddMes(false)
   }
 
+  // Borra UNA ficha de resumen. Es el caso del mismo resumen cargado dos veces —
+  // primero una captura del banco a mitad de ciclo, después el resumen completo —
+  // cuando las dos quedaron con fechas de cierre distintas: ahí no son "el mismo ciclo"
+  // para la app, el aviso de "A pagar" no las junta, y el único lugar donde se ven es
+  // acá, en el mes que comparten.
+  // Los movimientos se sueltan antes de borrar, para que la reconciliación los enganche
+  // a la ficha que queda en vez de dejarlos colgados (ver reconciliarSueltas).
+  const borrarResumenSuelto = async (statementId) => {
+    const { error: errorSoltar } = await supabase.from('transactions').update({ statement_id: null }).eq('statement_id', statementId)
+    if (errorSoltar) { window.alert('No se pudo borrar el resumen: ' + errorSoltar.message); return }
+    const { error } = await supabase.from('statements').delete().eq('id', statementId)
+    if (error) { window.alert('No se pudo borrar el resumen: ' + error.message); return }
+    setConfirmDeleteResumen(null)
+    if (allAccounts && accounts && accounts.length > 0) await fetchAllData()
+    else if (account) await fetchData()
+  }
+
   // OJO: se lleva TODOS los resúmenes de ese mes, no uno — la fila lo dice cuando hay
-  // más de uno ("N resúmenes cargados"). Para sacar solo un repetido está el botón del
-  // aviso de "A pagar" (borrarResumenRepetido), que nunca toca el que se está usando.
+  // más de uno ("N resúmenes cargados"). Para sacar solo uno está borrarResumenSuelto,
+  // desplegando la fila, o el botón del aviso de "A pagar" (borrarResumenRepetido).
   const eliminarMesFacturado = async (barMes) => {
     // Soltar los movimientos ANTES de borrar: si no, quedan apuntando a un resumen que
     // ya no existe, fuera del detalle de todo resumen.
@@ -3993,7 +4017,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               (barData), así nunca puede desalinearse con lo que se ve arriba. */}
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {barData.map(b => (
-              <div key={b.mes} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', gap: '8px' }}>
+              <div key={b.mes}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', gap: '8px' }}>
                 {editBarMes?.mes === b.mes ? (
                   <>
                     <input type="text" autoFocus value={editBarPeriodo} onChange={e => setEditBarPeriodo(e.target.value)}
@@ -4013,7 +4038,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   </>
                 ) : (
                   <>
-                    <span>{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}</span>
+                    {/* Con más de una ficha en el mes, el renglón se despliega: es el
+                        único lugar donde se ven por separado cuando quedaron con fechas
+                        de cierre distintas y el aviso de "A pagar" no las junta. */}
+                    <span onClick={() => b.statementIds.length > 1 && setMesDesplegado(m => m === b.mes ? null : b.mes)}
+                      style={{ cursor: b.statementIds.length > 1 ? 'pointer' : 'default' }}>
+                      {b.statementIds.length > 1 ? `${mesDesplegado === b.mes ? '▾' : '▸'} ` : ''}{b.mes}{b.statementIds.length > 1 ? ` (${b.statementIds.length} resúmenes cargados, se muestra el mayor)` : ''}
+                    </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       <span>
                         {b.totalArs > 0 && `$ ${formatMonto(b.totalArs)}`}
@@ -4032,6 +4063,33 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     </span>
                   </>
                 )}
+              </div>
+              {mesDesplegado === b.mes && b.resumenes.length > 1 && (
+                <div style={{ padding: '2px 2px 8px 16px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  {b.resumenes.map(r => (
+                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {cierreDe(r) ? `Cierra ${formatFecha(cierreDe(r))}` : 'Sin fecha de cierre'}
+                        {r.nombre_archivo ? ` · ${r.nombre_archivo}` : ' · cargado a mano'}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        <span>
+                          $ {formatMonto(Number(r.total_resumen) || 0)}
+                          {r.total_dolares ? ` + U$S ${formatMontoFull(Number(r.total_dolares))}` : ''}
+                        </span>
+                        {confirmDeleteResumen === r.id ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <button onClick={() => setConfirmDeleteResumen(null)} style={{ padding: '2px 7px', background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
+                            <button onClick={() => borrarResumenSuelto(r.id)} style={{ padding: '2px 7px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif' }}>Sí, borrar este</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setConfirmDeleteResumen(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '11px' }}>🗑️</button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               </div>
             ))}
           </div>
