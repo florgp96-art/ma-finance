@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
@@ -228,9 +228,12 @@ export default function Dashboard() {
   // Confirmación al recargar un resumen/extracto de un período ya cargado:
   // reemplaza al window.confirm() genérico (un solo botón "OK" que no
   // aclaraba qué pasaba) por dos opciones explícitas.
+  // `existente` (opcional) es la ficha que ya está cargada para ese ciclo: se muestra con
+  // su cierre y su total para que se vea QUÉ se va a reemplazar, en vez de confirmar a
+  // ciegas sobre un nombre de mes.
   const [resumenDupConfirm, setResumenDupConfirm] = useState(null)
-  const confirmarResumenDuplicado = (periodo, tipoPalabra) => new Promise(resolve => {
-    setResumenDupConfirm({ periodo, tipoPalabra, resolve })
+  const confirmarResumenDuplicado = (periodo, tipoPalabra, existente = null) => new Promise(resolve => {
+    setResumenDupConfirm({ periodo, tipoPalabra, existente, resolve })
   })
 
   const [msgIndex, setMsgIndex] = useState(0)
@@ -2337,8 +2340,15 @@ export default function Dashboard() {
         return
       }
 
-      const { data: existing } = await supabase.from('statements')
-        .select('id').eq('account_id', cuentaEgresos.id).eq('periodo', statementData.periodo).maybeSingle()
+      const { data: previosBanco } = await supabase.from('statements')
+        .select('id, periodo, fecha_hasta, fecha_vencimiento, total_resumen, total_dolares')
+        .eq('account_id', cuentaEgresos.id)
+      const cierreNuevoBanco = cierreDe({ fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion), fecha_vencimiento: null })
+      // Mismo criterio que en tarjetas: el ciclo (la fecha de cierre) identifica al
+      // extracto mejor que el nombre del mes, que lo lee la IA y varía entre cargas.
+      const existing = (cierreNuevoBanco ? (previosBanco || []).find(s => cierreDe(s) === cierreNuevoBanco) : null)
+        || (statementData.periodo ? (previosBanco || []).find(s => s.periodo === statementData.periodo) : null)
+        || null
       if (existing) {
         // Si el extracto existente no tiene transacciones, es el resto de un
         // intento que falló a mitad de camino: se limpia y se reintenta.
@@ -2347,11 +2357,12 @@ export default function Dashboard() {
         if ((txCount || 0) > 0) {
           // Puede ser un extracto distinto con el mismo período detectado
           // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
-          const seguir = await confirmarResumenDuplicado(statementData.periodo, 'extracto')
+          const seguir = await confirmarResumenDuplicado(existing.periodo || statementData.periodo, 'extracto', existing)
           if (!seguir) { setLoading(false); return }
-        } else {
-          await supabase.from('statements').delete().eq('id', existing.id)
         }
+        // Reemplaza, no se suma (ver el mismo caso en tarjetas, más abajo).
+        await supabase.from('transactions').update({ statement_id: null }).eq('statement_id', existing.id)
+        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
       // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
@@ -2535,10 +2546,26 @@ export default function Dashboard() {
       const account = targetAccount
       // Con una captura de movimientos no se crea ninguna ficha de resumen, así que
       // tampoco hay que chequear si ya existe una del mismo período ni borrarla.
-      const { data: existing } = esResumenCerrado
-        ? await supabase.from('statements')
-            .select('id').eq('account_id', account.id).eq('periodo', statementData.periodo).maybeSingle()
-        : { data: null }
+      //
+      // Un resumen se identifica por su CICLO —la fecha de cierre—, no por el nombre del
+      // mes. Dos resúmenes de la misma tarjeta no cierran nunca el mismo día, así que el
+      // cierre no tiene ambigüedad; el nombre del mes sí: lo lee la IA del PDF o de una
+      // captura y puede salir distinto en cada carga del MISMO resumen, y entonces el
+      // chequeo no lo reconocía y entraba una ficha nueva al lado de la que ya estaba.
+      const fechaHastaNueva = parseFechaArgentina(statementData.fecha_facturacion)
+      const fechaVencNueva = parseFechaArgentina(statementData.fecha_vencimiento)
+      const cierreNuevo = (fechaHastaNueva || fechaVencNueva)
+        ? cierreDe({ fecha_hasta: fechaHastaNueva, fecha_vencimiento: fechaVencNueva })
+        : null
+      let existing = null
+      if (esResumenCerrado) {
+        const { data: previos } = await supabase.from('statements')
+          .select('id, periodo, fecha_hasta, fecha_vencimiento, total_resumen, total_dolares')
+          .eq('account_id', account.id)
+        existing = (cierreNuevo ? (previos || []).find(s => cierreDe(s) === cierreNuevo) : null)
+          || (statementData.periodo ? (previos || []).find(s => s.periodo === statementData.periodo) : null)
+          || null
+      }
       if (existing) {
         // Si el extracto existente no tiene transacciones, es el resto de un
         // intento que falló a mitad de camino: se limpia y se reintenta.
@@ -2547,11 +2574,18 @@ export default function Dashboard() {
         if ((txCount || 0) > 0) {
           // Puede ser un resumen distinto con el mismo período detectado
           // (ej. resumen que cierra al mes siguiente): consultar, no denegar.
-          const seguir = await confirmarResumenDuplicado(statementData.periodo, 'resumen')
+          const seguir = await confirmarResumenDuplicado(existing.periodo || statementData.periodo, 'resumen', existing)
           if (!seguir) { setLoading(false); return }
-        } else {
-          await supabase.from('statements').delete().eq('id', existing.id)
         }
+        // El resumen que se está subiendo REEMPLAZA al que había para ese ciclo: no se
+        // suma. Antes, al confirmar, se insertaba una ficha nueva y quedaban las dos —
+        // que es exactamente cómo se cargan dos resúmenes del mismo mes: primero una
+        // captura del banco con el ciclo a medio facturar, y después el resumen
+        // completo. No son dos resúmenes, es el mismo dos veces.
+        // Los movimientos del viejo se sueltan antes de borrarlo para que la
+        // reconciliación los enganche al nuevo (ver reconciliarSueltas).
+        await supabase.from('transactions').update({ statement_id: null }).eq('statement_id', existing.id)
+        await supabase.from('statements').delete().eq('id', existing.id)
       }
 
       // Solo un resumen cerrado genera ficha (con su total y su vencimiento, que es lo
@@ -4927,14 +4961,24 @@ export default function Dashboard() {
           <div style={{...styles.modal, maxWidth: '400px'}}>
             <h3 style={styles.modalTitle}>Ya está cargado</h3>
             <p style={{ fontSize: '14px', color: darkMode ? '#ccc' : '#444', lineHeight: '1.5', margin: 0 }}>
-              Este {resumenDupConfirm.tipoPalabra} de {resumenDupConfirm.periodo} ya estaba cargado. Si había movimientos sin cargar, o es otro {resumenDupConfirm.tipoPalabra}, podés cargarlo igual — los que ya estén cargados van a aparecer tachados.
+              Este {resumenDupConfirm.tipoPalabra} de {resumenDupConfirm.periodo} ya estaba cargado. Si el que estás subiendo
+              es el completo (antes cargaste una captura o le faltaban movimientos), reemplazalo: el anterior se borra y sus
+              movimientos pasan al nuevo, así no te quedan dos {resumenDupConfirm.tipoPalabra}s del mismo ciclo.
             </p>
+            {/* Qué se va a reemplazar, con números: confirmar sobre un nombre de mes no
+                alcanza para saber si es el mismo resumen o uno distinto. */}
+            {resumenDupConfirm.existente && (
+              <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', lineHeight: '1.5', margin: '10px 0 0' }}>
+                El que está cargado cierra el {formatFecha(cierreDe(resumenDupConfirm.existente))} · $ {formatMonto(Number(resumenDupConfirm.existente.total_resumen) || 0)}
+                {resumenDupConfirm.existente.total_dolares ? ` + U$S ${formatMontoFull(Number(resumenDupConfirm.existente.total_dolares))}` : ''}
+              </p>
+            )}
             <div style={styles.modalButtons}>
               <button style={styles.cancelBtn} onClick={() => { resumenDupConfirm.resolve(false); setResumenDupConfirm(null) }}>
                 Es el mismo, no cargar
               </button>
               <button style={styles.saveBtn} onClick={() => { resumenDupConfirm.resolve(true); setResumenDupConfirm(null) }}>
-                Cargarlo igual
+                Reemplazarlo
               </button>
             </div>
           </div>
