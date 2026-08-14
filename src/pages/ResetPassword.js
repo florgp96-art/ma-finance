@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { COLORS, FONT, RADIUS } from '../theme'
+import { paleta, leerDarkMode, FONT, RADIUS } from '../theme'
 
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
@@ -24,6 +24,11 @@ export default function ResetPassword({ onDone }) {
     if (updateError) { setError('No se pudo cambiar la contraseña: ' + updateError.message); return }
     onDone()
   }
+
+  // Igual que Login: esta pantalla salía siempre en blanco, incluso con el
+  // tema oscuro puesto.
+  const dark = leerDarkMode()
+  const styles = getStyles(dark)
 
   return (
     <div style={styles.container}>
@@ -72,38 +77,46 @@ export default function ResetPassword({ onDone }) {
   )
 }
 
-const styles = {
+const getStyles = (dark) => {
+  const c = paleta(dark)
+  return {
   container: {
     minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: c.bg,
     fontFamily: FONT.family,
+    padding: '20px',
+    boxSizing: 'border-box',
   },
   card: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: c.surface,
     borderRadius: RADIUS.xl,
-    padding: '48px 40px 36px',
+    padding: '40px 28px 32px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 8px 40px rgba(92,79,92,0.12)',
+    boxShadow: dark ? '0 8px 40px rgba(0,0,0,0.45)' : '0 8px 40px rgba(92,79,92,0.12)',
+    boxSizing: 'border-box',
   },
   logoWrap: { display: 'flex', justifyContent: 'center', marginBottom: '24px' },
-  logo: { height: '90px', objectFit: 'contain' },
-  subtitle: { color: COLORS.textSecondary, textAlign: 'center', marginBottom: '32px', fontSize: '15px', fontWeight: '400' },
+  logo: { height: '90px', maxWidth: '100%', objectFit: 'contain', filter: dark ? 'invert(1)' : 'none' },
+  subtitle: { color: c.textSecondary, textAlign: 'center', marginBottom: '32px', fontSize: '15px', fontWeight: '400' },
   field: { marginBottom: '20px' },
-  label: { display: 'block', fontSize: '13px', fontWeight: '400', color: COLORS.text, marginBottom: '6px', letterSpacing: '0.02em' },
+  label: { display: 'block', fontSize: '13px', fontWeight: '400', color: c.text, marginBottom: '6px', letterSpacing: '0.02em' },
   input: {
-    width: '100%', padding: '13px 14px', borderRadius: RADIUS.md, border: `1.5px solid ${COLORS.inputBorder}`,
-    fontSize: '15px', outline: 'none', boxSizing: 'border-box', color: COLORS.text, backgroundColor: COLORS.inputBg,
+    width: '100%', padding: '13px 14px', borderRadius: RADIUS.md, border: `1.5px solid ${c.border}`,
+    // 16px: por debajo de eso, Safari en iPhone hace zoom al enfocar el campo.
+    fontSize: '16px', outline: 'none', boxSizing: 'border-box', color: c.text, backgroundColor: c.surfaceAlt,
+    colorScheme: dark ? 'dark' : 'light',
   },
   button: {
-    width: '100%', padding: '14px', backgroundColor: COLORS.primary, color: 'white', border: 'none',
+    width: '100%', padding: '14px', backgroundColor: c.primary, color: dark ? '#1C1A1C' : 'white', border: 'none',
     borderRadius: RADIUS.md, fontSize: '15px', fontWeight: '500', cursor: 'pointer', marginTop: '8px', letterSpacing: '0.02em', outline: 'none',
   },
   error: {
-    backgroundColor: COLORS.errorBg, color: COLORS.errorText, padding: '12px 16px', borderRadius: RADIUS.sm,
-    marginBottom: '16px', fontSize: '14px', border: `1px solid ${COLORS.errorBorder}`,
+    backgroundColor: dark ? '#3A2323' : '#fff0f0', color: c.errorText, padding: '12px 16px', borderRadius: RADIUS.sm,
+    marginBottom: '16px', fontSize: '14px', border: `1px solid ${dark ? '#5A3535' : '#fcc'}`,
   },
+  }
 }

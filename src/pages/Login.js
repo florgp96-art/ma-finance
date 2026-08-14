@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate, Link } from 'react-router-dom'
-import { COLORS, FONT, RADIUS } from '../theme'
+import { paleta, leerDarkMode, FONT, RADIUS } from '../theme'
 
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
@@ -44,6 +44,13 @@ export default function Login() {
       setResetSent(true)
     }
   }
+
+  // Esta pantalla se quedó sin modo oscuro: con el tema oscuro puesto, cerrar
+  // sesión (o volver a entrar) devolvía una pantalla blanca de golpe. El tema
+  // sale de localStorage, igual que en el onboarding.
+  const dark = leerDarkMode()
+  const c = paleta(dark)
+  const styles = getStyles(dark)
 
   return (
     <div style={styles.container}>
@@ -92,16 +99,16 @@ export default function Login() {
 
         {resetSent ? (
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
-            <p style={{ fontSize: '13px', color: '#27ae60', margin: '0 0 8px' }}>
+            <p style={{ fontSize: '13px', color: dark ? '#5FBF87' : '#1f7a44', margin: '0 0 8px' }}>
               ✅ Te enviamos un email para restablecer tu contraseña.
             </p>
-            <button onClick={() => setResetSent(false)} style={{ background: 'none', border: 'none', color: COLORS.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
+            <button onClick={() => setResetSent(false)} style={{ background: 'none', border: 'none', color: c.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
               Volver
             </button>
           </div>
         ) : (
-          <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: COLORS.textSecondary }}>
-            <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: COLORS.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
+          <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '13px', color: c.textSecondary }}>
+            <button onClick={handleResetPassword} style={{ background: 'none', border: 'none', color: c.primary, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}>
               ¿Olvidaste tu contraseña?
             </button>
           </p>
@@ -115,22 +122,29 @@ export default function Login() {
   )
 }
 
-const styles = {
+const getStyles = (dark) => {
+  const c = paleta(dark)
+  return {
   container: {
     minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: c.bg,
     fontFamily: FONT.family,
+    // Sin este padding la tarjeta llegaba al borde exacto de la pantalla en el
+    // celular y las esquinas redondeadas quedaban cortadas contra el marco.
+    padding: '20px',
+    boxSizing: 'border-box',
   },
   card: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: c.surface,
     borderRadius: RADIUS.xl,
-    padding: '48px 40px 36px',
+    padding: '40px 28px 32px',
     width: '100%',
     maxWidth: '400px',
-    boxShadow: '0 8px 40px rgba(92,79,92,0.12)',
+    boxShadow: dark ? '0 8px 40px rgba(0,0,0,0.45)' : '0 8px 40px rgba(92,79,92,0.12)',
+    boxSizing: 'border-box',
   },
   logoWrap: {
     display: 'flex',
@@ -139,10 +153,14 @@ const styles = {
   },
   logo: {
     height: '90px',
+    maxWidth: '100%',
     objectFit: 'contain',
+    // El logo es un monograma casi negro sobre transparencia: sin invertirlo
+    // desaparece contra el fondo oscuro.
+    filter: dark ? 'invert(1)' : 'none',
   },
   subtitle: {
-    color: COLORS.textSecondary,
+    color: c.textSecondary,
     textAlign: 'center',
     marginBottom: '32px',
     fontSize: '15px',
@@ -153,7 +171,7 @@ const styles = {
     display: 'block',
     fontSize: '13px',
     fontWeight: '400',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: '6px',
     letterSpacing: '0.02em',
   },
@@ -161,19 +179,22 @@ const styles = {
     width: '100%',
     padding: '13px 14px',
     borderRadius: RADIUS.md,
-    border: `1.5px solid ${COLORS.inputBorder}`,
-    fontSize: '15px',
+    border: `1.5px solid ${c.border}`,
+    // 16px y no 15: por debajo de 16px, Safari en iPhone hace zoom solo al
+    // tocar el campo y deja la pantalla corrida.
+    fontSize: '16px',
     outline: 'none',
     boxSizing: 'border-box',
-    color: COLORS.text,
-    backgroundColor: COLORS.inputBg,
+    color: c.text,
+    backgroundColor: c.surfaceAlt,
+    colorScheme: dark ? 'dark' : 'light',
     transition: 'border-color 0.2s',
   },
   button: {
     width: '100%',
     padding: '14px',
-    backgroundColor: COLORS.primary,
-    color: 'white',
+    backgroundColor: c.primary,
+    color: dark ? '#1C1A1C' : 'white',
     border: 'none',
     borderRadius: RADIUS.md,
     fontSize: '15px',
@@ -185,23 +206,24 @@ const styles = {
     outline: 'none',
   },
   error: {
-    backgroundColor: COLORS.errorBg,
-    color: COLORS.errorText,
+    backgroundColor: dark ? '#3A2323' : '#fff0f0',
+    color: c.errorText,
     padding: '12px 16px',
     borderRadius: RADIUS.sm,
     marginBottom: '16px',
     fontSize: '14px',
-    border: `1px solid ${COLORS.errorBorder}`,
+    border: `1px solid ${dark ? '#5A3535' : '#fcc'}`,
   },
   link: {
     textAlign: 'center',
     marginTop: '24px',
     fontSize: '14px',
-    color: COLORS.textSecondary,
+    color: c.textSecondary,
   },
   linkAnchor: {
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '500',
     textDecoration: 'none',
   },
+  }
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
+import { semaforo } from '../theme'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -338,6 +339,7 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
   if (Math.round(ars) === 0 && Math.round(usd * 100) === 0 && Math.round(eur * 100) === 0) return null
   const monedasConMonto = [ars, usd, eur].filter(v => Math.round(v * 100) !== 0).length
   const hayMultiples = monedasConMonto > 1
+  const sem = semaforo(darkMode)
   return (
     <tfoot>
       <tr>
@@ -349,9 +351,9 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
           }}>
             <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
             {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
-            {Math.round(usd * 100) !== 0 && <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(usd)}</span>}
-            {Math.round(eur * 100) !== 0 && <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(eur)}</span>}
-            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#8e8e93', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
+            {Math.round(usd * 100) !== 0 && <span style={{ color: sem.usd }}>U$S {formatMontoFull(usd)}</span>}
+            {Math.round(eur * 100) !== 0 && <span style={{ color: sem.positivo }}>€ {formatMontoFull(eur)}</span>}
+            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#75757a', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
           </div>
         </td>
       </tr>
@@ -391,8 +393,8 @@ export function InfoTooltip({ text, darkMode }) {
         onClick={(e) => { e.stopPropagation(); if (!hoverCapaz) setOpen(o => !o) }}
         style={{
           width: '15px', height: '15px', borderRadius: '50%', padding: 0, boxSizing: 'border-box',
-          border: `1px solid ${darkMode ? '#6A5A6A' : '#bbb'}`, background: 'none',
-          color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '10px', lineHeight: '13px',
+          border: `1px solid ${darkMode ? '#8A7A8A' : '#75757a'}`, background: 'none',
+          color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '10px', lineHeight: '13px',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'help', fontFamily: 'Georgia, serif', fontStyle: 'italic',
           textTransform: 'none', letterSpacing: 'normal', fontWeight: '400',
@@ -792,7 +794,12 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
     const anioActual = String(new Date().getFullYear())
     return (transactions || []).some(t => t.fecha && t.fecha.slice(0, 4) !== anioActual)
   }, [transactions])
-  const FECHA_PX = anchoHolgado ? 82 : (hayFechasDeOtroAnio ? 76 : 62)
+  // 62px alcanzan para el contenido ("13/08") pero no para el encabezado: en
+  // computadora "FECHA" mide 39,5px y la celda se lleva 12px de padding de cada
+  // lado, así que el título salía cortado como "FEC…" arriba de una columna
+  // medio vacía. En el celular el padding es de 8px y sí entra, y ahí cada píxel
+  // se lo lleva la descripción, que hace más falta.
+  const FECHA_PX = anchoHolgado ? 82 : (hayFechasDeOtroAnio ? 76 : (tablaWidth >= 500 ? 70 : 62))
   const CUOTAS_PX = anchoHolgado ? 78 : 54
   const MONTO_PX = 112, EXPAND_PX = 28
   // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
@@ -2091,7 +2098,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     const ingresoLabel = tx.tag || tx.subcategories?.nombre || tx.categories?.nombre || '—'
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
-    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }
+    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }
     const detailValue = { margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }
     return (
       <React.Fragment key={tx.id}>
@@ -2127,10 +2134,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </td>
           )}
           {colVisible.cuenta && (
-            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
+            <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.accounts?.nombre || '—'}</span></td>
           )}
           {colVisible.subcategoria && (
-            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{esIngresoTx ? '' : (tx.subcategories?.nombre || '—')}</span></td>
+            <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{esIngresoTx ? '' : (tx.subcategories?.nombre || '—')}</span></td>
           )}
           {colVisible.cuotas && (
             <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{esIngresoTx ? '—' : (tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—')}</td>
@@ -2140,7 +2147,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             title={tcTooltipDe(tx, tcMap, tipoCambio)}>
             {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </td>
-          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
         </tr>
         {expandido && (
           <tr style={styles.tr}>
@@ -2254,10 +2261,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </td>
         )}
         {colVisible.cuenta && (
-          <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{repTx.accounts?.nombre || '—'}</span></td>
+          <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{repTx.accounts?.nombre || '—'}</span></td>
         )}
         {colVisible.subcategoria && (
-          <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{repTx.subcategories?.nombre || '—'}</span></td>
+          <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{repTx.subcategories?.nombre || '—'}</span></td>
         )}
         {colVisible.cuotas && (
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}</td>
@@ -2266,7 +2273,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
           -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
         </td>
-        <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>▸</td>
+        <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>▸</td>
       </tr>
     )
   }
@@ -2337,7 +2344,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     return (
       <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 2px' }}>
-          <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+          <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </span>
           {/* Tipo (gasto/ingreso): reemplaza el atajo viejo de elegir la categoría
@@ -2488,7 +2495,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 background: activo ? (darkMode ? '#4A3F4A' : '#E8E0E8') : 'none',
                 border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '1px 3px',
                 fontSize: '9px', lineHeight: 1, flexShrink: 0,
-                color: activo ? (darkMode ? '#E8D8E8' : '#5C4F5C') : (darkMode ? '#5A4A5A' : '#bbb'),
+                color: activo ? (darkMode ? '#E8D8E8' : '#5C4F5C') : (darkMode ? '#8A7A8A' : '#75757a'),
               }}
             >
               ▼
@@ -2552,7 +2559,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {visibles.length === 0 && (
-              <p style={{ margin: '6px 4px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+              <p style={{ margin: '6px 4px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
                 Nada que coincida.
               </p>
             )}
@@ -2587,6 +2594,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const isMobile = windowWidth < 768
   const styles = getStyles(darkMode, isMobile)
   const ellipsisCell = { ...styles.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', wordBreak: 'normal' }
+  // Mismo gris secundario que usa getStyles internamente. Las celdas de cuenta/
+  // subcategoría lo traían como '#888' o '#aaa' fijos: en oscuro se hunden
+  // contra el panel y en claro '#aaa' sobre blanco da 2,3:1.
+  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
+  const sem = semaforo(darkMode)
 
   // Corte de la tabla de movimientos (ver verTodosMovimientos). El corte es solo
   // visual: el contador del título, el pie de totales y el export a CSV siguen
@@ -3217,7 +3229,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 dónde salió la fecha se aclara siempre: una estimación no se puede
                 confundir con un dato del banco. */}
             {s._virtual && s._editableCierre && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? '#c0392b' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: s._cerradoSinPdf ? sem.negativo : muted, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 {s._cerradoSinPdf ? 'Cerró el' : 'Cierra el'}
                 <input {...propsInputFecha(s._cierraEl, v => guardarCierreManual(s.account_id, { proximo_cierre: v }))} />
                 y vence el
@@ -3228,7 +3240,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </p>
             )}
             {s._virtual && !s._editableCierre && s._cierraEl && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>
                 Cierra alrededor del {formatFechaCorta(s._cierraEl)} (estimado)
               </p>
             )}
@@ -3237,7 +3249,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 selector daba a entender que se puede mover cada tramo por separado. */}
             {s._virtual && s._editableDesde && (
               <>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Contando desde
                   <input {...propsInputFecha(
                     s.cicloDesde || (s.cicloDesdeEfectivo ? restarDiasISO(s.cicloDesdeEfectivo, -1) : ''),
@@ -3253,7 +3265,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 cuenta se leen como la misma cosa repetida en vez de como dos períodos
                 consecutivos. */}
             {s._virtual && !s._editableDesde && s.cicloDesdeEfectivo && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6e6e73' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: muted }}>
                 Contando desde el {formatFechaCorta(restarDiasISO(s.cicloDesdeEfectivo, -1))}
               </p>
             )}
@@ -3275,8 +3287,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <input type="number" step="0.01" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
                   placeholder="negativo si es a favor"
                   style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
-                <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
+                <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
+                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
               </span>
             ) : (
               (s.total_usd !== 0 || s.total_dolares) && (
@@ -3305,19 +3317,19 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 muestra como "A favor"; en "Ciclo actual" (resumen anterior ya saldado
                 por completo) se aclara que es de ese resumen anterior. */}
             {s._excedenteArs > 0 && (
-              <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: sem.teal }}>
                 {s._virtual ? 'Te queda a favor' : 'A favor'}: $ {formatMonto(s._excedenteArs)}{!s._virtual ? ' (según resumen)' : ''}
               </p>
             )}
             {s._excedenteUsd > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: '#4a9e7a' }}>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: sem.teal }}>
                 {s._virtual ? 'Te queda a favor' : 'A favor'}: U$S {formatMontoFull(s._excedenteUsd)}{!s._virtual ? ' (según resumen)' : ''}
               </p>
             )}
             {diasRestantes !== null && (
               <p
                 title={`Vence: ${s.fecha_vencimiento}`}
-                style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? '#e74c3c' : diasRestantes <= 7 ? '#e07b39' : '#4a9e7a', cursor: 'default' }}>
+                style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '500', color: diasRestantes <= 3 ? sem.negativo : diasRestantes <= 7 ? sem.alerta : sem.teal, cursor: 'default' }}>
                 {diasRestantes < 0
                   ? `Venció hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) === 1 ? '' : 's'}`
                   : diasRestantes === 0 ? '¡Vence hoy!' : diasRestantes === 1 ? 'Vence mañana' : `Vence en ${diasRestantes} días`}
@@ -3373,7 +3385,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </span>
                     </td>
                     <td style={{ ...styles.td, display: isMobile ? 'none' : undefined }}>
-                      <span style={{ fontSize: '12px', color: '#888' }}>{tx.subcategories?.nombre || '—'}</span>
+                      <span style={{ fontSize: '12px', color: muted }}>{tx.subcategories?.nombre || '—'}</span>
                     </td>
                     <td style={{ ...styles.td, textAlign: 'right', fontWeight: '600' }}>
                       {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
@@ -3422,7 +3434,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </p>
             )}
             {allAccounts && totalBrutoBarra > 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+              <p style={{ margin: '10px 0 0', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
                 $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes · {pctPagadoBarra}%
               </p>
             )}
@@ -3510,7 +3522,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                         </span>
                       </div>
                       {(s._excedenteArs > 0 || s._excedenteUsd > 0) && (
-                        <div style={{ fontSize: '11px', color: '#4a9e7a' }}>
+                        <div style={{ fontSize: '11px', color: sem.teal }}>
                           Te queda a favor{s._excedenteArs > 0 ? `: $ ${formatMonto(s._excedenteArs)}` : ''}{s._excedenteUsd > 0 ? ` ${s._excedenteArs > 0 ? '+ ' : ': '}U$S ${formatMontoFull(s._excedenteUsd)}` : ''}
                         </div>
                       )}
@@ -3677,12 +3689,12 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             </div>
           )}
           {statementsFacturados.length === 0 && statementsSinResumen.length === 0 ? (
-            <p style={{ color: '#aaa', fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
+            <p style={{ color: muted, fontSize: '14px' }}>No hay resúmenes con vencimiento próximo{allAccounts ? '' : ' para esta cuenta'}.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {statementsVencidas.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#c0392b', ...rotuloLabel }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: sem.negativo, ...rotuloLabel }}>
                     ⚠️ Acción inmediata
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3824,7 +3836,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Total Ingresos unificado (ARS)</p>
                 <p style={styles.summaryValue}>$ {formatMonto(ingresosEquivARS)}</p>
-                <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
+                <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
               </div>
             )}
 
@@ -3858,7 +3870,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>$ {formatMonto(totalIngresosARS)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance ARS</p>
-                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
+                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
                 </>}
               </div>
             )}
@@ -3873,7 +3885,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance USD</p>
-                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -3888,7 +3900,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>€ {formatMontoFull(totalIngresosEUR)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance EUR</p>
-                  {(() => { const b = totalIngresosEUR - totalEUR; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}€ {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosEUR - totalEUR; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}€ {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -3899,7 +3911,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <p style={{ ...styles.summaryLabel, marginBottom: '6px' }}>vs {mesLabel(mesAnterior)}</p>
                 {diffPct !== null && <>
                   <p style={{ ...styles.summaryLabel, marginBottom: '2px', opacity: 0.7 }}>Gastos</p>
-                  <p style={{...styles.summaryValue, color: diffPct > 0 ? '#c0392b' : '#2e8b6a', fontSize: '20px', marginBottom: '2px'}}>
+                  <p style={{...styles.summaryValue, color: diffPct > 0 ? sem.negativo : sem.teal, fontSize: '20px', marginBottom: '2px'}}>
                     {diffPct > 0 ? '↑' : '↓'} {Math.abs(diffPct)}%
                   </p>
                   <p style={{...styles.summarySubval, marginBottom: diffIngPct !== null ? '8px' : 0}}>{diffMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffMonto))}</p>
@@ -3907,7 +3919,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 {diffIngPct !== null && <>
                   {diffPct !== null && <div style={{ borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`, margin: '4px 0 6px' }} />}
                   <p style={{ ...styles.summaryLabel, marginBottom: '2px', opacity: 0.7 }}>Ingresos</p>
-                  <p style={{...styles.summaryValue, color: diffIngPct > 0 ? '#2e8b6a' : '#c0392b', fontSize: '20px', marginBottom: '2px'}}>
+                  <p style={{...styles.summaryValue, color: diffIngPct > 0 ? sem.teal : sem.negativo, fontSize: '20px', marginBottom: '2px'}}>
                     {diffIngPct > 0 ? '↑' : '↓'} {Math.abs(diffIngPct)}%
                   </p>
                   <p style={styles.summarySubval}>{diffIngMonto > 0 ? '+' : ''}$ {formatMonto(Math.abs(diffIngMonto))}</p>
@@ -3961,7 +3973,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>U$S {formatMonto(ingresosEquivUSD)}</p>
                     {divider}
                     <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
+                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
                   </>}
                 </> : <>
                   <p style={styles.summaryLabel}>Egresos</p>
@@ -3971,7 +3983,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>$ {formatMonto(ingresosEquivARS)}</p>
                     {divider}
                     <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? '#3a7d44' : '#c0392b' }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
+                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
                   </>}
                 </>}
               </div>
@@ -4032,8 +4044,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       </select>
                       <input type="number" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
                         style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
-                      <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
+                      <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
+                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
                     </span>
                   </>
                 ) : (
@@ -4067,7 +4079,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               {mesDesplegado === b.mes && b.resumenes.length > 1 && (
                 <div style={{ padding: '2px 2px 8px 16px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   {b.resumenes.map(r => (
-                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#8e8e93' }}>
+                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {cierreDe(r) ? `Cierra ${formatFecha(cierreDe(r))}` : 'Sin fecha de cierre'}
                         {r.nombre_archivo ? ` · ${r.nombre_archivo}` : ' · cargado a mano'}
@@ -4105,8 +4117,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </select>
               <input type="number" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
                 placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
-              <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4a9e7a', fontSize: '13px' }}>✓</button>
-              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize: '13px' }}>✕</button>
+              <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
+              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
             </div>
           ) : (
             <button onClick={() => setShowAddMes(true)} style={{ marginTop: '8px', background: 'none', border: 'none', cursor: 'pointer', color: BAR_COLOR, fontSize: '12px', padding: '4px 2px', textAlign: 'left' }}>+ Agregar mes</button>
@@ -4118,14 +4130,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ textAlign: 'center', padding: '48px 24px' }}>
           <p style={{ fontSize: '32px', marginBottom: '12px' }}>💰</p>
           <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
-          <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
+          <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
         </div>
       )}
 
       {mesesDisponibles.length > 0 && (
         <div style={styles.chartSection}>
           {selectedMeses.length === 0 && (
-            <p style={{color:'#aaa', fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
+            <p style={{color: muted, fontSize:'14px', marginTop:'16px'}}>Seleccioná al menos un mes.</p>
           )}
 
           {(() => {
@@ -4265,10 +4277,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             )
           })()}
           {selectedMeses.length > 0 && displayChartData.length === 0 && !esVistaIngresos && (
-            <p style={{color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
+            <p style={{color: darkMode ? '#9A8A9A' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
           {selectedMeses.length > 0 && displayChartData.length === 0 && esVistaIngresos && (
-            <p style={{color: darkMode ? '#9A8A9A' : '#8e8e93', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
+            <p style={{color: darkMode ? '#9A8A9A' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
           )}
         </div>
       )}
@@ -4351,34 +4363,34 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                       {colVisible.cuenta && <td style={ellipsisCell} title={tx.detalle}><span style={styles.detalle}>{tx.detalle}</span></td>}
                       {colVisible.subcategoria && (
                         <td style={ellipsisCell}>
-                          <span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span>
+                          <span style={{fontSize:'12px', color: muted}}>{tx.accounts?.nombre || '—'}</span>
                         </td>
                       )}
-                      <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color:'#aaa'}}>{tx.nombre || '—'}</span></td>
-                      {colVisible.categoria && <td style={ellipsisCell}><span style={{color:'#aaa'}}>—</span></td>}
+                      <td style={ellipsisCell} title={tx.nombre || ''}><span style={{color: muted}}>{tx.nombre || '—'}</span></td>
+                      {colVisible.categoria && <td style={ellipsisCell}><span style={{color: muted}}>—</span></td>}
                       <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
                         {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                       </td>
-                      <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+                      <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                     </tr>
                     {expandido && (
                       <tr style={styles.tr}>
                         <td colSpan={numColsSinId} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                             <div style={{ flexBasis: '100%' }}>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Detalle original</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Detalle original</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.detalle || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
                             </div>
                           </div>
@@ -4534,41 +4546,41 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                           <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
                           <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
                           {colVisible.categoria && (
-                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.categories?.nombre || '—'}</span></td>
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.categories?.nombre || '—'}</span></td>
                           )}
                           {colVisible.subcategoria && (
-                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.subcategories?.nombre || '—'}</span></td>
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.subcategories?.nombre || '—'}</span></td>
                           )}
                           {colVisible.cuenta && (
-                            <td style={ellipsisCell}><span style={{fontSize:'12px', color:'#888'}}>{tx.accounts?.nombre || '—'}</span></td>
+                            <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.accounts?.nombre || '—'}</span></td>
                           )}
                           <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
                             {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                           </td>
-                          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+                          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                         </tr>
                         {expandido && (
                           <tr style={styles.tr}>
                             <td colSpan={numColsNeutros} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                                 <div style={{ flexBasis: '100%' }}>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || tx.detalle || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Categoría</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Categoría</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.categories?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Subcategoría</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Subcategoría</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.subcategories?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
                                 </div>
                               </div>
@@ -4595,7 +4607,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
-            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
+            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
             <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
               {opcionesParticipantesReparto.map(op => {
@@ -4608,7 +4620,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 )
               })}
               {opcionesParticipantesReparto.length === 1 && (
-                <span style={{ fontSize: '12px', color: '#aaa', alignSelf: 'center' }}>Cargá hijos/as en Configuración para poder repartir con ellos.</span>
+                <span style={{ fontSize: '12px', color: muted, alignSelf: 'center' }}>Cargá hijos/as en Configuración para poder repartir con ellos.</span>
               )}
             </div>
             {repartoModalSeleccion.length > 0 && (
@@ -4619,10 +4631,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                     <input type="number" min="0" max="100" step="1" value={sel.porcentaje}
                       onChange={e => editarPorcentajeModalReparto(sel.key, e.target.value)}
                       style={{ width: '70px', padding: '6px 8px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }} />
-                    <span style={{ fontSize: '13px', color: '#6e6e73' }}>%</span>
+                    <span style={{ fontSize: '13px', color: muted }}>%</span>
                   </div>
                 ))}
-                <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: sumaModalRepartoValida ? '#3a7d44' : '#c0392b' }}>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', fontWeight: '600', color: sumaModalRepartoValida ? sem.positivo : sem.negativo }}>
                   Suma: {Math.round(sumaPorcentajesModalReparto * 100) / 100}% {sumaModalRepartoValida ? '✓' : '(tiene que dar 100%)'}
                 </p>
               </div>
@@ -4630,7 +4642,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', marginTop: '20px', flexWrap: 'wrap' }}>
               <div>
                 {desglosarReparto(repartoModalTx) && (
-                  <button type="button" onClick={quitarReparto} style={{ padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #c0392b', color: '#c0392b', background: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif' }}>
+                  <button type="button" onClick={quitarReparto} style={{ padding: '10px 14px', borderRadius: '10px', border: `1.5px solid ${sem.negativo}`, color: sem.negativo, background: 'none', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif' }}>
                     Quitar reparto
                   </button>
                 )}
@@ -4654,7 +4666,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
               🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
             </h3>
-            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#8e8e93', margin: '0 0 20px' }}>
+            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '0 0 20px' }}>
               {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -4682,6 +4694,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 export default React.memo(AccountDetail)
 
 const getStyles = (dark, mobile) => {
+  const sem = semaforo(dark)
   const p = dark ? '#8C7B8C' : '#5C4F5C'
   const panel = dark ? '#2A272A' : 'white'
   const txt = dark ? '#F0EDEC' : '#1d1d1f'
@@ -4736,7 +4749,7 @@ const getStyles = (dark, mobile) => {
       cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
       overflow: 'hidden', textOverflow: 'ellipsis'
     },
-    sortIcon: { fontSize: '10px', color: dark ? '#5A4A5A' : '#bbb' },
+    sortIcon: { fontSize: '10px', color: dark ? '#8A7A8A' : '#75757a' },
     filtroColAccion: {
       flex: 1, padding: '4px 6px', borderRadius: '6px', border: `1px solid ${hdrBorder}`,
       background: 'none', cursor: 'pointer', fontSize: '11px', color: muted,
@@ -4759,7 +4772,7 @@ const getStyles = (dark, mobile) => {
     // de Ahorros: grupo de botones con borde redondeado, buen padding,
     // altura táctil cómoda (~44px) en vez de texto suelto con emojis.
     accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
-    accionBtnDanger: { border: '1px solid #c0392b', color: '#c0392b' },
+    accionBtnDanger: { border: `1px solid ${sem.negativo}`, color: sem.negativo },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },

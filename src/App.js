@@ -1,7 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
-import { COLORS, FONT } from './theme'
+import { paleta, leerDarkMode, FONT } from './theme'
 
 // Pages
 import Login from './pages/Login'
@@ -14,15 +14,18 @@ function App() {
   const { user, loading, passwordRecovery, clearPasswordRecovery } = useAuth()
 
   if (loading) {
+    // Es lo primero que se ve al abrir la app: en blanco fijo, con el tema
+    // oscuro puesto pegaba un flash blanco antes de pintar el Dashboard.
+    const c = paleta(leerDarkMode())
     return (
       <div style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        height: '100vh',
+        minHeight: '100dvh',
         fontFamily: FONT.family,
-        color: COLORS.textSecondary,
-        backgroundColor: COLORS.bg,
+        color: c.textSecondary,
+        backgroundColor: c.bg,
       }}>
         Cargando...
       </div>
