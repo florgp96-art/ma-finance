@@ -3291,7 +3291,11 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
               </span>
             ) : (
-              (s.total_usd !== 0 || s.total_dolares) && (
+              // Boolean() a propósito: si total_usd es 0 y total_dolares es 0,
+              // la condición vale 0 (no false) y React imprime ese cero como
+              // texto — quedaba un "0" suelto colgando debajo del importe en
+              // todo resumen que fuera solo en pesos, que son casi todos.
+              Boolean(s.total_usd !== 0 || s.total_dolares) && (
                 <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
                   U$S {formatMontoFull(s.total_usd)}
                   {/* Si el total en dólares que informa el resumen no se leyó bien del

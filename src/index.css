@@ -35,6 +35,28 @@ body {
   padding-left: calc(16px + env(safe-area-inset-left)) !important;
 }
 
+/* En el iPhone, tocar un campo cuya letra mide menos de 16px hace que Safari
+   acerque la pantalla solo — y al salir del campo NO la devuelve: la app queda
+   agrandada y hay que achicarla con los dedos. Es la razón de que "no se vea
+   como una app" en el celular.
+
+   Va como piso global y con !important porque el tamaño de cada campo está
+   escrito en su propio estilo (inline), que le gana a cualquier regla normal;
+   así además no se escapa ninguno nuevo. 16px es el mínimo exacto que pide
+   iOS, no una preferencia de diseño.
+
+   Solo los campos que abren el teclado: un <select> y un campo de fecha abren
+   una ruedita de selección, no el teclado, y no disparan ese zoom. Meterlos acá
+   además se veía mal — los desplegables chiquitos de "Editar categorías"
+   quedaban más grandes que el nombre de la categoría que acompañan. */
+@media (max-width: 767px) {
+  input[type="text"], input[type="email"], input[type="password"],
+  input[type="number"], input[type="search"], input[type="tel"],
+  input[type="url"], input:not([type]), textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Quita el rendering nativo del OS en todos los selects (evita flash negro en Windows/Android) */
 select {
   appearance: none;
