@@ -3,7 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/icon.png" type="image/png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      viewport-fit=cover va de la mano con apple-mobile-web-app-status-bar-style
+      black-translucent (más abajo): instalada en el iPhone, la app dibuja debajo
+      de la barra de estado y del indicador de inicio. Sin viewport-fit=cover,
+      env(safe-area-inset-*) devuelve 0 y no hay forma de esquivarlos; con él,
+      el header y el menú lateral se separan solos (ver index.css).
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#5C4F5C" />
     <meta name="description" content="Mom's Assist Finance" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/icon.png" />

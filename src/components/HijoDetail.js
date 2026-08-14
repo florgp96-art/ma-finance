@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { mesLabel, formatMonto, formatMontoFull, formatFechaCorta, TotalesFooter, tcDeMovimiento, tcEURDeMovimiento, resolveCategoryIcon, resolveCategoryColor, InfoTooltip, useContainerWidth, columnasVisibles, repartirAnchoTexto, rotuloLabel } from './AccountDetail'
+import useBreakpoint from '../hooks/useBreakpoint'
+import { semaforo } from '../theme'
 
 const getLast6Months = () => {
   const months = []
@@ -30,6 +32,9 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const [editingTx, setEditingTx] = useState(null)
   const [filaExpandida, setFilaExpandida] = useState(null)
   const [tablaRef, tablaWidth] = useContainerWidth()
+  // Se declara acá arriba (y no junto a windowWidth, más abajo) porque los
+  // anchos de columna que siguen dependen de él.
+  const { isMobile } = useBreakpoint()
   const colVisible = columnasVisibles(tablaWidth)
   const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0)
   // Mismo criterio que la tabla principal de AccountDetail.js: fecha/monto/
@@ -43,7 +48,16 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     const anioActual = String(new Date().getFullYear())
     return (transactions || []).some(t => t.fecha && t.fecha.slice(0, 4) !== anioActual)
   }, [transactions])
-  const FECHA_PX = hayFechasDeOtroAnio ? 74 : 58, MONTO_PX = 106, EXPAND_PX = 28
+  // En el celular las columnas fijas se llevaban 192px de una tabla de 254 y a
+  // la descripción le quedaban 62: todos los movimientos se leían "Coto…",
+  // "Farm…", "Netfl…". Fecha y monto se aprietan (y las celdas usan 6px de
+  // padding lateral en vez de 10) para devolverle ese espacio a lo único que
+  // identifica al movimiento.
+  // 58px en el celular es el piso: el contenido ("13/08") entra en 44, pero el
+  // encabezado "FECHA" mide 39,5 + la flechita de ordenar + 12 de padding.
+  const FECHA_PX = hayFechasDeOtroAnio ? (isMobile ? 66 : 78) : (isMobile ? 58 : 66)
+  const MONTO_PX = isMobile ? 94 : 106
+  const EXPAND_PX = isMobile ? 22 : 28
   const anchosTexto = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
     colVisible, { descripcion: 1.6, categoria: 1.3, subcategoria: 1, cuenta: 1 }
@@ -59,14 +73,6 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const [verTodos, setVerTodos] = useState(false)
   const [sortKey, setSortKey] = useState('fecha')
   const [sortDir, setSortDir] = useState('desc')
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
-  const isMobile = windowWidth < 768
-
-  useEffect(() => {
-    const onResize = () => setWindowWidth(window.innerWidth)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   // Se dispara una sola vez por hijo (no en cada refreshKey — antes cualquier
   // guardado en OTRA parte de la app volvía a elegir el período por default acá,
@@ -330,10 +336,17 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
     URL.revokeObjectURL(url)
   }
 
-  const s = getStyles(darkMode)
+  const s = getStyles(darkMode, isMobile)
+  // Gris secundario y acento del tema. Antes cada uno de estos textos traía su
+  // hex de modo claro escrito a mano: en oscuro, '#6e6e73' sobre el panel
+  // #2A272A queda en 2,9:1 y el chip de categoría ('#5C4F5C' sobre #3A333A) en
+  // 1,6:1 — o sea, ilegible.
+  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
+  const acento = darkMode ? '#D6C6D6' : '#5C4F5C'
+  const sem = semaforo(darkMode)
 
   if (loading) return (
-    <p style={{ color: darkMode ? '#aaa' : '#888', fontSize: '14px', textAlign: 'center', marginTop: '48px' }}>
+    <p style={{ color: muted, fontSize: '14px', textAlign: 'center', marginTop: '48px' }}>
       Cargando gastos de {hijoNombre}...
     </p>
   )
@@ -414,14 +427,14 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
         )}
         {totalUSD > 0 && (
           <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2D3A' : '#E8F4F8', border: `1px solid ${darkMode ? '#2A3D4A' : '#B3D9E8'}` }}>
-            <p style={{ ...s.statLabel, color: '#5588aa' }}>Total USD</p>
-            <p style={{ ...s.statValue, color: '#5588aa' }}>U$S {formatMontoFull(totalUSD)}</p>
+            <p style={{ ...s.statLabel, color: sem.usd }}>Total USD</p>
+            <p style={{ ...s.statValue, color: sem.usd }}>U$S {formatMontoFull(totalUSD)}</p>
           </div>
         )}
         {totalEUR > 0 && (
           <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
-            <p style={{ ...s.statLabel, color: '#3a7d44' }}>Total EUR</p>
-            <p style={{ ...s.statValue, color: '#3a7d44' }}>€ {formatMontoFull(totalEUR)}</p>
+            <p style={{ ...s.statLabel, color: sem.positivo }}>Total EUR</p>
+            <p style={{ ...s.statValue, color: sem.positivo }}>€ {formatMontoFull(totalEUR)}</p>
           </div>
         )}
         {(totalUSD > 0 || totalEUR > 0) && (
@@ -522,16 +535,16 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
           </h3>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: cuotaMonthlyData.some(m => m.ingreso > 0 || m.egreso > 0) ? '20px' : 0 }}>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#1A2B1A' : '#E8F5E8', border: `1px solid ${darkMode ? '#2A3B2A' : '#B3D9B3'}` }}>
-              <p style={{ ...s.statLabel, color: '#3a7d44' }}>Ingresos</p>
-              <p style={{ ...s.statValue, color: '#3a7d44' }}>$ {formatMonto(cuotaResumen.ingreso)}</p>
+              <p style={{ ...s.statLabel, color: sem.positivo }}>Ingresos</p>
+              <p style={{ ...s.statValue, color: sem.positivo }}>$ {formatMonto(cuotaResumen.ingreso)}</p>
             </div>
             <div style={{ ...s.statCard, backgroundColor: darkMode ? '#3A2323' : '#FBEAEA', border: `1px solid ${darkMode ? '#5A3232' : '#F0C4C4'}` }}>
-              <p style={{ ...s.statLabel, color: '#c0392b' }}>Egresos</p>
-              <p style={{ ...s.statValue, color: '#c0392b' }}>$ {formatMonto(cuotaResumen.egreso)}</p>
+              <p style={{ ...s.statLabel, color: sem.negativo }}>Egresos</p>
+              <p style={{ ...s.statValue, color: sem.negativo }}>$ {formatMonto(cuotaResumen.egreso)}</p>
             </div>
             <div style={s.statCard}>
               <p style={s.statLabel}>Balance</p>
-              <p style={{ ...s.statValue, color: cuotaResumen.ingreso - cuotaResumen.egreso >= 0 ? '#3a7d44' : '#c0392b' }}>
+              <p style={{ ...s.statValue, color: cuotaResumen.ingreso - cuotaResumen.egreso >= 0 ? sem.positivo : sem.negativo }}>
                 {cuotaResumen.ingreso - cuotaResumen.egreso >= 0 ? '+' : ''}$ {formatMonto(cuotaResumen.ingreso - cuotaResumen.egreso)}
               </p>
             </div>
@@ -570,7 +583,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       <div style={s.card}>
         <h3 style={s.cardTitle}>Transacciones ({filteredTx.length})</h3>
         {filteredTx.length === 0 ? (
-          <p style={{ color: '#aaa', fontSize: '14px', margin: 0 }}>
+          <p style={{ color: muted, fontSize: '14px', margin: 0 }}>
             No hay gastos en el período seleccionado.
           </p>
         ) : (
@@ -597,13 +610,18 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                     { h: '' },
                   ].map(({ h, key }, i) => (
                     <th key={h || `acciones-${i}`} onClick={key ? () => handleSort(key) : undefined} style={{
-                      textAlign: key === 'monto' ? 'right' : 'left', padding: '8px 10px',
+                      textAlign: key === 'monto' ? 'right' : 'left', padding: isMobile ? '8px 6px' : '8px 10px',
                       borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
-                      color: '#6e6e73', fontWeight: '400', fontSize: '11px',
+                      // Un punto más chico en el celular: "DESCRIPCIÓN" a 11px
+                      // no entra en la columna y se cortaba el propio título.
+                      // Achicar el rótulo es preferible a robarle ancho al dato.
+                      color: muted, fontWeight: '400', fontSize: isMobile ? '10px' : '11px',
                       textTransform: 'uppercase', letterSpacing: '0.04em',
                       cursor: key ? 'pointer' : undefined, userSelect: key ? 'none' : undefined,
-                      whiteSpace: 'nowrap'
-                    }}>{h}{key && <span style={{ fontSize: '10px', color: darkMode ? '#5A4A5A' : '#bbb' }}>{sortIcon(key)}</span>}</th>
+                      // Sin overflow oculto, un encabezado que no entra se
+                      // monta encima de la columna de al lado en vez de cortarse.
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                    }}>{h}{key && <span style={{ fontSize: '10px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{sortIcon(key)}</span>}</th>
                   ))}
                 </tr>
               </thead>
@@ -611,7 +629,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                 {filasVisibles.map((t, i) => {
                   const isEditing = editingTx === t.id
                   const expandido = filaExpandida === t.id
-                  const ellipsisTd = { padding: '9px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                  const ellipsisTd = { padding: isMobile ? '9px 6px' : '9px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
                   if (isEditing) {
                     return (
                       <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
@@ -640,52 +658,52 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                       style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}`, cursor: 'pointer' }}
                       onClick={() => setFilaExpandida(prev => prev === t.id ? null : t.id)}
                     >
-                      <td style={{ padding: '9px 10px', color: '#6e6e73', whiteSpace: 'nowrap', fontSize: '12px' }}>{formatFechaCorta(t.fecha)}</td>
+                      <td style={{ padding: isMobile ? '9px 6px' : '9px 10px', color: muted, whiteSpace: 'nowrap', fontSize: '12px' }}>{formatFechaCorta(t.fecha)}</td>
                       <td style={ellipsisTd} title={t.nombre || t.detalle || ''}>
                         <span style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</span>
                       </td>
                       {colVisible.categoria && (
                         <td style={ellipsisTd}>
                           {t.categories?.nombre
-                            ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: '#5C4F5C', padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
-                            : <span style={{ color: '#aaa' }}>—</span>
+                            ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: acento, padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
+                            : <span style={{ color: muted }}>—</span>
                           }
                         </td>
                       )}
                       {colVisible.subcategoria && (
-                        <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.subcategories?.nombre || '—'}</td>
+                        <td style={{ ...ellipsisTd, color: muted, fontSize: '12px' }}>{t.subcategories?.nombre || '—'}</td>
                       )}
                       {colVisible.cuenta && (
-                        <td style={{ ...ellipsisTd, color: '#6e6e73', fontSize: '12px' }}>{t.accounts?.nombre || '—'}</td>
+                        <td style={{ ...ellipsisTd, color: muted, fontSize: '12px' }}>{t.accounts?.nombre || '—'}</td>
                       )}
-                      <td style={{ padding: '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', textAlign: 'right', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+                      <td style={{ padding: isMobile ? '9px 6px' : '9px 10px', fontWeight: '600', whiteSpace: 'nowrap', textAlign: 'right', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                         {t.tipo === 'ingreso' ? '+' : '-'}
                         {t.moneda === 'USD'
-                          ? <span style={{ color: '#5588aa' }}>U$S {formatMontoFull(t.monto)}</span>
+                          ? <span style={{ color: sem.usd }}>U$S {formatMontoFull(t.monto)}</span>
                           : t.moneda === 'EUR'
-                            ? <span style={{ color: '#3a7d44' }}>€ {formatMontoFull(t.monto)}</span>
+                            ? <span style={{ color: sem.positivo }}>€ {formatMontoFull(t.monto)}</span>
                             : `$ ${formatMonto(t.monto)}`}
                       </td>
-                      <td style={{ padding: '9px 4px', textAlign: 'center', color: darkMode ? '#6A5A6A' : '#bbb' }}>{expandido ? '▾' : '▸'}</td>
+                      <td style={{ padding: '9px 4px', textAlign: 'center', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                     </tr>
                     {expandido && (
                       <tr style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
                         <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
                             <div style={{ flexBasis: '100%' }}>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Nombre</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Nombre</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Subcategoría</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Subcategoría</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.subcategories?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Forma de pago</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Forma de pago</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#8e8e93', ...rotuloLabel }}>Moneda</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
@@ -721,11 +739,13 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
 // ninguno de sus props.
 export default React.memo(HijoDetail)
 
-const getStyles = (dark) => ({
+const getStyles = (dark, mobile) => ({
   card: {
     backgroundColor: dark ? '#2A272A' : 'white',
     borderRadius: '16px',
-    padding: '20px 24px',
+    // 24px de padding lateral en un teléfono de 360px son 48px que le faltan a
+    // la tabla de movimientos, que es justo lo que se viene a leer acá.
+    padding: mobile ? '16px 14px' : '20px 24px',
     border: `1px solid ${dark ? '#3A333A' : '#EDE8EC'}`,
     marginBottom: '20px',
   },
@@ -747,7 +767,7 @@ const getStyles = (dark) => ({
   statLabel: {
     margin: 0,
     fontSize: '11px',
-    color: '#6e6e73',
+    color: dark ? '#9A8A9A' : '#6e6e73',
     letterSpacing: '0.06em',
     ...rotuloLabel,
   },

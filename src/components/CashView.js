@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
 import { cuotasFuturasCargadas } from '../lib/cuotas'
+import { semaforo } from '../theme'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -226,6 +227,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
   const muted = darkMode ? '#9A8A9A' : '#6e6e73'
   const border = darkMode ? '#3A333A' : '#E2DDE0'
+  const sem = semaforo(darkMode)
   const panel = darkMode ? '#2A272A' : '#F0EDEC'
   const cardBg = darkMode ? '#1C1A1C' : 'white'
   // Formato compacto para el eje Y del historial (ej. "$2,1M", "$450k") — solo
@@ -357,25 +359,25 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: txt, padding: '4px 0' }}>
           <span>Total pagado</span><span style={{ fontWeight: '600' }}>$ {formatMonto(actual.totalPagado)}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '700', paddingTop: '10px', marginTop: '6px', borderTop: `1px solid ${border}`, color: actual.balance >= 0 ? '#3a7d44' : '#c0392b' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '700', paddingTop: '10px', marginTop: '6px', borderTop: `1px solid ${border}`, color: actual.balance >= 0 ? sem.positivo : sem.negativo }}>
           <span>Balance</span><span>{actual.balance >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balance))}</span>
         </div>
         {(actual.totalIngresosUsd > 0 || actual.totalPagadoUsd > 0 || actual.totalIngresosEur > 0 || actual.totalPagadoEur > 0) && (
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px dashed ${border}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
               <span>Balance ARS</span>
-              <span style={{ fontWeight: '600', color: actual.balanceArs >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceArs >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balanceArs))}</span>
+              <span style={{ fontWeight: '600', color: actual.balanceArs >= 0 ? sem.positivo : sem.negativo }}>{actual.balanceArs >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balanceArs))}</span>
             </div>
             {(actual.totalIngresosUsd > 0 || actual.totalPagadoUsd > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
                 <span>Balance USD</span>
-                <span style={{ fontWeight: '600', color: actual.balanceUsd >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceUsd >= 0 ? '+' : '-'}U$S {formatMontoFull(Math.abs(actual.balanceUsd))}</span>
+                <span style={{ fontWeight: '600', color: actual.balanceUsd >= 0 ? sem.positivo : sem.negativo }}>{actual.balanceUsd >= 0 ? '+' : '-'}U$S {formatMontoFull(Math.abs(actual.balanceUsd))}</span>
               </div>
             )}
             {(actual.totalIngresosEur > 0 || actual.totalPagadoEur > 0) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
                 <span>Balance EUR</span>
-                <span style={{ fontWeight: '600', color: actual.balanceEur >= 0 ? '#3a7d44' : '#c0392b' }}>{actual.balanceEur >= 0 ? '+' : '-'}€ {formatMontoFull(Math.abs(actual.balanceEur))}</span>
+                <span style={{ fontWeight: '600', color: actual.balanceEur >= 0 ? sem.positivo : sem.negativo }}>{actual.balanceEur >= 0 ? '+' : '-'}€ {formatMontoFull(Math.abs(actual.balanceEur))}</span>
               </div>
             )}
           </div>

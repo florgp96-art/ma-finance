@@ -19,6 +19,20 @@ body {
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Con viewport-fit=cover, el contenido llega hasta el borde físico: estos
+     márgenes lo apartan de la barra de estado, del indicador de inicio y de la
+     muesca cuando el teléfono está acostado. En un navegador sin muescas
+     env() vale 0 y no cambia nada. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* El menú lateral va en position: fixed cuando es el cajón del celular, así que
+   ignora el padding del body y sí llega al borde: se lo pone él. En computadora
+   env() vale 0 y queda igual que antes (24px arriba y abajo, 16px a los lados). */
+.sidebar-scroll {
+  padding-top: calc(24px + env(safe-area-inset-top)) !important;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+  padding-left: calc(16px + env(safe-area-inset-left)) !important;
 }
 
 /* Quita el rendering nativo del OS en todos los selects (evita flash negro en Windows/Android) */
@@ -59,4 +73,19 @@ input:-webkit-autofill:focus {
   -webkit-text-fill-color: #1d1d1f !important;
   border-color: #D0C8CC !important;
   transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Con el tema oscuro, el email y la contraseña recordados por el navegador
+   seguían pintándose claros: quedaban dos campos blancos en medio de una
+   tarjeta oscura. El tema lo marca index.js en <html data-theme>. */
+:root[data-theme="dark"] input:-webkit-autofill,
+:root[data-theme="dark"] input:-webkit-autofill:hover,
+:root[data-theme="dark"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px #2A272A inset !important;
+  -webkit-text-fill-color: #F0EDEC !important;
+  border-color: #3A333A !important;
+}
+:root[data-theme="dark"] select option {
+  background-color: #241F24;
+  color: #F0EDEC;
 }
