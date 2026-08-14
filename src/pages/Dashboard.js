@@ -319,7 +319,6 @@ export default function Dashboard() {
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkmode_ma') === 'true')
-  const [rotarBannerCerrado, setRotarBannerCerrado] = useState(() => localStorage.getItem('rotar_banner_cerrado') === '1')
   const [dashboardTab, setDashboardTab] = useState('resumen')
   const tabsScrollRef = useRef(null)
   const [sharedPeriod, setSharedPeriod] = useState([])
@@ -354,7 +353,6 @@ export default function Dashboard() {
 
   // Responsive
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
-  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Hijos
@@ -732,7 +730,7 @@ export default function Dashboard() {
 
 
   useEffect(() => {
-    const handleResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight) }
+    const handleResize = () => setWindowWidth(window.innerWidth)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
@@ -2804,7 +2802,6 @@ export default function Dashboard() {
   const sem = semaforo(darkMode)
 
   const isTablet = windowWidth >= 640 && windowWidth < 960
-  const isPortraitMobile = isMobile && windowHeight > windowWidth
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -3840,21 +3837,6 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-
-        {/* Banner: rotar teléfono — solo mobile portrait, hasta que lo cierren */}
-        {isPortraitMobile && !rotarBannerCerrado && (
-          <div style={{ margin: '0 12px 10px', padding: '10px 14px', borderRadius: '12px', backgroundColor: darkMode ? '#2A202A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#D0C8CC'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '20px' }}>📱↔️</span>
-            <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#C8B4E8' : '#5C4F5C', fontWeight: '500', flex: 1 }}>
-              Girá el teléfono en horizontal para mejor experiencia
-            </p>
-            <button
-              onClick={() => { setRotarBannerCerrado(true); localStorage.setItem('rotar_banner_cerrado', '1') }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 4px', flexShrink: 0 }}>
-              ✕
-            </button>
-          </div>
-        )}
 
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '2200px', margin: isMobile ? undefined : '0 auto', width: isMobile ? undefined : '100%', boxSizing: 'border-box' }}>
 
