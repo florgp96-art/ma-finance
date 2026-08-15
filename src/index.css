@@ -14,6 +14,32 @@
   flex-shrink: 0;
 }
 
+/* Las tarjetas de totales (ARS, USD, Equiv. totales, Categorías top…) se
+   acomodan por el ancho de la columna donde caen, no por el de la ventana.
+   Entre el menú lateral y la columna de widgets esa columna puede quedar en
+   ~320px con la ventana en 1000px, o con el teléfono acostado, y ahí tres
+   tarjetas no entran: un importe como "$ 2.937.638" se partía al medio y se
+   leía "2.937.63 / 8". En una app de plata un número cortado no es un detalle
+   estético, se lee mal.
+
+   Los cortes están calculados sobre lo que necesita una tarjeta para mostrar un
+   importe de millones sin partirlo (~150px de contenido + 48px de padding).
+   El teléfono parado queda igual que antes: su columna mide ~334px, o sea dos
+   tarjetas, que es lo que ya mostraba. */
+.summary-cards-wrap {
+  container-type: inline-size;
+}
+@container (max-width: 500px) {
+  .summary-cards {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@container (max-width: 300px) {
+  .summary-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 body {
   margin: 0;
   font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -27,12 +53,22 @@ body {
 }
 
 /* El menú lateral va en position: fixed cuando es el cajón del celular, así que
-   ignora el padding del body y sí llega al borde: se lo pone él. En computadora
-   env() vale 0 y queda igual que antes (24px arriba y abajo, 16px a los lados). */
-.sidebar-scroll {
-  padding-top: calc(24px + env(safe-area-inset-top)) !important;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
-  padding-left: calc(16px + env(safe-area-inset-left)) !important;
+   ignora el padding del body y sí llega al borde: se lo pone él.
+
+   Va SOLO en el cajón (mismo corte que usa el JS para armarlo: ancho < 640px).
+   Suelto se aplicaba también al menú fijo de tablet y computadora, que sí está
+   dentro del body y ya tiene ese margen puesto una vez. Con el teléfono parado
+   no se notaba porque ahí env(safe-area-inset-left) vale 0, pero acostado vale
+   ~59px por la muesca: el menú sumaba el margen dos veces y, como su ancho está
+   escrito en píxeles, se iba 59px más a la derecha de la columna que lo
+   contiene. El panel de contenido, que se dibuja después, le pasaba por encima
+   y tapaba media lista de cuentas y el botón "Cargar movimientos". */
+@media (max-width: 639.98px) {
+  .sidebar-scroll {
+    padding-top: calc(24px + env(safe-area-inset-top)) !important;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+    padding-left: calc(16px + env(safe-area-inset-left)) !important;
+  }
 }
 
 /* En el iPhone, tocar un campo cuya letra mide menos de 16px hace que Safari
