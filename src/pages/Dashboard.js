@@ -353,6 +353,7 @@ export default function Dashboard() {
 
   // Responsive
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Hijos
@@ -730,7 +731,7 @@ export default function Dashboard() {
 
 
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth)
+    const handleResize = () => { setWindowWidth(window.innerWidth); setWindowHeight(window.innerHeight) }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
@@ -2802,6 +2803,18 @@ export default function Dashboard() {
   const sem = semaforo(darkMode)
 
   const isTablet = windowWidth >= 640 && windowWidth < 960
+
+  // Con el teléfono acostado la pantalla queda en unos 390px de alto y el logo
+  // se llevaba 90 de esos píxeles: casi un cuarto de todo lo que se ve, para
+  // algo que no cambia nunca y que ya se vio al entrar. Acostado no se muestra
+  // y el encabezado queda en una sola franja con los chips.
+  //
+  // El corte va por ALTO, que es lo que escasea al girar, y no por ancho: el
+  // iPad acostado mide 1024x768 y ahí el logo sigue entrando de sobra. La
+  // comparación ancho > alto es la que distingue "girado" de "pantalla corta":
+  // en Android el teclado achica window.innerHeight y sin ella el logo
+  // desaparecía al escribir con el teléfono parado.
+  const sinLogo = windowHeight <= 500 && windowWidth > windowHeight
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
@@ -3776,7 +3789,7 @@ export default function Dashboard() {
       <div style={{...styles.container, overflowX: 'hidden', width: '100%', boxSizing: 'border-box'}}>
 
         {/* ===== HEADER: cards izq | logo centro | logout+darkmode der ===== */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: sinLogo ? '8px 20px' : isMobile ? '12px 16px' : isTablet ? '12px 20px' : '20px 32px', position: 'relative', minHeight: sinLogo ? 0 : isMobile ? '60px' : isTablet ? '90px' : '160px' }}>
               {/* Izquierda */}
               {isMobile ? (
                 // Los chips de Vencimientos/Monedas ya no van acá: con el logo
@@ -3789,9 +3802,11 @@ export default function Dashboard() {
               ) : isTablet ? (
                 // maxWidth + wrap: que los chips pasen a segunda fila antes de
                 // pisar el logo, que está centrado con posición absoluta detrás.
+                // Sin logo no hay nada que esquivar, así que el tope se saca y los
+                // chips quedan en una sola fila — que es de lo que se trata acostado.
                 // Vencimientos va primero por el mismo motivo que en mobile: que el
                 // desplegable de Monedas, al abrirse, no lo tape.
-                <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: '34%' }}>
+                <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: sinLogo ? undefined : '34%' }}>
                   <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
                     <p style={{ margin: 0, fontSize: '9px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
@@ -3807,8 +3822,10 @@ export default function Dashboard() {
                   {monedasWidget('desktop')}
                 </div>
               )}
-              {/* Centro: logo */}
-              <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none', filter: darkMode ? 'invert(1)' : 'none' }} />
+              {/* Centro: logo — no va con el teléfono acostado (ver `sinLogo`) */}
+              {!sinLogo && (
+                <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none', filter: darkMode ? 'invert(1)' : 'none' }} />
+              )}
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next); aplicarTemaAlDocumento(next); const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', next ? '#1C1A1C' : '#F0EDEC') }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
