@@ -2804,17 +2804,22 @@ export default function Dashboard() {
 
   const isTablet = windowWidth >= 640 && windowWidth < 960
 
-  // Con el teléfono acostado la pantalla queda en unos 390px de alto y el logo
-  // se llevaba 90 de esos píxeles: casi un cuarto de todo lo que se ve, para
-  // algo que no cambia nunca y que ya se vio al entrar. Acostado no se muestra
-  // y el encabezado queda en una sola franja con los chips.
+  // Con el teléfono acostado la pantalla queda en unos 390px de alto y el
+  // encabezado se llevaba 114 de esos píxeles: casi un tercio de todo lo que se
+  // ve, para un logo que no cambia nunca y que ya se vio al entrar. Girado no
+  // se muestra y el encabezado queda en una sola franja con los chips.
   //
-  // El corte va por ALTO, que es lo que escasea al girar, y no por ancho: el
-  // iPad acostado mide 1024x768 y ahí el logo sigue entrando de sobra. La
-  // comparación ancho > alto es la que distingue "girado" de "pantalla corta":
-  // en Android el teclado achica window.innerHeight y sin ella el logo
-  // desaparecía al escribir con el teléfono parado.
-  const sinLogo = windowHeight <= 500 && windowWidth > windowHeight
+  // Las tres condiciones, que son solo tres porque cada una descarta algo
+  // distinto que NO es un teléfono girado:
+  //   - ancho < 960: es solo para el celular. El corte es el mismo que separa
+  //     tablet de computadora más abajo, así que una ventana de computadora
+  //     achicada de alto conserva el logo.
+  //   - alto <= 500: el alto es lo que escasea al girar. El iPad acostado mide
+  //     1024x768 y ahí el logo entra de sobra.
+  //   - ancho > alto: distingue "girado" de "pantalla corta". En Android el
+  //     teclado achica window.innerHeight, y sin esto el logo desaparecía al
+  //     escribir con el teléfono parado.
+  const sinLogo = windowWidth < 960 && windowHeight <= 500 && windowWidth > windowHeight
   const txActual = txSinIdentificar[txIdentificarIdx]
   const contextoActual = contextoDetectado[contextoIdx]
 
