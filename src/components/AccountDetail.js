@@ -3813,7 +3813,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
-          <div style={styles.summaryCards}>
+          <div className="summary-cards-wrap"><div className="summary-cards" style={styles.summaryCards}>
 
             {/* === Vista cuenta de ingresos individual === */}
             {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
@@ -3993,7 +3993,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             )}
 
-          </div>
+          </div></div>
         )
       })()}
 
