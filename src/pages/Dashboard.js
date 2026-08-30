@@ -13,6 +13,22 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
 const logo = process.env.PUBLIC_URL + '/logo.png'
 
+// Los nombres que baja el home banking son larguísimos y sin espacios
+// (ej. "PTCFD65320260827066272428H1788074919768.PDF"): el navegador no tiene
+// dónde cortarlos y el texto se sale del cuadro. Mostramos el principio y el
+// final (con la extensión, que es lo que identifica el archivo) y el nombre
+// completo queda en el title.
+const acortarNombreArchivo = (nombre, max = 30) => {
+  if (!nombre || nombre.length <= max) return nombre || ''
+  const punto = nombre.lastIndexOf('.')
+  const ext = punto > 0 && nombre.length - punto <= 6 ? nombre.slice(punto) : ''
+  const base = ext ? nombre.slice(0, punto) : nombre
+  const visibles = Math.max(max - ext.length - 1, 8)
+  const inicio = Math.ceil(visibles * 0.6)
+  const fin = visibles - inicio
+  return `${base.slice(0, inicio)}…${fin > 0 ? base.slice(-fin) : ''}${ext}`
+}
+
 const PROCESSING_MSGS = [
   { icon: '📄', title: 'Leyendo el extracto...', desc: 'Procesando las páginas del PDF' },
   { icon: '🔍', title: 'Identificando transacciones...', desc: 'Encontrando cada compra y pago' },
@@ -4553,13 +4569,13 @@ export default function Dashboard() {
                   onClick={() => document.getElementById('uploadInput').click()}
                 >
                   {archivo ? (
-                    <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{archivo.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
+                    <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText} title={archivo.name}>{acortarNombreArchivo(archivo.name)}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
                   ) : (
                     <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG, JPG · Máx. 10MB</p></>
                   )}
                 </div>
-                <label htmlFor="uploadInput" style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : '#5C4F5C', color: archivo ? '#5C4F5C' : 'white', border: `2px solid #5C4F5C`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif' }}>
-                  {archivo ? `✅ ${archivo.name}` : '📁 Seleccionar archivo'}
+                <label htmlFor="uploadInput" title={archivo ? archivo.name : undefined} style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : '#5C4F5C', color: archivo ? '#5C4F5C' : 'white', border: `2px solid #5C4F5C`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                  {archivo ? `✅ ${acortarNombreArchivo(archivo.name)}` : '📁 Seleccionar archivo'}
                 </label>
                 <input id="uploadInput" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,image/png,image/jpeg" style={{display:'none'}}
                   onChange={(e) => { if (e.target.files[0]) setArchivo(e.target.files[0]) }} />
@@ -5214,7 +5230,7 @@ export default function Dashboard() {
                       onClick={() => document.getElementById('excelInput').click()}
                     >
                       {excelFile ? (
-                        <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText}>{excelFile.name}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
+                        <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText} title={excelFile.name}>{acortarNombreArchivo(excelFile.name)}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
                       ) : (
                         <><p style={styles.dropzoneIcon}>📊</p><p style={styles.dropzoneText}>Arrastrá el archivo .xlsx o clickeá para seleccionar</p><p style={styles.dropzoneHint}>Solo archivos Excel (.xlsx)</p></>
                       )}
@@ -5568,11 +5584,11 @@ const getStyles = (dark, mobile = false) => {
     field: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
     input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: mobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: dark ? 'dark' : 'light' },
-    dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px' },
+    dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden' },
     dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
     dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },
     dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
-    dropzoneText: { fontSize: '14px', color: dark ? '#C0B0C0' : '#444', margin: '0 0 4px 0', fontWeight: '500' },
+    dropzoneText: { fontSize: '14px', color: dark ? '#C0B0C0' : '#444', margin: '0 0 4px 0', fontWeight: '500', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' },
     dropzoneHint: { fontSize: '12px', color: muted, margin: 0 },
     modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },

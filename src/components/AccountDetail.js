@@ -4084,7 +4084,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 <div style={{ padding: '2px 2px 8px 16px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   {b.resumenes.map(r => (
                     <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
-                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.nombre_archivo || undefined}>
                         {cierreDe(r) ? `Cierra ${formatFecha(cierreDe(r))}` : 'Sin fecha de cierre'}
                         {r.nombre_archivo ? ` · ${r.nombre_archivo}` : ' · cargado a mano'}
                       </span>
