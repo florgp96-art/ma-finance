@@ -294,3 +294,30 @@ export function salvageClaudeJson(data) {
   }
   return data
 }
+
+// ¿La respuesta (ya pasada por salvageClaudeJson) sirve para importar? Devuelve
+// el objeto parseado, o null si la IA no dejó un JSON con lista de movimientos.
+// Se chequea en el servidor para no cobrarle el cupo del plan gratis a un
+// intento que no sirvió, y para poder contar qué pasó en vez de dejar que el
+// cliente falle con un "Unexpected token" que no le dice nada a nadie.
+export function leerRespuestaAnalisis(data) {
+  const textBlock = data?.content?.find(b => b.type === 'text')
+  if (!textBlock?.text) return null
+  try {
+    const parsed = JSON.parse(textBlock.text)
+    return Array.isArray(parsed?.transacciones) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+// Qué devolvió la IA cuando no sirvió: el motivo de corte y un pedazo del texto,
+// para que el error que ve el usuario (y el mail de aviso) digan algo concreto.
+export function describirRespuesta(data) {
+  const textBlock = data?.content?.find(b => b.type === 'text')
+  const texto = (textBlock?.text || '').trim()
+  return {
+    stop_reason: data?.stop_reason || 'desconocido',
+    muestra: texto ? texto.slice(0, 300) : '(la IA no devolvió texto)',
+  }
+}
