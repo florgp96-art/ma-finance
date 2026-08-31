@@ -2,6 +2,16 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 
+// ¿Esta línea parece un movimiento? Fecha + importe. Los tres formatos de fecha
+// cubren lo que usan los bancos de acá: 12/07/26, 2026-07-12 y 12-Jul-26 (el
+// mes abreviado en letras es el de Galicia y varios más). Antes faltaba el
+// tercero, así que en un resumen de Galicia casi ninguna línea de la tabla
+// contaba como movimiento: el recorte y la decisión de mandar el PDF entero a
+// la IA (el camino más lento) se tomaban a ciegas.
+const RE_FECHA_MOV = /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b|\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[-/ ](ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*[-/ ]\d{2,4}\b/i
+const RE_IMPORTE_MOV = /\d(?:[\d.,]*\d)?[.,]\d{2}\b/
+const esLineaDeMovimiento = (linea) => RE_FECHA_MOV.test(linea) && RE_IMPORTE_MOV.test(linea)
+
 // Devuelve el texto del PDF, o null si el archivo no se puede leer como texto
 // (PDF dañado/no estándar, escaneado, o sin la tabla de movimientos). En ese
 // caso el caller debe usar analyzePdfDocumentWithClaude como fallback.
@@ -65,21 +75,32 @@ export async function extractTextFromPDF(file) {
   // Tope de seguridad: si ningún marcador matcheó (banco/formato no contemplado),
   // no mandar el documento entero (letra chica legal incluida) a la IA — eso
   // dispara respuestas más lentas y arriesga el timeout del servidor.
+  // Pero cortar a ciegas en el carácter 16.000 es peligroso: en un resumen un
+  // poco más largo ahí adentro todavía hay movimientos. Primero recortamos por
+  // contenido —después del último movimiento, con margen para los cargos de
+  // cierre que vienen sin fecha— y recién si aún queda pasado el tope cortamos
+  // por caracteres.
   const MAX_CHARS = 16000
-  if (finalText.length > MAX_CHARS) finalText = finalText.slice(0, MAX_CHARS)
+  const MARGEN_LINEAS = 25
+  if (finalText.length > MAX_CHARS) {
+    const lineas = finalText.split('\n')
+    let ultimoMov = -1
+    for (let i = lineas.length - 1; i >= 0; i--) {
+      if (esLineaDeMovimiento(lineas[i])) { ultimoMov = i; break }
+    }
+    if (ultimoMov !== -1) {
+      const recortado = lineas.slice(0, ultimoMov + 1 + MARGEN_LINEAS).join('\n')
+      if (recortado.length > 1000) finalText = recortado
+    }
+    if (finalText.length > MAX_CHARS) finalText = finalText.slice(0, MAX_CHARS)
+  }
 
   console.log(`Texto extraído: ${finalText.length} chars`)
 
   // ¿El texto tiene pinta de contener la tabla de movimientos? Contamos líneas
   // con fecha + importe. Si hay muy pocas (resúmenes donde la tabla no sale
   // como texto, ej. algunos Galicia), mejor mandar el PDF entero a la IA.
-  // Incluye fechas DD/MM(/AAAA) y también AAAA-MM-DD (ISO) — antes solo
-  // reconocía el primer formato, así que un extracto con fechas ISO siempre
-  // caía al camino más caro (documento completo a la IA) aunque el texto
-  // extraído tuviera la tabla de movimientos perfectamente legible.
-  const txLikeLines = finalText.split('\n').filter(l =>
-    (/\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/.test(l) || /\b\d{4}-\d{1,2}-\d{1,2}\b/.test(l)) && /\d(?:[\d.,]*\d)?[.,]\d{2}\b/.test(l)
-  ).length
+  const txLikeLines = finalText.split('\n').filter(esLineaDeMovimiento).length
   if (txLikeLines < 5) {
     console.warn(`Solo ${txLikeLines} líneas con pinta de movimiento: se usará análisis de documento`)
     return null
