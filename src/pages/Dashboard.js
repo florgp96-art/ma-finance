@@ -1982,7 +1982,9 @@ export default function Dashboard() {
           tipo: archivo?.type?.startsWith('image/') ? 'imagen' : 'pdf',
           nombreArchivo: archivo?.name,
           estado: 'error',
-          errorMensaje: err.message,
+          // Si la IA contestó algo que no se pudo leer, va también lo que
+          // contestó: sin eso el mail de aviso llega sin nada que investigar.
+          errorMensaje: err.muestraIA ? `${err.message} | La IA devolvió: ${err.muestraIA}` : err.message,
         })
       }
       setStep('upload')

@@ -111,8 +111,14 @@ export async function extractTextFromPDF(file) {
 
 const parseAnalyzeResponse = async (response) => {
   if (!response.ok) {
+    // El cuerpo se lee UNA sola vez: response.text() y response.json() no se
+    // pueden encadenar, y antes el log de abajo se comía el cuerpo y dejaba a
+    // las ramas siguientes sin los datos del error.
+    const cuerpo = await response.text()
+    let body = {}
+    try { body = JSON.parse(cuerpo) } catch { /* el error no vino en JSON */ }
+
     if (response.status === 402) {
-      const body = await response.json().catch(() => ({}))
       // Se marca como límite del plan (no como falla técnica) para que quien lo
       // muestre no le ponga el prefijo "Error procesando el PDF": es un aviso
       // esperado del plan gratis, y con ese prefijo parecía un bug de la app.
@@ -120,12 +126,23 @@ const parseAnalyzeResponse = async (response) => {
       err.esLimitePlan = true
       throw err
     }
-    console.error('Error HTTP:', response.status, await response.text())
+    console.error('Error HTTP:', response.status, cuerpo)
     if ([502, 503, 504, 524].includes(response.status)) {
       throw new Error('El extracto tardó demasiado en procesarse (puede ser muy largo o el servidor está ocupado). Probá de nuevo, o si el PDF es muy largo intentá dividirlo en partes más chicas.')
     }
     if (response.status === 413) {
       throw new Error('El PDF es demasiado pesado. Probá descargar el resumen original desde el home banking (suele pesar menos que una versión escaneada).')
+    }
+    // El servidor ya vio la respuesta de la IA y no le encontró los movimientos.
+    // Suele ser un tropiezo de una vez, así que el caller reintenta solo; el
+    // motivo viaja igual para que, si vuelve a pasar, el error diga qué devolvió.
+    if (response.status === 422) {
+      const err = new Error(
+        `La IA leyó el extracto pero no devolvió los movimientos en el formato esperado (motivo: ${body.stop_reason || 'desconocido'}). Probá de nuevo; si vuelve a pasar, avisanos con el nombre del archivo.`
+      )
+      err.reintentable = true
+      err.muestraIA = body.muestra
+      throw err
     }
     throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
   }
@@ -165,18 +182,32 @@ const parseAnalyzeResponse = async (response) => {
   }
 }
 
+// Una respuesta que no se pudo leer casi siempre sale bien en el segundo intento
+// (la IA no es determinística). Antes eso lo tenía que hacer el usuario a mano y
+// veía un error críptico; ahora se reintenta una vez, y solo si vuelve a fallar
+// se muestra el error. El servidor no cobra el cupo del plan por el intento que
+// no sirvió, así que el reintento no le sale más caro a nadie.
+const conReintento = async (enviar) => {
+  try {
+    return await parseAnalyzeResponse(await enviar())
+  } catch (err) {
+    if (!err.reintentable) throw err
+    console.warn('Respuesta no utilizable de la IA, reintentando una vez:', err.muestraIA)
+    return parseAnalyzeResponse(await enviar())
+  }
+}
+
 export async function analyzeStatementWithClaude(pdfText, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const response = await fetch('/api/analyze', {
+  return conReintento(() => fetch('/api/analyze', {
     method: 'POST',
     headers,
     body: JSON.stringify({
       pdfText, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
       categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
     })
-  })
-  return parseAnalyzeResponse(response)
+  }))
 }
 
 // Fallback: manda el PDF completo (base64) para que la IA lo lea como
@@ -192,13 +223,12 @@ export async function analyzePdfDocumentWithClaude(file, cardName, userRules, to
 
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const response = await fetch('/api/analyzePdf', {
+  return conReintento(() => fetch('/api/analyzePdf', {
     method: 'POST',
     headers,
     body: JSON.stringify({
       pdfBase64: base64, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
       categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
     })
-  })
-  return parseAnalyzeResponse(response)
+  }))
 }

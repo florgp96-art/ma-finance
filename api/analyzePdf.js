@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { buildAnalysisPrompt, salvageClaudeJson } from './_lib/analyzePrompt.js'
+import { buildAnalysisPrompt, salvageClaudeJson, leerRespuestaAnalisis, describirRespuesta } from './_lib/analyzePrompt.js'
 import { checkRateLimit } from './_lib/rateLimit.js'
 import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage } from './_lib/plan.js'
 
@@ -90,7 +90,22 @@ EXTRACTO: es el documento PDF adjunto. Leé TODAS sus páginas y extraé todas l
     return res.status(502).json({ error: `Claude API error ${response.status}: ${err.slice(0, 200)}` })
   }
 
-  const data = await response.json()
+  const data = salvageClaudeJson(await response.json())
+
+  // Si la IA no devolvió un JSON con movimientos no hay nada que importar: se
+  // corta acá con un 422 y el motivo, en vez de mandarle al cliente algo que
+  // no puede parsear. Y no se consume el cupo del plan gratis: el intento no
+  // sirvió, así que no se cobra.
+  if (!leerRespuestaAnalisis(data)) {
+    const detalle = describirRespuesta(data)
+    console.error('Respuesta inservible de Claude:', JSON.stringify(detalle))
+    return res.status(422).json({
+      error: 'La IA no devolvió el resumen en el formato esperado',
+      code: 'RESPUESTA_NO_UTIL',
+      ...detalle,
+    })
+  }
+
   if (!esPremium) await recordAiUsage(supabaseAdmin, user.id)
-  res.status(200).json(salvageClaudeJson(data))
+  res.status(200).json(data)
 }
