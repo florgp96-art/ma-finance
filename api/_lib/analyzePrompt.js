@@ -265,6 +265,73 @@ IMPORTANTE: Respondé ÚNICAMENTE con el objeto JSON. Sin texto previo, sin expl
 // transacción completa en vez de fallar todo: "transacciones" es la última
 // clave del JSON pedido, así que cerrando el array y el objeto después de una
 // transacción completa queda válido.
+// Repara los deslices de JSON que comete la IA de vez en cuando y que dejan la
+// respuesta entera sin parsear (el error real que vimos: "JSON parse error:
+// unexpected identifier"). Son dos: un valor sin comillas ("tipo": ingreso, o
+// "fecha": 2026-07-13) y una coma de más antes de cerrar. Se recorre carácter
+// por carácter salteando el contenido de los strings, así que un ":" o una coma
+// que estén DENTRO de un nombre de comercio no se tocan. Solo se usa cuando el
+// parseo normal ya falló: si el JSON venía bien, esta función ni se llama.
+export function repararJsonDeLaIA(raw) {
+  const esNumero = (v) => /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(v)
+  const esLiteral = (v) => v === 'true' || v === 'false' || v === 'null'
+  let out = ''
+  let i = 0
+  let enString = false
+  while (i < raw.length) {
+    const c = raw[i]
+    if (enString) {
+      out += c
+      if (c === '\\') { out += raw[i + 1] ?? ''; i += 2; continue }
+      if (c === '"') enString = false
+      i++
+      continue
+    }
+    if (c === '"') { enString = true; out += c; i++; continue }
+    if (c === ':') {
+      let j = i + 1
+      while (j < raw.length && /[ \t]/.test(raw[j])) j++
+      const m = /^[^,}\]\n\r]+/.exec(raw.slice(j))
+      const valor = m ? m[0].trim() : ''
+      const yaEsValido = !valor || valor.startsWith('"') || valor.startsWith('{') ||
+        valor.startsWith('[') || esNumero(valor) || esLiteral(valor)
+      if (!yaEsValido) {
+        out += ': ' + JSON.stringify(valor)
+        i = j + m[0].length
+        continue
+      }
+    }
+    out += c
+    i++
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1')
+}
+
+// Parsea el objeto completo: desde el primer { hasta el último }.
+const parsearEntero = (raw) => {
+  try { return JSON.parse(raw.slice(0, raw.lastIndexOf('}') + 1)) } catch { return null }
+}
+
+// Rescate de respuestas cortadas a la mitad (ej. por max_tokens): "transacciones"
+// es la última clave del JSON que pedimos, así que cerrando el array y el objeto
+// después de una transacción completa queda válido. Se va corriendo hacia atrás
+// hasta encontrar el último corte que parsea.
+const rescatarTruncado = (raw) => {
+  const arrKey = raw.indexOf('"transacciones"')
+  if (arrKey === -1) return null
+  let cut = raw.lastIndexOf('}')
+  while (cut > arrKey) {
+    try { return JSON.parse(raw.slice(0, cut + 1) + ']}') } catch { /* seguimos hacia atrás */ }
+    cut = raw.lastIndexOf('}', cut - 1)
+  }
+  return null
+}
+
+// Minifica la respuesta de Claude a JSON válido, rescatando lo que se pueda si
+// vino rota. El orden importa: primero se intenta quedarse con TODAS las
+// transacciones (parseo normal, después reparando los deslices de formato) y
+// recién al final se acepta perder la cola, que es lo que hace el rescate de
+// respuestas truncadas.
 export function salvageClaudeJson(data) {
   try {
     const textBlock = data?.content?.find(b => b.type === 'text')
@@ -273,17 +340,15 @@ export function salvageClaudeJson(data) {
       const jsonStart = text.indexOf('{')
       if (jsonStart === -1) throw new Error('No JSON object found in response')
       const raw = text.slice(jsonStart)
-      let parsed = null
-      try {
-        const jsonEnd = raw.lastIndexOf('}')
-        parsed = JSON.parse(raw.slice(0, jsonEnd + 1))
-      } catch {
-        const arrKey = raw.indexOf('"transacciones"')
-        let cut = arrKey !== -1 ? raw.lastIndexOf('}') : -1
-        while (cut > arrKey && arrKey !== -1) {
-          try { parsed = JSON.parse(raw.slice(0, cut + 1) + ']}'); break } catch {}
-          cut = raw.lastIndexOf('}', cut - 1)
-        }
+      const reparado = repararJsonDeLaIA(raw)
+
+      let parsed = parsearEntero(raw)
+      if (!parsed) {
+        parsed = parsearEntero(reparado)
+        if (parsed) console.error(`Respuesta con JSON inválido (stop_reason=${data?.stop_reason}): se reparó y quedaron ${parsed.transacciones?.length ?? 0} transacciones`)
+      }
+      if (!parsed) {
+        parsed = rescatarTruncado(reparado) || rescatarTruncado(raw)
         if (parsed) console.error(`Respuesta truncada (stop_reason=${data?.stop_reason}): rescatadas ${parsed.transacciones?.length ?? 0} transacciones`)
       }
       if (!parsed) throw new Error('JSON inválido y sin rescate posible')
