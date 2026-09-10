@@ -31,7 +31,6 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   const sem = semaforo(darkMode)
   const muted = darkMode ? '#9A8A9A' : '#75757a'
   const [anclas, setAnclas] = useState([])
-  const [ingresosDestinados, setIngresosDestinados] = useState([])
   const [pagosDeTarjeta, setPagosDeTarjeta] = useState([])
   // null = la columna/tabla todavía no existen (migración sin correr). Se avisa en
   // vez de romper la pantalla, igual que con las fechas del próximo ciclo.
@@ -55,13 +54,6 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     if (errAnclas) { setSinMigrar(true); return }
     setSinMigrar(false)
     setAnclas(data || [])
-    // Los ingresos importados de un extracto se guardan en la cuenta "Ingresos",
-    // no en la cuenta donde entró la plata — por eso hay que ir a buscarlos por
-    // cuenta_destino_id, que es lo único que dice a dónde entraron de verdad.
-    const { data: ing } = await supabase.from('transactions')
-      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id, cuenta_destino_id')
-      .eq('cuenta_destino_id', account.id).eq('tipo', 'ingreso')
-    setIngresosDestinados(ing || [])
     // Los pagos de tarjeta viven en la cuenta de CRÉDITO, no en esta: hay que ir a
     // buscarlos a las tarjetas que se pagan desde acá. Es la plata más grande que
     // sale de la cuenta en el mes, así que sin esto el saldo queda muy de más.
@@ -76,18 +68,12 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
 
   useEffect(() => { fetchAnclas() }, [fetchAnclas])
 
-  // Los ingresos destinados pueden venir duplicados con los que ya están en
-  // transactions (uno cargado a mano tiene la cuenta en account_id y no necesita
-  // destino): deduplicar por id antes de sumar nada.
+  // Los pagos de tarjeta vienen de otra consulta que las transacciones de la cuenta:
+  // deduplicar por id antes de sumar nada.
   const movimientos = useMemo(() => {
     const vistos = new Set((transactions || []).map(t => t.id))
-    const extra = [...ingresosDestinados, ...pagosDeTarjeta].filter(t => {
-      if (vistos.has(t.id)) return false
-      vistos.add(t.id)
-      return true
-    })
-    return [...(transactions || []), ...extra]
-  }, [transactions, ingresosDestinados, pagosDeTarjeta])
+    return [...(transactions || []), ...pagosDeTarjeta.filter(t => !vistos.has(t.id))]
+  }, [transactions, pagosDeTarjeta])
 
   // Una tarjeta sin cuenta de pago configurada no le resta a nadie: avisarlo es la
   // diferencia entre "me falta plata en la caja de ahorro" y "no le dije a la app

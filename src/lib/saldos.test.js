@@ -29,17 +29,13 @@ describe('en qué cuenta cuenta un movimiento', () => {
     expect(enLaCuenta(mov('2026-09-05', 1000, 'gasto'), 'otra')).toBe(false)
   })
 
-  // Al importar un extracto, el ingreso se guarda en la cuenta "Ingresos" para que
-  // los gráficos lo agrupen — pero la plata entró a la caja de ahorro.
-  test('un ingreso importado cuenta en la cuenta que recibió la plata', () => {
-    const sueldo = { account_id: 'ingresos', cuenta_destino_id: CA, tipo: 'ingreso', fecha: '2026-09-05', monto: 100 }
+  // Un ingreso vive en la cuenta que recibió la plata, venga de un extracto o
+  // cargado a mano. La cuenta "Ingresos" es una vista que los junta todos, no el
+  // lugar donde viven.
+  test('un ingreso cuenta en la cuenta que recibió la plata', () => {
+    const sueldo = { account_id: CA, tipo: 'ingreso', fecha: '2026-09-05', monto: 100 }
     expect(enLaCuenta(sueldo, CA)).toBe(true)
     expect(enLaCuenta(sueldo, 'ingresos')).toBe(false)
-  })
-
-  test('un ingreso cargado a mano usa la cuenta que eligió el usuario', () => {
-    const manual = { account_id: CA, tipo: 'ingreso', fecha: '2026-09-05', monto: 100 }
-    expect(enLaCuenta(manual, CA)).toBe(true)
   })
 })
 

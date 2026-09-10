@@ -46,17 +46,15 @@ export const signoEnSaldo = (t) => {
 
 // ¿Este movimiento afecta el saldo de esta cuenta?
 //
-// Los gastos y los neutros viven en la cuenta donde se hicieron, así que alcanza
-// con account_id. Los INGRESOS no: al importar un extracto bancario se guardan en
-// la cuenta "Ingresos" (para que los gráficos de ingresos los agrupen todos
-// juntos), y ahí se perdía en qué cuenta entró la plata. cuenta_destino_id repara
-// eso — es la cuenta real que recibió el ingreso. Un ingreso cargado a mano ya
-// tiene la cuenta elegida en account_id y no necesita destino.
-export const enLaCuenta = (t, accountId) => {
-  if (!t || !accountId) return false
-  if (t.tipo === 'ingreso') return (t.cuenta_destino_id || t.account_id) === accountId
-  return t.account_id === accountId
-}
+// Alcanza con account_id, para gastos, ingresos y neutros por igual: todo
+// movimiento vive en la cuenta donde pasó. La cuenta "Ingresos" no es una cuenta
+// donde vivan los ingresos, es una VISTA que los junta todos sin importar en qué
+// cuenta están (ver esCuentaIngresos en AccountDetail) — así que no hace falta
+// ningún dato extra que diga "en realidad entró acá".
+//
+// La excepción es el pago de tarjeta, que sí toca dos cuentas: eso se resuelve en
+// pagosDeTarjetaDesde, más abajo.
+export const enLaCuenta = (t, accountId) => Boolean(t && accountId && t.account_id === accountId)
 
 // El ancla vigente: la más reciente que no sea posterior a `hasta`. Las anclas son
 // append-only (cada vez que el usuario chequea su cuenta queda una fila nueva), así

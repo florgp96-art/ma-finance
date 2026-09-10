@@ -2358,14 +2358,15 @@ export default function Dashboard() {
         await supabase.from('statements').delete().eq('id', existing.id)
       }
 
-      // Ingresos van a la cuenta Ingresos principal (tipo='ingreso')
-      const cuentaIngresos = await getOrCreateIngresosAccount(user)
-      const hayIngresosParaGuardar = statementData.transacciones.some((t, i) => pdfTxSelections.has(i) && (t.tipo === 'ingreso' || t.es_credito))
-      if (hayIngresosParaGuardar && !cuentaIngresos) {
-        showToast('No se pudo crear la cuenta de Ingresos. Revisá los permisos.', 'error')
-        setLoading(false)
-        return
-      }
+      // El ingreso de un extracto va a la cuenta que recibió la plata, igual que un
+      // ingreso cargado a mano (ver handleGuardarMovimiento). Antes iba a la cuenta
+      // "Ingresos", y ahí se perdía en qué cuenta había entrado: con eso perdido, una
+      // caja de ahorro solo veía gastos y su saldo bajaba para siempre.
+      //
+      // No hace falta ningún dato nuevo para saberlo: la cuenta "Ingresos" NO es una
+      // cuenta donde vivan los ingresos, es una VISTA que los junta todos sin importar
+      // en qué cuenta están (ver esCuentaIngresos en AccountDetail). Sigue mostrando
+      // todo igual, y ahora el movimiento está donde de verdad pasó.
 
       const { data: stmtEgresos, error: errStmtEg } = await supabase.from('statements').insert({
         user_id: user.id, account_id: cuentaEgresos.id, nombre_archivo: archivo.name,
@@ -2379,24 +2380,9 @@ export default function Dashboard() {
         return
       }
 
-      // Statement de ingresos solo si hay transacciones de ingreso
-      const hayIngresosEnExtracto = statementData.transacciones.some(t => (t.tipo || (t.es_credito ? 'ingreso' : 'gasto')) === 'ingreso')
-      let stmtIngresos = null
-      if (hayIngresosEnExtracto && cuentaIngresos) {
-        // Verificar si ya existe statement para ingresos en este periodo
-        const { data: existingIngreso } = await supabase.from('statements')
-          .select('id').eq('account_id', cuentaIngresos.id).eq('periodo', statementData.periodo).maybeSingle()
-        if (existingIngreso) {
-          stmtIngresos = existingIngreso
-        } else {
-          const { data: si } = await supabase.from('statements').insert({
-            user_id: user.id, account_id: cuentaIngresos.id, nombre_archivo: archivo.name,
-            periodo: statementData.periodo, fecha_desde: null,
-            fecha_hasta: parseFechaArgentina(statementData.fecha_facturacion), total_resumen: null, estado: 'completo'
-          }).select().single()
-          stmtIngresos = si
-        }
-      }
+      // Los ingresos ya no necesitan un extracto propio en otra cuenta: pertenecen al
+      // mismo extracto que los gastos, porque salieron del mismo PDF y entraron a la
+      // misma cuenta.
 
       const txEgresos = []
       const txIngresos = []
@@ -2417,7 +2403,7 @@ export default function Dashboard() {
         const esDevolucion = detalleTxLower.includes('devoluci') || detalleTxLower.includes('dev.imp') || detalleTxLower.includes('reintegro') || detalleTxLower.includes('acreditacion') || detalleTxLower.includes('acreditación')
         const esNeutroAuto = detalleTxLower.includes('conversion a eur') || detalleTxLower.includes('conversion a usd') || detalleTxLower.includes('fondeo') || detalleTxLower.includes('repatriaci') || detalleTxLower.includes('transferencia entre cuenta') || (t.es_credito && contextoNames.some(n => detalleTxLower.includes(n)))
         const tipoTx = esNeutroAuto ? 'neutro' : esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
-        if (tipoTx === 'ingreso' && cuentaIngresos) {
+        if (tipoTx === 'ingreso') {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
           const histMatch = matchIngresoHistorial(t.nombre_original)
           txIngresos.push({
@@ -2434,13 +2420,7 @@ export default function Dashboard() {
             // child_id (ver también el selector de hijo en "Cargar movimiento").
             child_id: getHijoId(t.hijo),
             estado: 'identificado', es_manual: false,
-            account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso',
-            // El ingreso se guarda en la cuenta "Ingresos" para que todos los gráficos
-            // de ingresos los agrupen juntos, sin importar dónde entró la plata. Pero
-            // "dónde entró" es justamente lo que necesita el saldo de una cuenta, y se
-            // perdía: cuenta_destino_id lo conserva. Sin esto la caja de ahorro solo
-            // ve gastos y su saldo baja para siempre (ver src/lib/saldos.js).
-            cuenta_destino_id: cuentaEgresos.id,
+            account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: 'ingreso',
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
           })
         } else if (tipoTx !== 'ingreso') {
@@ -2467,9 +2447,8 @@ export default function Dashboard() {
       // esto dependía por completo de que el usuario notara a mano las filas tachadas
       // "ya cargada" en la previsualización y las desmarcara antes de confirmar; si no,
       // quedaban duplicadas de verdad (incluidos los pagos de tarjeta tipo "neutro").
-      const cuentasDestinoBanco = [cuentaEgresos.id, ...(cuentaIngresos ? [cuentaIngresos.id] : [])]
       const existentesBanco = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle').in('account_id', cuentasDestinoBanco)
+        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle').eq('account_id', cuentaEgresos.id)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
       const normDetBanco = (s) => (s || '').toLowerCase().trim()
@@ -2508,17 +2487,7 @@ export default function Dashboard() {
         if (ins) insertedIds.push(...ins)
       }
       if (txIngresosFiltrados.length > 0) {
-        let { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresosFiltrados).select('id, detalle, estado')
-        // La columna se agrega con una migración aparte: mientras no esté, se guarda
-        // sin ella. Que falte el dato del saldo no puede hacer fallar la importación.
-        if (errIn && /cuenta_destino_id/.test(errIn.message || '')) {
-          console.warn('transactions sin cuenta_destino_id — el ingreso se guarda sin saber a qué cuenta entró')
-          const retry = await supabase.from('transactions')
-            .insert(txIngresosFiltrados.map(({ cuenta_destino_id, ...resto }) => resto))
-            .select('id, detalle, estado')
-          ins = retry.data
-          errIn = retry.error
-        }
+        const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresosFiltrados).select('id, detalle, estado')
         if (errIn) {
           showToast(`Error ingresos: ${errIn.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (ingresos): ${errIn.message}` })
