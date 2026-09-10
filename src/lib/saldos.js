@@ -18,6 +18,18 @@
 // nueva, la diferencia contra lo que la app venía calculando es exactamente lo
 // que falta o está cargado de más. Ver desvioDeAncla.
 
+// ¿Esta cuenta tiene saldo? Se define por exclusión y no por lista, así una cuenta
+// nueva —o tipeada de una forma que hoy no existe— igual tiene saldo en vez de no
+// mostrar nada sin que se entienda por qué. Las dos que quedan afuera:
+//
+//   - Tarjeta de crédito: no tiene saldo, tiene deuda, y ese número ya viene del
+//     resumen del banco (ver calcularStatementsPendientes). Un saldo a mano al lado
+//     sería una segunda fuente para el mismo número.
+//   - "Ingresos": no es una cuenta donde viva plata, es una vista que junta todos
+//     los ingresos sin importar en qué cuenta están.
+export const tieneSaldo = (account) =>
+  Boolean(account?.tipo) && account.tipo !== 'credito' && account.tipo !== 'ingreso'
+
 const norm = (f) => (f || '').trim().slice(0, 10)
 const redondear = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -166,4 +178,38 @@ export const saldoDeCuenta = ({ anclas, transactions, accounts, accountId, moned
 export const desvioDeAncla = (saldoReal, estimado) => {
   if (!estimado) return null
   return redondear(Number(saldoReal) - estimado.saldo)
+}
+
+// Cuánta plata hay en TOTAL, sumando todas las cuentas que tienen saldo.
+//
+// Devuelve el total por moneda sin convertir nada: sumar pesos con dólares necesita
+// un tipo de cambio, y esa decisión es de quien muestra el número, no de acá.
+//
+// Devuelve TAMBIÉN las cuentas que todavía no tienen un saldo cargado. Eso no es un
+// detalle: un total al que le falta una cuenta no se puede mostrar como si estuviera
+// completo. Es la diferencia entre "tenés esto" y "de las cuentas que cargaste,
+// tenés esto".
+export const saldoTotal = ({ anclas, transactions, accounts, hasta = null }) => {
+  const porMoneda = new Map()
+  const detalle = []
+  const sinSaldoCargado = []
+  for (const cuenta of (accounts || []).filter(tieneSaldo)) {
+    const monedas = [...new Set((anclas || [])
+      .filter(a => a.account_id === cuenta.id)
+      .map(a => a.moneda || 'ARS'))].sort()
+    if (monedas.length === 0) { sinSaldoCargado.push(cuenta); continue }
+    for (const moneda of monedas) {
+      const s = saldoDeCuenta({ anclas, transactions, accounts, accountId: cuenta.id, moneda, hasta })
+      if (!s) continue
+      porMoneda.set(moneda, redondear((porMoneda.get(moneda) || 0) + s.saldo))
+      detalle.push({ account_id: cuenta.id, nombre: cuenta.nombre, moneda, saldo: s.saldo })
+    }
+  }
+  return {
+    porMoneda: [...porMoneda.entries()]
+      .map(([moneda, saldo]) => ({ moneda, saldo }))
+      .sort((a, b) => a.moneda.localeCompare(b.moneda)),
+    detalle,
+    sinSaldoCargado,
+  }
 }

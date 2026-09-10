@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
 import { cuotasFuturasCargadas } from '../lib/cuotas'
+import { saldoTotal } from '../lib/saldos'
 import { semaforo } from '../theme'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
@@ -61,9 +62,12 @@ const statementDelPago = (pago, statements) => {
   return null
 }
 
+const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
+
 function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
+  const [anclas, setAnclas] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => mesActualLocal())
   const [mesDropdownOpen, setMesDropdownOpen] = useState(false)
@@ -86,7 +90,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     setLoading(true)
     try {
       const accountIds = accounts.map(a => a.id)
-      const [txs, stmtRes] = await Promise.all([
+      const [txs, stmtRes, anclasRes] = await Promise.all([
         fetchAllPages(() =>
           supabase.from('transactions')
             .select('*, categories(nombre), subcategories(nombre)')
@@ -94,9 +98,14 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             .order('fecha', { ascending: false }).order('id', { ascending: true })
         ),
         supabase.from('statements').select('*').in('account_id', accountIds).order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
+        // Los saldos cargados por el usuario. Si la tabla todavía no existe (la
+        // migración se corre aparte), el error se ignora y la sección no se muestra
+        // — la card de saldo de cada cuenta ya avisa que falta correrla.
+        supabase.from('account_balances').select('*').in('account_id', accountIds),
       ])
       setTransactions(txs)
       setStatements(stmtRes.data || [])
+      setAnclas(anclasRes.error ? [] : (anclasRes.data || []))
     } finally {
       // Si alguna de las dos consultas falla, "Cargando datos..." no debe quedar
       // pegado para siempre — mejor mostrar la pantalla (vacía o parcial) que un
@@ -124,7 +133,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // el mes seleccionado + 6 para el historial) — memoizado como un todo para que un
   // re-render ajeno (abrir/cerrar un ítem del desglose, hover) no dispare esos 7 barridos
   // de nuevo. Ningún cálculo interno se modificó.
-  const { actual, pagosPorCuenta, cuotas, historial } = useMemo(() => {
+  const esMesEnCurso = selectedMonth === mesActualLocal()
+  const { actual, pagosPorCuenta, cuotas, historial, totalDisponible } = useMemo(() => {
     const ahora = new Date()
     const hoyISO = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
     const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
@@ -184,6 +194,18 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
 
     const actual = desgloseDelMes(selectedMonth)
 
+    // Plata que hay de verdad, al cierre del mes que se está mirando (o a hoy, si es
+    // el mes en curso). Va acotado al mismo período que el resto del panel: mirando
+    // un mes viejo, el saldo de hoy no diría nada de ese mes.
+    //
+    // Esto es un STOCK y el balance de arriba es un FLUJO: el balance dice cuánto
+    // mejoró o empeoró el mes, el saldo dice cuánta plata hay. Son dos preguntas
+    // distintas y por eso van en la misma sección pero separadas por una línea, no
+    // sumadas entre sí.
+    const finDelMes = [selectedMonth, '31'].join('-')
+    const hasta = finDelMes > hoyISO ? hoyISO : finDelMes
+    const totalDisponible = saldoTotal({ anclas, transactions, accounts, hasta })
+
     const pagosPorCuenta = new Map()
     actual.pagos.forEach(p => {
       const list = pagosPorCuenta.get(p.account_id) || []
@@ -217,8 +239,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       total: Math.round(desgloseDelMes(m).totalPagado),
     }))
 
-    return { actual, pagosPorCuenta, cuotas, historial }
-  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs])
+    return { actual, pagosPorCuenta, cuotas, historial, totalDisponible }
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
@@ -362,6 +384,45 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: '700', paddingTop: '10px', marginTop: '6px', borderTop: `1px solid ${border}`, color: actual.balance >= 0 ? sem.positivo : sem.negativo }}>
           <span>Balance</span><span>{actual.balance >= 0 ? '+' : '-'}$ {formatMonto(Math.abs(actual.balance))}</span>
         </div>
+        {/* Plata que hay de verdad. El balance de arriba es un FLUJO —cuánto mejoró o
+            empeoró el mes— y esto es un STOCK: cuánta plata hay. Son dos preguntas
+            distintas, así que van separadas y no sumadas entre sí. Sale del saldo que
+            cargó el usuario en cada cuenta más los movimientos posteriores (ver
+            src/lib/saldos.js), o sea de la misma fuente que la card de cada cuenta:
+            las dos pantallas no pueden discrepar. */}
+        {totalDisponible.porMoneda.length > 0 && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: txt, padding: '4px 0' }}>
+              <span>Plata que tenés{esMesEnCurso ? ' hoy' : ' al cierre del mes'}</span>
+              <span style={{ fontWeight: '700' }}>
+                {totalDisponible.porMoneda.map(s => `${SIMBOLO_MONEDA[s.moneda] || '$'} ${s.moneda === 'ARS' ? formatMonto(s.saldo) : formatMontoFull(s.saldo)}`).join('  ·  ')}
+              </span>
+            </div>
+            {totalDisponible.detalle.length > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                {totalDisponible.detalle.map(d => (
+                  <div key={`${d.account_id}-${d.moneda}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+                    <span>{d.nombre}{d.moneda !== 'ARS' ? ` (${d.moneda})` : ''}</span>
+                    <span>{SIMBOLO_MONEDA[d.moneda] || '$'} {d.moneda === 'ARS' ? formatMonto(d.saldo) : formatMontoFull(d.saldo)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Un total al que le falta una cuenta no se puede mostrar como si estuviera
+                completo: es la diferencia entre "tenés esto" y "de lo que cargaste,
+                tenés esto". */}
+            {totalDisponible.sinSaldoCargado.length > 0 && (
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: muted }}>
+                No incluye {totalDisponible.sinSaldoCargado.map(c => c.nombre).join(', ')}: {totalDisponible.sinSaldoCargado.length === 1 ? 'todavía no le cargaste' : 'todavía no les cargaste'} el saldo.
+              </p>
+            )}
+          </div>
+        )}
+        {totalDisponible.porMoneda.length === 0 && totalDisponible.sinSaldoCargado.length > 0 && (
+          <p style={{ margin: '12px 0 0', paddingTop: '12px', borderTop: `1px solid ${border}`, fontSize: '11px', color: muted }}>
+            Cargá el saldo de tus cuentas para ver acá cuánta plata tenés, no solo cuánto entró y salió.
+          </p>
+        )}
         {(actual.totalIngresosUsd > 0 || actual.totalPagadoUsd > 0 || actual.totalIngresosEur > 0 || actual.totalPagadoEur > 0) && (
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px dashed ${border}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>

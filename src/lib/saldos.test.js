@@ -1,5 +1,6 @@
 const {
   signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
+  saldoTotal, tieneSaldo,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -270,5 +271,109 @@ describe('los pagos de tarjeta salen de la cuenta que la paga', () => {
       transactions: [pagoEnTarjeta('2026-09-01', 500000)],
       accounts: [cuentas[0]], accountId: CA, moneda: 'ARS', desde: '2026-08-31',
     })).toEqual([])
+  })
+})
+
+// El "Balance de caja" del resumen mensual es un FLUJO (cuánto entró y salió este
+// mes) y el saldo es un STOCK (cuánta plata hay). saldoTotal es lo que conecta las
+// dos vistas: sale de las mismas anclas que la card de cada cuenta, así que las dos
+// pantallas no pueden discrepar.
+describe('saldoTotal — la plata que hay sumando todas las cuentas', () => {
+  const EFE = 'efectivo'
+  const cuentas = [
+    { id: CA, nombre: 'Caja de ahorro', tipo: 'debito' },
+    { id: EFE, nombre: 'Efectivo', tipo: 'efectivo' },
+  ]
+  const anclaDe = (accountId, fecha, saldo, moneda = 'ARS') =>
+    ({ id: `${accountId}-${moneda}-${fecha}`, account_id: accountId, moneda, fecha, saldo })
+
+  test('suma las cuentas y no convierte monedas', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000), anclaDe(CA, '2026-09-01', 1200, 'USD'), anclaDe(EFE, '2026-09-01', 80000)],
+      transactions: [],
+      accounts: cuentas,
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 580000 }, { moneda: 'USD', saldo: 1200 }])
+  })
+
+  test('descuenta los movimientos posteriores a cada ancla', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000), anclaDe(EFE, '2026-09-01', 80000)],
+      transactions: [
+        { id: 'g1', account_id: CA, tipo: 'gasto', fecha: '2026-09-04', monto: 30000, moneda: 'ARS' },
+        { id: 'g2', account_id: EFE, tipo: 'gasto', fecha: '2026-09-05', monto: 5000, moneda: 'ARS' },
+      ],
+      accounts: cuentas,
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 545000 }])
+  })
+
+  test('el pago de tarjeta baja del total, igual que en la card de la cuenta', () => {
+    const tarjeta = { id: 'mc', nombre: 'Mastercard', tipo: 'credito', cuenta_pago_id: CA }
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-08-31', 3000000)],
+      transactions: [{ id: 'p1', account_id: 'mc', tipo: 'neutro', fecha: '2026-09-01', monto: 500000, moneda: 'ARS', nombre: 'Pago Mastercard' }],
+      accounts: [...cuentas, tarjeta],
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 2500000 }])
+  })
+
+  // Un total al que le falta una cuenta no se puede mostrar como si estuviera
+  // completo: es la diferencia entre "tenés esto" y "de lo que cargaste, tenés esto".
+  test('nombra las cuentas que todavía no tienen saldo cargado', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000)],
+      transactions: [],
+      accounts: cuentas,
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 500000 }])
+    expect(r.sinSaldoCargado.map(c => c.nombre)).toEqual(['Efectivo'])
+  })
+
+  test('una tarjeta no cuenta como cuenta sin saldo: no lleva saldo nunca', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000), anclaDe(EFE, '2026-09-01', 1000)],
+      transactions: [],
+      accounts: [...cuentas, { id: 'mc', nombre: 'Mastercard', tipo: 'credito' }],
+    })
+    expect(r.sinSaldoCargado).toEqual([])
+  })
+
+  test('acotado a una fecha, ignora lo posterior', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000)],
+      transactions: [{ id: 'g1', account_id: CA, tipo: 'gasto', fecha: '2026-09-20', monto: 100000, moneda: 'ARS' }],
+      accounts: [cuentas[0]],
+      hasta: '2026-09-10',
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 500000 }])
+  })
+
+  test('sin ninguna cuenta con saldo cargado no inventa un total', () => {
+    const r = saldoTotal({ anclas: [], transactions: [], accounts: cuentas })
+    expect(r.porMoneda).toEqual([])
+    expect(r.detalle).toEqual([])
+    expect(r.sinSaldoCargado).toHaveLength(2)
+  })
+
+  test('el detalle dice cuánto hay en cada cuenta', () => {
+    const r = saldoTotal({
+      anclas: [anclaDe(CA, '2026-09-01', 500000), anclaDe(EFE, '2026-09-01', 80000)],
+      transactions: [],
+      accounts: cuentas,
+    })
+    expect(r.detalle).toEqual([
+      { account_id: CA, nombre: 'Caja de ahorro', moneda: 'ARS', saldo: 500000 },
+      { account_id: EFE, nombre: 'Efectivo', moneda: 'ARS', saldo: 80000 },
+    ])
+  })
+})
+
+describe('tieneSaldo (ahora en lib)', () => {
+  test('caja de ahorro y efectivo sí; tarjeta e Ingresos no', () => {
+    expect(tieneSaldo({ tipo: 'debito' })).toBe(true)
+    expect(tieneSaldo({ tipo: 'efectivo' })).toBe(true)
+    expect(tieneSaldo({ tipo: 'credito' })).toBe(false)
+    expect(tieneSaldo({ tipo: 'ingreso' })).toBe(false)
   })
 })
