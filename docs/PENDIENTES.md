@@ -223,6 +223,50 @@ Buscar ceros sin sentido, `NaN`, guiones raros y widgets vacíos sin explicació
 del tipo de cosa que sale: la etiqueta del selector de meses decía literalmente
 "0 meses" al destildar todos los meses.
 
+### a-bis) Mercado Pago es DOS cuentas, no una — y el caso general: transferencias entre cuentas propias
+
+Lo levantó el dueño el 10 de septiembre. **Queda para una sesión próxima**, no se tocó nada.
+
+Mercado Pago es a la vez una billetera con saldo (dinero en cuenta, del que el dueño
+viene transfiriendo plata a su caja de ahorro) **y** una tarjeta de crédito con cierre,
+vencimiento y deuda. Una cuenta tiene un solo `tipo`, así que hoy no puede ser las dos:
+
+- Tipeada `credito`: no muestra saldo (`tieneSaldo` la excluye a propósito) aunque tenga
+  plata adentro, y las transferencias que salen de ahí no bajan ningún saldo.
+- Tipeada `debito`: aparece el saldo, pero se cae de "A pagar" y de todo el cálculo de
+  deuda, porque `calcularStatementsPendientes` filtra `a.tipo === 'credito'`.
+
+**El camino recomendado es partirla en dos cuentas**, no hacer que `tipo` sea múltiple:
+"Mercado Pago" (`debito`, la billetera) y "Mercado Pago Crédito" (`credito`, la tarjeta),
+con `cuenta_pago_id` de la segunda apuntando a la primera o a la caja de ahorro, según de
+dónde se pague. Dos cuentas es vocabulario que la app ya tiene y soporta de sobra; un
+`tipo` múltiple obliga a tocar justo el código más frágil del repo
+(`calcularStatementsPendientes`, el agrupado de CashView, `tieneSaldo`, los selectores de
+cuenta), y ese código ya se llevó media docena de PRs de bugs.
+
+Lo que hay que resolver de verdad al hacerlo: **un mismo PDF de Mercado Pago puede traer
+movimientos de la billetera y de la tarjeta juntos**, así que el import tiene que saber
+repartir las filas entre las dos cuentas. Ojo también con que el parser directo de MP
+(`tryDirectParsePDF`) hoy devuelve `tipo_documento: 'banco'`, mientras que en la tabla de
+ciclos de la sección 1 la MP figura como tarjeta: conviene mirar los dos caminos antes de
+decidir.
+
+**El caso general, que es más grande que Mercado Pago:** una transferencia entre cuentas
+propias es un hecho con dos efectos —sale de una cuenta y entra en la otra— y hoy se
+guarda como un solo movimiento `neutro` en una sola cuenta. Es exactamente la misma forma
+que el pago de tarjeta, que se resolvió con `accounts.cuenta_pago_id` (ver
+`pagosDeTarjetaDesde` en `src/lib/saldos.js`): la atribución no se guarda en cada
+movimiento, se deriva al calcular, y por eso arregla también el pasado sin migrar datos.
+
+Conviene resolver la transferencia con el mismo criterio en vez de inventar otro. Hoy
+`signoEnSaldo` trata todo `neutro` como plata que sale, salvo los textos de
+`NEUTRO_QUE_ENTRA` (rescate, acreditación, depósito) — el lado que RECIBE una
+transferencia propia no está cubierto, así que sube al saldo solo si además se importa el
+extracto de la cuenta que la recibió. Mientras eso no esté, el desvío que muestra el ancla
+al actualizar el saldo es lo que lo deja a la vista.
+
+---
+
 ### b) Fase 3 — asistente de IA financiero con tool-calling
 
 La feature grande que falta. Nunca se empezó. La idea es un asistente que pueda consultar
