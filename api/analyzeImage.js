@@ -58,13 +58,22 @@ export default async function handler(req, res) {
   let userRulesBlock = ''
   if (userRules && userRules.length > 0) {
     const rulesText = userRules
-      .map(r => `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"`)
+      .map(r => {
+        // El nombre aprendido viaja con la regla: es lo que hace que un comercio con
+        // sigla ilegible ("STB KM 43") vuelva a salir con su nombre real ("Starbucks")
+        // en vez de quedar como no identificado en cada carga.
+        const nombreAprendido = r.nombre_asignado && r.nombre_asignado !== r.texto_original
+          ? `, nombre_limpio: "${r.nombre_asignado}"`
+          : ''
+        return `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"${nombreAprendido}`
+      })
       .join('\n')
     userRulesBlock = `
 ═══════════════════════════════
 REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
 ═══════════════════════════════
-Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada:
+Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada.
+Cuando la regla trae un nombre_limpio, devolvé EXACTAMENTE ese nombre en el campo nombre_limpio de esa transacción: es el nombre con el que el usuario reconoce a ese comercio (ej. "STB KM 43" es su Starbucks). Si lo ignorás y dejás la sigla del banco, la app da el movimiento por no identificado y le vuelve a preguntar algo que ya contestó.
 ${rulesText}
 `
   }
