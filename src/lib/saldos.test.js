@@ -1,6 +1,6 @@
 const {
   signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
-  saldoTotal, tieneSaldo,
+  saldoTotal, tieneSaldo, monedaDeLaCuenta,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -375,5 +375,92 @@ describe('tieneSaldo (ahora en lib)', () => {
     expect(tieneSaldo({ tipo: 'efectivo' })).toBe(true)
     expect(tieneSaldo({ tipo: 'credito' })).toBe(false)
     expect(tieneSaldo({ tipo: 'ingreso' })).toBe(false)
+  })
+})
+
+// Cargar U$S 33 con el selector en "$" guardaba un ancla en pesos, y ese saldo se
+// sumaba al total en pesos sin que se viera el error. Caso real: "Caja de Ahorro USD
+// Galicia — $ 33" sumando dentro de $ 72.998.
+describe('monedaDeLaCuenta — con qué moneda arranca el formulario de saldo', () => {
+  const cuentaUSD = { id: 'ca-usd', nombre: 'Caja de Ahorro USD Galicia', tipo: 'debito' }
+
+  test('la decide los movimientos de la cuenta, que es el dato real', () => {
+    const r = monedaDeLaCuenta({
+      account: cuentaUSD,
+      transactions: [
+        { account_id: 'ca-usd', moneda: 'USD', monto: 100 },
+        { account_id: 'ca-usd', moneda: 'USD', monto: 50 },
+        { account_id: 'ca-usd', moneda: 'ARS', monto: 10 },
+      ],
+    })
+    expect(r).toBe('USD')
+  })
+
+  test('no mira los movimientos de otras cuentas', () => {
+    const r = monedaDeLaCuenta({
+      account: cuentaUSD,
+      transactions: [{ account_id: 'otra', moneda: 'ARS', monto: 999999 }],
+    })
+    // Sin movimientos propios cae al nombre, que dice USD.
+    expect(r).toBe('USD')
+  })
+
+  test('sin movimientos, el nombre es la pista', () => {
+    expect(monedaDeLaCuenta({ account: cuentaUSD, transactions: [] })).toBe('USD')
+    expect(monedaDeLaCuenta({ account: { nombre: 'Cuenta en dólares' }, transactions: [] })).toBe('USD')
+    expect(monedaDeLaCuenta({ account: { nombre: 'Ahorro EUR' }, transactions: [] })).toBe('EUR')
+  })
+
+  test('una caja de ahorro común arranca en pesos', () => {
+    expect(monedaDeLaCuenta({ account: { id: 'ca', nombre: 'Caja de Ahorro Galicia' }, transactions: [] })).toBe('ARS')
+    expect(monedaDeLaCuenta({ account: { nombre: 'Efectivo' }, transactions: [] })).toBe('ARS')
+  })
+
+  test('sin cuenta ni movimientos no se rompe', () => {
+    expect(monedaDeLaCuenta({})).toBe('ARS')
+  })
+
+  test('empatadas, el resultado no depende del orden de las filas', () => {
+    const txs = [
+      { account_id: 'ca', moneda: 'USD', monto: 1 },
+      { account_id: 'ca', moneda: 'ARS', monto: 1 },
+    ]
+    const a = monedaDeLaCuenta({ account: { id: 'ca', nombre: 'X' }, transactions: txs })
+    const b = monedaDeLaCuenta({ account: { id: 'ca', nombre: 'X' }, transactions: [...txs].reverse() })
+    expect(a).toBe(b)
+  })
+})
+
+// El bug tal como se vio en pantalla: el ancla en la moneda equivocada hace que un
+// saldo en dólares se sume al total en pesos.
+describe('un ancla en la moneda equivocada no puede pasar desapercibida', () => {
+  const cuentas = [
+    { id: 'efe', nombre: 'Efectivo', tipo: 'efectivo' },
+    { id: 'ca', nombre: 'Caja de Ahorro Galicia', tipo: 'debito' },
+    { id: 'ca-usd', nombre: 'Caja de Ahorro USD Galicia', tipo: 'debito' },
+  ]
+
+  test('así se veía el $ 72.998: los 33 dólares sumados como pesos', () => {
+    const r = saldoTotal({
+      anclas: [
+        { id: '1', account_id: 'efe', moneda: 'ARS', fecha: '2026-09-10', saldo: 42100 },
+        { id: '2', account_id: 'ca', moneda: 'ARS', fecha: '2026-09-10', saldo: 30865 },
+        { id: '3', account_id: 'ca-usd', moneda: 'ARS', fecha: '2026-09-10', saldo: 33 },
+      ],
+      transactions: [], accounts: cuentas,
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 72998 }])
+  })
+
+  test('con el ancla en dólares, cada moneda queda en su total', () => {
+    const r = saldoTotal({
+      anclas: [
+        { id: '1', account_id: 'efe', moneda: 'ARS', fecha: '2026-09-10', saldo: 42100 },
+        { id: '2', account_id: 'ca', moneda: 'ARS', fecha: '2026-09-10', saldo: 30865 },
+        { id: '3', account_id: 'ca-usd', moneda: 'USD', fecha: '2026-09-10', saldo: 33 },
+      ],
+      transactions: [], accounts: cuentas,
+    })
+    expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 72965 }, { moneda: 'USD', saldo: 33 }])
   })
 })

@@ -64,7 +64,7 @@ const statementDelPago = (pago, statements) => {
 
 const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
 
-function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual }) {
+function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual, cuentasAhorro }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [anclas, setAnclas] = useState([])
@@ -134,7 +134,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // re-render ajeno (abrir/cerrar un ítem del desglose, hover) no dispare esos 7 barridos
   // de nuevo. Ningún cálculo interno se modificó.
   const esMesEnCurso = selectedMonth === mesActualLocal()
-  const { actual, pagosPorCuenta, cuotas, historial, totalDisponible } = useMemo(() => {
+  const { actual, pagosPorCuenta, cuotas, historial, totalDisponible, ahorrosPorMoneda, ahorrosDuplicados } = useMemo(() => {
     const ahora = new Date()
     const hoyISO = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
     const esSuscripcion = (t) => t.categories?.nombre === 'Suscripciones'
@@ -206,6 +206,28 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     const hasta = finDelMes > hoyISO ? hoyISO : finDelMes
     const totalDisponible = saldoTotal({ anclas, transactions, accounts, hasta })
 
+    // Los ahorros son la lista que el usuario carga a mano en el widget "Ahorros".
+    // Van SEPARADOS del saldo de las cuentas y no sumados adentro: un plazo fijo o
+    // dólares guardados son plata que tenés, pero no plata con la que podés pagar hoy.
+    // Mezclarlas daría a entender que hay más disponible del que hay.
+    const ahorrosPorMoneda = [...(cuentasAhorro || []).reduce((acc, c) => {
+      const monto = parseFloat(c.monto) || 0
+      if (!monto) return acc
+      const m = c.moneda || 'ARS'
+      return acc.set(m, (acc.get(m) || 0) + monto)
+    }, new Map()).entries()]
+      .map(([moneda, monto]) => ({ moneda, monto }))
+      .sort((a, b) => a.moneda.localeCompare(b.moneda))
+
+    // Un ahorro cargado con el nombre de una cuenta que YA tiene saldo estaría
+    // contado dos veces. No se puede saber con certeza (el nombre del ahorro es texto
+    // libre), así que no se descuenta nada por las dudas: se avisa y decide el usuario.
+    const normNombre = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const nombresConSaldo = new Set(totalDisponible.detalle.map(d => normNombre(d.nombre)))
+    const ahorrosDuplicados = (cuentasAhorro || [])
+      .filter(c => nombresConSaldo.has(normNombre(c.cuenta)))
+      .map(c => c.cuenta)
+
     const pagosPorCuenta = new Map()
     actual.pagos.forEach(p => {
       const list = pagosPorCuenta.get(p.account_id) || []
@@ -239,8 +261,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       total: Math.round(desgloseDelMes(m).totalPagado),
     }))
 
-    return { actual, pagosPorCuenta, cuotas, historial, totalDisponible }
-  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas])
+    return { actual, pagosPorCuenta, cuotas, historial, totalDisponible, ahorrosPorMoneda, ahorrosDuplicados }
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
@@ -414,6 +436,26 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             {totalDisponible.sinSaldoCargado.length > 0 && (
               <p style={{ margin: '6px 0 0', fontSize: '11px', color: muted }}>
                 No incluye {totalDisponible.sinSaldoCargado.map(c => c.nombre).join(', ')}: {totalDisponible.sinSaldoCargado.length === 1 ? 'todavía no le cargaste' : 'todavía no les cargaste'} el saldo.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Ahorros: la lista que se carga a mano en el widget "Ahorros". Va como un
+            renglón aparte y NO sumado dentro de la plata disponible — un plazo fijo o
+            dólares guardados son plata que tenés, pero no plata con la que podés pagar
+            hoy, y mezclarlas daría a entender que hay más disponible del que hay. */}
+        {ahorrosPorMoneda.length > 0 && (
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px dashed ${border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: txt, padding: '2px 0' }}>
+              <span>Ahorros</span>
+              <span style={{ fontWeight: '700' }}>
+                {ahorrosPorMoneda.map(a => `${SIMBOLO_MONEDA[a.moneda] || '$'} ${a.moneda === 'ARS' ? formatMonto(a.monto) : formatMontoFull(a.monto)}`).join('  ·  ')}
+              </span>
+            </div>
+            {ahorrosDuplicados.length > 0 && (
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: sem.negativo }}>
+                Ojo: {ahorrosDuplicados.join(', ')} figura en Ahorros y además tiene saldo cargado como cuenta. Estaría contado dos veces.
               </p>
             )}
           </div>

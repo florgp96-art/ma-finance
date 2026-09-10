@@ -213,3 +213,28 @@ export const saldoTotal = ({ anclas, transactions, accounts, hasta = null }) => 
     sinSaldoCargado,
   }
 }
+
+// ¿En qué moneda opera esta cuenta? Sirve para no arrancar el formulario de saldo en
+// pesos en una caja de ahorro en dólares: cargar U$S 33 con el selector en "$" guarda
+// un ancla en pesos, y ese saldo se suma al total en pesos sin que se vea el error
+// (caso real: "Caja de Ahorro USD Galicia — $ 33" sumando dentro de $ 72.998).
+//
+// La respuesta buena la dan los movimientos de la cuenta, no su nombre: es el dato de
+// lo que realmente pasa ahí. El nombre queda como última pista para una cuenta recién
+// creada, que todavía no tiene movimientos.
+export const monedaDeLaCuenta = ({ account, transactions }) => {
+  const cuenta = new Map()
+  for (const t of (transactions || [])) {
+    if (t.account_id && account?.id && t.account_id !== account.id) continue
+    const m = t.moneda || 'ARS'
+    cuenta.set(m, (cuenta.get(m) || 0) + 1)
+  }
+  // Empatadas, gana la de nombre menor para que el resultado no dependa del orden en
+  // que la base devolvió las filas.
+  const masUsada = [...cuenta.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]
+  if (masUsada) return masUsada[0]
+  const nombre = (account?.nombre || '').toLowerCase()
+  if (/\busd\b|d[oó]lar|u\$s/.test(nombre)) return 'USD'
+  if (/\beur\b|euro/.test(nombre)) return 'EUR'
+  return 'ARS'
+}

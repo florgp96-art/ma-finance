@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
-import { saldoDeCuenta, desvioDeAncla } from '../lib/saldos'
+import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta } from '../lib/saldos'
 import { formatMonto, formatMontoFull, formatFecha } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -33,7 +33,11 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   // vez de romper la pantalla, igual que con las fechas del próximo ciclo.
   const [sinMigrar, setSinMigrar] = useState(false)
   const [editando, setEditando] = useState(false)
-  const [moneda, setMoneda] = useState('ARS')
+  // La moneda arranca en la que opera la cuenta, no en pesos: cargar U$S 33 con el
+  // selector en "$" guarda un ancla en pesos y ese saldo se suma al total en pesos sin
+  // que se vea el error (pasó con "Caja de Ahorro USD Galicia — $ 33").
+  const monedaDefault = useMemo(() => monedaDeLaCuenta({ account, transactions }), [account, transactions])
+  const [moneda, setMoneda] = useState(monedaDefault)
   const [valor, setValor] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
   const [guardando, setGuardando] = useState(false)
@@ -112,6 +116,20 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     onSaved?.()
   }
 
+  // Las anclas son append-only a propósito (así se ve desde cuándo un saldo se
+  // desvió), pero un saldo mal cargado —la moneda equivocada, un dedazo— no se puede
+  // arreglar agregando otro: hay que poder sacarlo. Se borra el ancla EN USO de esa
+  // moneda; si había una anterior, el saldo vuelve a calcularse desde ella.
+  const borrarAncla = async (ancla) => {
+    const cuanto = fmt(Number(ancla.saldo), ancla.moneda || 'ARS')
+    if (!window.confirm(`¿Borrar el saldo de ${cuanto} del ${formatFecha(ancla.fecha)}?`)) return
+    const { error: errDel } = await supabase.from('account_balances').delete().eq('id', ancla.id)
+    if (errDel) { setError(`No se pudo borrar: ${errDel.message}`); return }
+    setError(null)
+    await fetchAnclas()
+    onSaved?.()
+  }
+
   const estimadoActual = useMemo(
     () => saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda, hasta: fecha }),
     [anclas, movimientos, accounts, account.id, moneda, fecha])
@@ -147,6 +165,8 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
           <p style={{ ...styles.summaryValue, marginBottom: '2px' }}>{fmt(s.saldo, s.moneda)}</p>
           <p style={{ ...styles.summarySubval, textAlign: 'center' }}>
             desde {fmt(s.ancla.saldo, s.moneda)} del {formatFecha(s.ancla.fecha)}
+            <button onClick={() => borrarAncla(s.ancla)} title="Borrar este saldo"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, fontSize: '13px', padding: '0 0 0 6px', lineHeight: 1 }}>×</button>
           </p>
           {s.cantidadMovimientos > 0 && (
             <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
@@ -173,7 +193,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
       )}
 
       {!editando ? (
-        <button onClick={() => { setEditando(true); setFecha(hoyISO()); setError(null) }}
+        <button onClick={() => { setEditando(true); setFecha(hoyISO()); setMoneda(monedaDefault); setError(null) }}
           style={{
             marginTop: '10px', width: '100%', padding: '6px', borderRadius: '8px', cursor: 'pointer',
             border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
