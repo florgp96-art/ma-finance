@@ -133,7 +133,25 @@ alter table transactions add column if not exists cuenta_destino_id uuid referen
 
 create index if not exists transactions_cuenta_destino_idx
   on transactions (cuenta_destino_id) where cuenta_destino_id is not null;
+
+-- De qué cuenta se paga cada tarjeta. Pagar la tarjeta saca plata de una cuenta real,
+-- pero el pago se guarda como movimiento de la TARJETA (es la convención de toda la
+-- app: ver CashView y calcularEstadoStatement). La cuenta de la que salió la plata no
+-- se enteraba nunca, y su saldo quedaba de más por el monto más grande del mes.
+alter table accounts add column if not exists cuenta_pago_id uuid references accounts(id) on delete set null;
 ```
+
+**Esto arregla también el pasado, sin migrar ni un movimiento.** La atribución no se
+guarda en cada pago: se deriva de `cuenta_pago_id` al calcular. Configurada una vez por
+tarjeta, todos los pagos ya cargados de esa tarjeta empiezan a restar del saldo de la
+cuenta que corresponde — no hay que adivinar de dónde salió cada pago viejo ni tocar
+datos históricos. Y es reversible: si la cuenta estaba mal, se cambia el selector.
+
+Cuando además se importa el extracto bancario, el mismo pago entra dos veces (neutro en
+la tarjeta + línea "PAGO TARJETA" en la caja de ahorro). `pagosDeTarjetaDesde` los
+empareja por monto y fecha cercana para restarlo una sola vez; cada línea del extracto
+cancela como máximo un pago, así dos pagos iguales del mismo día no se anulan con una
+sola fila.
 
 **La tabla es append-only a propósito.** Cada vez que el usuario chequea su cuenta queda
 una fila nueva, no se pisa la anterior: así se puede ver desde cuándo un saldo empezó a

@@ -1607,7 +1607,16 @@ export default function Dashboard() {
     e.preventDefault()
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('accounts').update({ nombre: editAccount.nombre, tipo: editAccount.tipo }).eq('id', editAccount.id).eq('user_id', user.id)
+    const camposCuenta = { nombre: editAccount.nombre, tipo: editAccount.tipo }
+    // La columna se agrega con una migración aparte: si todavía no está, se guarda
+    // el resto igual en vez de que falle la edición entera.
+    const { error: errEdit } = await supabase.from('accounts')
+      .update({ ...camposCuenta, cuenta_pago_id: editAccount.cuenta_pago_id || null })
+      .eq('id', editAccount.id).eq('user_id', user.id)
+    if (errEdit && /cuenta_pago_id/.test(errEdit.message || '')) {
+      console.warn('accounts sin cuenta_pago_id — no se guarda de qué cuenta se paga la tarjeta')
+      await supabase.from('accounts').update(camposCuenta).eq('id', editAccount.id).eq('user_id', user.id)
+    }
     setEditAccount(null)
     fetchAccounts()
     setLoading(false)
@@ -4493,6 +4502,27 @@ export default function Dashboard() {
                   <option value="debito">🏦 Débito / Cuenta bancaria</option>
                 </select>
               </div>
+              {/* Pagar la tarjeta saca plata de una cuenta real, pero el pago se
+                  guarda como movimiento de la TARJETA — así que la cuenta de la que
+                  salió no se enteraba y su saldo quedaba de más por el monto más
+                  grande del mes. Con esto configurado el pago se resta donde
+                  corresponde, incluidos los pagos ya cargados: no hay que tocar
+                  ningún movimiento viejo. */}
+              {editAccount.tipo === 'credito' && (
+                <div style={styles.field}>
+                  <label style={styles.label}>¿De qué cuenta pagás esta tarjeta?</label>
+                  <select style={styles.input} value={editAccount.cuenta_pago_id || ''}
+                    onChange={(e) => setEditAccount({...editAccount, cuenta_pago_id: e.target.value || null})}>
+                    <option value="">— sin definir —</option>
+                    {accounts.filter(a => a.tipo === 'debito' || a.tipo === 'efectivo').map(a => (
+                      <option key={a.id} value={a.id}>{a.nombre}</option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '6px 0 0' }}>
+                    Sirve para que los pagos de esta tarjeta se resten del saldo de esa cuenta.
+                  </p>
+                </div>
+              )}
               <div style={styles.modalButtons}>
                 <button type="button" style={styles.cancelBtn} onClick={() => setEditAccount(null)}>Cancelar</button>
                 <button type="submit" style={styles.saveBtn} disabled={loading}>{loading ? 'Guardando...' : 'Guardar cambios'}</button>
