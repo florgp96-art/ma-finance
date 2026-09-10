@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
+import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
@@ -1194,19 +1195,6 @@ export default function Dashboard() {
     handleElegirCuentaExtractoBanco(account.nombre)
   }
 
-  // Único lugar que sabe matchear los alias del usuario (categoría, hijo,
-  // neutro, split) contra una descripción — lo usan tanto la importación por
-  // Excel (clasificarYPrevisualizarExcel) como la de PDF/foto
-  // (aplicarReglasYAlias) para que un tipo de alias nuevo se aplique en los
-  // dos flujos sin tener que acordarse de tocar dos lugares distintos (así
-  // quedó "neutro" aplicándose en uno y no en el otro).
-  const buscarAliases = (descUpper, aliasesList) => ({
-    categoria: (aliasesList || []).find(a => a.tipo === 'categoria' && descUpper.includes(a.alias)),
-    hijo: (aliasesList || []).find(a => a.tipo === 'hijo' && descUpper.includes(a.alias)),
-    neutro: (aliasesList || []).find(a => a.tipo === 'neutro' && descUpper.includes(a.alias)),
-    split: (aliasesList || []).find(a => a.tipo === 'split' && descUpper.includes(a.alias)),
-  })
-
   const clasificarYPrevisualizarExcel = async (rows) => {
     try {
       // Pre-clasificar usando historial de transacciones ya identificadas (aprende del pasado)
@@ -1796,53 +1784,6 @@ export default function Dashboard() {
     return { validas, omitidas }
   }
 
-  // Re-aplica reglas aprendidas (user_rules) y alias del usuario a las transacciones que
-  // devolvió la IA (o el parser directo), sin depender de que la IA haya obedecido el prompt.
-  // Prioridad: reglas aprendidas > alias de categoría/hijo.
-  const aplicarReglasYAlias = (transacciones, rules, aliasesList) => {
-    return (transacciones || []).flatMap(t => {
-      const descNorm = ((t.descripcion || t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().trim()
-      const descUpper = descNorm.toUpperCase()
-      let updated = { ...t }
-      const ruleMatch = (rules || []).find(r => {
-        const rNorm = (r.texto_original || '').toLowerCase().trim()
-        return rNorm && (descNorm === rNorm || descNorm.startsWith(rNorm) || rNorm.startsWith(descNorm))
-      })
-      // La regla aprendida (categoría) tiene prioridad sobre el alias de
-      // categoría, pero los alias de hijo/neutro aplican SIEMPRE: la regla
-      // aprendida no guarda hijo, y antes lo pisaba (un gasto con regla de
-      // categoría nunca recibía su hijo/a por alias).
-      const { categoria: catAlias, hijo: hijoAlias, neutro: neutroAlias, split: splitAlias } = buscarAliases(descUpper, aliasesList)
-      if (ruleMatch) {
-        updated.categoria_sugerida = ruleMatch.categoria
-        updated.subcategoria_sugerida = ruleMatch.subcategoria
-      } else if (catAlias) {
-        const [cat, subcat] = catAlias.valor.split(' > ').map(v => v.trim())
-        updated.categoria_sugerida = cat
-        updated.subcategoria_sugerida = subcat || null
-      }
-      if (hijoAlias) updated.hijo = hijoAlias.valor
-      if (neutroAlias) updated.tipo = 'neutro'
-      // Regla "dividir con hijo/a" (ej. OSDE → 50% Amelia): el gasto se parte
-      // en dos movimientos reales, así gráficos, totales y detalle por hijo
-      // cierran solos sin lógica especial en ningún otro lado.
-      const montoNum = Number(updated.monto) || 0
-      if (splitAlias && updated.tipo !== 'ingreso' && montoNum > 0) {
-        const [hijoNombre, pctStr] = String(splitAlias.valor || '').split(':')
-        const pct = Math.min(95, Math.max(5, parseFloat(pctStr) || 50))
-        const parteHijo = Math.round(montoNum * pct) / 100
-        const parteResto = Math.round((montoNum - parteHijo) * 100) / 100
-        if (hijoNombre && parteHijo > 0 && parteResto > 0) {
-          return [
-            { ...updated, monto: parteHijo, hijo: hijoNombre },
-            { ...updated, monto: parteResto, hijo: updated.hijo && updated.hijo !== hijoNombre ? updated.hijo : null },
-          ]
-        }
-      }
-      return [updated]
-    })
-  }
-
   const logImportAttempt = async (datos) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1864,12 +1805,20 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser()
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
+      // nombre_asignado es el nombre que el usuario le puso al comercio la primera
+      // vez que identificó el movimiento ("STB KM 43" -> "Starbucks"). Sin traerlo
+      // acá, la regla aprendida devolvía SOLO la categoría: el nombre seguía siendo
+      // la sigla del banco y, como el estado se decide por "¿el nombre quedó distinto
+      // del original?" (ver los inserts de la importación), el movimiento entraba de
+      // nuevo como "a_identificar". Resultado: la app volvía a preguntar lo mismo en
+      // cada resumen por más veces que se le aclarara.
       const { data: rulesRaw } = await supabase.from('user_rules')
-        .select('texto_original, categories(nombre), subcategories(nombre)')
+        .select('texto_original, nombre_asignado, categories(nombre), subcategories(nombre)')
         .eq('user_id', user.id)
         .not('texto_original', 'like', 'contexto_%')
       const rules = (rulesRaw || []).map(r => ({
         texto_original: r.texto_original,
+        nombre_asignado: r.nombre_asignado || null,
         categoria: r.categories?.nombre || null,
         subcategoria: r.subcategories?.nombre || null,
       })).filter(r => r.categoria)
@@ -2490,7 +2439,7 @@ export default function Dashboard() {
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
             tag: getHijoTag(t.hijo),
             child_id: getHijoId(t.hijo),
-            estado: (tipoTx === 'neutro' || (t.nombre_limpio && t.nombre_limpio !== t.nombre_original)) ? 'identificado' : 'a_identificar',
+            estado: yaIdentificado({ ...t, tipo: tipoTx }) ? 'identificado' : 'a_identificar',
             es_manual: false,
             account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
           })
@@ -2709,8 +2658,10 @@ export default function Dashboard() {
             child_id: getHijoId(t.hijo),
             // Los movimientos neutros (ej. "Gracias por su pago", pago recibido de
             // la tarjeta) ya están clasificados por definición — no son un gasto sin
-            // identificar, aunque el nombre no se haya podido "limpiar".
-            estado: t.tipo === 'neutro' ? 'identificado' : ((!t.nombre_limpio || t.nombre_limpio === t.nombre_original) ? 'a_identificar' : 'identificado'),
+            // identificar, aunque el nombre no se haya podido "limpiar". Lo mismo con
+            // lo que resolvió una regla o un alias del usuario: ya lo contestó, aunque
+            // haya dejado el nombre igual al del banco (ver yaIdentificado).
+            estado: yaIdentificado(t) ? 'identificado' : 'a_identificar',
             es_manual: false
           }
         })
