@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
+import { filtrarYaCargados } from '../lib/duplicados'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
@@ -2447,21 +2448,20 @@ export default function Dashboard() {
       // esto dependía por completo de que el usuario notara a mano las filas tachadas
       // "ya cargada" en la previsualización y las desmarcara antes de confirmar; si no,
       // quedaban duplicadas de verdad (incluidos los pagos de tarjeta tipo "neutro").
+      // El `tipo` no es opcional en el select: filtrarYaCargados compara los pagos con
+      // otra regla que los gastos (ver src/lib/duplicados.js), y sin el tipo no puede
+      // distinguirlos.
       const existentesBanco = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle').eq('account_id', cuentaEgresos.id)
+        supabase.from('transactions').select('id, account_id, fecha, monto, moneda, detalle, tipo').eq('account_id', cuentaEgresos.id)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
-      const normDetBanco = (s) => (s || '').toLowerCase().trim()
-      const esDupeBanco = (cand) => (existentesBanco || []).some(e =>
-        e.account_id === cand.account_id &&
-        e.fecha === cand.fecha &&
-        (e.moneda || 'ARS') === (cand.moneda || 'ARS') &&
-        Math.abs(Number(e.monto) - cand.monto) < 0.01 &&
-        normDetBanco(e.detalle) === normDetBanco(cand.detalle)
-      )
-      const txEgresosFiltrados = txEgresos.filter(t => !esDupeBanco(t))
-      const txIngresosFiltrados = txIngresos.filter(t => !esDupeBanco(t))
-      const omitidasBanco = (txEgresos.length - txEgresosFiltrados.length) + (txIngresos.length - txIngresosFiltrados.length)
+      // Los dos lotes se filtran contra el MISMO pool: si se filtraran por separado,
+      // una fila ya cargada podría tapar un egreso y además un ingreso.
+      const filtradoBanco = filtrarYaCargados([...txEgresos, ...txIngresos], existentesBanco)
+      const idsNuevosBanco = new Set(filtradoBanco.nuevos)
+      const txEgresosFiltrados = txEgresos.filter(t => idsNuevosBanco.has(t))
+      const txIngresosFiltrados = txIngresos.filter(t => idsNuevosBanco.has(t))
+      const omitidasBanco = filtradoBanco.omitidos
 
       // El extracto se creó con total_resumen: null (arriba) porque recién acá se
       // sabe qué se terminó guardando de verdad. Para cuentas de banco esto quedaba
@@ -2660,22 +2660,17 @@ export default function Dashboard() {
           }
         })
 
-      // Evitar duplicar movimientos que ya estaban cargados en la cuenta (ej. por Excel,
-      // mientras se esperaba este resumen): mismo día, monto y detalle → se omite.
+      // Evitar duplicar movimientos que ya estaban cargados en la cuenta: los gastos
+      // por día, monto y detalle; los PAGOS sin exigir que el texto coincida, porque
+      // el banco escribe "SU PAGO" donde el usuario había escrito "Pago Mastercard"
+      // (ver src/lib/duplicados.js — un pago contado dos veces borra deuda real).
       const existentesTarjeta = await fetchAllTxPages(() =>
-        supabase.from('transactions').select('id, fecha, monto, moneda, detalle').eq('account_id', account.id)
+        supabase.from('transactions').select('id, fecha, monto, moneda, detalle, tipo').eq('account_id', account.id)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
-      const normDetTarjeta = (s) => (s || '').toLowerCase().trim()
-      const transacciones = transaccionesCandidatas.filter(cand =>
-        !(existentesTarjeta || []).some(e =>
-          e.fecha === cand.fecha &&
-          (e.moneda || 'ARS') === (cand.moneda || 'ARS') &&
-          Math.abs(Number(e.monto) - cand.monto) < 0.01 &&
-          normDetTarjeta(e.detalle) === normDetTarjeta(cand.detalle)
-        )
-      )
-      const omitidasTarjeta = transaccionesCandidatas.length - transacciones.length
+      const filtradoTarjeta = filtrarYaCargados(transaccionesCandidatas, existentesTarjeta)
+      const transacciones = filtradoTarjeta.nuevos
+      const omitidasTarjeta = filtradoTarjeta.omitidos
 
       if (transacciones.length === 0) {
         showToast(`Todas las transacciones de este resumen ya estaban cargadas (${omitidasTarjeta} duplicadas omitidas).`, 'error')
