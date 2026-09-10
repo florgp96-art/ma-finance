@@ -3761,8 +3761,8 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
                 Solo en caja de ahorro y efectivo: una tarjeta no tiene saldo sino
                 deuda, y ese número ya sale del resumen del banco. */}
             {!allAccounts && tieneSaldo(account) && (
-              <SaldoCuenta account={account} transactions={transactions} darkMode={darkMode}
-                styles={styles} onSaved={onAccountsChanged} />
+              <SaldoCuenta account={account} accounts={accounts} transactions={transactions}
+                darkMode={darkMode} styles={styles} onSaved={onAccountsChanged} />
             )}
 
             {/* === Vista cuenta de ingresos individual === */}

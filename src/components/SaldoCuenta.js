@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
 import { saldoDeCuenta, desvioDeAncla } from '../lib/saldos'
@@ -27,11 +27,12 @@ export const tieneSaldo = (account) => account?.tipo === 'debito' || account?.ti
 // Card de saldo de una cuenta: cuánta plata hay, calculada desde el último saldo
 // que cargó el usuario más lo que pasó después. Ver src/lib/saldos.js para el
 // porqué del modelo de anclas.
-export default function SaldoCuenta({ account, transactions, darkMode, styles, onSaved }) {
+export default function SaldoCuenta({ account, accounts, transactions, darkMode, styles, onSaved }) {
   const sem = semaforo(darkMode)
   const muted = darkMode ? '#9A8A9A' : '#75757a'
   const [anclas, setAnclas] = useState([])
   const [ingresosDestinados, setIngresosDestinados] = useState([])
+  const [pagosDeTarjeta, setPagosDeTarjeta] = useState([])
   // null = la columna/tabla todavía no existen (migración sin correr). Se avisa en
   // vez de romper la pantalla, igual que con las fechas del próximo ciclo.
   const [sinMigrar, setSinMigrar] = useState(false)
@@ -41,6 +42,11 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
   const [fecha, setFecha] = useState(hoyISO())
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
+
+  // accounts entra por props y cambia de identidad en cada render del padre: si
+  // fetchAnclas dependiera de él, refetchearía en loop. Se lee por ref.
+  const accountsRef = useRef(accounts)
+  useEffect(() => { accountsRef.current = accounts }, [accounts])
 
   const fetchAnclas = useCallback(async () => {
     if (!account?.id) return
@@ -56,6 +62,16 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
       .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id, cuenta_destino_id')
       .eq('cuenta_destino_id', account.id).eq('tipo', 'ingreso')
     setIngresosDestinados(ing || [])
+    // Los pagos de tarjeta viven en la cuenta de CRÉDITO, no en esta: hay que ir a
+    // buscarlos a las tarjetas que se pagan desde acá. Es la plata más grande que
+    // sale de la cuenta en el mes, así que sin esto el saldo queda muy de más.
+    const tarjetasQuePago = (accountsRef.current || [])
+      .filter(a => a.tipo === 'credito' && a.cuenta_pago_id === account.id)
+    if (tarjetasQuePago.length === 0) { setPagosDeTarjeta([]); return }
+    const { data: pagos } = await supabase.from('transactions')
+      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id')
+      .in('account_id', tarjetasQuePago.map(a => a.id)).eq('tipo', 'neutro')
+    setPagosDeTarjeta(pagos || [])
   }, [account?.id])
 
   useEffect(() => { fetchAnclas() }, [fetchAnclas])
@@ -65,8 +81,20 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
   // destino): deduplicar por id antes de sumar nada.
   const movimientos = useMemo(() => {
     const vistos = new Set((transactions || []).map(t => t.id))
-    return [...(transactions || []), ...ingresosDestinados.filter(t => !vistos.has(t.id))]
-  }, [transactions, ingresosDestinados])
+    const extra = [...ingresosDestinados, ...pagosDeTarjeta].filter(t => {
+      if (vistos.has(t.id)) return false
+      vistos.add(t.id)
+      return true
+    })
+    return [...(transactions || []), ...extra]
+  }, [transactions, ingresosDestinados, pagosDeTarjeta])
+
+  // Una tarjeta sin cuenta de pago configurada no le resta a nadie: avisarlo es la
+  // diferencia entre "me falta plata en la caja de ahorro" y "no le dije a la app
+  // de dónde sale el pago de la tarjeta".
+  const tarjetasSinCuentaDePago = useMemo(
+    () => (accounts || []).filter(a => a.tipo === 'credito' && !a.cuenta_pago_id),
+    [accounts])
 
   const monedasConDatos = useMemo(() => {
     const conAncla = new Set(anclas.map(a => a.moneda || 'ARS'))
@@ -75,8 +103,8 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
   }, [anclas])
 
   const saldos = useMemo(() => monedasConDatos
-    .map(m => saldoDeCuenta({ anclas, transactions: movimientos, accountId: account.id, moneda: m }))
-    .filter(Boolean), [monedasConDatos, anclas, movimientos, account.id])
+    .map(m => saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda: m }))
+    .filter(Boolean), [monedasConDatos, anclas, movimientos, accounts, account.id])
 
   const guardar = async () => {
     const saldoNum = parseSaldo(valor)
@@ -88,7 +116,7 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
     const { data: { user } } = await supabase.auth.getUser()
     // Lo que la app venía calculando queda guardado junto al ancla: sin eso, el
     // desvío solo se puede ver en el momento y después se pierde.
-    const estimado = saldoDeCuenta({ anclas, transactions: movimientos, accountId: account.id, moneda, hasta: fecha })
+    const estimado = saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda, hasta: fecha })
     const { error: errIns } = await supabase.from('account_balances').insert({
       user_id: user.id, account_id: account.id, moneda, fecha, saldo: saldoNum,
       saldo_calculado: estimado ? estimado.saldo : null,
@@ -102,8 +130,8 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
   }
 
   const estimadoActual = useMemo(
-    () => saldoDeCuenta({ anclas, transactions: movimientos, accountId: account.id, moneda, hasta: fecha }),
-    [anclas, movimientos, account.id, moneda, fecha])
+    () => saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda, hasta: fecha }),
+    [anclas, movimientos, accounts, account.id, moneda, fecha])
   const saldoTipeado = parseSaldo(valor)
   const desvioPrevisto = saldoTipeado === null ? null : desvioDeAncla(saldoTipeado, estimadoActual)
 
@@ -144,8 +172,22 @@ export default function SaldoCuenta({ account, transactions, darkMode, styles, o
               <span style={{ color: sem.negativo }}>−{fmt(s.salidas, s.moneda)}</span>
             </p>
           )}
+          {s.pagosDeTarjeta > 0 && (
+            <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
+              incluye {fmt(s.pagosDeTarjeta, s.moneda)} de tarjetas
+            </p>
+          )}
         </div>
       ))}
+
+      {tarjetasSinCuentaDePago.length > 0 && (
+        <p style={{ fontSize: '11px', color: muted, margin: '8px 0 0', textAlign: 'center' }}>
+          {tarjetasSinCuentaDePago.length === 1
+            ? `No configuraste de qué cuenta se paga ${tarjetasSinCuentaDePago[0].nombre}.`
+            : `Hay ${tarjetasSinCuentaDePago.length} tarjetas sin cuenta de pago configurada.`}
+          {' '}Sus pagos no están restados de ningún saldo.
+        </p>
+      )}
 
       {!editando ? (
         <button onClick={() => { setEditando(true); setFecha(hoyISO()); setError(null) }}

@@ -1,5 +1,5 @@
 const {
-  signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla,
+  signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -143,5 +143,136 @@ describe('desvío al cargar una nueva ancla', () => {
 
   test('la primera ancla de una cuenta no tiene desvío', () => {
     expect(desvioDeAncla(500000, null)).toBeNull()
+  })
+})
+
+// Pagar la tarjeta saca plata de la caja de ahorro, pero la app guarda el pago como
+// un neutro en la cuenta de crédito. Sin esto, la caja de ahorro no se enteraba nunca
+// y su saldo quedaba de más por el monto más grande del mes.
+describe('los pagos de tarjeta salen de la cuenta que la paga', () => {
+  const CARD = 'mastercard'
+  const cuentas = [
+    { id: CA, tipo: 'debito', nombre: 'Caja de ahorro' },
+    { id: CARD, tipo: 'credito', nombre: 'Mastercard', cuenta_pago_id: CA },
+  ]
+  const pagoEnTarjeta = (fecha, monto, nombre = 'Pago Mastercard', extra = {}) =>
+    ({ account_id: CARD, tipo: 'neutro', fecha, monto, moneda: 'ARS', nombre, ...extra })
+
+  test('el pago baja el saldo de la caja de ahorro', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [pagoEnTarjeta('2026-09-01', 1465058.14), pagoEnTarjeta('2026-09-01', 500000)],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    expect(r.pagosDeTarjeta).toBe(1965058.14)
+    expect(r.saldo).toBe(1034941.86)
+  })
+
+  test('una tarjeta que se paga desde otra cuenta no toca esta', () => {
+    const otras = [cuentas[0], { ...cuentas[1], cuenta_pago_id: 'otra-cuenta' }]
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [pagoEnTarjeta('2026-09-01', 500000)],
+      accounts: otras,
+      accountId: CA,
+    })
+    expect(r.pagosDeTarjeta).toBe(0)
+    expect(r.saldo).toBe(3000000)
+  })
+
+  test('sin cuenta_pago_id configurada no se le atribuye a nadie', () => {
+    const sinConfigurar = [cuentas[0], { id: CARD, tipo: 'credito', nombre: 'Mastercard' }]
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [pagoEnTarjeta('2026-09-01', 500000)],
+      accounts: sinConfigurar,
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(3000000)
+  })
+
+  // Si además se importa el extracto del banco, el mismo pago entra dos veces:
+  // como neutro en la tarjeta y como "PAGO TARJETA" en la caja de ahorro.
+  test('si el extracto del banco ya lo trajo, se resta una sola vez', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [
+        pagoEnTarjeta('2026-09-01', 500000),
+        mov('2026-09-01', 500000, 'neutro', { nombre: 'PAGO TARJETA VISA' }),
+      ],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(2500000)
+  })
+
+  test('empareja aunque el banco y el resumen lo fechen distinto', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [
+        pagoEnTarjeta('2026-09-03', 500000),
+        mov('2026-09-01', 500000, 'neutro', { nombre: 'Pago tarjeta' }),
+      ],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(2500000)
+  })
+
+  test('cada línea del extracto cancela un solo pago, no todos los iguales', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [
+        pagoEnTarjeta('2026-09-01', 500000),
+        pagoEnTarjeta('2026-09-01', 500000),
+        mov('2026-09-01', 500000, 'neutro', { nombre: 'Pago tarjeta' }),
+      ],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    // Dos pagos reales de $500.000; el extracto trajo uno. Se restan los dos, una vez cada uno.
+    expect(r.saldo).toBe(2000000)
+  })
+
+  test('un neutro que no es pago de tarjeta no cancela un pago', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [
+        pagoEnTarjeta('2026-09-01', 500000),
+        mov('2026-09-01', 500000, 'neutro', { nombre: 'Constitución plazo fijo' }),
+      ],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    // Son dos salidas distintas que casualmente coinciden en monto y día.
+    expect(r.saldo).toBe(2000000)
+  })
+
+  test('el pago en dólares no baja el saldo en pesos', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-08-31', 3000000)],
+      transactions: [pagoEnTarjeta('2026-09-01', 103.65, 'Pago Tarjeta', { moneda: 'USD' })],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(3000000)
+  })
+
+  test('los pagos anteriores al ancla ya están en el saldo que cargó el usuario', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-09-05', 1000000)],
+      transactions: [pagoEnTarjeta('2026-09-01', 500000)],
+      accounts: cuentas,
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(1000000)
+  })
+
+  test('sin tarjetas asociadas devuelve lista vacía', () => {
+    expect(pagosDeTarjetaDesde({
+      transactions: [pagoEnTarjeta('2026-09-01', 500000)],
+      accounts: [cuentas[0]], accountId: CA, moneda: 'ARS', desde: '2026-08-31',
+    })).toEqual([])
   })
 })
