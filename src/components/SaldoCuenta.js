@@ -18,11 +18,17 @@ const parseSaldo = (valor) => {
 }
 const fmt = (monto, moneda) => `${SIMBOLO[moneda] || '$'} ${moneda === 'ARS' ? formatMonto(monto) : formatMontoFull(monto)}`
 
-// El saldo solo tiene sentido en cuentas donde hay plata guardada. Una tarjeta de
-// crédito no tiene saldo, tiene deuda — y ese número ya viene del resumen del banco,
-// que es la única fuente que puede tenerlo (ver calcularStatementsPendientes). Poner
-// un saldo a mano al lado sería una segunda fuente para el mismo número.
-export const tieneSaldo = (account) => account?.tipo === 'debito' || account?.tipo === 'efectivo'
+// El saldo tiene sentido en cualquier cuenta donde haya plata guardada, así que se
+// define por exclusión y no por lista: una cuenta nueva, o tipeada de una forma que
+// hoy no existe, igual tiene saldo. Las dos que quedan afuera:
+//
+//   - Tarjeta de crédito: no tiene saldo, tiene deuda, y ese número ya viene del
+//     resumen del banco — la única fuente que puede tenerlo (ver
+//     calcularStatementsPendientes). Un saldo a mano al lado sería una segunda
+//     fuente para el mismo número.
+//   - "Ingresos": no es una cuenta donde viva plata, es una vista que junta todos
+//     los ingresos sin importar en qué cuenta están.
+export const tieneSaldo = (account) => Boolean(account?.tipo) && account.tipo !== 'credito' && account.tipo !== 'ingreso'
 
 // Card de saldo de una cuenta: cuánta plata hay, calculada desde el último saldo
 // que cargó el usuario más lo que pasó después. Ver src/lib/saldos.js para el

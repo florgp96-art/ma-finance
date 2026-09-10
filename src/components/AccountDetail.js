@@ -3668,6 +3668,21 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       )}
 
       {mostrarMovimientos && (<>
+
+      {/* Cuánta plata hay en la cuenta. Va arriba de todo y FUERA de las cards de
+          resumen: esas son del período que se está mirando y no se dibujan si el mes
+          elegido no tiene movimientos, pero el saldo es de HOY y tiene que estar
+          siempre — sobre todo en una cuenta sin movimientos cargados, que es justo
+          cuando hace falta poner el saldo inicial.
+          Solo en caja de ahorro y efectivo: una tarjeta no tiene saldo sino deuda, y
+          ese número ya sale del resumen del banco. */}
+      {!allAccounts && tieneSaldo(account) && (
+        <div style={{ maxWidth: isMobile ? '100%' : '340px', marginBottom: '24px' }}>
+          <SaldoCuenta account={account} accounts={accounts} transactions={transactions}
+            darkMode={darkMode} styles={styles} onSaved={onAccountsChanged} />
+        </div>
+      )}
+
       {/* Historial de extractos */}
       {!allAccounts && stmtsConTx.length > 0 && (
         <div style={styles.stmtHistory}>
@@ -3755,15 +3770,6 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
           <div className="summary-cards-wrap"><div className="summary-cards" style={styles.summaryCards}>
-
-            {/* Cuánta plata hay en la cuenta. Va primero porque es lo que se viene a
-                mirar; el resto de las cards son del período elegido, esta es de hoy.
-                Solo en caja de ahorro y efectivo: una tarjeta no tiene saldo sino
-                deuda, y ese número ya sale del resumen del banco. */}
-            {!allAccounts && tieneSaldo(account) && (
-              <SaldoCuenta account={account} accounts={accounts} transactions={transactions}
-                darkMode={darkMode} styles={styles} onSaved={onAccountsChanged} />
-            )}
 
             {/* === Vista cuenta de ingresos individual === */}
             {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0) && (
