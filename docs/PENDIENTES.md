@@ -125,14 +125,6 @@ create policy "cada uno carga sus saldos" on account_balances
 create policy "cada uno borra sus saldos" on account_balances
   for delete using (auth.uid() = user_id);
 
--- En qué cuenta entró un ingreso. Al importar un extracto, el ingreso se guarda en
--- la cuenta "Ingresos" (para que los gráficos lo agrupen), y ahí se perdía a dónde
--- entró la plata. Sin esta columna la caja de ahorro solo ve gastos y su saldo baja
--- para siempre.
-alter table transactions add column if not exists cuenta_destino_id uuid references accounts(id) on delete set null;
-
-create index if not exists transactions_cuenta_destino_idx
-  on transactions (cuenta_destino_id) where cuenta_destino_id is not null;
 
 -- De qué cuenta se paga cada tarjeta. Pagar la tarjeta saca plata de una cuenta real,
 -- pero el pago se guarda como movimiento de la TARJETA (es la convención de toda la
@@ -159,9 +151,11 @@ desviarse. El saldo mostrado se calcula siempre (`último ancla + movimientos po
 ver `src/lib/saldos.js`), nunca se guarda un acumulado que se va incrementando — un
 contador así se desincroniza en silencio y no hay forma de saber cuándo empezó.
 
-**Solo sirve de acá para adelante.** Los ingresos ya importados no tienen
-`cuenta_destino_id` y no hay de dónde sacarlo: el dato nunca se guardó. Por eso el saldo
-arranca de un ancla que carga el usuario, no de reconstruir el pasado.
+**Solo sirve de acá para adelante.** Los ingresos ya importados quedaron guardados en la
+cuenta "Ingresos" y no hay de dónde sacar en qué cuenta entró la plata: el dato nunca se
+guardó. De ahí para adelante el ingreso se guarda en la cuenta que lo recibió (igual que
+uno cargado a mano), pero el pasado no se puede reconstruir — por eso el saldo arranca de
+un ancla que carga el usuario.
 
 Sin la migración la app no se rompe: la card de saldo avisa que falta correrla y la
 importación de ingresos se reintenta sin la columna (ver `handleConfirmTransactions`).
