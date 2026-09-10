@@ -5,6 +5,7 @@ import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 // Respuestas que devuelve la base en cada test. Se setean antes de renderizar.
 const respuestas = { account_balances: { data: [], error: null }, transactions: { data: [], error: null } }
 const inserts = []
+const borrados = []
 
 jest.mock('../lib/supabase', () => {
   const thenable = (resultado) => {
@@ -19,9 +20,14 @@ jest.mock('../lib/supabase', () => {
       auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
       from: (tabla) => {
         // eslint-disable-next-line global-require
-        const { respuestas: r, inserts: ins } = require('./SaldoCuenta.test.js')
+        const { respuestas: r, inserts: ins, borrados: del } = require('./SaldoCuenta.test.js')
         const base = thenable(r[tabla])
         base.insert = (fila) => { ins.push({ tabla, fila }); return thenable({ error: r[tabla].errorInsert || null }) }
+        base.delete = () => {
+          const d = thenable({ error: r[tabla].errorDelete || null })
+          d.eq = (campo, valor) => { del.push({ tabla, campo, valor }); return d }
+          return d
+        }
         return base
       },
     },
@@ -29,6 +35,7 @@ jest.mock('../lib/supabase', () => {
 })
 module.exports.respuestas = respuestas
 module.exports.inserts = inserts
+module.exports.borrados = borrados
 
 const styles = {
   summaryCard: {}, summaryLabel: {}, summaryValue: {}, summarySubval: {},
@@ -45,6 +52,7 @@ beforeEach(() => {
   respuestas.account_balances = { data: [], error: null }
   respuestas.transactions = { data: [], error: null }
   inserts.length = 0
+  borrados.length = 0
 })
 
 describe('qué cuentas llevan saldo', () => {
@@ -177,5 +185,65 @@ describe('cargar un saldo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     expect(await screen.findByText('La fecha no puede ser futura.')).toBeInTheDocument()
     expect(inserts).toHaveLength(0)
+  })
+})
+
+// Cargar U$S 33 con el selector en "$" guardaba un ancla en pesos, y ese saldo se
+// sumaba al total en pesos sin que se viera el error.
+describe('la moneda del formulario arranca en la de la cuenta', () => {
+  const cuentaUSD = { id: 'ca-usd', nombre: 'Caja de Ahorro USD Galicia', tipo: 'debito' }
+
+  test('en una cuenta en dólares el saldo se guarda en dólares, no en pesos', async () => {
+    render(<SaldoCuenta account={cuentaUSD} accounts={[cuentaUSD]} transactions={[]}
+      darkMode={false} styles={styles} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cargar saldo' }))
+    fireEvent.change(screen.getByPlaceholderText('saldo de hoy'), { target: { value: '33' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(inserts).toHaveLength(1))
+    expect(inserts[0].fila.moneda).toBe('USD')
+    expect(inserts[0].fila.saldo).toBe(33)
+  })
+
+  test('en una caja de ahorro común sigue arrancando en pesos', async () => {
+    montar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Cargar saldo' }))
+    fireEvent.change(screen.getByPlaceholderText('saldo de hoy'), { target: { value: '30865' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(inserts).toHaveLength(1))
+    expect(inserts[0].fila.moneda).toBe('ARS')
+  })
+})
+
+// Las anclas son append-only a propósito, pero un saldo mal cargado (la moneda
+// equivocada, un dedazo) no se arregla agregando otro: hay que poder sacarlo.
+describe('borrar un saldo mal cargado', () => {
+  const conAncla = () => {
+    respuestas.account_balances = {
+      data: [{ id: 'a-mala', account_id: CA, moneda: 'ARS', fecha: '2026-09-10', saldo: 33 }],
+      error: null,
+    }
+    return montar()
+  }
+
+  test('borra el ancla en uso cuando se confirma', async () => {
+    window.confirm = jest.fn(() => true)
+    conAncla()
+    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    await waitFor(() => expect(borrados).toHaveLength(1))
+    expect(borrados[0]).toMatchObject({ tabla: 'account_balances', campo: 'id', valor: 'a-mala' })
+  })
+
+  test('si se cancela no borra nada', async () => {
+    window.confirm = jest.fn(() => false)
+    conAncla()
+    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    expect(borrados).toHaveLength(0)
+  })
+
+  test('avisa cuánto y de qué fecha antes de borrar', async () => {
+    window.confirm = jest.fn(() => false)
+    conAncla()
+    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('10/09/2026'))
   })
 })

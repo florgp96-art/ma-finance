@@ -4077,7 +4077,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'caja' && (
-                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} />
+                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} cuentasAhorro={cuentasAhorro} />
                 )}
 
                 {dashboardTab === 'apagar' && (
