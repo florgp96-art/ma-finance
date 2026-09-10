@@ -3,6 +3,9 @@ import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
 import { semaforo } from '../theme'
+import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta } from '../lib/formato'
+import { InfoTooltip } from './InfoTooltip'
+import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -133,24 +136,8 @@ const ETIQUETA_COLUMNA = {
   subcategoria: 'Subcategoría', cuotas: 'Cuotas', moneda: 'Moneda',
 }
 
-export const formatMonto = (monto) =>
-  new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(monto)
-
-export const formatMontoFull = (monto) =>
-  new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
-
-export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
-
-// Fecha corta para las tablas de movimientos. Se omite el año SOLO si es del año
-// en curso: mezclado con movimientos viejos, "28/06" no dice de qué año es (y en
-// una lista con cosas de 2023 y de hoy eso es directamente confuso). En ese caso
-// se agrega el año en dos dígitos, que entra en el ancho de columna existente.
-export const formatFechaCorta = (f) => {
-  if (!f) return ''
-  const corta = f.slice(8, 10) + '/' + f.slice(5, 7)
-  const esDeEsteAnio = f.slice(0, 4) === String(new Date().getFullYear())
-  return esDeEsteAnio ? corta : corta + '/' + f.slice(2, 4)
-}
+// Se re-exportan para no romper los imports que ya apuntaban acá.
+export { formatMonto, formatMontoFull, formatFecha, formatFechaCorta } from '../lib/formato'
 
 // Única fuente de verdad para "categoría de un ingreso": la subcategoría real de la
 // categoría "Ingresos" en la base (categories/subcategories) — la usan por igual el
@@ -366,54 +353,8 @@ export const TotalesFooter = React.memo(TotalesFooterImpl)
 // qué incluye/excluye) con TAP en mobile y con hover en desktop (no con :hover
 // de CSS, que en touch no existe) — se cierra tocando afuera. Reemplaza el
 // patrón anterior de title= nativo, que en mobile no se podía abrir.
-export function InfoTooltip({ text, darkMode }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  const hoverCapaz = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: hover)').matches
-  useEffect(() => {
-    if (!open) return
-    const cerrarSiAfuera = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', cerrarSiAfuera)
-    document.addEventListener('touchstart', cerrarSiAfuera)
-    return () => {
-      document.removeEventListener('mousedown', cerrarSiAfuera)
-      document.removeEventListener('touchstart', cerrarSiAfuera)
-    }
-  }, [open])
-  return (
-    <span
-      ref={ref}
-      style={{ position: 'relative', display: 'inline-flex', marginLeft: '6px', verticalAlign: 'middle' }}
-      onMouseEnter={hoverCapaz ? () => setOpen(true) : undefined}
-      onMouseLeave={hoverCapaz ? () => setOpen(false) : undefined}
-    >
-      <button
-        type="button"
-        aria-label="Más información"
-        onClick={(e) => { e.stopPropagation(); if (!hoverCapaz) setOpen(o => !o) }}
-        style={{
-          width: '15px', height: '15px', borderRadius: '50%', padding: 0, boxSizing: 'border-box',
-          border: `1px solid ${darkMode ? '#8A7A8A' : '#75757a'}`, background: 'none',
-          color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '10px', lineHeight: '13px',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'help', fontFamily: 'Georgia, serif', fontStyle: 'italic',
-          textTransform: 'none', letterSpacing: 'normal', fontWeight: '400',
-        }}
-      >i</button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: '20px', right: 0, zIndex: 60, minWidth: '200px', maxWidth: '260px',
-          padding: '8px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '400',
-          textTransform: 'none', letterSpacing: 'normal', lineHeight: '1.4', textAlign: 'left',
-          backgroundColor: darkMode ? '#2A232A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
-          border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-        }}>
-          {text}
-        </div>
-      )}
-    </span>
-  )
-}
+// Se re-exporta para no romper los imports que ya apuntaban acá.
+export { InfoTooltip } from './InfoTooltip'
 
 // Ancho real del contenedor de una tabla de movimientos (ResizeObserver, no
 // el ancho de la ventana): el mismo componente se renderiza a veces con
@@ -3814,6 +3755,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
         return (
           <div className="summary-cards-wrap"><div className="summary-cards" style={styles.summaryCards}>
+
+            {/* Cuánta plata hay en la cuenta. Va primero porque es lo que se viene a
+                mirar; el resto de las cards son del período elegido, esta es de hoy.
+                Solo en caja de ahorro y efectivo: una tarjeta no tiene saldo sino
+                deuda, y ese número ya sale del resumen del banco. */}
+            {!allAccounts && tieneSaldo(account) && (
+              <SaldoCuenta account={account} transactions={transactions} darkMode={darkMode}
+                styles={styles} onSaved={onAccountsChanged} />
+            )}
 
             {/* === Vista cuenta de ingresos individual === */}
             {esVistaIngresos && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0) && (

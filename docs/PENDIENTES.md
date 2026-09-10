@@ -86,6 +86,70 @@ importados después de la migración):
 select count(*) total, count(proximo_cierre) con_proximo_cierre from statements;
 ```
 
+### d) Saldo de las cuentas (caja de ahorro, caja de ahorro en dólares, efectivo)
+
+Primero chequear de qué tipo es `accounts.id`, para saber cómo declarar el `account_id`
+de la tabla nueva:
+
+```sql
+select data_type from information_schema.columns
+where table_name = 'accounts' and column_name = 'id';
+```
+
+Si devuelve `bigint` en vez de `uuid`, cambiar `account_id uuid` por `account_id bigint`
+en el bloque de abajo.
+
+```sql
+create table if not exists account_balances (
+  id              uuid        primary key default gen_random_uuid(),
+  user_id         uuid        not null references auth.users(id) on delete cascade,
+  account_id      uuid        not null references accounts(id)   on delete cascade,
+  moneda          text        not null default 'ARS' check (moneda in ('ARS', 'USD', 'EUR')),
+  fecha           date        not null,
+  saldo           numeric(16,2) not null,
+  -- Lo que la app venía calculando en el momento de anclar. Guardarlo permite ver
+  -- después de cuánto fue el desvío sin tener que recalcular el pasado.
+  saldo_calculado numeric(16,2),
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists account_balances_cuenta_idx
+  on account_balances (account_id, moneda, fecha);
+
+alter table account_balances enable row level security;
+
+create policy "cada uno ve solo sus saldos" on account_balances
+  for select using (auth.uid() = user_id);
+create policy "cada uno carga sus saldos" on account_balances
+  for insert with check (auth.uid() = user_id);
+create policy "cada uno borra sus saldos" on account_balances
+  for delete using (auth.uid() = user_id);
+
+-- En qué cuenta entró un ingreso. Al importar un extracto, el ingreso se guarda en
+-- la cuenta "Ingresos" (para que los gráficos lo agrupen), y ahí se perdía a dónde
+-- entró la plata. Sin esta columna la caja de ahorro solo ve gastos y su saldo baja
+-- para siempre.
+alter table transactions add column if not exists cuenta_destino_id uuid references accounts(id) on delete set null;
+
+create index if not exists transactions_cuenta_destino_idx
+  on transactions (cuenta_destino_id) where cuenta_destino_id is not null;
+```
+
+**La tabla es append-only a propósito.** Cada vez que el usuario chequea su cuenta queda
+una fila nueva, no se pisa la anterior: así se puede ver desde cuándo un saldo empezó a
+desviarse. El saldo mostrado se calcula siempre (`último ancla + movimientos posteriores`,
+ver `src/lib/saldos.js`), nunca se guarda un acumulado que se va incrementando — un
+contador así se desincroniza en silencio y no hay forma de saber cuándo empezó.
+
+**Solo sirve de acá para adelante.** Los ingresos ya importados no tienen
+`cuenta_destino_id` y no hay de dónde sacarlo: el dato nunca se guardó. Por eso el saldo
+arranca de un ancla que carga el usuario, no de reconstruir el pasado.
+
+Sin la migración la app no se rompe: la card de saldo avisa que falta correrla y la
+importación de ingresos se reintenta sin la columna (ver `handleConfirmTransactions`).
+
+---
+
 ### b) Rate limit compartido — **esta es la que más conviene**
 
 ```sql
