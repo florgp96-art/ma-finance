@@ -2426,6 +2426,12 @@ export default function Dashboard() {
             child_id: getHijoId(t.hijo),
             estado: 'identificado', es_manual: false,
             account_id: cuentaIngresos.id, statement_id: stmtIngresos?.id || null, tipo: 'ingreso',
+            // El ingreso se guarda en la cuenta "Ingresos" para que todos los gráficos
+            // de ingresos los agrupen juntos, sin importar dónde entró la plata. Pero
+            // "dónde entró" es justamente lo que necesita el saldo de una cuenta, y se
+            // perdía: cuenta_destino_id lo conserva. Sin esto la caja de ahorro solo
+            // ve gastos y su saldo baja para siempre (ver src/lib/saldos.js).
+            cuenta_destino_id: cuentaEgresos.id,
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
           })
         } else if (tipoTx !== 'ingreso') {
@@ -2493,7 +2499,17 @@ export default function Dashboard() {
         if (ins) insertedIds.push(...ins)
       }
       if (txIngresosFiltrados.length > 0) {
-        const { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresosFiltrados).select('id, detalle, estado')
+        let { data: ins, error: errIn } = await supabase.from('transactions').insert(txIngresosFiltrados).select('id, detalle, estado')
+        // La columna se agrega con una migración aparte: mientras no esté, se guarda
+        // sin ella. Que falte el dato del saldo no puede hacer fallar la importación.
+        if (errIn && /cuenta_destino_id/.test(errIn.message || '')) {
+          console.warn('transactions sin cuenta_destino_id — el ingreso se guarda sin saber a qué cuenta entró')
+          const retry = await supabase.from('transactions')
+            .insert(txIngresosFiltrados.map(({ cuenta_destino_id, ...resto }) => resto))
+            .select('id, detalle, estado')
+          ins = retry.data
+          errIn = retry.error
+        }
         if (errIn) {
           showToast(`Error ingresos: ${errIn.message}`, 'error')
           logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado banco (ingresos): ${errIn.message}` })
