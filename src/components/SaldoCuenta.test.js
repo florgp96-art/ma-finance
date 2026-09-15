@@ -247,3 +247,34 @@ describe('borrar un saldo mal cargado', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('10/09/2026'))
   })
 })
+
+// Sin este renglón, un saldo sin movimientos posteriores se ve idéntico al número
+// que tipeó el usuario y parece que la app no hiciera nada.
+describe('la card dice qué está contando', () => {
+  const conAncla = (transactions = []) => {
+    respuestas.account_balances = {
+      data: [{ id: 'a1', account_id: CA, moneda: 'ARS', fecha: '2026-09-10', saldo: 500000 }],
+      error: null,
+    }
+    return montar({ transactions })
+  }
+
+  test('sin movimientos posteriores lo dice, en vez de parecer congelado', async () => {
+    conAncla([])
+    expect(await screen.findByText(/Sin movimientos posteriores: es el saldo que cargaste/i)).toBeInTheDocument()
+  })
+
+  test('con movimientos muestra cuántos y cuánto entró y salió', async () => {
+    conAncla([
+      { id: 't1', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 30000, moneda: 'ARS' },
+      { id: 't2', account_id: CA, tipo: 'ingreso', fecha: '2026-09-13', monto: 120000, moneda: 'ARS' },
+    ])
+    expect(await screen.findByText(/2 movimientos/)).toBeInTheDocument()
+    expect(screen.getByText('$ 590.000')).toBeInTheDocument()
+  })
+
+  test('un solo movimiento se dice en singular', async () => {
+    conAncla([{ id: 't1', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 30000, moneda: 'ARS' }])
+    expect(await screen.findByText(/1 movimiento(?!s)/)).toBeInTheDocument()
+  })
+})
