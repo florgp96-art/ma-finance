@@ -86,15 +86,39 @@ export const ultimaAncla = (anclas, accountId, moneda = 'ARS', hasta = null) => 
   return candidatas[candidatas.length - 1] || null
 }
 
-// Movimientos que caen DESPUÉS del ancla (y hasta `hasta`, si se acota).
-// Estrictamente posteriores: si el usuario dice "el 10/09 tengo $X", ese saldo ya
-// incluye todo lo que pasó ese día — volver a sumarlo sería contarlo dos veces.
-export const movimientosDesdeAncla = (transactions, accountId, moneda, desde, hasta = null) => {
+// ¿El ancla podía conocer este movimiento? Es la pregunta que decide si cuenta.
+//
+// Cuenta si su fecha es POSTERIOR al ancla. Y también si es del MISMO día pero se
+// cargó en la app después de que se puso el ancla: uno pone "hoy tengo $X" y
+// enseguida carga los gastos del día, y con la fecha sola esos gastos no contaban
+// nunca — el saldo quedaba clavado en el número tipeado y se veía como si la app no
+// estuviera haciendo nada.
+//
+// El caso del mismo día se limita a eso a propósito. Un movimiento con fecha
+// ANTERIOR al ancla no cuenta nunca, aunque se haya cargado después: si importás hoy
+// el resumen de agosto, esa plata ya salió de la cuenta y ya está descontada en el
+// saldo que pusiste. Contarla de nuevo sería restarla dos veces.
+//
+// `created_at` puede no existir (la columna se agrega aparte, y no todas las filas
+// viejas la tienen). Sin ese dato se cae al criterio de solo fecha, que es el que
+// había: un dato opcional que falta no puede cambiar un saldo.
+const esPosteriorAlAncla = (t, ancla) => {
+  const fechaAncla = norm(typeof ancla === 'string' ? ancla : ancla?.fecha)
+  const fechaTx = norm(t.fecha)
+  if (fechaTx > fechaAncla) return true
+  if (fechaTx !== fechaAncla) return false
+  const creadoAncla = typeof ancla === 'string' ? null : ancla?.created_at
+  return Boolean(t.created_at && creadoAncla && String(t.created_at) > String(creadoAncla))
+}
+
+// Movimientos que el ancla no podía conocer (y hasta `hasta`, si se acota).
+// `ancla` puede ser el ancla entera o solo su fecha.
+export const movimientosDesdeAncla = (transactions, accountId, moneda, ancla, hasta = null) => {
   const tope = norm(hasta)
   return (transactions || []).filter(t =>
     enLaCuenta(t, accountId) &&
     (t.moneda || 'ARS') === moneda &&
-    norm(t.fecha) > norm(desde) &&
+    esPosteriorAlAncla(t, ancla) &&
     (!tope || norm(t.fecha) <= tope))
 }
 
@@ -128,7 +152,7 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
   const tarjetas = (accounts || []).filter(a => a.tipo === 'credito' && a.cuenta_pago_id === accountId)
   if (tarjetas.length === 0) return []
   const idsTarjeta = new Set(tarjetas.map(a => a.id))
-  const enVentana = (t) => norm(t.fecha) > norm(desde) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
+  const enVentana = (t) => esPosteriorAlAncla(t, desde) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
   const mismaMoneda = (t) => (t.moneda || 'ARS') === moneda
 
   const pagos = (transactions || []).filter(t =>
@@ -152,8 +176,8 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
 export const saldoDeCuenta = ({ anclas, transactions, accounts, accountId, moneda = 'ARS', hasta = null }) => {
   const ancla = ultimaAncla(anclas, accountId, moneda, hasta)
   if (!ancla) return null
-  const movimientos = movimientosDesdeAncla(transactions, accountId, moneda, ancla.fecha, hasta)
-  const pagosTarjeta = pagosDeTarjetaDesde({ transactions, accounts, accountId, moneda, desde: ancla.fecha, hasta })
+  const movimientos = movimientosDesdeAncla(transactions, accountId, moneda, ancla, hasta)
+  const pagosTarjeta = pagosDeTarjetaDesde({ transactions, accounts, accountId, moneda, desde: ancla, hasta })
   const entradas = movimientos.filter(t => signoEnSaldo(t) > 0)
   const salidas = movimientos.filter(t => signoEnSaldo(t) < 0)
   const suma = (lista) => lista.reduce((s, t) => s + Math.abs(Number(t.monto) || 0), 0)

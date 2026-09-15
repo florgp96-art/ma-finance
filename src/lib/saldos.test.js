@@ -464,3 +464,67 @@ describe('un ancla en la moneda equivocada no puede pasar desapercibida', () => 
     expect(r.porMoneda).toEqual([{ moneda: 'ARS', saldo: 72965 }, { moneda: 'USD', saldo: 33 }])
   })
 })
+
+// El motivo por el que el saldo se veía "estático": uno pone "hoy tengo $X" y
+// enseguida carga los gastos del día, y con la fecha sola esos gastos no contaban
+// nunca. El saldo quedaba clavado en el número tipeado.
+describe('un movimiento del mismo día que el ancla', () => {
+  const ancla10 = { id: 'a1', account_id: CA, moneda: 'ARS', fecha: '2026-09-10', saldo: 500000, created_at: '2026-09-10T10:00:00Z' }
+  const gastoEseDia = (created_at) =>
+    ({ id: 'g1', account_id: CA, tipo: 'gasto', fecha: '2026-09-10', monto: 30000, moneda: 'ARS', created_at })
+
+  test('cuenta si se cargó DESPUÉS de poner el saldo', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla10], transactions: [gastoEseDia('2026-09-10T11:00:00Z')], accountId: CA,
+    })
+    expect(r.saldo).toBe(470000)
+    expect(r.cantidadMovimientos).toBe(1)
+  })
+
+  test('no cuenta si ya estaba cargado cuando se puso el saldo', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla10], transactions: [gastoEseDia('2026-09-10T09:00:00Z')], accountId: CA,
+    })
+    expect(r.saldo).toBe(500000)
+    expect(r.cantidadMovimientos).toBe(0)
+  })
+
+  test('sin created_at se cae al criterio de solo fecha, como antes', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla10], transactions: [gastoEseDia(undefined)], accountId: CA,
+    })
+    expect(r.saldo).toBe(500000)
+  })
+
+  // Lo importante del límite: un movimiento con fecha ANTERIOR no cuenta nunca,
+  // aunque se cargue después. Si importás hoy el resumen de agosto, esa plata ya
+  // salió antes de que contaras y ya está descontada en el saldo que pusiste.
+  test('un movimiento más viejo no cuenta ni cargándolo después', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla10],
+      transactions: [{ id: 'g2', account_id: CA, tipo: 'gasto', fecha: '2026-08-15', monto: 900000, moneda: 'ARS', created_at: '2026-09-14T12:00:00Z' }],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(500000)
+  })
+
+  test('un pago de tarjeta del mismo día también cuenta si se cargó después', () => {
+    const tarjeta = { id: 'mc', nombre: 'Mastercard', tipo: 'credito', cuenta_pago_id: CA }
+    const r = saldoDeCuenta({
+      anclas: [ancla10],
+      transactions: [{ id: 'p1', account_id: 'mc', tipo: 'neutro', fecha: '2026-09-10', monto: 100000, moneda: 'ARS', nombre: 'Pago Mastercard', created_at: '2026-09-10T18:00:00Z' }],
+      accounts: [{ id: CA, tipo: 'debito' }, tarjeta],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(400000)
+  })
+
+  test('un movimiento posterior cuenta siempre, con o sin created_at', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla10],
+      transactions: [{ id: 'g3', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 20000, moneda: 'ARS' }],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(480000)
+  })
+})

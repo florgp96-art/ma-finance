@@ -151,7 +151,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     <div style={styles.summaryCard}>
       <p style={{ ...styles.summaryLabel, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span>Saldo</span>
-        <InfoTooltip darkMode={darkMode} text="Sale del último saldo que cargaste más lo que pasó después: ingresos que entraron, gastos y pagos que salieron. La app no puede saber sola cuánta plata tenés — siempre falta algo por cargar — así que el número bueno es el que ponés vos. Cuando lo actualices te va a decir cuánto se había desviado: esa diferencia es exactamente lo que falta cargar." />
+        <InfoTooltip darkMode={darkMode} text="Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia, y está bien que sea así: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número. Por eso, si recién cargaste el saldo y todos tus movimientos son más viejos, todavía no se mueve. Cuando lo actualices te va a decir cuánto se había desviado: esa diferencia es exactamente lo que falta cargar." />
       </p>
 
       {saldos.length === 0 && !editando && (
@@ -168,11 +168,21 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
             <button onClick={() => borrarAncla(s.ancla)} title="Borrar este saldo"
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, fontSize: '13px', padding: '0 0 0 6px', lineHeight: 1 }}>×</button>
           </p>
-          {s.cantidadMovimientos > 0 && (
+          {/* Qué se está contando desde el ancla. Se muestra SIEMPRE, incluso en cero:
+              sin este renglón, un saldo sin movimientos posteriores se ve idéntico al
+              número que tipeó el usuario y parece que la app no hiciera nada. Decir
+              "no hay movimientos posteriores" es la diferencia entre "está roto" y
+              "ah, claro". */}
+          {s.cantidadMovimientos > 0 ? (
             <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
               <span style={{ color: sem.teal }}>+{fmt(s.entradas, s.moneda)}</span>
               {'  '}
               <span style={{ color: sem.negativo }}>−{fmt(s.salidas, s.moneda)}</span>
+              {`  ·  ${s.cantidadMovimientos} movimiento${s.cantidadMovimientos === 1 ? '' : 's'}`}
+            </p>
+          ) : (
+            <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
+              Sin movimientos posteriores: es el saldo que cargaste.
             </p>
           )}
           {s.pagosDeTarjeta > 0 && (
