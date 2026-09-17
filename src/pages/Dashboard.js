@@ -886,12 +886,18 @@ export default function Dashboard() {
 
     let accountId = efectivo.cuenta || cuentaEfectivoId
     if (tipoMovimiento === 'ingreso') {
-      // El ingreso se guarda en la cuenta real elegida; si no eligió ninguna,
-      // cae en la cuenta "Ingresos" (comportamiento histórico).
-      accountId = efectivo.cuenta || accounts.find(a => a.tipo === 'ingreso')?.id
+      // El ingreso va a la cuenta donde entró la plata, y punto: sin eso, el saldo de
+      // esa cuenta nunca se enteraría de que entró. Antes se caía a la cuenta
+      // "Ingresos" cuando no se elegía ninguna, que es exactamente el caso en el que
+      // el ingreso se perdía de vista.
+      accountId = efectivo.cuenta
       if (!accountId) {
-        const acc = await getOrCreateIngresosAccount(user)
-        if (!acc) { setLoading(false); return }
+        // Solo si el usuario todavía no tiene ninguna cuenta real donde poner la plata.
+        const acc = accounts.find(a => a.tipo !== 'ingreso') || await getOrCreateIngresosAccount(user)
+        if (!acc) {
+          showToast('Elegí a qué cuenta entró la plata.', 'error')
+          setLoading(false); return
+        }
         accountId = acc.id
       }
     }
@@ -5343,13 +5349,18 @@ export default function Dashboard() {
                   Cuenta <span style={{color:sem.negativo}}>*</span>
                   {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
                 </label>
+                {/* En un ingreso hay que elegir la cuenta, no hay default. Antes el
+                    selector arrancaba en la cuenta "Ingresos" y bastaba con no tocarlo:
+                    el ingreso quedaba ahí y el saldo de la cuenta donde entró la plata
+                    no se movía nunca. "Ingresos" tampoco figura como opción — no es una
+                    cuenta donde viva plata, es una vista que junta todos los ingresos
+                    sin importar en qué cuenta están. */}
                 <select style={styles.input}
-                  value={efectivo.cuenta || (tipoMovimiento === 'ingreso' ? (accounts.find(a => a.tipo === 'ingreso')?.id || '') : (cuentaEfectivoId || ''))}
-                  onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}>
-                  {(tipoMovimiento === 'ingreso'
-                    ? [...accounts.filter(a => a.tipo !== 'ingreso'), ...accounts.filter(a => a.tipo === 'ingreso')]
-                    : accounts.filter(a => a.tipo !== 'ingreso')
-                  ).map(a => (
+                  value={efectivo.cuenta || (tipoMovimiento === 'ingreso' ? '' : (cuentaEfectivoId || ''))}
+                  onChange={e => setEfectivo({...efectivo, cuenta: e.target.value})}
+                  required={tipoMovimiento === 'ingreso'}>
+                  {tipoMovimiento === 'ingreso' && <option value="">— elegí la cuenta —</option>}
+                  {accounts.filter(a => a.tipo !== 'ingreso').map(a => (
                     <option key={a.id} value={a.id}>{a.nombre}</option>
                   ))}
                 </select>

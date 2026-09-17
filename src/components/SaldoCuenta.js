@@ -130,9 +130,28 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     onSaved?.()
   }
 
+  // El detalle sale de la card y entra acá: de qué saldo parte cada moneda, qué se
+  // contó desde entonces y cuántos movimientos fueron.
+  const textoDelTooltip = useMemo(() => {
+    const comoFunciona = 'Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número.'
+    if (saldos.length === 0) return comoFunciona
+    const detalle = saldos.map(s => {
+      const desde = `Desde ${fmt(s.ancla.saldo, s.moneda)} del ${formatFecha(s.ancla.fecha)}`
+      if (s.cantidadMovimientos === 0) return `${desde}: todavía no cargaste movimientos posteriores.`
+      const movs = `${s.cantidadMovimientos} movimiento${s.cantidadMovimientos === 1 ? '' : 's'}`
+      const tarjetas = s.pagosDeTarjeta > 0 ? ` (incluye ${fmt(s.pagosDeTarjeta, s.moneda)} de pagos de tarjeta)` : ''
+      return `${desde}: entró ${fmt(s.entradas, s.moneda)} y salió ${fmt(s.salidas, s.moneda)} en ${movs}${tarjetas}.`
+    }).join(' ')
+    return `${detalle} ${comoFunciona}`
+  }, [saldos])
+
   const estimadoActual = useMemo(
     () => saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda, hasta: fecha }),
     [anclas, movimientos, accounts, account.id, moneda, fecha])
+  // El ancla que se está por reemplazar en la moneda elegida: lo que se ofrece borrar.
+  const anclaAEditar = useMemo(
+    () => saldos.find(s => s.moneda === moneda)?.ancla || null,
+    [saldos, moneda])
   const saldoTipeado = parseSaldo(valor)
   const desvioPrevisto = saldoTipeado === null ? null : desvioDeAncla(saldoTipeado, estimadoActual)
 
@@ -151,7 +170,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     <div style={styles.summaryCard}>
       <p style={{ ...styles.summaryLabel, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span>Saldo</span>
-        <InfoTooltip darkMode={darkMode} text="Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia, y está bien que sea así: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número. Por eso, si recién cargaste el saldo y todos tus movimientos son más viejos, todavía no se mueve. Cuando lo actualices te va a decir cuánto se había desviado: esa diferencia es exactamente lo que falta cargar." />
+        <InfoTooltip darkMode={darkMode} text={textoDelTooltip} />
       </p>
 
       {saldos.length === 0 && !editando && (
@@ -160,37 +179,14 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
         </p>
       )}
 
+      {/* Solo el monto. De dónde sale —el saldo que cargaste, qué entró y salió
+          desde entonces, cuántos movimientos— va en la "i" del título y no como
+          renglones acá: la card es para mirar un número, no para leer el detalle de
+          los movimientos, que ya están en la tabla de abajo. */}
       {saldos.map((s, i) => (
-        <div key={s.moneda} style={{ marginTop: i === 0 ? '2px' : '12px' }}>
-          <p style={{ ...styles.summaryValue, marginBottom: '2px' }}>{fmt(s.saldo, s.moneda)}</p>
-          <p style={{ ...styles.summarySubval, textAlign: 'center' }}>
-            desde {fmt(s.ancla.saldo, s.moneda)} del {formatFecha(s.ancla.fecha)}
-            <button onClick={() => borrarAncla(s.ancla)} title="Borrar este saldo"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, fontSize: '13px', padding: '0 0 0 6px', lineHeight: 1 }}>×</button>
-          </p>
-          {/* Qué se está contando desde el ancla. Se muestra SIEMPRE, incluso en cero:
-              sin este renglón, un saldo sin movimientos posteriores se ve idéntico al
-              número que tipeó el usuario y parece que la app no hiciera nada. Decir
-              "no hay movimientos posteriores" es la diferencia entre "está roto" y
-              "ah, claro". */}
-          {s.cantidadMovimientos > 0 ? (
-            <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
-              <span style={{ color: sem.teal }}>+{fmt(s.entradas, s.moneda)}</span>
-              {'  '}
-              <span style={{ color: sem.negativo }}>−{fmt(s.salidas, s.moneda)}</span>
-              {`  ·  ${s.cantidadMovimientos} movimiento${s.cantidadMovimientos === 1 ? '' : 's'}`}
-            </p>
-          ) : (
-            <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
-              Sin movimientos posteriores: es el saldo que cargaste.
-            </p>
-          )}
-          {s.pagosDeTarjeta > 0 && (
-            <p style={{ ...styles.summarySubval, textAlign: 'center', marginTop: '2px' }}>
-              incluye {fmt(s.pagosDeTarjeta, s.moneda)} de tarjetas
-            </p>
-          )}
-        </div>
+        <p key={s.moneda} style={{ ...styles.summaryValue, marginBottom: '2px', marginTop: i === 0 ? '2px' : '6px' }}>
+          {fmt(s.saldo, s.moneda)}
+        </p>
       ))}
 
       {tarjetasSinCuentaDePago.length > 0 && (
@@ -239,6 +235,14 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
               Cancelar
             </button>
           </div>
+          {/* Borrar vive acá y no en la card: es para arreglar un saldo mal cargado
+              (la moneda equivocada, un dedazo), no algo que se mire todos los días. */}
+          {anclaAEditar && (
+            <button onClick={() => borrarAncla(anclaAEditar)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, fontSize: '11px', padding: '2px 0 0', textDecoration: 'underline' }}>
+              Borrar el saldo de {fmt(Number(anclaAEditar.saldo), anclaAEditar.moneda || 'ARS')} del {formatFecha(anclaAEditar.fecha)}
+            </button>
+          )}
         </div>
       )}
     </div>
