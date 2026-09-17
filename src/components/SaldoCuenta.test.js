@@ -90,7 +90,9 @@ describe('la card se renderiza', () => {
     expect(screen.getByRole('button', { name: 'Cargar saldo' })).toBeInTheDocument()
   })
 
-  test('con ancla muestra el saldo y de dónde sale', async () => {
+  // La card muestra SOLO el monto: el detalle de los movimientos ya está en la tabla
+  // de abajo, y repetirlo acá convertía la card en una lista en vez de un número.
+  test('con ancla muestra el monto y nada más', async () => {
     respuestas.account_balances = {
       data: [{ id: 'a1', account_id: CA, moneda: 'ARS', fecha: '2026-09-01', saldo: 500000 }],
       error: null,
@@ -100,8 +102,25 @@ describe('la card se renderiza', () => {
       { id: 't2', account_id: CA, tipo: 'ingreso', fecha: '2026-09-03', monto: 120000, moneda: 'ARS' },
     ] })
     expect(await screen.findByText('$ 590.000')).toBeInTheDocument()
-    expect(screen.getByText(/desde \$ 500.000 del 01\/09\/2026/)).toBeInTheDocument()
+    expect(screen.queryByText(/desde \$ 500.000/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/movimientos/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Actualizar saldo' })).toBeInTheDocument()
+  })
+
+  test('de dónde sale el monto se cuenta en la "i"', async () => {
+    respuestas.account_balances = {
+      data: [{ id: 'a1', account_id: CA, moneda: 'ARS', fecha: '2026-09-01', saldo: 500000 }],
+      error: null,
+    }
+    montar({ transactions: [
+      { id: 't1', account_id: CA, tipo: 'gasto', fecha: '2026-09-04', monto: 30000, moneda: 'ARS' },
+      { id: 't2', account_id: CA, tipo: 'ingreso', fecha: '2026-09-03', monto: 120000, moneda: 'ARS' },
+    ] })
+    fireEvent.click(await screen.findByRole('button', { name: 'Más información' }))
+    const ayuda = await screen.findByText(/Desde \$ 500.000 del 01\/09\/2026/)
+    expect(ayuda).toHaveTextContent('entró $ 120.000')
+    expect(ayuda).toHaveTextContent('salió $ 30.000')
+    expect(ayuda).toHaveTextContent('2 movimientos')
   })
 
   test('el pago de la tarjeta se resta y se aclara aparte', async () => {
@@ -116,7 +135,8 @@ describe('la card se renderiza', () => {
     }
     montar({ accounts: [cuentaCA, tarjeta] })
     expect(await screen.findByText('$ 2.500.000')).toBeInTheDocument()
-    expect(screen.getByText(/incluye \$ 500.000 de tarjetas/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Más información' }))
+    expect(await screen.findByText(/incluye \$ 500.000 de pagos de tarjeta/)).toBeInTheDocument()
   })
 
   test('avisa cuando una tarjeta no tiene cuenta de pago configurada', async () => {
@@ -217,33 +237,34 @@ describe('la moneda del formulario arranca en la de la cuenta', () => {
 // Las anclas son append-only a propósito, pero un saldo mal cargado (la moneda
 // equivocada, un dedazo) no se arregla agregando otro: hay que poder sacarlo.
 describe('borrar un saldo mal cargado', () => {
-  const conAncla = () => {
+  // Borrar vive dentro del formulario y no en la card: es para arreglar un saldo mal
+  // cargado, no algo que se mire todos los días.
+  const abrirBorrado = async () => {
     respuestas.account_balances = {
       data: [{ id: 'a-mala', account_id: CA, moneda: 'ARS', fecha: '2026-09-10', saldo: 33 }],
       error: null,
     }
-    return montar()
+    montar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Actualizar saldo' }))
+    return screen.findByRole('button', { name: /Borrar el saldo de \$ 33 del 10\/09\/2026/ })
   }
 
   test('borra el ancla en uso cuando se confirma', async () => {
     window.confirm = jest.fn(() => true)
-    conAncla()
-    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    fireEvent.click(await abrirBorrado())
     await waitFor(() => expect(borrados).toHaveLength(1))
     expect(borrados[0]).toMatchObject({ tabla: 'account_balances', campo: 'id', valor: 'a-mala' })
   })
 
   test('si se cancela no borra nada', async () => {
     window.confirm = jest.fn(() => false)
-    conAncla()
-    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    fireEvent.click(await abrirBorrado())
     expect(borrados).toHaveLength(0)
   })
 
   test('avisa cuánto y de qué fecha antes de borrar', async () => {
     window.confirm = jest.fn(() => false)
-    conAncla()
-    fireEvent.click(await screen.findByTitle('Borrar este saldo'))
+    fireEvent.click(await abrirBorrado())
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('10/09/2026'))
   })
 })
@@ -259,22 +280,29 @@ describe('la card dice qué está contando', () => {
     return montar({ transactions })
   }
 
+  const abrirAyuda = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Más información' }))
+  }
+
   test('sin movimientos posteriores lo dice, en vez de parecer congelado', async () => {
     conAncla([])
-    expect(await screen.findByText(/Sin movimientos posteriores: es el saldo que cargaste/i)).toBeInTheDocument()
+    await abrirAyuda()
+    expect(await screen.findByText(/todavía no cargaste movimientos posteriores/i)).toBeInTheDocument()
   })
 
-  test('con movimientos muestra cuántos y cuánto entró y salió', async () => {
+  test('con movimientos dice cuántos y cuánto entró y salió', async () => {
     conAncla([
       { id: 't1', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 30000, moneda: 'ARS' },
       { id: 't2', account_id: CA, tipo: 'ingreso', fecha: '2026-09-13', monto: 120000, moneda: 'ARS' },
     ])
+    expect(await screen.findByText('$ 590.000')).toBeInTheDocument()
+    await abrirAyuda()
     expect(await screen.findByText(/2 movimientos/)).toBeInTheDocument()
-    expect(screen.getByText('$ 590.000')).toBeInTheDocument()
   })
 
   test('un solo movimiento se dice en singular', async () => {
     conAncla([{ id: 't1', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 30000, moneda: 'ARS' }])
-    expect(await screen.findByText(/1 movimiento(?!s)/)).toBeInTheDocument()
+    await abrirAyuda()
+    expect(await screen.findByText(/1 movimiento\./)).toBeInTheDocument()
   })
 })
