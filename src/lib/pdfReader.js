@@ -2,13 +2,15 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 
-// ¿Esta línea parece un movimiento? Fecha + importe. Los tres formatos de fecha
+// ¿Esta línea parece un movimiento? Fecha + importe. Los formatos de fecha
 // cubren lo que usan los bancos de acá: 12/07/26, 2026-07-12 y 12-Jul-26 (el
-// mes abreviado en letras es el de Galicia y varios más). Antes faltaba el
-// tercero, así que en un resumen de Galicia casi ninguna línea de la tabla
-// contaba como movimiento: el recorte y la decisión de mandar el PDF entero a
-// la IA (el camino más lento) se tomaban a ciegas.
-const RE_FECHA_MOV = /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b|\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[-/ ](ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*[-/ ]\d{2,4}\b/i
+// mes abreviado en letras es el de Galicia y varios más), más el de Mercado
+// Pago, que en el resumen de tarjeta no lleva año ("10/sep", "18/ago"). Sin
+// ese último caso, ninguna línea de la tabla de consumos contaba como
+// movimiento: el resumen se mandaba entero como documento a la IA en vez de
+// usar el texto ya extraído, y ese camino de respaldo podía volver sin
+// transacciones.
+const RE_FECHA_MOV = /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b|\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[-/ ](ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*([-/ ]\d{2,4})?\b/i
 const RE_IMPORTE_MOV = /\d(?:[\d.,]*\d)?[.,]\d{2}\b/
 const esLineaDeMovimiento = (linea) => RE_FECHA_MOV.test(linea) && RE_IMPORTE_MOV.test(linea)
 
