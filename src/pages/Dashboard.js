@@ -2678,24 +2678,38 @@ export default function Dashboard() {
       const transacciones = filtradoTarjeta.nuevos
       const omitidasTarjeta = filtradoTarjeta.omitidos
 
-      if (transacciones.length === 0) {
+      // "No hay nada nuevo" solo es un motivo real para abortar y borrar el resumen
+      // recién creado cuando NO se está reemplazando uno existente. Si `existing` es
+      // true, estos "duplicados" son justo los movimientos que se acaban de soltar del
+      // resumen viejo unas líneas arriba (statement_id a null) para que
+      // reconciliarSueltas los reenganche al resumen nuevo la próxima vez que se abra
+      // la cuenta — si acá se borra ese resumen nuevo, esos movimientos se quedan
+      // sueltos para siempre y el usuario ve el resumen (y sus movimientos) desaparecer,
+      // aunque el aviso diga que "ya estaban cargados".
+      if (transacciones.length === 0 && !existing) {
         showToast(`Todas las transacciones de este resumen ya estaban cargadas (${omitidasTarjeta} duplicadas omitidas).`, 'error')
         if (statement) await supabase.from('statements').delete().eq('id', statement.id)
         setLoading(false)
         return
       }
 
-      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(aplicarReglasReparto(transacciones, repartoRules)).select('id, detalle, estado')
-      if (errTxTarjeta) {
-        showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
-        logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
-        // Dejar el estado limpio para que el reintento no quede bloqueado
-        if (statement) await supabase.from('statements').delete().eq('id', statement.id)
-        setLoading(false)
-        return
-      }
-      if (omitidasTarjeta > 0) {
-        showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
+      let inserted = []
+      if (transacciones.length > 0) {
+        const { data: insertedData, error: errTxTarjeta } = await supabase.from('transactions').insert(aplicarReglasReparto(transacciones, repartoRules)).select('id, detalle, estado')
+        if (errTxTarjeta) {
+          showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
+          logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
+          // Dejar el estado limpio para que el reintento no quede bloqueado
+          if (statement) await supabase.from('statements').delete().eq('id', statement.id)
+          setLoading(false)
+          return
+        }
+        inserted = insertedData || []
+        if (omitidasTarjeta > 0) {
+          showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
+        }
+      } else {
+        showToast('El resumen se actualizó: los movimientos ya estaban cargados y quedan enganchados a este resumen.')
       }
 
       // Los movimientos sueltos (sin statement_id) que caen dentro del período que este
