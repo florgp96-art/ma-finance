@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases })
+  const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, fechaHoy: new Date().toISOString().slice(0, 10) })
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

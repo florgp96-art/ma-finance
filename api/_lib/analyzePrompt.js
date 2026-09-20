@@ -2,7 +2,17 @@
 // /api/analyze (texto extraído con pdf.js) y /api/analyzePdf (PDF adjunto
 // como documento, para archivos que pdf.js no puede abrir o sin capa de texto).
 
-export function buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases }) {
+export function buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, fechaHoy }) {
+  // Fecha real del servidor al momento de la carga, no la que "cree" el modelo. Hace
+  // falta explícita porque Mercado Pago (y no es el único) imprime las fechas de sus
+  // consumos SIN año ("10/sep", "18/ago") — en toda la tarjeta de crédito no aparece
+  // un solo año escrito. Sin este dato, la IA le pone a esas fechas el año de su
+  // propio entrenamiento (se vieron respuestas con 2024 y con 2025 para el mismo
+  // resumen, en cargas distintas), y las transacciones quedan fechadas uno o dos años
+  // en el pasado: no rompe la importación (se guardan igual), pero la app las entierra
+  // fuera de cualquier vista o resumen del período real, así que el usuario ve "no
+  // aparecen los movimientos" aunque estén cargados.
+  const hoyISO = fechaHoy || new Date().toISOString().slice(0, 10)
   // Construir bloque de reglas del usuario si existen
   let userRulesBlock = ''
   if (userRules && userRules.length > 0) {
@@ -171,6 +181,7 @@ CAMPO tipo POR TRANSACCIÓN:
 ═══════════════════════════════
 REGLAS GENERALES:
 ═══════════════════════════════
+- HOY es ${hoyISO}. Usalo para completar el AÑO de cualquier fecha del resumen que no lo traiga impreso — Mercado Pago, por ejemplo, en toda la tarjeta de crédito escribe las fechas como "10/sep" o "18/ago", sin año en ningún lado del documento. NUNCA le pongas a esas fechas un año "por defecto" ni el de tu propio conocimiento: elegí el año que hace que esa fecha caiga cerca de HOY dentro del ciclo de este resumen (el mismo año que HOY, salvo que el mes de la fecha sea posterior al mes de HOY — ej. una compra "de diciembre" en un resumen que cierra en enero es del año anterior a HOY, no del mismo). Errar el año dej a la transacción fechada uno o más años en el pasado: se guarda igual, pero desaparece de cualquier vista o resumen del período real, y el usuario ve el resumen "cargado" sin sus movimientos.
 - fecha_facturacion y fecha_vencimiento son SIEMPRE las de ESTE resumen, nunca las de otro ciclo. Muchos resúmenes traen una banda "Ciclo de facturación" con SEIS fechas seguidas, rotuladas: "Cierre anterior / Vencimiento anterior / Cierre actual / Vencimiento actual / Próximo cierre / Próximo vencimiento". De esa banda, fecha_facturacion es el CIERRE ACTUAL y fecha_vencimiento el VENCIMIENTO ACTUAL — las del medio, no las últimas. Leé el rótulo que tiene debajo cada fecha; no las tomes por posición ni agarres la más nueva. Equivocarse acá rompe todo el resumen: si se toma el próximo vencimiento como propio, la app cree que una factura ya vencida vence dentro de tres semanas, le pone el período equivocado, y da por cerrado un ciclo que todavía está abierto (con lo cual deja de contar los gastos nuevos de esa tarjeta). El vencimiento actual suele estar RESALTADO en la banda; el cierre actual es el que va inmediatamente antes.
 - proximo_cierre y proximo_vencimiento: son las dos ÚLTIMAS de esa misma banda ("Próximo cierre" / "Próximo vencimiento"), o cualquier par equivalente que muestre el resumen. Si están, devolvelas. Si el resumen no las muestra, devolvé null en las dos: NUNCA las calcules ni las estimes sumando un mes, porque los ciclos no caen siempre el mismo día y una fecha inventada hace que la app dé por facturado un gasto que todavía no lo está.
 - periodo: en resúmenes de tarjeta es el mes del CIERRE del resumen (el mes de fecha_facturacion), NO el mes de las compras — el resumen que cierra en junio trae compras de mayo y su periodo es "Junio". En extractos bancarios es el mes de los movimientos.
