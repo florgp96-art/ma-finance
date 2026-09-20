@@ -107,6 +107,8 @@ ${rulesText}
 
 Si no podés leer claramente algún campo, usá null. Si la imagen no tiene transacciones reconocibles, devolvé transacciones vacío [].
 
+HOY es ${new Date().toISOString().slice(0, 10)}. Usalo para completar el AÑO de cualquier fecha que se vea sin año (común en Mercado Pago y en screenshots de apps de banco, que muestran solo día y mes) — elegí el año que hace que esa fecha caiga cerca de HOY. Nunca uses un año "por defecto" ni el de tu propio conocimiento: errarlo deja la transacción fechada años en el pasado, y aunque se guarda igual, desaparece de cualquier vista del período real.
+
 ${userRulesBlock}
 
 CATEGORÍAS DISPONIBLES:
