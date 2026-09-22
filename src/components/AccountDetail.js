@@ -675,6 +675,27 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido }
 }
 
+// ¿Mandar un movimiento a otra cuenta lo saca de la lista que se está mirando?
+//
+//   vista          la cuenta abierta, o null/undefined si se están mirando todas.
+//   nuevaCuentaId  la cuenta a la que se lo mandó (vacío = no se movió de cuenta).
+//
+// En la vista de UNA cuenta, sí: el movimiento pasó a vivir en otra y quedaría acá
+// visible pero ajeno hasta el próximo refresh de la página.
+//
+// En la vista "Ingresos", NO, aunque también sea una cuenta puntual: esa vista junta
+// TODOS los ingresos sin importar en qué cuenta están (ver esCuentaIngresos en
+// fetchData), así que asignarle a un ingreso la cuenta donde entró la plata no lo saca
+// de ahí. Sacarlo igual de la lista hacía que el mes se fuera vaciando a medida que se
+// asignaban las cuentas —hasta quedar casi en cero, arrastrando el total del mes y el
+// gráfico— y volviera entero al recargar la página: la misma acción mostraba dos cosas
+// distintas según si habías refrescado, y ninguna de las dos era lo que decía la base.
+export const saleDeLaVistaAlCambiarDeCuenta = (vista, nuevaCuentaId) => {
+  if (!nuevaCuentaId || !vista) return false
+  if (vista.tipo === 'ingreso') return false
+  return nuevaCuentaId !== vista.id
+}
+
 export const mesLabel = (yearMonth) => {
   const [year, month] = yearMonth.split('-')
   return `${MESES[parseInt(month) - 1]} ${year}`
@@ -1224,6 +1245,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     })()
     const cuentaObj = (accounts || []).find(a => a.id === editCuenta)
     const accountChange = editCuenta && editCuenta !== tx.account_id ? { account_id: editCuenta } : {}
+    // La vista "Ingresos" se mira con allAccounts en falso, así que la cuenta abierta
+    // alcanza para decidir (ver saleDeLaVistaAlCambiarDeCuenta).
+    const saleDeLaVista = saleDeLaVistaAlCambiarDeCuenta(allAccounts ? null : account, accountChange.account_id)
     // El tipo (gasto/ingreso) ahora se elige explícitamente con el selector del
     // formulario de edición (editTipo), no infiriéndolo de tx.tipo — así una fila
     // de gasto se puede pasar a ingreso (o al revés) sin el atajo viejo de elegir
@@ -1255,10 +1279,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
       if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
-      // Si se movió a otra cuenta y esta vista es de una cuenta puntual (no
-      // "todas las cuentas"), ya no pertenece acá — sacarla de la lista en vez
-      // de dejarla actualizada-pero-visible hasta el próximo refresh de página.
-      setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+      // Si el movimiento ya no pertenece a esta vista (ver saleDeLaVista), sacarlo
+      // de la lista en vez de dejarlo actualizado-pero-visible hasta el próximo
+      // refresh de página.
+      setTransactions(prev => saleDeLaVista
         ? prev.filter(t => t.id !== tx.id)
         : prev.map(t => t.id === tx.id ? { ...t, nombre: editNombre, tag: editTag || null, child_id: childIngresoObj?.id || null, children: childIngresoObj ? { id: childIngresoObj.id, nombre: childIngresoObj.nombre } : null, estado: 'identificado', ...accountChange, tipo: 'ingreso', category_id: 'category_id' in upd ? upd.category_id : t.category_id, subcategory_id: 'subcategory_id' in upd ? upd.subcategory_id : t.subcategory_id, categories: 'category_id' in upd ? (catIngresos ? { nombre: catIngresos.nombre } : null) : t.categories, ...(cuentaObj ? { accounts: { nombre: cuentaObj.nombre } } : {}), ...cambioFecha, ...cambioCuotas, ...(montoCorregido !== undefined ? { monto: montoCorregido } : {}) } : t))
       setEditingTx(null)
@@ -1310,10 +1334,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
       })
     }
 
-    // Igual que en la rama de ingresos: si se movió a otra cuenta y esta vista
-    // es de una cuenta puntual, sacarla de la lista en vez de dejarla visible
-    // (con la cuenta ya cambiada) hasta que se refresque la página.
-    setTransactions(prev => (accountChange.account_id && account && accountChange.account_id !== account.id)
+    // Igual que en la rama de ingresos: si el movimiento ya no pertenece a esta
+    // vista (ver saleDeLaVista), sacarlo de la lista en vez de dejarlo visible —con
+    // la cuenta ya cambiada— hasta que se refresque la página.
+    setTransactions(prev => saleDeLaVista
       ? prev.filter(t => t.id !== tx.id)
       : prev.map(t => t.id === tx.id ? {
         ...t,
@@ -4373,7 +4397,14 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
 
       <div style={styles.tableSection}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ ...styles.chartTitle, margin: 0 }}>{esVistaIngresos ? `💰 Todos los ingresos (${identificadas.length})` : `📋 Todas las transacciones (${identificadas.length})`}</h3>
+          <h3 style={{ ...styles.chartTitle, margin: 0 }}>
+            {esVistaIngresos ? `💰 Todos los ingresos (${identificadas.length})` : `📋 Todas las transacciones (${identificadas.length})`}
+            {/* Asignarle la cuenta a un ingreso no lo saca de esta lista, y eso no se
+                deduce mirando la pantalla: la "i" lo dice donde aparece la duda. */}
+            {esVistaIngresos && (
+              <InfoTooltip darkMode={darkMode} text={'"Ingresos" no es una cuenta donde viva la plata: es la vista que junta todos tus ingresos, estén en la cuenta que estén. Cuando le asignás a un ingreso la cuenta donde entró la plata, esa plata pasa a sumar al saldo de esa cuenta y el ingreso se sigue viendo acá — la columna Cuenta te dice en cuál quedó, y el filtro de arriba te deja ver una sola.'} />
+            )}
+          </h3>
           {txFiltradas.length > 0 && (
             <button onClick={handleExportCSV} style={styles.exportBtn}>
               ↓ Exportar CSV
