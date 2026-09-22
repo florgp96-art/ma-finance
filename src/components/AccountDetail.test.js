@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -172,5 +172,33 @@ describe('calcularStatementsPendientes — un resumen repetido no puede tapar la
   test('sin repetidos no avisa nada', () => {
     const { cuentasConResumenRepetido } = calcularStatementsPendientes({ accounts: [cuenta], statements: [conSaldo], transactions: [] })
     expect(cuentasConResumenRepetido).toEqual([])
+  })
+})
+
+describe('saleDeLaVistaAlCambiarDeCuenta — a qué lista deja de pertenecer un movimiento', () => {
+  const cajaAhorro = { id: 'caja', tipo: 'debito' }
+  const ingresos = { id: 'ingresos', tipo: 'ingreso' }
+
+  test('mirando una cuenta, lo que se manda a otra ya no pertenece', () => {
+    expect(saleDeLaVistaAlCambiarDeCuenta(cajaAhorro, 'usd')).toBe(true)
+  })
+
+  test('mirando "Ingresos", asignarle la cuenta donde entró la plata no lo saca', () => {
+    // El caso que lo motivó: asignándole la cuenta a cada ingreso, el mes se iba
+    // vaciando en pantalla hasta quedar casi en cero, y volvía entero al recargar.
+    expect(saleDeLaVistaAlCambiarDeCuenta(ingresos, 'caja')).toBe(false)
+  })
+
+  test('mirando todas las cuentas no sale de ningún lado', () => {
+    expect(saleDeLaVistaAlCambiarDeCuenta(null, 'caja')).toBe(false)
+  })
+
+  test('sin cambio de cuenta no se mueve nada', () => {
+    expect(saleDeLaVistaAlCambiarDeCuenta(cajaAhorro, null)).toBe(false)
+    expect(saleDeLaVistaAlCambiarDeCuenta(cajaAhorro, '')).toBe(false)
+  })
+
+  test('elegir de nuevo la misma cuenta tampoco lo saca', () => {
+    expect(saleDeLaVistaAlCambiarDeCuenta(cajaAhorro, 'caja')).toBe(false)
   })
 })
