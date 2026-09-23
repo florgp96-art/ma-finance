@@ -133,6 +133,16 @@ export const movimientosDesdeAncla = (transactions, accountId, moneda, ancla, ha
 // De qué cuenta sale cada tarjeta lo dice accounts.cuenta_pago_id, que se configura
 // una vez por tarjeta. Por eso esto arregla también el pasado: no hace falta tocar
 // ni un movimiento ya cargado, ni adivinar de dónde salió cada pago viejo.
+//
+// Un mismo plástico puede pagarse en dos monedas desde dos cuentas distintas (ej.
+// Mercado Pago: la parte en pesos sale de la caja de ahorro en pesos, la parte en
+// dólares de la caja de ahorro en dólares). Un solo vínculo no alcanza para eso —
+// apuntando a una sola cuenta, los pagos en la otra moneda no se restaban en
+// ningún lado—, así que el vínculo es uno por moneda: cuenta_pago_id para pesos
+// (y cualquier otra moneda sin campo propio, como EUR, mismo criterio que
+// calcularEstadoStatement) y cuenta_pago_id_usd para dólares.
+const campoVinculoPago = (moneda) => moneda === 'USD' ? 'cuenta_pago_id_usd' : 'cuenta_pago_id'
+
 const DIAS_TOLERANCIA = 3
 const PARECE_PAGO_TARJETA = /tarjeta|pago\s*tc\b|visa|master|amex|cabal/i
 
@@ -149,7 +159,8 @@ const diasEntre = (a, b) =>
 // línea del extracto cancela como máximo un pago — si no, dos cuotas iguales del mismo
 // día se anularían con una sola fila.
 export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda, desde, hasta = null }) => {
-  const tarjetas = (accounts || []).filter(a => a.tipo === 'credito' && a.cuenta_pago_id === accountId)
+  const campo = campoVinculoPago(moneda)
+  const tarjetas = (accounts || []).filter(a => a.tipo === 'credito' && a[campo] === accountId)
   if (tarjetas.length === 0) return []
   const idsTarjeta = new Set(tarjetas.map(a => a.id))
   const enVentana = (t) => esPosteriorAlAncla(t, desde) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
