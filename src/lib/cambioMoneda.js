@@ -104,8 +104,14 @@ export const armarCambioDeMoneda = ({ userId, fecha, origen, destino, conSentido
 // DOLARES", "Venta de USD", "DOLAR MEP"), pero siempre es compra/venta pegado a la
 // moneda. Se exige que vayan pegados para no confundirlo con una compra con débito
 // en un comercio que cobra en dólares ("COMPRA DEBITO NETFLIX USD").
+//
+// También la compra y venta de títulos: el dólar MEP se hace comprando un bono con
+// dólares ("COMP. TITULOS / VAL. AL30") y vendiéndolo en pesos ("VENTA DE TITULOS /
+// VALORES - AL30"). Y si el bono se guarda como inversión tampoco es gasto ni
+// ingreso: es plata propia que cambia de forma, como un plazo fijo.
 const CAMBIO_DE_MONEDA = new RegExp([
   String.raw`\b(compra|venta|cpra|vta)\.?\s+(de\s+)?(moneda\s+extranjera|dolares|dolar|divisas?|usd|u\$s|euros?)\b`,
+  String.raw`\b(compra|venta|comp|cpra|vta)\.?\s+(de\s+)?(titulos|valores|bonos?)\b`,
   String.raw`\bdolar\s+mep\b`,
   String.raw`\b(operacion\s+de\s+cambio|(operacion|cambio)\s+de\s+(moneda|divisas?))\b`,
   String.raw`\bconversion\s+a\s+(ars|pesos|usd|dolares|eur|euros)\b`,
