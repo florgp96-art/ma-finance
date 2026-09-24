@@ -2826,9 +2826,9 @@ export default function Dashboard() {
   // pendientes aunque el resumen no esté saldado del todo.
   const saldoPorResumen = useMemo(() => new Map(
     calcularStatementsPendientes({
-      accounts, statements: dashboardStatements, transactions: accountTransactions,
+      accounts, statements: dashboardStatements, transactions: accountTransactions, tcMap, tipoCambio,
     }).statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
-  ), [accounts, dashboardStatements, accountTransactions])
+  ), [accounts, dashboardStatements, accountTransactions, tcMap, tipoCambio])
 
   const cuotasPendientesMemo = useMemo(() => {
     // Se leen los MOVIMIENTOS ya cargados, no una proyección calculada al vuelo.
@@ -3601,7 +3601,7 @@ export default function Dashboard() {
             pagado: vencPagados.has(s.id),
             diasRestantes: typeof s.dia === 'number' ? s.dia - hoyDia : null,
           }))
-          const tarjetasVenc = calcularStatementsPendientes({ accounts, statements: dashboardStatements, transactions: accountTransactions })
+          const tarjetasVenc = calcularStatementsPendientes({ accounts, statements: dashboardStatements, transactions: accountTransactions, tcMap, tipoCambio })
             .statementsRealesConUsd.map(s => ({
               id: `tarjeta-${s.id}`, tipo: 'tarjeta',
               nombre: (accounts || []).find(a => a.id === s.account_id)?.nombre || 'Tarjeta',

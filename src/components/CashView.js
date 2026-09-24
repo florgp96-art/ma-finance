@@ -246,7 +246,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     // facturó ninguno, decide el mes. El saldo por resumen sale de
     // calcularStatementsPendientes, la misma función que usa "A pagar".
     const saldoPorResumen = new Map(
-      calcularStatementsPendientes({ accounts, statements, transactions })
+      calcularStatementsPendientes({ accounts, statements, transactions, tipoCambio })
         .statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
     )
     const futuras = cuotasFuturasCargadas(transactions, new Date(), saldoPorResumen)
@@ -262,7 +262,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     }))
 
     return { actual, pagosPorCuenta, cuotas, historial, totalDisponible, ahorrosPorMoneda, ahorrosDuplicados }
-  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro])
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro, tipoCambio])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así

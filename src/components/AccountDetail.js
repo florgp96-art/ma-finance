@@ -550,7 +550,7 @@ export const compararStatements = (s1, s2) =>
 // abajo). Única fuente de "cuánto debo y cuándo vence" para tarjetas: la
 // consumen tanto la pestaña "A pagar" como el widget de Vencimientos, así
 // nunca pueden desalinearse entre sí.
-export const calcularStatementsPendientes = ({ accounts, statements, transactions }) => {
+export const calcularStatementsPendientes = ({ accounts, statements, transactions, tcMap, tipoCambio }) => {
   const cuentasCreditoAPagar = (accounts || []).filter(a => a.tipo === 'credito')
   const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
   const statementsPorCuenta = new Map()
@@ -585,6 +585,19 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     if (s.total_dolares !== null && s.total_dolares !== undefined) return Number(s.total_dolares)
     const usdItems = (transactions || []).filter(t => t.statement_id === s.id && t.tipo !== 'neutro' && t.moneda === 'USD')
     return usdItems.reduce((sum, t) => sum + (t.tipo === 'ingreso' ? -1 : 1) * Number(t.monto), 0)
+  }
+  // Qué parte del valor pesificado de la deuda en dólares tiene que cubrir el excedente
+  // para darla por pagada. No es exacto a propósito: entre el TC vendedor del banco y el
+  // que tiene cargado la app hay siempre unos puntos de diferencia, y pueden ser dólares
+  // distintos. La mitad deja pasar esa diferencia sin llegar a confundir un sobrepago
+  // suelto con el pago de los dólares.
+  const PROPORCION_MINIMA_PAGO_EN_PESOS = 0.5
+  // El TC del pago que cancela el resumen: su fx_rate, el promedio de su mes o el
+  // vigente (ver tcDeMovimiento). Se mira el último pago, que es el que suele cerrar el
+  // resumen; sin pagos en pesos no hay nada que pesificar.
+  const tcDeReferenciaDe = (pagos) => {
+    const ultimo = [...pagos].sort((a, b) => normFecha(a.fecha).localeCompare(normFecha(b.fecha))).pop()
+    return ultimo ? tcDeMovimiento(ultimo, tcMap, tipoCambio) : 0
   }
   const calcularEstadoStatement = (s, cierreSiguiente) => {
     const cierre = cierreDe(s)
@@ -630,11 +643,38 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     // `excedente` es la plata pagada POR ENCIMA del total que informó el banco. No es
     // un sobrepago: es lo que ya está pagando el ciclo siguiente. Quien lo consume
     // (virtualesAPagar) lo baja en cascada por los ciclos que vienen después.
+    const sobranteEnPesos = totalArs > 0 ? Math.max(0, -pendienteArsSinClamp) : 0
+    const pendienteUsdBruto = Math.max(0, pendienteUsdSinClamp)
+    // UN RESUMEN EN DÓLARES QUE SE PAGA EN PESOS.
+    //
+    // El banco deja cancelar los consumos en dólares en pesos —"será aplicable el tipo
+    // de cambio vendedor del momento de la transacción", dice el propio resumen— y es lo
+    // que pasa casi siempre: del homebanking sale UN pago en pesos por el total, dólares
+    // incluidos. Pero acá la deuda en dólares solo se cancelaba con un pago hecho EN
+    // DÓLARES, así que un resumen pagado entero quedaba pendiente para siempre por unos
+    // dólares que ya estaban pagos, y los pesos de más figuraban ADEMÁS como sobrepago
+    // que bajaba al ciclo siguiente: el mismo pago, contado dos veces y mal las dos.
+    // Caso real: Mastercard, total $ 2.447.731,71 + U$S 103,65, pagado todo junto en
+    // pesos — la app seguía mostrando "te falta pagar U$S 103,65 (≈ $ 120.000)".
+    //
+    // Con qué TC pesificó el banco es un dato que la app no tiene (el vendedor de ESE
+    // día, que además puede ser otro dólar que el que cargó el usuario). Por eso no se
+    // exige que el excedente dé justo: alcanza con que sea del orden de la deuda en
+    // dólares. Un sobrepago chico no puede borrar una deuda en dólares grande.
+    const valorEnPesosDeLosDolares = pendienteUsdBruto * tcDeReferenciaDe(pagosArs)
+    const dolaresPagadosEnPesos = valorEnPesosDeLosDolares > 0 &&
+      sobranteEnPesos >= valorEnPesosDeLosDolares * PROPORCION_MINIMA_PAGO_EN_PESOS
+    // Los pesos que se fueron en pagar los dólares no son plata que sobró: no pueden
+    // bajar también al ciclo siguiente.
+    const pesosUsadosEnLosDolares = dolaresPagadosEnPesos
+      ? Math.min(sobranteEnPesos, valorEnPesosDeLosDolares)
+      : 0
     return {
       pendienteArs: Math.max(0, pendienteArsSinClamp),
-      excedenteArs: totalArs > 0 ? Math.max(0, -pendienteArsSinClamp) : 0,
-      pendienteUsd: Math.max(0, pendienteUsdSinClamp),
+      excedenteArs: sobranteEnPesos - pesosUsadosEnLosDolares,
+      pendienteUsd: dolaresPagadosEnPesos ? 0 : pendienteUsdBruto,
       excedenteUsd: totalUsd > 0 ? Math.max(0, -pendienteUsdSinClamp) : 0,
+      dolaresPagadosEnPesos, pesosUsadosEnLosDolares,
       totalPagosArs, totalPagosUsd,
     }
   }
@@ -2677,7 +2717,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // MISMA función que usa el widget de Vencimientos en Dashboard.js, así nunca pueden
   // desalinearse entre sí.
   const { cuentasCreditoAPagar, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido } = mostrarTabAPagar
-    ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions })
+    ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions, tcMap, tipoCambio })
     : { cuentasCreditoAPagar: [], statementsPorCuenta: new Map(), estadosStatement: new Map(), statementsRealesConUsd: [], cuentasConResumenRepetido: [] }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese

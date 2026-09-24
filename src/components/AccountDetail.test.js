@@ -274,3 +274,69 @@ describe('enTramoDelCiclo — cada gasto cae en un solo tramo del ciclo', () => 
     expect(enTramoDelCiclo(gasto('g', '2026-09-20'), { accountId: CUENTA, desde: '2026-09-15' })).toBe(false)
   })
 })
+
+describe('calcularStatementsPendientes — la deuda en dólares también se paga en pesos', () => {
+  // El caso real: Mastercard Platinum, cierre 27-Ago, total $ 2.447.731,71 + U$S 103,65,
+  // pagado todo junto con una transferencia en pesos. El banco pesifica los dólares al
+  // vendedor del día (acá, $ 1.200).
+  const cuenta = { id: 'mc', nombre: 'Mastercard Galicia', tipo: 'credito' }
+  const resumen = {
+    id: 'mc-ago', account_id: 'mc', periodo: 'Agosto 2026',
+    fecha_hasta: '2026-08-27', fecha_vencimiento: '2026-09-04',
+    total_resumen: 2447731.71, total_dolares: 103.65,
+  }
+  const DOLARES_EN_PESOS = 103.65 * 1200
+  const pagoEnPesos = (monto, fecha = '2026-09-03') => ({
+    id: `pago-${monto}`, account_id: 'mc', fecha, tipo: 'neutro', moneda: 'ARS', monto,
+  })
+  const correr = (transactions, tipoCambio = 1200) =>
+    calcularStatementsPendientes({ accounts: [cuenta], statements: [resumen], transactions, tipoCambio })
+
+  test('pagado entero en pesos, el resumen deja de figurar como pendiente', () => {
+    const { statementsRealesConUsd, estadosStatement } = correr([pagoEnPesos(2447731.71 + DOLARES_EN_PESOS)])
+    expect(statementsRealesConUsd).toEqual([])
+    expect(estadosStatement.get('mc-ago')).toMatchObject({ pendienteArs: 0, pendienteUsd: 0 })
+  })
+
+  test('los pesos que pagaron los dólares no bajan además como sobrepago al ciclo siguiente', () => {
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71 + DOLARES_EN_PESOS)])
+    expect(estadosStatement.get('mc-ago').excedenteArs).toBeCloseTo(0, 2)
+  })
+
+  test('el TC del banco no es el de la app: igual se da por pagada', () => {
+    // La app puede tener cargado otro dólar (ej. $ 1.500) que el que usó el banco.
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71 + DOLARES_EN_PESOS)], 1500)
+    expect(estadosStatement.get('mc-ago').pendienteUsd).toBe(0)
+  })
+
+  test('un sobrepago chico no borra la deuda en dólares', () => {
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71 + 10000)])
+    expect(estadosStatement.get('mc-ago').pendienteUsd).toBeCloseTo(103.65, 2)
+    expect(estadosStatement.get('mc-ago').excedenteArs).toBeCloseTo(10000, 2)
+  })
+
+  test('pagada solo la parte en pesos, los dólares siguen debiéndose', () => {
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71)])
+    expect(estadosStatement.get('mc-ago').pendienteUsd).toBeCloseTo(103.65, 2)
+  })
+
+  test('sin TC cargado no se inventa ninguna conversión', () => {
+    const { estadosStatement } = calcularStatementsPendientes({
+      accounts: [cuenta], statements: [resumen],
+      transactions: [pagoEnPesos(2447731.71 + DOLARES_EN_PESOS)],
+    })
+    expect(estadosStatement.get('mc-ago').pendienteUsd).toBeCloseTo(103.65, 2)
+  })
+
+  test('un pago en dólares sigue cancelando los dólares, como siempre', () => {
+    const pagoUsd = { id: 'pago-usd', account_id: 'mc', fecha: '2026-09-03', tipo: 'neutro', moneda: 'USD', monto: 103.65 }
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71), pagoUsd])
+    expect(estadosStatement.get('mc-ago')).toMatchObject({ pendienteArs: 0, pendienteUsd: 0 })
+  })
+
+  test('un pago anterior al cierre ya venía descontado: no cancela nada de nuevo', () => {
+    const { estadosStatement } = correr([pagoEnPesos(2447731.71 + DOLARES_EN_PESOS, '2026-08-20')])
+    expect(estadosStatement.get('mc-ago').pendienteArs).toBeCloseTo(2447731.71, 2)
+    expect(estadosStatement.get('mc-ago').pendienteUsd).toBeCloseTo(103.65, 2)
+  })
+})
