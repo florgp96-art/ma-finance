@@ -269,6 +269,7 @@ REGLAS DE ASIGNACIÓN PARA CUENTAS BANCARIAS:
 - TRANSF. CTAS PROPIAS / TRANSFERENCIA CUENTA PROPIA → Transferencias propias, tipo: "neutro"
 - PAGO TC / PAGO TARJETA / PAGO RESUMEN → Pago tarjeta, tipo: "neutro"
 - ADELANTO / PRESTAMO PROPIO → Transferencias propias, tipo: "neutro"
+- COMPRA / VENTA DE MONEDA EXTRANJERA, DE DÓLARES, DE DIVISAS o DÓLAR MEP → Transferencias propias, tipo: "ingreso" si en el extracto es un crédito (entra plata a esta cuenta) o "gasto" si es un débito (sale). Nunca "neutro": la app ya lo registra como cambio de moneda, y lo que necesita de vos es de qué lado del extracto está.
 - TRANSFERENCIA DE TERCEROS recibida / ACREDITACION → Ingresos / Otros, tipo: "ingreso" (si parece sueldo → Ingresos / Sueldo)
 - HABERES / SUELDO / REMUNERACION → Ingresos / Sueldo, tipo: "ingreso"
 - ALQUILER cobrado → Ingresos / Alquiler cobrado, tipo: "ingreso"

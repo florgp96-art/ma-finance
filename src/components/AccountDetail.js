@@ -6,6 +6,8 @@ import { semaforo } from '../theme'
 import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
+import { sentidoPorTipo } from '../lib/saldos'
+import { hayColumnaSentido } from '../lib/columnaSentido'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -2372,8 +2374,13 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   }
 
   const handleMarcarNeutro = async (tx) => {
-    await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).eq('id', tx.id)
-    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, tipo: 'neutro', estado: 'identificado' } : t))
+    // Al pasar a neutro el tipo deja de decir si la plata entró o salió: se anota
+    // antes en `sentido`, o una venta de dólares que entró como ingreso empezaría a
+    // restar del saldo (ver signoEnSaldo). Si ya lo trae (del extracto), se respeta.
+    const sentido = !tx.sentido && await hayColumnaSentido() ? sentidoPorTipo(tx.tipo) : null
+    const cambios = { tipo: 'neutro', estado: 'identificado', ...(sentido ? { sentido } : {}) }
+    await supabase.from('transactions').update(cambios).eq('id', tx.id)
+    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, ...cambios } : t))
   }
 
   const getIngresoTagOpts = () => {
