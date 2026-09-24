@@ -675,6 +675,48 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
   return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido }
 }
 
+// ¿Este movimiento cae en el tramo (desde, hasta] del ciclo de una tarjeta?
+//
+//   accountId              la tarjeta del tramo.
+//   desde                  el cierre anterior — lo de ese día o antes ya se facturó.
+//   hasta                  el cierre del tramo; null = el tramo abierto, que llega a hoy.
+//   hoy                    el tope cuando el tramo está abierto.
+//   statementIdsFacturados resúmenes que se muestran con su propia tarjeta: sus
+//                          movimientos ya se cuentan ahí y no vuelven a contarse acá.
+//
+// Esta es la ÚNICA definición del tramo, y la usan los dos que necesitan la respuesta:
+// el TOTAL del tramo (ver tramo) y la LISTA de sus movimientos (ver itemsPorStatement).
+// Antes era la misma regla escrita dos veces, y la copia de la lista se había quedado
+// sin el `hasta`: en una tarjeta partida en dos tramos —el ciclo que el banco ya cerró
+// pero cuyo PDF todavía no se cargó, más el que sigue abierto— el tramo cerrado listaba
+// también los movimientos del abierto, y todo lo posterior al cierre se contaba DOS
+// VECES en "Gastos del mes por categoría" y en la barra de lo pagado. El total de cada
+// tramo estaba bien, así que el panel mostraba por categoría bastante más de lo que
+// existía: el mismo gasto, sumado en los dos tramos.
+//
+// Los pagos y reintegros (tipo "neutro"/"ingreso") nunca son de un ciclo: ya se
+// atribuyeron a saldar el resumen anterior (ver calcularEstadoStatement).
+//
+// Las cuotas se ubican por MES y el resto de los movimientos por día. Toda la regla de
+// las cuotas vive en cuotaEnCiclo (lib/cuotas.js), la misma que usa reconciliarSueltas
+// para ligar una cuota a su resumen: el día de una cuota es el de la compra original
+// arrastrado mes a mes, así que no dice nada sobre en qué resumen cae — la cuota de
+// agosto la factura el resumen de agosto, cierre el 9 o el 20.
+//
+// Sin tope (ni `hasta` ni `hoy`) no entra nada: es preferible una lista vacía, que se
+// nota, a una que arrastre movimientos con fecha futura sin que se vea.
+export const enTramoDelCiclo = (t, { accountId, desde, hasta, hoy, statementIdsFacturados } = {}) => {
+  if (!t || !accountId || t.account_id !== accountId) return false
+  if (t.statement_id && statementIdsFacturados?.has(t.statement_id)) return false
+  if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
+  const tope = hasta || hoy
+  if (!tope) return false
+  if (esCuota(t)) return cuotaEnCiclo(t, desde || null, tope)
+  const fecha = normFecha(t.fecha)
+  if (desde && fecha <= desde) return false
+  return fecha <= tope
+}
+
 // ¿Mandar un movimiento a otra cuenta lo saca de la lista que se está mirando?
 //
 //   vista          la cuenta abierta, o null/undefined si se están mirando todas.
@@ -1034,7 +1076,7 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     // facturación de ningún resumen puntual — para cuotas se compara el MES contra el
     // mes de cierre del resumen, nunca el día ni la ventana de días de los demás
     // movimientos. La regla vive en cuotaEnCiclo (lib/cuotas.js), compartida con
-    // perteneceCicloActual: acá la ventana es un solo mes, así que el desde es el mes
+    // enTramoDelCiclo: acá la ventana es un solo mes, así que el desde es el mes
     // anterior al del cierre.
     const perteneceAlCierre = (t, cierre, desde) => {
       if (esCuota(t)) return cuotaEnCiclo(t, addMeses(cierre, -1), cierre)
@@ -2642,35 +2684,17 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   // resumen no llega a mostrarse solo (ej. ya está saldado), el movimiento no puede
   // quedar invisible: se cuenta igual dentro de "Ciclo actual" en vez de desaparecer.
   const statementIdsConTarjetaPropia = new Set(statementsRealesConUsd.map(s => s.id))
-  // "Ciclo actual" es lo gastado DESPUÉS del último cierre y HASTA HOY: solo compras
-  // nuevas (nunca pagos/reintegros, que ya se atribuyeron a saldar el statement anterior
-  // en calcularEstadoStatement y no vuelven a contarse acá).
+  // "Ciclo actual" es lo gastado DESPUÉS del último cierre y hasta el cierre del tramo
+  // (o hasta hoy, si el tramo sigue abierto). La regla entera vive en enTramoDelCiclo,
+  // arriba: acá solo se le pasan los datos del componente. El tope del ciclo abierto es
+  // el mes en CURSO — de ahí en adelante ya son cuotas de meses que no llegaron, y viven
+  // en el widget de "Cuotas pendientes", no acá.
   //
-  // Las cuotas se ubican por MES y el resto de los movimientos por día.
-  //
-  // Toda la regla de las cuotas vive en cuotaEnCiclo (lib/cuotas.js), que es la misma
-  // que usa reconciliarSueltas para ligar una cuota a su resumen: se compara el mes y
-  // nunca el día, en los dos extremos del ciclo. El día de una cuota es el de la compra
-  // original arrastrado mes a mes, así que no dice nada sobre en qué resumen cae — la
-  // cuota de agosto la factura el resumen de agosto, cierre el 9 o el 20.
-  //
-  // El tope del ciclo abierto es el mes en CURSO (hoyISO, del que solo se mira el mes):
-  // de ahí en adelante ya son cuotas de meses que no llegaron y viven en el widget de
-  // "Cuotas pendientes", no acá.
-  //
-  // No hay doble conteo con un resumen que ya facturó la cuota: esa queda afuera por
-  // statement_id (ver itemsPorStatement y reconciliarSueltas), no por la fecha.
-  //
-  // Para todo lo demás el tope sigue siendo el día: un gasto suelto con fecha futura es
-  // un dato anómalo (la auditoría semanal lo reporta como tal), no algo para sumar.
-  const perteneceCicloActual = (t, ultimoCierre, hasta = null) => {
-    if (t.tipo === 'neutro' || t.tipo === 'ingreso') return false
-    const fecha = normFecha(t.fecha)
-    if (esCuota(t)) return cuotaEnCiclo(t, ultimoCierre, hasta || hoyISO)
-    if (ultimoCierre && fecha <= ultimoCierre) return false
-    if (hasta) return fecha <= hasta
-    return fecha <= hoyISO
-  }
+  // Todo el que necesite los movimientos de un tramo los pide por acá, y solo por acá:
+  // que el total y la lista salgan de la misma función es lo que impide que vuelvan a
+  // decir cosas distintas.
+  const movimientosDelTramo = (accountId, desde, hasta) => transactions.filter(t =>
+    enTramoDelCiclo(t, { accountId, desde, hasta, hoy: hoyISO, statementIdsFacturados: statementIdsConTarjetaPropia }))
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
@@ -2710,12 +2734,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
     }
 
     // Un tramo del ciclo: (desde, hasta]. Con `hasta` en null llega hasta hoy (o hasta
-    // fin de mes para las cuotas, ver perteneceCicloActual).
+    // fin de mes para las cuotas, ver enTramoDelCiclo).
     const tramo = (desde, hasta, extra) => {
-      const compras = transactions.filter(t =>
-        (!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) &&
-        t.account_id === a.id && perteneceCicloActual(t, desde, hasta)
-      )
+      const compras = movimientosDelTramo(a.id, desde, hasta)
       const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
       const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
       return {
@@ -2723,7 +2744,10 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         total_resumen: total, total_usd: totalUsd,
         _virtual: true, _comprasCount: compras.length,
         _pagosPosterioresArs: 0, _pagosPosterioresUsd: 0,
-        cicloDesde: null, cicloDesdeEfectivo: desde,
+        // Los dos extremos del tramo quedan guardados en él: sin el de arriba, quien
+        // después pida sus movimientos (itemsPorStatement) no tiene cómo saber dónde
+        // termina, y se los lleva todos hasta hoy — los del tramo siguiente incluidos.
+        cicloDesde: null, cicloDesdeEfectivo: desde, _hastaEfectivo: hasta || null,
         _excedenteArs: 0, _excedenteUsd: 0,
         ...extra,
       }
@@ -2847,9 +2871,9 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
   const totalProximoResumenArs = statementsSinResumen.reduce((sum, s) => sum + Math.max(0, Number(s.total_resumen) || 0), 0)
   const totalProximoResumenUsd = statementsSinResumen.reduce((sum, s) => sum + Math.max(0, Number(s.total_usd) || 0), 0)
   const itemsPorStatement = (s) => {
-    const items = transactions.filter(t => s._virtual
-      ? ((!t.statement_id || !statementIdsConTarjetaPropia.has(t.statement_id)) && t.account_id === s.account_id && perteneceCicloActual(t, s.cicloDesdeEfectivo))
-      : (t.statement_id === s.id && t.tipo !== 'neutro'))
+    const items = s._virtual
+      ? movimientosDelTramo(s.account_id, s.cicloDesdeEfectivo, s._hastaEfectivo)
+      : transactions.filter(t => t.statement_id === s.id && t.tipo !== 'neutro')
     return [...items].sort((a, b) => {
       let valA, valB
       if (apagarSortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }

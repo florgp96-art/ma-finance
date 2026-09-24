@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -200,5 +200,77 @@ describe('saleDeLaVistaAlCambiarDeCuenta — a qué lista deja de pertenecer un 
 
   test('elegir de nuevo la misma cuenta tampoco lo saca', () => {
     expect(saleDeLaVistaAlCambiarDeCuenta(cajaAhorro, 'caja')).toBe(false)
+  })
+})
+
+describe('enTramoDelCiclo — cada gasto cae en un solo tramo del ciclo', () => {
+  // Una tarjeta partida en dos: el ciclo que el banco ya cerró el 15/09 (todavía sin
+  // PDF) y el que sigue abierto. Hoy es 24/09.
+  const CUENTA = 'visa'
+  const HOY = '2026-09-24'
+  const cerrado = { accountId: CUENTA, desde: '2026-08-15', hasta: '2026-09-15', hoy: HOY }
+  const abierto = { accountId: CUENTA, desde: '2026-09-15', hasta: null, hoy: HOY }
+  const gasto = (id, fecha, extra = {}) => ({ id, account_id: CUENTA, fecha, tipo: 'gasto', monto: 1000, ...extra })
+
+  test('un gasto posterior al cierre es del tramo abierto y NO del cerrado', () => {
+    // El bug: el tramo cerrado se llevaba TODO hasta hoy, así que este gasto se contaba
+    // dos veces en "Gastos del mes por categoría" — una por tramo.
+    const farmacity = gasto('farmacity', '2026-09-16')
+    expect(enTramoDelCiclo(farmacity, cerrado)).toBe(false)
+    expect(enTramoDelCiclo(farmacity, abierto)).toBe(true)
+  })
+
+  test('un gasto anterior al cierre es del tramo cerrado y NO del abierto', () => {
+    const osde = gasto('osde', '2026-09-02')
+    expect(enTramoDelCiclo(osde, cerrado)).toBe(true)
+    expect(enTramoDelCiclo(osde, abierto)).toBe(false)
+  })
+
+  test('ningún gasto del ciclo cae en los dos tramos a la vez', () => {
+    const gastos = ['2026-08-14', '2026-08-16', '2026-09-02', '2026-09-15', '2026-09-16', '2026-09-24']
+      .map((f, i) => gasto(`g${i}`, f))
+    gastos.forEach(g => {
+      const veces = [cerrado, abierto].filter(tramo => enTramoDelCiclo(g, tramo)).length
+      expect(veces).toBeLessThanOrEqual(1)
+    })
+  })
+
+  test('lo del día del cierre anterior ya se facturó: no vuelve', () => {
+    expect(enTramoDelCiclo(gasto('viejo', '2026-08-15'), cerrado)).toBe(false)
+    expect(enTramoDelCiclo(gasto('viejo', '2026-08-14'), cerrado)).toBe(false)
+  })
+
+  test('el tramo abierto llega hasta hoy, no más allá', () => {
+    expect(enTramoDelCiclo(gasto('hoy', HOY), abierto)).toBe(true)
+    expect(enTramoDelCiclo(gasto('futuro', '2026-09-30'), abierto)).toBe(false)
+  })
+
+  test('pagos y reintegros no son gastos de ningún tramo', () => {
+    expect(enTramoDelCiclo(gasto('pago', '2026-09-20', { tipo: 'neutro' }), abierto)).toBe(false)
+    expect(enTramoDelCiclo(gasto('reintegro', '2026-09-20', { tipo: 'ingreso' }), abierto)).toBe(false)
+  })
+
+  test('los movimientos de otra tarjeta no entran', () => {
+    expect(enTramoDelCiclo({ ...gasto('ajeno', '2026-09-20'), account_id: 'amex' }, abierto)).toBe(false)
+  })
+
+  test('lo que ya factura un resumen con tarjeta propia no se cuenta de nuevo', () => {
+    const facturado = gasto('facturado', '2026-09-20', { statement_id: 'st-1' })
+    const statementIdsFacturados = new Set(['st-1'])
+    expect(enTramoDelCiclo(facturado, { ...abierto, statementIdsFacturados })).toBe(false)
+    // Ligado a un resumen que ya no se muestra solo (saldado), se cuenta igual acá en
+    // vez de desaparecer de la app.
+    expect(enTramoDelCiclo(facturado, { ...abierto, statementIdsFacturados: new Set(['otro']) })).toBe(true)
+  })
+
+  test('una cuota se ubica por mes, no por día del cierre', () => {
+    // La cuota de septiembre la factura el resumen de septiembre, cierre el 15 o el 28.
+    const cuotaSept = gasto('cuota', '2026-09-28', { cuotas_total: 6, cuota_numero: 2 })
+    expect(enTramoDelCiclo(cuotaSept, cerrado)).toBe(true)
+    expect(enTramoDelCiclo(cuotaSept, abierto)).toBe(false)
+  })
+
+  test('sin tope no entra nada', () => {
+    expect(enTramoDelCiclo(gasto('g', '2026-09-20'), { accountId: CUENTA, desde: '2026-09-15' })).toBe(false)
   })
 })
