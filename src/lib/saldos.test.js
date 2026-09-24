@@ -272,6 +272,50 @@ describe('los pagos de tarjeta salen de la cuenta que la paga', () => {
       accounts: [cuentas[0]], accountId: CA, moneda: 'ARS', desde: '2026-08-31',
     })).toEqual([])
   })
+
+  // Mercado Pago (y otras) se pueden pagar en dos monedas desde dos cuentas
+  // distintas: la parte en pesos de una caja de ahorro en pesos, la parte en
+  // dólares de una caja de ahorro en dólares. Un solo cuenta_pago_id no alcanza.
+  describe('la misma tarjeta pagada en dos monedas desde dos cuentas', () => {
+    const CA_USD = 'caja-ahorro-usd'
+    const dosCuentas = [
+      { id: CA, tipo: 'debito', nombre: 'Caja de ahorro' },
+      { id: CA_USD, tipo: 'debito', nombre: 'Caja de ahorro USD' },
+      { id: CARD, tipo: 'credito', nombre: 'Mercado Pago', cuenta_pago_id: CA, cuenta_pago_id_usd: CA_USD },
+    ]
+
+    test('el pago en pesos baja la cuenta en pesos', () => {
+      const r = saldoDeCuenta({
+        anclas: [ancla('2026-08-31', 3000000)],
+        transactions: [pagoEnTarjeta('2026-09-01', 500000)],
+        accounts: dosCuentas,
+        accountId: CA,
+      })
+      expect(r.pagosDeTarjeta).toBe(500000)
+      expect(r.saldo).toBe(2500000)
+    })
+
+    test('el pago en dólares baja la cuenta en dólares, no la de pesos', () => {
+      const rArs = saldoDeCuenta({
+        anclas: [ancla('2026-08-31', 3000000)],
+        transactions: [pagoEnTarjeta('2026-09-01', 103.65, 'Pago Tarjeta', { moneda: 'USD' })],
+        accounts: dosCuentas,
+        accountId: CA,
+      })
+      expect(rArs.pagosDeTarjeta).toBe(0)
+      expect(rArs.saldo).toBe(3000000)
+
+      const rUsd = saldoDeCuenta({
+        anclas: [{ ...ancla('2026-08-31', 1000), account_id: CA_USD, moneda: 'USD', id: 'usd' }],
+        transactions: [pagoEnTarjeta('2026-09-01', 103.65, 'Pago Tarjeta', { moneda: 'USD' })],
+        accounts: dosCuentas,
+        accountId: CA_USD,
+        moneda: 'USD',
+      })
+      expect(rUsd.pagosDeTarjeta).toBe(103.65)
+      expect(rUsd.saldo).toBe(896.35)
+    })
+  })
 })
 
 // El "Balance de caja" del resumen mensual es un FLUJO (cuánto entró y salió este

@@ -1615,11 +1615,22 @@ export default function Dashboard() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const camposCuenta = { nombre: editAccount.nombre, tipo: editAccount.tipo }
-    // La columna se agrega con una migración aparte: si todavía no está, se guarda
-    // el resto igual en vez de que falle la edición entera.
-    const { error: errEdit } = await supabase.from('accounts')
-      .update({ ...camposCuenta, cuenta_pago_id: editAccount.cuenta_pago_id || null })
+    // Las columnas se agregan con migraciones aparte: si alguna todavía no está, se
+    // va sacando de a una y guardando el resto, en vez de que falle la edición entera.
+    const camposPago = {
+      cuenta_pago_id: editAccount.cuenta_pago_id || null,
+      cuenta_pago_id_usd: editAccount.cuenta_pago_id_usd || null,
+    }
+    let { error: errEdit } = await supabase.from('accounts')
+      .update({ ...camposCuenta, ...camposPago })
       .eq('id', editAccount.id).eq('user_id', user.id)
+    if (errEdit && /cuenta_pago_id_usd/.test(errEdit.message || '')) {
+      console.warn('accounts sin cuenta_pago_id_usd — no se guarda de qué cuenta se pagan los dólares')
+      delete camposPago.cuenta_pago_id_usd;
+      ({ error: errEdit } = await supabase.from('accounts')
+        .update({ ...camposCuenta, ...camposPago })
+        .eq('id', editAccount.id).eq('user_id', user.id))
+    }
     if (errEdit && /cuenta_pago_id/.test(errEdit.message || '')) {
       console.warn('accounts sin cuenta_pago_id — no se guarda de qué cuenta se paga la tarjeta')
       await supabase.from('accounts').update(camposCuenta).eq('id', editAccount.id).eq('user_id', user.id)
@@ -2678,24 +2689,38 @@ export default function Dashboard() {
       const transacciones = filtradoTarjeta.nuevos
       const omitidasTarjeta = filtradoTarjeta.omitidos
 
-      if (transacciones.length === 0) {
+      // "No hay nada nuevo" solo es un motivo real para abortar y borrar el resumen
+      // recién creado cuando NO se está reemplazando uno existente. Si `existing` es
+      // true, estos "duplicados" son justo los movimientos que se acaban de soltar del
+      // resumen viejo unas líneas arriba (statement_id a null) para que
+      // reconciliarSueltas los reenganche al resumen nuevo la próxima vez que se abra
+      // la cuenta — si acá se borra ese resumen nuevo, esos movimientos se quedan
+      // sueltos para siempre y el usuario ve el resumen (y sus movimientos) desaparecer,
+      // aunque el aviso diga que "ya estaban cargados".
+      if (transacciones.length === 0 && !existing) {
         showToast(`Todas las transacciones de este resumen ya estaban cargadas (${omitidasTarjeta} duplicadas omitidas).`, 'error')
         if (statement) await supabase.from('statements').delete().eq('id', statement.id)
         setLoading(false)
         return
       }
 
-      const { data: inserted, error: errTxTarjeta } = await supabase.from('transactions').insert(aplicarReglasReparto(transacciones, repartoRules)).select('id, detalle, estado')
-      if (errTxTarjeta) {
-        showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
-        logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
-        // Dejar el estado limpio para que el reintento no quede bloqueado
-        if (statement) await supabase.from('statements').delete().eq('id', statement.id)
-        setLoading(false)
-        return
-      }
-      if (omitidasTarjeta > 0) {
-        showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
+      let inserted = []
+      if (transacciones.length > 0) {
+        const { data: insertedData, error: errTxTarjeta } = await supabase.from('transactions').insert(aplicarReglasReparto(transacciones, repartoRules)).select('id, detalle, estado')
+        if (errTxTarjeta) {
+          showToast(`Error al guardar: ${errTxTarjeta.message}`, 'error')
+          logImportAttempt({ tipo: 'pdf', nombreArchivo: archivo?.name, estado: 'error', errorMensaje: `Guardado tarjeta: ${errTxTarjeta.message}` })
+          // Dejar el estado limpio para que el reintento no quede bloqueado
+          if (statement) await supabase.from('statements').delete().eq('id', statement.id)
+          setLoading(false)
+          return
+        }
+        inserted = insertedData || []
+        if (omitidasTarjeta > 0) {
+          showToast(`${transacciones.length} transacciones importadas. ${omitidasTarjeta} duplicadas exactas omitidas.`)
+        }
+      } else {
+        showToast('El resumen se actualizó: los movimientos ya estaban cargados y quedan enganchados a este resumen.')
       }
 
       // Los movimientos sueltos (sin statement_id) que caen dentro del período que este
@@ -4480,7 +4505,7 @@ export default function Dashboard() {
                   ningún movimiento viejo. */}
               {editAccount.tipo === 'credito' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>¿De qué cuenta pagás esta tarjeta?</label>
+                  <label style={styles.label}>¿De qué cuenta pagás esta tarjeta en pesos?</label>
                   <select style={styles.input} value={editAccount.cuenta_pago_id || ''}
                     onChange={(e) => setEditAccount({...editAccount, cuenta_pago_id: e.target.value || null})}>
                     <option value="">— sin definir —</option>
@@ -4488,8 +4513,16 @@ export default function Dashboard() {
                       <option key={a.id} value={a.id}>{a.nombre}</option>
                     ))}
                   </select>
+                  <label style={{ ...styles.label, marginTop: '12px' }}>¿Y en dólares?</label>
+                  <select style={styles.input} value={editAccount.cuenta_pago_id_usd || ''}
+                    onChange={(e) => setEditAccount({...editAccount, cuenta_pago_id_usd: e.target.value || null})}>
+                    <option value="">— sin definir —</option>
+                    {accounts.filter(a => a.tipo === 'debito' || a.tipo === 'efectivo').map(a => (
+                      <option key={a.id} value={a.id}>{a.nombre}</option>
+                    ))}
+                  </select>
                   <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '6px 0 0' }}>
-                    Sirve para que los pagos de esta tarjeta se resten del saldo de esa cuenta.
+                    Sirve para que los pagos de esta tarjeta se resten del saldo de esa cuenta, cada moneda de la suya.
                   </p>
                 </div>
               )}
