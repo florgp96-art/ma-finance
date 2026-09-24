@@ -100,6 +100,9 @@ describe('pareceCambioDeMoneda', () => {
     'DOLAR MEP',
     'OPERACION DE CAMBIO',
     'Conversión a ARS',
+    // Dólar MEP: se compra el bono con dólares y se vende en pesos.
+    'COMP. TITULOS / VAL. AL30 BONO REP.ARGENT Nro Operacion: 23130',
+    'VENTA DE TITULOS / VALORES - AL30 BONO REP.ARGENTINA USD 2030 - Nro Operacion: 230385151',
   ])('reconoce "%s"', (texto) => {
     expect(pareceCambioDeMoneda(texto)).toBe(true)
   })
