@@ -160,6 +160,36 @@ un ancla que carga el usuario.
 Sin la migración la app no se rompe: la card de saldo avisa que falta correrla y la
 importación de ingresos se reintenta sin la columna (ver `handleConfirmTransactions`).
 
+### e) Sentido de los movimientos neutros (cambio de moneda)
+
+```sql
+alter table transactions add column if not exists sentido text
+  check (sentido in ('entra', 'sale'));
+```
+
+Un neutro (pago de tarjeta, transferencia propia, plazo fijo, cambio de moneda) no
+es gasto ni ingreso, y el monto se guarda siempre positivo: nada decía si la plata
+**entró o salió** de la cuenta. `signoEnSaldo` lo adivinaba por el texto
+("rescate", "acreditación", "depósito" → entra; todo lo demás → sale), y eso falla
+justo con la compra y venta de moneda: el extracto dice "VENTA MONEDA EXTRANJERA"
+tanto en la cuenta de la que salen los dólares como en la que reciben los pesos.
+
+Con la columna:
+
+- **Cargar movimiento → 💱 Cambio** guarda las dos patas (sale U$S de una cuenta,
+  entran $ en otra) como neutros con su sentido. Sin la columna funciona igual: la
+  pata que entra dice "Acreditación" y el texto la resuelve.
+- **La importación de extractos** anota el sentido de cada línea antes de que un
+  alias la pase a neutro, y pasa sola a neutro la compra y venta de moneda. Sin la
+  columna importa exactamente como antes (la venta de dólares queda como ingreso o
+  gasto: el saldo da bien, el balance del mes la cuenta).
+- **Marcar neutro** guarda el sentido que tenía la fila (ingreso → entra, gasto →
+  sale). Sin eso, una venta de dólares importada como ingreso empezaba a restar.
+
+Las filas viejas quedan con `sentido` en null y siguen decidiéndose por el texto. La
+app pregunta si la columna existe antes de escribirla (`hayColumnaSentido`), así
+que se puede correr en cualquier momento, incluso con la app abierta.
+
 ---
 
 ### b) Rate limit compartido — **esta es la que más conviene**

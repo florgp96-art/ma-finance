@@ -34,27 +34,51 @@ const norm = (f) => (f || '').trim().slice(0, 10)
 const redondear = (n) => Math.round((Number(n) || 0) * 100) / 100
 
 // Plata que ENTRA aunque el movimiento sea "neutro". El modelo guarda el monto
-// siempre positivo y el tipo no distingue dirección, así que para los neutros hay
-// que deducirla del texto: un rescate de fondo o la acreditación de un plazo fijo
-// vencido son neutros (no son ingresos reales, es plata propia que vuelve) pero
-// entran a la cuenta, no salen. Si acá se le erra, el desvío de la próxima ancla
-// lo deja a la vista — que es justamente para lo que sirve.
+// siempre positivo y el tipo no distingue dirección, así que para los neutros sin
+// `sentido` (ver signoEnSaldo) hay que deducirla del texto: un rescate de fondo o
+// la acreditación de un plazo fijo vencido son neutros (no son ingresos reales, es
+// plata propia que vuelve) pero entran a la cuenta, no salen. Si acá se le erra,
+// el desvío de la próxima ancla lo deja a la vista — que es justamente para lo
+// que sirve.
 const NEUTRO_QUE_ENTRA = /\brescate\b|\bacreditaci|\bdep[oó]sito\b/i
 
 // ¿Este movimiento suma o resta del saldo de una cuenta que no es tarjeta?
 //   ingreso → entra    gasto → sale
-//   neutro  → sale por defecto (pago de tarjeta, transferencia a otra cuenta
+//   neutro  → lo que diga `sentido` ('entra' / 'sale') si se sabe. Si no:
+//             sale por defecto (pago de tarjeta, transferencia a otra cuenta
 //             propia, plazo fijo, suscripción a un fondo), salvo que el texto
 //             diga que es plata que vuelve.
+//
+// `sentido` existe porque el texto no alcanza: la venta de dólares de un extracto
+// dice "VENTA MONEDA EXTRANJERA" tanto en la cuenta de la que salen los dólares
+// como en la que reciben los pesos. Lo guardan el cambio de moneda, la
+// importación de extractos y "Marcar neutro" (ver sentidoPorTipo). Las filas
+// viejas no lo tienen, y ahí sigue decidiendo el texto.
 export const signoEnSaldo = (t) => {
   if (!t) return 0
   if (t.tipo === 'ingreso') return 1
   if (t.tipo === 'neutro') {
+    if (t.sentido === 'entra') return 1
+    if (t.sentido === 'sale') return -1
     const texto = `${t.nombre || ''} ${t.detalle || ''}`
     return NEUTRO_QUE_ENTRA.test(texto) ? 1 : -1
   }
   return -1
 }
+
+// El sentido que ya dice el tipo. Se guarda antes de pasar un movimiento a
+// neutro, que es justo cuando el tipo deja de decirlo: un ingreso marcado como
+// neutro sin esto empezaba a restar.
+export const sentidoPorTipo = (tipo) =>
+  tipo === 'ingreso' ? 'entra' : tipo === 'gasto' ? 'sale' : null
+
+// De qué lado del extracto bancario está un movimiento, según lo que devolvió la
+// IA ANTES de que la app lo pase a neutro (por alias, por ser un cambio de
+// moneda, etc.). De un neutro el tipo no dice nada: solo se confía en
+// es_credito cuando dice que entró, porque false es su valor por defecto y no
+// prueba que haya salido.
+export const sentidoDelExtracto = (t) =>
+  sentidoPorTipo(t?.tipo) || (t?.es_credito === true ? 'entra' : null)
 
 // ¿Este movimiento afecta el saldo de esta cuenta?
 //

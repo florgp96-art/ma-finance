@@ -5,11 +5,15 @@ import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithC
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
 import { filtrarYaCargados } from '../lib/duplicados'
+import { sentidoDelExtracto } from '../lib/saldos'
+import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
+import { hayColumnaSentido } from '../lib/columnaSentido'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
+import CambioMoneda from '../components/CambioMoneda'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
@@ -1883,7 +1887,10 @@ export default function Dashboard() {
       // Re-aplica reglas/alias por código (no depende de que la IA haya obedecido el prompt),
       // así las reglas que el cliente ya creó se usan solas en cada resumen nuevo.
       if (result?.transacciones) {
-        result.transacciones = aplicarReglasYAlias(result.transacciones, rules, userAliases)
+        // El sentido se anota ANTES de los alias: un alias "neutro" pisa el tipo, y
+        // con él se perdía si la plata había entrado o salido (ver sentidoDelExtracto).
+        result.transacciones = aplicarReglasYAlias(
+          result.transacciones.map(t => ({ ...t, sentido: sentidoDelExtracto(t) })), rules, userAliases)
         const { validas, omitidas } = sanitizarTxImport(result.transacciones)
         result.transacciones = validas
         if (omitidas > 0) showToast(`Se omitieron ${omitidas} movimiento(s) con fecha o monto ilegible.`, 'warning')
@@ -2413,6 +2420,11 @@ export default function Dashboard() {
         return null
       }
 
+      // Cada movimiento del extracto guarda de qué lado estaba (`sentido`), así un
+      // neutro sabe si la plata entró o salió aunque el texto no lo diga. Sin la
+      // columna en la base se importa como antes (ver hayColumnaSentido).
+      const conSentido = await hayColumnaSentido()
+
       statementData.transacciones.forEach((t, i) => {
         if (!pdfTxSelections.has(i)) return
         const categoryId = getCategoryId(t.categoria_sugerida)
@@ -2420,7 +2432,16 @@ export default function Dashboard() {
         const detalleTxLower = ((t.nombre_original || '') + ' ' + (t.nombre_limpio || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
         const esDevolucion = detalleTxLower.includes('devoluci') || detalleTxLower.includes('dev.imp') || detalleTxLower.includes('reintegro') || detalleTxLower.includes('acreditacion') || detalleTxLower.includes('acreditación')
         const esNeutroAuto = detalleTxLower.includes('conversion a eur') || detalleTxLower.includes('conversion a usd') || detalleTxLower.includes('fondeo') || detalleTxLower.includes('repatriaci') || detalleTxLower.includes('transferencia entre cuenta') || (t.es_credito && contextoNames.some(n => detalleTxLower.includes(n)))
-        const tipoTx = esNeutroAuto ? 'neutro' : esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
+        // Vender o comprar moneda no es gasto ni ingreso: es la misma plata en otra
+        // moneda. Solo con `sentido`: sin él, la pata que recibe los pesos se restaría.
+        const esCambioDeMoneda = conSentido && pareceCambioDeMoneda(detalleTxLower)
+        const tipoTx = esNeutroAuto || esCambioDeMoneda ? 'neutro' : esDevolucion ? 'ingreso' : (t.tipo || (t.es_credito ? 'ingreso' : 'gasto'))
+        // Gasto e ingreso ya dicen su sentido; el de un neutro es el que traía el
+        // extracto antes de volverse neutro (anotado al leerlo, ver handleUploadPDF).
+        const sentidoTx = tipoTx === 'ingreso' ? 'entra'
+          : tipoTx !== 'neutro' ? 'sale'
+          : (t.sentido !== undefined ? t.sentido : sentidoDelExtracto(t))
+        const campoSentido = conSentido && sentidoTx ? { sentido: sentidoTx } : {}
         if (tipoTx === 'ingreso') {
           // Ingresos: van a la cuenta Ingresos principal, usan tag para categoría
           const histMatch = matchIngresoHistorial(t.nombre_original)
@@ -2440,6 +2461,7 @@ export default function Dashboard() {
             estado: 'identificado', es_manual: false,
             account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: 'ingreso',
             fx_rate: (t.moneda || 'ARS') === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
+            ...campoSentido,
           })
         } else if (tipoTx !== 'ingreso') {
           txEgresos.push({
@@ -2454,7 +2476,8 @@ export default function Dashboard() {
             child_id: getHijoId(t.hijo),
             estado: yaIdentificado({ ...t, tipo: tipoTx }) ? 'identificado' : 'a_identificar',
             es_manual: false,
-            account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto'
+            account_id: cuentaEgresos.id, statement_id: stmtEgresos.id, tipo: tipoTx === 'neutro' ? 'neutro' : 'gasto',
+            ...campoSentido,
           })
         }
       })
@@ -4861,7 +4884,7 @@ export default function Dashboard() {
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                         </div>
                         {(() => {
-                          const esPos = statementData?.tipo_documento === 'banco' ? t.tipo === 'ingreso' : t.es_credito
+                          const esPos = statementData?.tipo_documento === 'banco' ? (t.tipo === 'ingreso' || (t.tipo === 'neutro' && t.sentido === 'entra')) : t.es_credito
                           return (
                             <p style={{ ...styles.transactionMonto, color: esPos ? sem.positivo : undefined }}>
                               {esPos ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : t.moneda === 'EUR' ? '€' : '$'} {formatMonto(Math.abs(t.monto))}
@@ -5327,11 +5350,13 @@ export default function Dashboard() {
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '440px', width: '90%' }}>
             <h3 style={styles.modalTitle}>+ Cargar movimiento</h3>
-            <div style={{ display: 'flex', gap: '8px', margin: '-4px 0 16px 0' }}>
+            {/* Cuatro opciones no entran en una fila en el celular: van de a dos. */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '8px', margin: '-4px 0 16px 0' }}>
               {[
                 { v: 'gasto', label: '💸 Gasto' },
                 { v: 'ingreso', label: '💰 Ingreso' },
                 { v: 'neutro', label: '🔄 Neutro' },
+                { v: 'cambio', label: '💱 Cambio' },
               ].map(opt => (
                 <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '', cuenta: opt.v === 'ingreso' ? '' : (cuentaEfectivoId || '') })) }}
                   style={{
@@ -5347,6 +5372,16 @@ export default function Dashboard() {
               ))}
             </div>
 
+            {tipoMovimiento === 'cambio' ? (
+              <CambioMoneda accounts={accounts} styles={styles} darkMode={darkMode} sem={sem}
+                tipoCambio={tipoCambioEfectivo}
+                onCancelar={() => setShowMovimiento(false)}
+                onGuardado={() => {
+                  setShowMovimiento(false)
+                  setRefreshKey(k => k + 1)
+                  showToast('Cambio registrado.')
+                }} />
+            ) : (
             <form onSubmit={handleGuardarMovimiento}>
               <p style={{fontSize:'12px', color: darkMode ? '#9A8A9A' : '#75757a', margin:'0 0 16px 0'}}>Los campos con <span style={{color:sem.negativo}}>*</span> son obligatorios</p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
@@ -5474,6 +5509,7 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

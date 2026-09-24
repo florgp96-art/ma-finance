@@ -1,6 +1,6 @@
 const {
   signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
-  saldoTotal, tieneSaldo, monedaDeLaCuenta,
+  saldoTotal, tieneSaldo, monedaDeLaCuenta, sentidoPorTipo, sentidoDelExtracto,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -21,6 +21,40 @@ describe('signoEnSaldo', () => {
     expect(signoEnSaldo({ tipo: 'neutro', nombre: 'Constitución plazo fijo' })).toBe(-1)
     expect(signoEnSaldo({ tipo: 'neutro', nombre: 'Rescate FIMA Premium' })).toBe(1)
     expect(signoEnSaldo({ tipo: 'neutro', detalle: 'ACREDITACION PLAZO FIJO' })).toBe(1)
+  })
+
+  // El extracto escribe lo mismo en las dos cuentas de una venta de dólares: por el
+  // texto, la cuenta que recibe los pesos restaba.
+  test('un neutro con sentido le gana al texto', () => {
+    expect(signoEnSaldo({ tipo: 'neutro', detalle: 'VENTA MONEDA EXTRANJERA', sentido: 'entra' })).toBe(1)
+    expect(signoEnSaldo({ tipo: 'neutro', detalle: 'VENTA MONEDA EXTRANJERA', sentido: 'sale' })).toBe(-1)
+    expect(signoEnSaldo({ tipo: 'neutro', detalle: 'DEPOSITO A PLAZO FIJO', sentido: 'sale' })).toBe(-1)
+  })
+
+  test('sin sentido, un neutro se sigue decidiendo por el texto', () => {
+    expect(signoEnSaldo({ tipo: 'neutro', detalle: 'VENTA MONEDA EXTRANJERA', sentido: null })).toBe(-1)
+  })
+
+  test('el sentido no cambia un gasto ni un ingreso', () => {
+    expect(signoEnSaldo({ tipo: 'gasto', sentido: 'entra' })).toBe(-1)
+    expect(signoEnSaldo({ tipo: 'ingreso', sentido: 'sale' })).toBe(1)
+  })
+})
+
+describe('sentido de un movimiento', () => {
+  test('el tipo lo dice para gasto e ingreso, no para un neutro', () => {
+    expect(sentidoPorTipo('ingreso')).toBe('entra')
+    expect(sentidoPorTipo('gasto')).toBe('sale')
+    expect(sentidoPorTipo('neutro')).toBe(null)
+  })
+
+  test('del extracto: un neutro solo entra si la IA dijo que es un crédito', () => {
+    expect(sentidoDelExtracto({ tipo: 'ingreso' })).toBe('entra')
+    expect(sentidoDelExtracto({ tipo: 'gasto', es_credito: true })).toBe('sale')
+    expect(sentidoDelExtracto({ tipo: 'neutro', es_credito: true })).toBe('entra')
+    // false es el valor por defecto: no prueba que la plata haya salido.
+    expect(sentidoDelExtracto({ tipo: 'neutro', es_credito: false })).toBe(null)
+    expect(sentidoDelExtracto(null)).toBe(null)
   })
 })
 
