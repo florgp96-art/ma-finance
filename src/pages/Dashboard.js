@@ -4454,9 +4454,12 @@ export default function Dashboard() {
           <div style={{ ...styles.modal, maxWidth: '520px', width: '92%' }}>
             <h3 style={styles.modalTitle}>🤝 Reparto entre socios</h3>
             <RepartoSocios config={repartoSocios} accounts={accounts} userId={currentUserId}
+              // Siempre blue y euro, promedio entre compra y venta (así los guarda
+              // fetchDolarRates). Si la consulta en vivo falló, el del mes en la
+              // base; nunca el tipo de dólar elegido en "Monedas", que puede ser otro.
               cotizacionesVivas={{
-                USD: dolarRates.blue || parseFloat(tipoCambio) || null,
-                EUR: dolarRates.eur || parseFloat(tipoCambioEUR) || null,
+                USD: dolarRates.blue || exchangeRates.find(x => x.tipo === 'blue' && x.periodo === new Date().toISOString().slice(0, 7))?.valor || null,
+                EUR: dolarRates.eur || exchangeRates.find(x => x.tipo === 'euro' && x.periodo === new Date().toISOString().slice(0, 7))?.valor || null,
               }}
               refreshKey={refreshKey} styles={styles} darkMode={darkMode} sem={sem}
               onCambiarConfig={(nueva) => { setRepartoSocios(nueva); persistPref('reparto_socios', nueva) }}

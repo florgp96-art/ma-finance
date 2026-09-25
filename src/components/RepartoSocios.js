@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { formatMonto } from '../lib/formato'
+import { formatMonto, formatFecha } from '../lib/formato'
 import { calcularReparto, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta } from '../lib/repartoSocios'
 
-const mesLocal = () => {
+const hoyLocal = () => {
   const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+const mesLocal = () => hoyLocal().slice(0, 7)
 const NBSP = '\u00A0'
 const pesos = (n) => `$${NBSP}${formatMonto(Math.round(Math.abs(n)))}`
 const conSigno = (signo, n) => `${signo}${NBSP}${pesos(n)}`
@@ -20,26 +21,28 @@ const enMoneda = (monto, moneda = 'ARS') => {
 const listaDeNombres = (nombres) => nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}` : nombres.join('')
 
 // Calculadora del reparto entre socios (ver src/lib/repartoSocios.js). Lee los
-// movimientos del mes elegido; lo que no está en la base —las cotizaciones con
-// las que cierran y lo que ya se pasaron entre ellos— se guarda por mes en la
-// configuración, así la cuenta de un mes cerrado no cambia cuando se mueve el
-// dólar.
+// movimientos del mes elegido; lo que no está en la base —lo que ya se pasaron
+// entre ellos y la cotización con la que cerraron— se guarda por mes en la
+// configuración.
+//
+// La cotización no se elige: es el promedio entre compra y venta del blue para
+// el dólar y del euro (cotizacionesVivas, la misma que muestra "Monedas"). Queda
+// fija en el mes cuando se registra el primer pago: si siguiera la del día, un
+// mes ya pagado cambiaría con el dólar y aparecerían pagos nuevos de diferencia.
 function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizacionesVivas, refreshKey, styles, darkMode, sem, onCerrar }) {
   const [mes, setMes] = useState(mesLocal)
   const [movimientos, setMovimientos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
-  const [usdTxt, setUsdTxt] = useState('')
-  const [eurTxt, setEurTxt] = useState('')
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
 
   const delMes = config.meses?.[mes] || {}
   const transferencias = Array.isArray(delMes.transferencias) ? delMes.transferencias : []
 
-  // La cotización guardada del mes; si todavía no hay, la del día.
-  useEffect(() => { setUsdTxt(String(delMes.usd ?? cotizacionesVivas.USD ?? '')) }, [mes, delMes.usd, cotizacionesVivas.USD])
-  useEffect(() => { setEurTxt(String(delMes.eur ?? cotizacionesVivas.EUR ?? '')) }, [mes, delMes.eur, cotizacionesVivas.EUR])
+  // Las claves viejas `usd`/`eur` del mes (de cuando la cotización se escribía a
+  // mano) no se usan: la única cotización que cuenta es la fija o la del día.
+  const fija = delMes.cotizacionFija && typeof delMes.cotizacionFija === 'object' ? delMes.cotizacionFija : null
 
   useEffect(() => {
     const rango = rangoDelMes(mes)
@@ -58,7 +61,10 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     return () => { vigente = false }
   }, [mes, userId, refreshKey])
 
-  const cotizaciones = { USD: montoValido(usdTxt), EUR: montoValido(eurTxt) }
+  const cotizaciones = {
+    USD: montoValido(fija?.usd) || montoValido(cotizacionesVivas.USD),
+    EUR: montoValido(fija?.eur) || montoValido(cotizacionesVivas.EUR),
+  }
   const cuotas = Array.isArray(config.cuotas) ? config.cuotas : []
   const r = calcularReparto({ socios: config.socios, cuentas: accounts, movimientos, cotizaciones, transferencias, cuotas, mes })
 
@@ -99,18 +105,12 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const guardarMes = (cambios) => {
     onCambiarConfig({ ...config, meses: { ...config.meses, [mes]: { ...delMes, ...cambios } } })
   }
-  // Al registrar una transferencia se guardan también las cotizaciones en uso:
-  // desde ese momento el mes queda con las suyas, aunque el dólar se mueva.
-  const conCotizaciones = (cambios) => guardarMes({
-    ...(cotizaciones.USD ? { usd: cotizaciones.USD } : {}),
-    ...(cotizaciones.EUR ? { eur: cotizaciones.EUR } : {}),
+  // El primer pago que se registra en el mes deja fija la cotización de ese día.
+  const conCotizacionFija = (cambios) => guardarMes({
+    ...(fija ? {} : { cotizacionFija: { usd: cotizaciones.USD, eur: cotizaciones.EUR, fecha: hoyLocal() } }),
     ...cambios,
   })
-  const guardarCotizacion = (clave, txt) => {
-    const n = montoValido(txt)
-    if (n && n !== delMes[clave]) guardarMes({ [clave]: n })
-  }
-  const agregarTransferencia = (tr) => conCotizaciones({ transferencias: [...transferencias, tr] })
+  const agregarTransferencia = (tr) => conCotizacionFija({ transferencias: [...transferencias, tr] })
   const quitarTransferencia = (i) => guardarMes({ transferencias: transferencias.filter((_, k) => k !== i) })
 
   const errorNueva = nueva.de === nueva.a ? 'Elegí dos socios distintos.' : null
@@ -129,7 +129,6 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const rotulo = { fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 8px' }
   const fila = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, margin: '3px 0' }
   const botonChico = { background: 'none', border: `1px solid ${borde}`, borderRadius: '6px', color: txt, cursor: 'pointer', fontSize: '12px', padding: '4px 8px', whiteSpace: 'nowrap' }
-  const etiqueta = { ...styles.label, fontSize: '12px', marginBottom: '4px', minWidth: 0 }
   const flecha = { ...botonChico, fontSize: '20px', lineHeight: 1, padding: '6px 14px' }
 
   return (
@@ -144,15 +143,20 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
         <button type="button" style={flecha} aria-label="Mes siguiente" onClick={() => setMes(m => moverMes(m, 1))}>›</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '14px' }}>
-        <label style={etiqueta}>U$S 1 = $
-          <input style={styles.input} type="number" inputMode="decimal" min="0" step="0.01" value={usdTxt}
-            onChange={e => setUsdTxt(e.target.value)} onBlur={e => guardarCotizacion('usd', e.target.value)} />
-        </label>
-        <label style={etiqueta}>€ 1 = $
-          <input style={styles.input} type="number" inputMode="decimal" min="0" step="0.01" value={eurTxt}
-            onChange={e => setEurTxt(e.target.value)} onBlur={e => guardarCotizacion('eur', e.target.value)} />
-        </label>
+      <div style={{ ...caja, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '4px 10px' }}>
+        <div>
+          <p style={{ ...rotulo, margin: '0 0 2px' }}>Dólar blue</p>
+          <p style={{ fontSize: '16px', fontWeight: 600, color: txt, margin: 0 }}>{cotizaciones.USD ? pesos(cotizaciones.USD) : 'Sin cotización'}</p>
+        </div>
+        <div>
+          <p style={{ ...rotulo, margin: '0 0 2px' }}>Euro</p>
+          <p style={{ fontSize: '16px', fontWeight: 600, color: txt, margin: 0 }}>{cotizaciones.EUR ? pesos(cotizaciones.EUR) : 'Sin cotización'}</p>
+        </div>
+        <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: muted, margin: '6px 0 0' }}>
+          {fija
+            ? `Promedio entre compra y venta del ${formatFecha(fija.fecha)}: quedó fijo con el primer pago del mes.`
+            : 'Promedio entre compra y venta de hoy. Queda fijo cuando se registre el primer pago del mes.'}
+        </p>
       </div>
 
       {error && <p style={{ fontSize: '13px', color: sem.negativo, margin: '0 0 12px 0' }}>{error}</p>}
