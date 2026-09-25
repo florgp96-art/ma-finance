@@ -29,6 +29,10 @@ const listaDeNombres = (nombres) => nombres.length > 1 ? `${nombres.slice(0, -1)
 // el dólar y del euro (cotizacionesVivas, la misma que muestra "Monedas"). Queda
 // fija en el mes cuando se registra el primer pago: si siguiera la del día, un
 // mes ya pagado cambiaría con el dólar y aparecerían pagos nuevos de diferencia.
+//
+// La cotización se guarda DENTRO del pago que la fijó, no aparte en el mes: así,
+// si ese pago se borra (un "Hecho" tocado sin querer), el mes vuelve solo a la
+// cotización del día. Guardada aparte, borrar el pago la dejaba fija igual.
 function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizacionesVivas, refreshKey, styles, darkMode, sem, onCerrar }) {
   const [mes, setMes] = useState(mesLocal)
   const [movimientos, setMovimientos] = useState([])
@@ -40,9 +44,9 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const delMes = config.meses?.[mes] || {}
   const transferencias = Array.isArray(delMes.transferencias) ? delMes.transferencias : []
 
-  // Las claves viejas `usd`/`eur` del mes (de cuando la cotización se escribía a
-  // mano) no se usan: la única cotización que cuenta es la fija o la del día.
-  const fija = delMes.cotizacionFija && typeof delMes.cotizacionFija === 'object' ? delMes.cotizacionFija : null
+  // La fija es la del primer pago que tenga una. Las claves viejas del mes
+  // (`usd`/`eur` escritas a mano, `cotizacionFija` aparte) ya no se usan.
+  const fija = transferencias.map(t => t?.cotizacion).find(c => c && typeof c === 'object' && c.fecha) || null
 
   useEffect(() => {
     const rango = rangoDelMes(mes)
@@ -105,12 +109,13 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const guardarMes = (cambios) => {
     onCambiarConfig({ ...config, meses: { ...config.meses, [mes]: { ...delMes, ...cambios } } })
   }
-  // El primer pago que se registra en el mes deja fija la cotización de ese día.
-  const conCotizacionFija = (cambios) => guardarMes({
-    ...(fija ? {} : { cotizacionFija: { usd: cotizaciones.USD, eur: cotizaciones.EUR, fecha: hoyLocal() } }),
-    ...cambios,
+  // Cada pago guarda la cotización con la que se hizo (la fija si ya había una):
+  // el primero que quede es el que fija el mes.
+  const agregarTransferencia = (tr) => guardarMes({
+    transferencias: [...transferencias, {
+      ...tr, cotizacion: fija || { usd: cotizaciones.USD, eur: cotizaciones.EUR, fecha: hoyLocal() },
+    }],
   })
-  const agregarTransferencia = (tr) => conCotizacionFija({ transferencias: [...transferencias, tr] })
   const quitarTransferencia = (i) => guardarMes({ transferencias: transferencias.filter((_, k) => k !== i) })
 
   const errorNueva = nueva.de === nueva.a ? 'Elegí dos socios distintos.' : null
@@ -154,7 +159,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
         </div>
         <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: muted, margin: '6px 0 0' }}>
           {fija
-            ? `Promedio entre compra y venta del ${formatFecha(fija.fecha)}: quedó fijo con el primer pago del mes.`
+            ? `Promedio entre compra y venta del ${formatFecha(fija.fecha)}: quedó fijo con el primer pago del mes. Si se borra ese pago, vuelve a la de hoy.`
             : 'Promedio entre compra y venta de hoy. Queda fijo cuando se registre el primer pago del mes.'}
         </p>
       </div>

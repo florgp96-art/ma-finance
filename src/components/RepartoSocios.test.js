@@ -39,30 +39,32 @@ beforeEach(() => {
   ]
 })
 
-test('usa la cotización que quedó fija en el mes y dice quién le da a quién', async () => {
+test('usa la cotización del primer pago del mes y dice quién le da a quién', async () => {
   const hoy = new Date()
   const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
-  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { cotizacionFija: { usd: 1560, eur: 1700, fecha: `${mes}-10` } } } })
-  // Neto: 900.000 − 156.000 − 30.000 = 714.000 → 238.000 cada uno. Dol tiene los
-  // 900.000; Valen puso 156.000 y Flor 30.000 de su bolsillo.
+  const pago = { de: 'Dol', a: 'Valen', monto: 100000, cotizacion: { usd: 1560, eur: 1700, fecha: `${mes}-10` } }
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { transferencias: [pago] } } })
+  // Neto con el dólar a 1.560: 900.000 − 156.000 − 30.000 = 714.000 → 238.000 cada
+  // uno. Dol tiene 900.000 menos los 100.000 que ya le pasó a Valen; Valen puso
+  // 156.000 de su bolsillo y Flor 30.000.
   expect(await screen.findByText('$ 238.000')).toBeInTheDocument()
   expect(screen.getAllByText(/le da a/).map(el => el.textContent.replace(/\u00A0/g, ' '))).toEqual([
-    'Dol le da a Valen $ 394.000',
+    'Dol le da a Valen $ 294.000',
     'Dol le da a Flor $ 268.000',
   ])
+  expect(screen.getByText(/quedó fijo con el primer pago/)).toBeInTheDocument()
   expect(mockBase.consultas).toContainEqual(['eq', 'user_id', 'u1'])
 })
 
-test('"Hecho" guarda la transferencia junto con las cotizaciones en uso', async () => {
+test('"Hecho" guarda el pago con la cotización del día adentro', async () => {
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {} })
   const [primero] = await screen.findAllByRole('button', { name: 'Hecho' })
   fireEvent.click(primero)
-  const guardado = onCambiarConfig.mock.calls[0][0]
-  const [delMes] = Object.values(guardado.meses)
-  expect(delMes.cotizacionFija).toMatchObject({ usd: 1500, eur: 1700 })
-  expect(delMes.cotizacionFija.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  const [delMes] = Object.values(onCambiarConfig.mock.calls[0][0].meses)
   expect(delMes.transferencias).toHaveLength(1)
-  expect(delMes.transferencias[0]).toMatchObject({ de: 'Dol' })
+  expect(delMes.transferencias[0]).toMatchObject({ de: 'Dol', cotizacion: { usd: 1500, eur: 1700 } })
+  expect(delMes.transferencias[0].cotizacion.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(delMes).not.toHaveProperty('cotizacionFija')
 })
 
 test('las flechas cambian de mes y se leen los movimientos de ese mes', async () => {
@@ -92,10 +94,10 @@ test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó
   }])
 })
 
-test('la cotización no se edita: es la del día (promedio compra/venta) y la vieja cargada a mano no cuenta', async () => {
+test('la cotización no se edita: es la del día (promedio compra/venta) y las claves viejas no cuentan', async () => {
   const hoy = new Date()
   const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
-  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { usd: 1560, eur: 1750 } } })
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { usd: 1560, eur: 1750, cotizacionFija: { usd: 1600, eur: 1800, fecha: `${mes}-01` } } } })
   await screen.findAllByRole('button', { name: 'Hecho' })
   expect(screen.getByText('Dólar blue').nextSibling).toHaveTextContent('$ 1.500')
   expect(screen.getByText('Euro').nextSibling).toHaveTextContent('$ 1.700')
@@ -106,12 +108,33 @@ test('la cotización no se edita: es la del día (promedio compra/venta) y la vi
   expect(screen.getByText('$ 240.000')).toBeInTheDocument()
 })
 
-test('con la cotización ya fija, un pago nuevo no la cambia', async () => {
+test('con la cotización ya fija, un pago nuevo usa la misma', async () => {
   const hoy = new Date()
   const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
   const fija = { usd: 1560, eur: 1750, fecha: `${mes}-02` }
-  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { cotizacionFija: fija } } })
+  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { transferencias: [{ de: 'Dol', a: 'Flor', monto: 1000, cotizacion: fija }] } } })
   const [primero] = await screen.findAllByRole('button', { name: 'Hecho' })
   fireEvent.click(primero)
-  expect(Object.values(onCambiarConfig.mock.calls[0][0].meses)[0].cotizacionFija).toEqual(fija)
+  const { transferencias } = Object.values(onCambiarConfig.mock.calls[0][0].meses)[0]
+  expect(transferencias.map(t => t.cotizacion)).toEqual([fija, fija])
+})
+
+test('borrar el pago que fijó la cotización (un "Hecho" sin querer) la devuelve a la del día', async () => {
+  const hoy = new Date()
+  const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+  const onCambiarConfig = jest.fn()
+  const props = { onCambiarConfig, accounts: cuentas, userId: 'u1', cotizacionesVivas: { USD: 1500, EUR: 1700 },
+    refreshKey: 0, styles, darkMode: false, sem, onCerrar: () => {} }
+  const conPago = { socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: {
+    transferencias: [{ de: 'Dol', a: 'Valen', monto: 1000, cotizacion: { usd: 1560, eur: 1750, fecha: `${mes}-02` } }] } } }
+  const { rerender } = render(<RepartoSocios config={conPago} {...props} />)
+  expect(await screen.findByText(/quedó fijo con el primer pago/)).toBeInTheDocument()
+  expect(screen.getByText('Dólar blue').nextSibling).toHaveTextContent('$ 1.560')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Quitar' }))
+  const sinPago = onCambiarConfig.mock.calls[0][0]
+  expect(Object.values(sinPago.meses)[0].transferencias).toEqual([])
+  rerender(<RepartoSocios config={sinPago} {...props} />)
+  expect(screen.getByText('Dólar blue').nextSibling).toHaveTextContent('$ 1.500')
+  expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
 })
