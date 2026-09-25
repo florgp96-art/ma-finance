@@ -4063,7 +4063,9 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                     </div>
                   ))}
                   {divider}
-                  <p style={styles.summaryLabel}>A cada uno</p>
+                  {/* Con trabajos por fuera, cada uno se lleva además su porción de esos
+                      trabajos: lo que es igual para todos es solo la parte común. */}
+                  <p style={styles.summaryLabel}>{Math.abs(rp.netoTrabajos) >= 1 ? 'Parte común' : 'A cada uno'}</p>
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>{rp.parte < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(rp.parte)))}</p>
                 </div>
               )

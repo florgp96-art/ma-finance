@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import RepartoSocios from './RepartoSocios'
 
 const mockBase = { movimientos: [], consultas: [] }
@@ -86,9 +86,10 @@ test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó
     { id: 'cc', account_id: 'rev', tipo: 'gasto', moneda: 'EUR', monto: 300, nombre: 'CapCut (anual)' },
   ]
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [] })
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Gasto' }), { target: { value: 'cc' } })
+  const selectGasto = await screen.findByRole('combobox', { name: 'Gasto' })
+  fireEvent.change(selectGasto, { target: { value: 'cc' } })
   fireEvent.change(screen.getByRole('spinbutton', { name: /por mes/ }), { target: { value: '25' } })
-  fireEvent.click(screen.getAllByRole('button', { name: 'Agregar' }).at(-1))
+  fireEvent.click(within(selectGasto.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].cuotas).toEqual([{
     movimientoId: 'cc', concepto: 'CapCut (anual)', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: mes, porMes: 25,
   }])
@@ -137,4 +138,20 @@ test('borrar el pago que fijó la cotización (un "Hecho" sin querer) la devuelv
   rerender(<RepartoSocios config={sinPago} {...props} />)
   expect(screen.getByText('Dólar blue').nextSibling).toHaveTextContent('$ 1.500')
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
+})
+
+test('un trabajo por fuera: quien lo hizo 50 % y los otros dos 25 % cada uno', async () => {
+  mockBase.movimientos = [
+    { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
+    { id: 'br', account_id: 'rev', tipo: 'ingreso', moneda: 'EUR', monto: 150, nombre: 'Classic Brunch Party' },
+  ]
+  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [] })
+  const select = await screen.findByRole('combobox', { name: 'Movimiento del trabajo' })
+  fireEvent.change(select, { target: { value: 'br' } })
+  expect(screen.getByText('Flor 25 % · Valen 50 % · Dol 25 %')).toBeInTheDocument()
+  fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
+  expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
+    movimientoId: 'br', concepto: 'Classic Brunch Party', socio: 'Valen',
+    porcentajes: { Flor: 25, Valen: 50, Dol: 25 },
+  }])
 })

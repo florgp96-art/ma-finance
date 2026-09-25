@@ -25,7 +25,8 @@ export const normalizarConfigReparto = (raw) => {
   if (socios.length < 2) return null
   const meses = raw.meses && typeof raw.meses === 'object' && !Array.isArray(raw.meses) ? raw.meses : {}
   const cuotas = Array.isArray(raw.cuotas) ? raw.cuotas.filter(c => c && typeof c === 'object') : []
-  return { socios, meses, cuotas }
+  const trabajos = Array.isArray(raw.trabajos) ? raw.trabajos.filter(t => t && typeof t === 'object') : []
+  return { socios, meses, cuotas, trabajos }
 }
 
 export const socioDeLaCuenta = (cuenta, socios) => {
@@ -112,6 +113,28 @@ export const cuotasDelMes = ({ cuotas, socios, mes }) => {
   return res
 }
 
+// TRABAJOS POR FUERA: un movimiento que no se reparte en partes iguales. El que
+// hizo el trabajo se queda con más (ej. 50 %) y el resto se divide entre los
+// demás; vale para el ingreso y para los gastos de ese trabajo. La plata la
+// sigue teniendo quien la cobró o la pagó: lo que cambia es a quién le toca.
+//
+// porcentajes: { socio: número }. No hace falta que sumen 100 (se normalizan);
+// null si no hay nada que repartir.
+export const fraccionesDeReparto = (porcentajes, socios) => {
+  if (!porcentajes || typeof porcentajes !== 'object') return null
+  const pares = (socios || []).map(s => [s, Number(porcentajes[s]) || 0]).filter(([, p]) => p > 0)
+  const total = pares.reduce((suma, [, p]) => suma + p, 0)
+  if (!(total > 0)) return null
+  return Object.fromEntries(pares.map(([s, p]) => [s, p / total]))
+}
+
+// El que hizo el trabajo se queda con `propio` % y el resto va parejo a los demás.
+export const porcentajesTrabajo = (socio, socios, propio = 50) => {
+  const otros = (socios || []).filter(s => s !== socio)
+  const p = Math.min(100, Math.max(0, Number(propio) || 0))
+  return Object.fromEntries((socios || []).map(s => [s, s === socio ? p : (otros.length ? (100 - p) / otros.length : 0)]))
+}
+
 // Quién le da cuánto a quién para que todos queden con su parte. El que más
 // tiene de más le paga primero al que más le falta: en el caso común (uno tiene
 // la plata, los demás pusieron de su bolsillo) salen las menos transferencias.
@@ -139,10 +162,17 @@ const saldarDiferencias = (porSocio) => {
 // transferencias: lo que los socios ya se pasaron entre ellos ese mes.
 // cuotas + mes: los gastos que se devuelven en cuotas (ver cuotasDelMes). El
 // movimiento original no entra en su mes; entra la cuota que toca en `mes`.
-export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes }) => {
+// trabajos: los movimientos que se reparten con sus propios porcentajes (ver
+// fraccionesDeReparto); no entran en la parte común.
+export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos }) => {
   const lista = [...new Set((socios || []).map(s => String(s || '').trim()).filter(Boolean))]
   const cuentaPorId = new Map((cuentas || []).map(c => [c.id, c]))
-  const base = Object.fromEntries(lista.map(s => [s, { socio: s, cobro: 0, pago: 0, transferencias: 0, cuotas: 0 }]))
+  const base = Object.fromEntries(lista.map(s => [s, { socio: s, cobro: 0, pago: 0, transferencias: 0, cuotas: 0, trabajos: 0 }]))
+  const fraccionesPorId = new Map((trabajos || [])
+    .map(tb => [tb?.movimientoId, fraccionesDeReparto(tb?.porcentajes, lista)])
+    .filter(([id, fracciones]) => id && fracciones))
+  let ingresosComunes = 0
+  let gastosComunes = 0
   const sinSocio = new Set()
   const sinCotizacion = new Set()
   const enCuotas = new Set((cuotas || []).map(c => c?.movimientoId).filter(Boolean))
@@ -162,6 +192,12 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     if (!socio) { sinSocio.add(cuenta?.nombre || 'Cuenta borrada'); continue }
     if (t.tipo === 'ingreso') base[socio].cobro += pesos
     else base[socio].pago += pesos
+    const fracciones = fraccionesPorId.get(t.id)
+    if (fracciones) {
+      const signo = t.tipo === 'ingreso' ? 1 : -1
+      for (const [s, f] of Object.entries(fracciones)) base[s].trabajos += signo * pesos * f
+    } else if (t.tipo === 'ingreso') ingresosComunes += pesos
+    else gastosComunes += pesos
   }
 
   for (const tr of transferencias || []) {
@@ -183,18 +219,23 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   const ingresos = filas.reduce((s, f) => s + f.cobro, 0)
   const gastos = filas.reduce((s, f) => s + f.pago, 0)
   const neto = ingresos - gastos
-  const parte = lista.length ? neto / lista.length : 0
-  // Lo que le toca a cada uno es su parte más (o menos) las cuotas del mes: el
-  // que devuelve termina con menos, el que adelantó el gasto con más.
+  const netoTrabajos = neto - (ingresosComunes - gastosComunes)
+  // La parte común es la misma para todos; los trabajos por fuera se reparten aparte.
+  const parte = lista.length ? (ingresosComunes - gastosComunes) / lista.length : 0
+  // Lo que le toca a cada uno: la parte común, más o menos las cuotas del mes (el
+  // que devuelve termina con menos, el que adelantó el gasto con más), más su
+  // porción de los trabajos por fuera.
   const porSocio = filas.map(f => {
     const tiene = f.cobro - f.pago + f.transferencias
-    return { ...f, tiene, diferencia: tiene - (parte + f.cuotas) }
+    const leToca = parte + f.cuotas + f.trabajos
+    return { ...f, tiene, leToca, diferencia: tiene - leToca }
   })
 
   return {
     ingresos,
     gastos,
     neto,
+    netoTrabajos,
     parte,
     porSocio,
     pagos: saldarDiferencias(porSocio),
@@ -224,8 +265,9 @@ export const repartoDelMes = ({ config, mes, movimientos, cuentas, cotizacionesV
     EUR: montoValido(fija?.eur) || montoValido(cotizacionesVivas?.EUR),
   }
   const cuotas = Array.isArray(config?.cuotas) ? config.cuotas : []
+  const trabajos = Array.isArray(config?.trabajos) ? config.trabajos : []
   return {
-    ...calcularReparto({ socios: config?.socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes }),
+    ...calcularReparto({ socios: config?.socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos }),
     fija,
     cotizaciones,
     transferencias,
@@ -236,17 +278,21 @@ export const repartoDelMes = ({ config, mes, movimientos, cuentas, cotizacionesV
 // cotización, sus pagos y sus cuotas, y después se suma lo de cada socio.
 export const repartoDelPeriodo = ({ config, meses, movimientos, cuentas, cotizacionesVivas }) => {
   const socios = config?.socios || []
-  const porSocio = new Map(socios.map(s => [s, { socio: s, tiene: 0, diferencia: 0 }]))
+  const porSocio = new Map(socios.map(s => [s, { socio: s, tiene: 0, leToca: 0, trabajos: 0, diferencia: 0 }]))
   let parte = 0
+  let netoTrabajos = 0
   for (const mes of meses || []) {
     const delMes = (movimientos || []).filter(t => String(t.fecha || '').startsWith(mes))
     const r = repartoDelMes({ config, mes, movimientos: delMes, cuentas, cotizacionesVivas })
     parte += r.parte
+    netoTrabajos += r.netoTrabajos
     for (const s of r.porSocio) {
       const acumulado = porSocio.get(s.socio)
       acumulado.tiene += s.tiene
+      acumulado.leToca += s.leToca
+      acumulado.trabajos += s.trabajos
       acumulado.diferencia += s.diferencia
     }
   }
-  return { parte, porSocio: [...porSocio.values()] }
+  return { parte, netoTrabajos, porSocio: [...porSocio.values()] }
 }

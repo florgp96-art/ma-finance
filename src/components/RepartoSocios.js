@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto, formatFecha } from '../lib/formato'
-import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta } from '../lib/repartoSocios'
+import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo } from '../lib/repartoSocios'
 
 const hoyLocal = () => {
   const d = new Date()
@@ -40,6 +40,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [error, setError] = useState(null)
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
+  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', propio: '50' })
 
   const delMes = config.meses?.[mes] || {}
 
@@ -64,14 +65,18 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const r = repartoDelMes({ config, mes, movimientos, cuentas: accounts, cotizacionesVivas })
   const { fija, cotizaciones, transferencias } = r
 
-  // Gastos de este mes que se pueden pasar a cuotas: los que pagó un socio y
-  // todavía no están en cuotas.
+  const trabajos = Array.isArray(config.trabajos) ? config.trabajos : []
+
+  // Movimientos de este mes de algún socio. Un gasto se puede pasar a cuotas, y un
+  // ingreso o gasto a "trabajo por fuera", pero no las dos cosas a la vez.
   const enCuotas = new Set(cuotas.map(c => c.movimientoId))
+  const enTrabajos = new Set(trabajos.map(t => t.movimientoId))
   const cuentaPorId = new Map((accounts || []).map(a => [a.id, a]))
-  const gastosParaCuotas = movimientos
-    .filter(t => t.tipo === 'gasto' && !enCuotas.has(t.id))
+  const deSocios = movimientos
+    .filter(t => (t.tipo === 'gasto' || t.tipo === 'ingreso') && !enCuotas.has(t.id) && !enTrabajos.has(t.id))
     .map(t => ({ ...t, socio: socioDeLaCuenta(cuentaPorId.get(t.account_id), config.socios) }))
     .filter(t => t.socio)
+  const gastosParaCuotas = deSocios.filter(t => t.tipo === 'gasto')
   const gastoElegido = gastosParaCuotas.find(t => t.id === nuevaCuota.movimientoId)
   const guardarCuotas = (lista) => onCambiarConfig({ ...config, cuotas: lista })
   const agregarCuota = (e) => {
@@ -89,6 +94,32 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     }])
     setNuevaCuota({ movimientoId: '', porMes: '' })
   }
+  // Trabajos por fuera: quien lo hizo (el dueño de la cuenta) se queda con
+  // `propio` % y el resto va parejo a los demás.
+  const trabajoElegido = deSocios.find(t => t.id === nuevoTrabajo.movimientoId)
+  const propioValido = Number(nuevoTrabajo.propio) >= 0 && Number(nuevoTrabajo.propio) <= 100 && nuevoTrabajo.propio !== ''
+  const guardarTrabajos = (lista) => onCambiarConfig({ ...config, trabajos: lista })
+  const agregarTrabajo = (e) => {
+    e.preventDefault()
+    if (!trabajoElegido || !propioValido) return
+    guardarTrabajos([...trabajos, {
+      movimientoId: trabajoElegido.id,
+      concepto: trabajoElegido.nombre || (trabajoElegido.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
+      socio: trabajoElegido.socio,
+      porcentajes: porcentajesTrabajo(trabajoElegido.socio, config.socios, Number(nuevoTrabajo.propio)),
+    }])
+    setNuevoTrabajo(n => ({ ...n, movimientoId: '' }))
+  }
+  const movimientoPorId = new Map(movimientos.map(t => [t.id, t]))
+  const trabajosDelMes = trabajos
+    .map((t, i) => ({ ...t, indice: i, movimiento: movimientoPorId.get(t.movimientoId) }))
+    .filter(t => t.movimiento)
+  const textoPorcentajes = (porcentajes) => config.socios
+    .filter(s => Number(porcentajes?.[s]) > 0)
+    .map(s => `${s} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(Number(porcentajes[s]))} %`)
+    .join(' · ')
+  const hayTrabajos = Math.abs(r.netoTrabajos) >= 1
+
   const estadoDeCuota = (c) => {
     const delMes = cuotasDelMes({ cuotas: [c], socios: config.socios, mes })
     if (delMes.length) {
@@ -177,8 +208,11 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             <div style={fila}><span>Ingresos</span><span>{pesos(r.ingresos)}</span></div>
             <div style={fila}><span>Gastos</span><span>{conSigno('−', r.gastos)}</span></div>
             <div style={fila}><span>Neto</span><span>{r.neto < 0 ? conSigno('−', r.neto) : pesos(r.neto)}</span></div>
+            {hayTrabajos && (
+              <div style={{ ...fila, color: muted }}><span>De trabajos por fuera (va aparte)</span><span>{r.netoTrabajos < 0 ? conSigno('−', r.netoTrabajos) : pesos(r.netoTrabajos)}</span></div>
+            )}
             <div style={{ ...fila, marginTop: '8px', fontSize: '15px', fontWeight: 700 }}>
-              <span>A cada uno</span><span>{r.parte < 0 ? conSigno('−', r.parte) : pesos(r.parte)}</span>
+              <span>{hayTrabajos ? 'Parte común, a cada uno' : 'A cada uno'}</span><span>{r.parte < 0 ? conSigno('−', r.parte) : pesos(r.parte)}</span>
             </div>
           </div>
 
@@ -193,7 +227,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   </span>
                 </div>
                 <div style={{ ...fila, color: muted, fontSize: '12px' }}>
-                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}` : ''}{Math.abs(s.cuotas) >= 1 ? ` · Cuotas ${conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}` : ''}</span>
+                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}` : ''}{Math.abs(s.cuotas) >= 1 ? ` · Cuotas ${conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}` : ''}{Math.abs(s.trabajos) >= 1 ? ` · Trabajos por fuera ${conSigno(s.trabajos > 0 ? '+' : '−', s.trabajos)}` : ''}</span>
                 </div>
               </div>
             ))}
@@ -264,6 +298,46 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   onChange={e => setNuevaCuota(n => ({ ...n, porMes: e.target.value }))} />
                 <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
                   disabled={!gastoElegido || !montoValido(nuevaCuota.porMes)}>Agregar</button>
+              </form>
+            )}
+          </div>
+
+          <div style={caja}>
+            <p style={rotulo}>Trabajos por fuera</p>
+            <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
+              Un trabajo que hizo uno solo: se queda con una parte y el resto va parejo a los demás. Se marca el ingreso y también sus gastos.
+            </p>
+            {trabajosDelMes.map(t => (
+              <div key={t.movimientoId} style={{ ...fila, alignItems: 'flex-start' }}>
+                <span>
+                  <strong>{t.concepto}</strong> · {t.movimiento.tipo === 'ingreso' ? 'cobró' : 'pagó'} {t.socio} {enMoneda(Math.abs(Number(t.movimiento.monto) || 0), t.movimiento.moneda || 'ARS')}
+                  <br /><span style={{ fontSize: '12px', color: muted }}>{textoPorcentajes(t.porcentajes)}</span>
+                </span>
+                <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label={`Quitar ${t.concepto}`}
+                  onClick={() => guardarTrabajos(trabajos.filter((_, k) => k !== t.indice))}>×</button>
+              </div>
+            ))}
+            {deSocios.length > 0 && (
+              <form onSubmit={agregarTrabajo} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginTop: '10px' }}>
+                <select style={{ ...styles.input, gridColumn: '1 / -1' }} value={nuevoTrabajo.movimientoId} aria-label="Movimiento del trabajo"
+                  onChange={e => setNuevoTrabajo(n => ({ ...n, movimientoId: e.target.value }))}>
+                  <option value="">— Elegí un movimiento del mes —</option>
+                  {deSocios.map((t, i) => (
+                    <option key={t.id ?? i} value={t.id ?? ''} disabled={!t.id}>
+                      {t.tipo === 'ingreso' ? '＋' : '−'} {t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto')} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda || 'ARS')}
+                    </option>
+                  ))}
+                </select>
+                <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1" value={nuevoTrabajo.propio}
+                  aria-label="Porcentaje para quien hizo el trabajo" placeholder="% propio"
+                  onChange={e => setNuevoTrabajo(n => ({ ...n, propio: e.target.value }))} />
+                <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
+                  disabled={!trabajoElegido || !propioValido}>Agregar</button>
+                <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: muted, margin: 0 }}>
+                  {trabajoElegido && propioValido
+                    ? textoPorcentajes(porcentajesTrabajo(trabajoElegido.socio, config.socios, Number(nuevoTrabajo.propio)))
+                    : '% para quien lo hizo; el resto va parejo a los demás.'}
+                </p>
               </form>
             )}
           </div>
