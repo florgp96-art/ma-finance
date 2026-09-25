@@ -1,5 +1,6 @@
 const {
   calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes, cuotasDelMes,
+  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -165,5 +166,51 @@ describe('gastos que se devuelven en cuotas', () => {
 
   test('ignora cuotas rotas en vez de romper la cuenta', () => {
     expect(cuotasDelMes({ cuotas: [{ ...capcut, pagoDe: 'Nadie' }, { ...capcut, porMes: 0 }, null], socios, mes: '2026-09' })).toEqual([])
+  })
+})
+
+describe('repartoDelMes y repartoDelPeriodo (calculadora y tarjeta "Socios")', () => {
+  const conFecha = (t, fecha) => ({ ...t, fecha })
+  const config = {
+    socios,
+    cuotas: [capcut],
+    meses: { '2026-09': { usd: 9999, transferencias } },
+  }
+
+  test('la cotización fija es la del primer pago que la tenga; las claves viejas no cuentan', () => {
+    expect(cotizacionFijaDelMes({ usd: 9999, cotizacionFija: { usd: 1, fecha: '2026-09-01' }, transferencias })).toBe(null)
+    const fija = { usd: 1560, eur: 1750, fecha: '2026-09-26' }
+    expect(cotizacionFijaDelMes({ transferencias: [...transferencias, { de: 'Dol', a: 'Flor', monto: 1, cotizacion: fija }] })).toEqual(fija)
+  })
+
+  test('un mes desde la configuración da lo mismo que la calculadora a mano', () => {
+    const r = repartoDelMes({ config, mes: '2026-09', movimientos: septiembre, cuentas, cotizacionesVivas: { USD: 1560, EUR: 1750 } })
+    expect(r.fija).toBe(null)
+    expect(r.cotizaciones).toEqual({ USD: 1560, EUR: 1750 })
+    expect(r.pagos).toEqual([
+      { de: 'Dol', a: 'Valen', monto: 799349 },
+      { de: 'Dol', a: 'Flor', monto: 401876 },
+    ])
+  })
+
+  test('el período suma mes por mes, cada uno con sus pagos y sus cuotas', () => {
+    const octubre = [mov('efe', 'ingreso', 300000)]
+    const movimientos = [
+      ...septiembre.map(t => conFecha(t, '2026-09-01')),
+      ...octubre.map(t => conFecha(t, '2026-10-05')),
+    ]
+    const vivas = { USD: 1560, EUR: 1750 }
+    const sep = repartoDelMes({ config, mes: '2026-09', movimientos: movimientos.filter(t => t.fecha.startsWith('2026-09')), cuentas, cotizacionesVivas: vivas })
+    const oct = repartoDelMes({ config, mes: '2026-10', movimientos: movimientos.filter(t => t.fecha.startsWith('2026-10')), cuentas, cotizacionesVivas: vivas })
+    const r = repartoDelPeriodo({ config, meses: ['2026-09', '2026-10'], movimientos, cuentas, cotizacionesVivas: vivas })
+    expect(r.parte).toBeCloseTo(sep.parte + oct.parte, 2)
+    for (const s of r.porSocio) {
+      const enSep = sep.porSocio.find(x => x.socio === s.socio)
+      const enOct = oct.porSocio.find(x => x.socio === s.socio)
+      expect(s.tiene).toBeCloseTo(enSep.tiene + enOct.tiene, 2)
+      expect(s.diferencia).toBeCloseTo(enSep.diferencia + enOct.diferencia, 2)
+    }
+    // En octubre corre la cuota 2 de 8 de CapCut (Flor y Dol).
+    expect(oct.cuotas.map(c => c.numero)).toEqual([2, 2])
   })
 })

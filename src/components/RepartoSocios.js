@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto, formatFecha } from '../lib/formato'
-import { calcularReparto, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta } from '../lib/repartoSocios'
+import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta } from '../lib/repartoSocios'
 
 const hoyLocal = () => {
   const d = new Date()
@@ -42,11 +42,6 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
 
   const delMes = config.meses?.[mes] || {}
-  const transferencias = Array.isArray(delMes.transferencias) ? delMes.transferencias : []
-
-  // La fija es la del primer pago que tenga una. Las claves viejas del mes
-  // (`usd`/`eur` escritas a mano, `cotizacionFija` aparte) ya no se usan.
-  const fija = transferencias.map(t => t?.cotizacion).find(c => c && typeof c === 'object' && c.fecha) || null
 
   useEffect(() => {
     const rango = rangoDelMes(mes)
@@ -65,12 +60,9 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     return () => { vigente = false }
   }, [mes, userId, refreshKey])
 
-  const cotizaciones = {
-    USD: montoValido(fija?.usd) || montoValido(cotizacionesVivas.USD),
-    EUR: montoValido(fija?.eur) || montoValido(cotizacionesVivas.EUR),
-  }
   const cuotas = Array.isArray(config.cuotas) ? config.cuotas : []
-  const r = calcularReparto({ socios: config.socios, cuentas: accounts, movimientos, cotizaciones, transferencias, cuotas, mes })
+  const r = repartoDelMes({ config, mes, movimientos, cuentas: accounts, cotizacionesVivas })
+  const { fija, cotizaciones, transferencias } = r
 
   // Gastos de este mes que se pueden pasar a cuotas: los que pagó un socio y
   // todavía no están en cuotas.

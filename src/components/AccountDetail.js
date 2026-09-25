@@ -8,6 +8,7 @@ import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
+import { repartoDelPeriodo } from '../lib/repartoSocios'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -809,7 +810,7 @@ export const getLast6Months = () => {
   return months
 }
 
-function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail }) {
+function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto }) {
   const [transactions, setTransactions] = useState([])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
@@ -907,7 +908,7 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [sortDir, setSortDir] = useState('desc')
   const [expandedSplits, setExpandedSplits] = useState(new Set())
   const [selectedMeses, setSelectedMeses] = useState([])
-const [equivEnUSD, setEquivEnUSD] = useState(false)
+const [equivMoneda, setEquivMoneda] = useState('ARS')
   const [showNeutros, setShowNeutros] = useState(false)
   // La tabla de movimientos se corta a los primeros MOVIMIENTOS_VISIBLES, con un
   // botón para ver el resto: con 100+ movimientos había que scrollear la lista
@@ -3863,6 +3864,15 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
         const ingresosEquivARS = totalesDeLista(mesTxs.filter(t => t.tipo === 'ingreso'), tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, { signed: false }).unificado
         const egresosEquivUSD = tcEfectivo > 0 ? totalUSD + (totalARS + totalEUR * tcEUR) / tcEfectivo : 0
         const ingresosEquivUSD = tcEfectivo > 0 ? totalIngresosUSD + (totalIngresosARS + totalIngresosEUR * tcEUR) / tcEfectivo : 0
+        const egresosEquivEUR = tcEUR > 0 ? totalEUR + (totalARS + totalUSD * tcEfectivo) / tcEUR : 0
+        const ingresosEquivEUR = tcEUR > 0 ? totalIngresosEUR + (totalIngresosARS + totalIngresosUSD * tcEfectivo) / tcEUR : 0
+        // Sin cotización del euro no hay equivalente en EUR: vuelve a pesos.
+        const monedaEquiv = equivMoneda === 'EUR' && !(tcEUR > 0) ? 'ARS' : equivMoneda
+        const equiv = {
+          ARS: { simbolo: '$', egresos: egresosEquivARS, ingresos: ingresosEquivARS },
+          USD: { simbolo: 'U$S', egresos: egresosEquivUSD, ingresos: ingresosEquivUSD },
+          EUR: { simbolo: '€', egresos: egresosEquivEUR, ingresos: ingresosEquivEUR },
+        }[monedaEquiv]
         return (
           <div className="summary-cards-wrap"><div className="summary-cards" style={styles.summaryCards}>
 
@@ -4008,41 +4018,56 @@ const [equivEnUSD, setEquivEnUSD] = useState(false)
               </div>
             )}
 
-            {/* Equiv con toggle ARS⇌USD */}
+            {/* Equiv con toggle ARS / USD / EUR */}
             {tcEfectivo > 0 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
                 <p style={{ ...styles.summaryLabel, marginBottom: '8px' }}>Equiv. totales</p>
                 <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${darkMode ? '#4A3F4A' : '#C8C0CC'}`, overflow: 'hidden', marginBottom: '10px' }}>
-                  {[{ v: false, label: 'ARS' }, { v: true, label: 'USD' }].map(opt => (
-                    <button key={opt.label} onClick={() => setEquivEnUSD(opt.v)}
-                      style={{ flex: 1, padding: '6px 0', border: 'none', background: equivEnUSD === opt.v ? '#5C4F5C' : 'transparent', color: equivEnUSD === opt.v ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
-                      {opt.label}
+                  {['ARS', 'USD', ...(tcEUR > 0 ? ['EUR'] : [])].map(m => (
+                    <button key={m} onClick={() => setEquivMoneda(m)}
+                      style={{ flex: 1, padding: '6px 0', border: 'none', background: monedaEquiv === m ? '#5C4F5C' : 'transparent', color: monedaEquiv === m ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                      {m}
                     </button>
                   ))}
                 </div>
-                {equivEnUSD ? <>
-                  <p style={styles.summaryLabel}>Egresos</p>
-                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>U$S {formatMonto(egresosEquivUSD)}</p>
-                  {hayIngresos && ingresosEquivUSD > 0 && <>{divider}
-                    <p style={styles.summaryLabel}>Ingresos</p>
-                    <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>U$S {formatMonto(ingresosEquivUSD)}</p>
-                    {divider}
-                    <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivUSD - egresosEquivUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}U$S {formatMonto(Math.abs(b))}</p> })()}
-                  </>}
-                </> : <>
-                  <p style={styles.summaryLabel}>Egresos</p>
-                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>$ {formatMonto(egresosEquivARS)}</p>
-                  {hayIngresos && ingresosEquivARS > 0 && <>{divider}
-                    <p style={styles.summaryLabel}>Ingresos</p>
-                    <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>$ {formatMonto(ingresosEquivARS)}</p>
-                    {divider}
-                    <p style={styles.summaryLabel}>Balance</p>
-                    {(() => { const b = ingresosEquivARS - egresosEquivARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}$ {formatMonto(Math.abs(b))}</p> })()}
-                  </>}
+                <p style={styles.summaryLabel}>Egresos</p>
+                <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>{equiv.simbolo} {formatMonto(equiv.egresos)}</p>
+                {hayIngresos && equiv.ingresos > 0 && <>{divider}
+                  <p style={styles.summaryLabel}>Ingresos</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>{equiv.simbolo} {formatMonto(equiv.ingresos)}</p>
+                  {divider}
+                  <p style={styles.summaryLabel}>Balance</p>
+                  {(() => { const b = equiv.ingresos - equiv.egresos; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : '−'}{equiv.simbolo} {formatMonto(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
+
+            {/* Socios: cuánto tiene cada uno en el período, con el mismo cálculo que
+                la calculadora "Reparto entre socios" (solo en las cuentas que la usan). */}
+            {allAccounts && repartoSocios && !esVistaIngresos && (() => {
+              const rp = repartoDelPeriodo({ config: repartoSocios, meses: selectedMeses, movimientos: mesTxs, cuentas: accounts, cotizacionesVivas: cotizacionesReparto })
+              const gris = darkMode ? '#9A8A9A' : '#6e6e73'
+              return (
+                <div style={styles.summaryCard}>
+                  <p style={styles.summaryLabel}>Socios</p>
+                  <p style={{ fontSize: '11px', color: gris, margin: '2px 0 0' }}>Lo que tiene cada uno</p>
+                  {rp.porSocio.map(sc => (
+                    <div key={sc.socio} style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>
+                        <span>{sc.socio}</span>
+                        <span style={{ fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{sc.tiene < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.tiene)))}</span>
+                      </div>
+                      <div style={{ fontSize: '11px', textAlign: 'right', color: sc.diferencia >= 1 ? sem.negativo : sc.diferencia <= -1 ? sem.positivo : gris }}>
+                        {sc.diferencia >= 1 ? `da $ ${formatMonto(Math.round(sc.diferencia))}` : sc.diferencia <= -1 ? `recibe $ ${formatMonto(Math.round(-sc.diferencia))}` : 'a mano'}
+                      </div>
+                    </div>
+                  ))}
+                  {divider}
+                  <p style={styles.summaryLabel}>A cada uno</p>
+                  <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>{rp.parte < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(rp.parte)))}</p>
+                </div>
+              )
+            })()}
 
           </div></div>
         )

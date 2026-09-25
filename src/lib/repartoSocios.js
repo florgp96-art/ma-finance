@@ -203,3 +203,50 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     sinCotizacion: [...sinCotizacion],
   }
 }
+
+// La cotización con la que cierra un mes: la del primer pago registrado, que la
+// lleva guardada adentro (si se borra ese pago, se borra con él). null si no hay.
+export const cotizacionFijaDelMes = (delMes) =>
+  (Array.isArray(delMes?.transferencias) ? delMes.transferencias : [])
+    .map(t => t?.cotizacion).find(c => c && typeof c === 'object' && c.fecha) || null
+
+// El reparto de un mes armado desde la configuración. Lo usan la calculadora y
+// la tarjeta "Socios" del resumen, así las dos dan siempre lo mismo.
+// cotizacionesVivas: las del día (promedio entre compra y venta del blue y del
+// euro), para los meses que todavía no tienen una fija. Las claves viejas del
+// mes (`usd`/`eur` escritas a mano, `cotizacionFija` aparte) no se usan.
+export const repartoDelMes = ({ config, mes, movimientos, cuentas, cotizacionesVivas }) => {
+  const delMes = config?.meses?.[mes] || {}
+  const transferencias = Array.isArray(delMes.transferencias) ? delMes.transferencias : []
+  const fija = cotizacionFijaDelMes(delMes)
+  const cotizaciones = {
+    USD: montoValido(fija?.usd) || montoValido(cotizacionesVivas?.USD),
+    EUR: montoValido(fija?.eur) || montoValido(cotizacionesVivas?.EUR),
+  }
+  const cuotas = Array.isArray(config?.cuotas) ? config.cuotas : []
+  return {
+    ...calcularReparto({ socios: config?.socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes }),
+    fija,
+    cotizaciones,
+    transferencias,
+  }
+}
+
+// Varios meses juntos (el período elegido en el resumen): cada mes con su
+// cotización, sus pagos y sus cuotas, y después se suma lo de cada socio.
+export const repartoDelPeriodo = ({ config, meses, movimientos, cuentas, cotizacionesVivas }) => {
+  const socios = config?.socios || []
+  const porSocio = new Map(socios.map(s => [s, { socio: s, tiene: 0, diferencia: 0 }]))
+  let parte = 0
+  for (const mes of meses || []) {
+    const delMes = (movimientos || []).filter(t => String(t.fecha || '').startsWith(mes))
+    const r = repartoDelMes({ config, mes, movimientos: delMes, cuentas, cotizacionesVivas })
+    parte += r.parte
+    for (const s of r.porSocio) {
+      const acumulado = porSocio.get(s.socio)
+      acumulado.tiene += s.tiene
+      acumulado.diferencia += s.diferencia
+    }
+  }
+  return { parte, porSocio: [...porSocio.values()] }
+}
