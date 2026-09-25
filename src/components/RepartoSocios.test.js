@@ -46,20 +46,31 @@ test('usa las cotizaciones guardadas del mes y dice quién le da a quién', asyn
   // Neto: 900.000 − 156.000 − 30.000 = 714.000 → 238.000 cada uno. Dol tiene los
   // 900.000; Valen puso 156.000 y Flor 30.000 de su bolsillo.
   expect(await screen.findByText('$ 238.000')).toBeInTheDocument()
-  expect(screen.getAllByText(/le da a/).map(el => el.textContent)).toEqual([
+  expect(screen.getAllByText(/le da a/).map(el => el.textContent.replace(/\u00A0/g, ' '))).toEqual([
     'Dol le da a Valen $ 394.000',
     'Dol le da a Flor $ 268.000',
   ])
   expect(mockBase.consultas).toContainEqual(['eq', 'user_id', 'u1'])
 })
 
-test('"Ya lo hice" guarda la transferencia junto con las cotizaciones en uso', async () => {
+test('"Hecho" guarda la transferencia junto con las cotizaciones en uso', async () => {
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {} })
-  const [primero] = await screen.findAllByRole('button', { name: 'Ya lo hice' })
+  const [primero] = await screen.findAllByRole('button', { name: 'Hecho' })
   fireEvent.click(primero)
   const guardado = onCambiarConfig.mock.calls[0][0]
   const [delMes] = Object.values(guardado.meses)
   expect(delMes).toMatchObject({ usd: 1500, eur: 1700 })
   expect(delMes.transferencias).toHaveLength(1)
   expect(delMes.transferencias[0]).toMatchObject({ de: 'Dol' })
+})
+
+test('las flechas cambian de mes y se leen los movimientos de ese mes', async () => {
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {} })
+  await screen.findAllByRole('button', { name: 'Hecho' })
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }))
+  const hoy = new Date()
+  const anterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+  const desde = `${anterior.getFullYear()}-${String(anterior.getMonth() + 1).padStart(2, '0')}-01`
+  await screen.findAllByRole('button', { name: 'Hecho' })
+  expect(mockBase.consultas).toContainEqual(['gte', 'fecha', desde])
 })

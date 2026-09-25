@@ -1,5 +1,5 @@
 const {
-  calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes,
+  calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -102,5 +102,18 @@ describe('rangoDelMes', () => {
     expect(rangoDelMes('2026-12')).toEqual({ desde: '2026-12-01', hasta: '2027-01-01' })
     expect(rangoDelMes('2026-13')).toBe(null)
     expect(rangoDelMes('')).toBe(null)
+  })
+})
+
+describe('moverMes y nombreDelMes', () => {
+  test('cruza el cambio de año para los dos lados', () => {
+    expect(moverMes('2026-09', -1)).toBe('2026-08')
+    expect(moverMes('2026-12', 1)).toBe('2027-01')
+    expect(moverMes('2027-01', -1)).toBe('2026-12')
+  })
+
+  test('el nombre sale en castellano', () => {
+    expect(nombreDelMes('2026-09')).toBe('Septiembre 2026')
+    expect(nombreDelMes('2027-01')).toBe('Enero 2027')
   })
 })
