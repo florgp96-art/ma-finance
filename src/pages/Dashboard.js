@@ -2820,6 +2820,15 @@ export default function Dashboard() {
   const txtSecundario = darkMode ? '#C0B0C0' : '#4a4a4f'
   const txtTerciario = darkMode ? '#9A8A9A' : '#6e6e73'
   const sem = semaforo(darkMode)
+  // Cotizaciones del reparto entre socios (calculadora y tarjeta "Socios" del
+  // resumen): siempre blue y euro, promedio entre compra y venta (así los guarda
+  // fetchDolarRates). Si la consulta en vivo falló, el del mes en la base; nunca
+  // el tipo de dólar elegido en "Monedas", que puede ser otro.
+  const mesCotizacion = new Date().toISOString().slice(0, 7)
+  const cotizacionesReparto = {
+    USD: dolarRates.blue || exchangeRates.find(x => x.tipo === 'blue' && x.periodo === mesCotizacion)?.valor || null,
+    EUR: dolarRates.eur || exchangeRates.find(x => x.tipo === 'euro' && x.periodo === mesCotizacion)?.valor || null,
+  }
 
   const isTablet = windowWidth >= 640 && windowWidth < 960
 
@@ -4146,7 +4155,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -4454,13 +4463,7 @@ export default function Dashboard() {
           <div style={{ ...styles.modal, maxWidth: '520px', width: '92%' }}>
             <h3 style={styles.modalTitle}>🤝 Reparto entre socios</h3>
             <RepartoSocios config={repartoSocios} accounts={accounts} userId={currentUserId}
-              // Siempre blue y euro, promedio entre compra y venta (así los guarda
-              // fetchDolarRates). Si la consulta en vivo falló, el del mes en la
-              // base; nunca el tipo de dólar elegido en "Monedas", que puede ser otro.
-              cotizacionesVivas={{
-                USD: dolarRates.blue || exchangeRates.find(x => x.tipo === 'blue' && x.periodo === new Date().toISOString().slice(0, 7))?.valor || null,
-                EUR: dolarRates.eur || exchangeRates.find(x => x.tipo === 'euro' && x.periodo === new Date().toISOString().slice(0, 7))?.valor || null,
-              }}
+              cotizacionesVivas={cotizacionesReparto}
               refreshKey={refreshKey} styles={styles} darkMode={darkMode} sem={sem}
               onCambiarConfig={(nueva) => { setRepartoSocios(nueva); persistPref('reparto_socios', nueva) }}
               onCerrar={() => setShowReparto(false)} />
