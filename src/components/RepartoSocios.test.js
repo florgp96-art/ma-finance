@@ -39,10 +39,10 @@ beforeEach(() => {
   ]
 })
 
-test('usa las cotizaciones guardadas del mes y dice quién le da a quién', async () => {
+test('usa la cotización que quedó fija en el mes y dice quién le da a quién', async () => {
   const hoy = new Date()
   const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
-  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { usd: 1560 } } })
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { cotizacionFija: { usd: 1560, eur: 1700, fecha: `${mes}-10` } } } })
   // Neto: 900.000 − 156.000 − 30.000 = 714.000 → 238.000 cada uno. Dol tiene los
   // 900.000; Valen puso 156.000 y Flor 30.000 de su bolsillo.
   expect(await screen.findByText('$ 238.000')).toBeInTheDocument()
@@ -59,7 +59,8 @@ test('"Hecho" guarda la transferencia junto con las cotizaciones en uso', async 
   fireEvent.click(primero)
   const guardado = onCambiarConfig.mock.calls[0][0]
   const [delMes] = Object.values(guardado.meses)
-  expect(delMes).toMatchObject({ usd: 1500, eur: 1700 })
+  expect(delMes.cotizacionFija).toMatchObject({ usd: 1500, eur: 1700 })
+  expect(delMes.cotizacionFija.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   expect(delMes.transferencias).toHaveLength(1)
   expect(delMes.transferencias[0]).toMatchObject({ de: 'Dol' })
 })
@@ -89,4 +90,28 @@ test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó
   expect(onCambiarConfig.mock.calls[0][0].cuotas).toEqual([{
     movimientoId: 'cc', concepto: 'CapCut (anual)', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: mes, porMes: 25,
   }])
+})
+
+test('la cotización no se edita: es la del día (promedio compra/venta) y la vieja cargada a mano no cuenta', async () => {
+  const hoy = new Date()
+  const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { usd: 1560, eur: 1750 } } })
+  await screen.findAllByRole('button', { name: 'Hecho' })
+  expect(screen.getByText('Dólar blue').nextSibling).toHaveTextContent('$ 1.500')
+  expect(screen.getByText('Euro').nextSibling).toHaveTextContent('$ 1.700')
+  expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
+  // Los únicos campos numéricos son los de montos (transferencias), no cotizaciones.
+  expect(screen.getAllByRole('spinbutton').map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
+  // Neto con el dólar a 1.500: 900.000 − 150.000 − 30.000 = 720.000 → 240.000 cada uno.
+  expect(screen.getByText('$ 240.000')).toBeInTheDocument()
+})
+
+test('con la cotización ya fija, un pago nuevo no la cambia', async () => {
+  const hoy = new Date()
+  const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+  const fija = { usd: 1560, eur: 1750, fecha: `${mes}-02` }
+  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: { [mes]: { cotizacionFija: fija } } })
+  const [primero] = await screen.findAllByRole('button', { name: 'Hecho' })
+  fireEvent.click(primero)
+  expect(Object.values(onCambiarConfig.mock.calls[0][0].meses)[0].cotizacionFija).toEqual(fija)
 })
