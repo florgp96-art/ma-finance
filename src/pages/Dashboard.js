@@ -3953,6 +3953,18 @@ export default function Dashboard() {
                     </div>
                   )}
 
+                  {/* Reparto entre socios (solo en las cuentas que lo usan): arriba de
+                      todo, como tarjeta. Antes era un botón en la zona fija de abajo,
+                      que en el celular le come lugar a la lista de cuentas. */}
+                  {repartoSocios && (
+                    <div role="button" tabIndex={0} style={{ ...styles.accountCard, textAlign: 'center', marginBottom: '8px' }}
+                      onClick={() => { setShowReparto(true); setSidebarOpen(false) }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowReparto(true); setSidebarOpen(false) } }}>
+                      <p style={{ ...styles.accountType, marginBottom: '4px' }}>🤝 SOCIOS</p>
+                      <p style={styles.accountName}>Reparto entre socios</p>
+                    </div>
+                  )}
+
                   {/* RESUMEN siempre visible */}
                   {accounts.length > 0 && (
                     <div style={{ ...styles.accountCard, ...(selectedAccount === 'all' ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px' }}
@@ -4049,12 +4061,6 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-
-              {repartoSocios && (
-                <button style={styles.sidebarBtnPrimary} onClick={() => { setShowReparto(true); setSidebarOpen(false) }}>
-                  🤝 Reparto entre socios
-                </button>
-              )}
 
               {/* Configuración colapsable — solo mobile (en desktop está en el header) */}
               {isMobile && (
