@@ -1,5 +1,5 @@
 const {
-  calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes,
+  calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes, cuotasDelMes,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -15,7 +15,7 @@ const mov = (account_id, tipo, monto, moneda = 'ARS') => ({ account_id, tipo, mo
 const septiembre = [
   mov('efe', 'ingreso', 600000), mov('efe', 'ingreso', 350000), mov('efe', 'ingreso', 500000),
   mov('mp', 'ingreso', 200000), mov('rev', 'ingreso', 215, 'EUR'),
-  mov('rev', 'gasto', 150, 'USD'), mov('rev', 'gasto', 20, 'USD'), mov('rev', 'gasto', 300, 'EUR'),
+  mov('rev', 'gasto', 150, 'USD'), mov('rev', 'gasto', 20, 'USD'), { ...mov('rev', 'gasto', 300, 'EUR'), id: 'capcut' },
   mov('mp', 'gasto', 14000), mov('mc', 'gasto', 14000),
   mov('mc', 'gasto', 9.99, 'USD'), mov('mc', 'gasto', 20, 'USD'), mov('mc', 'gasto', 10.46, 'USD'),
 ]
@@ -92,7 +92,7 @@ describe('normalizarConfigReparto', () => {
     expect(normalizarConfigReparto(null)).toBe(null)
     expect(normalizarConfigReparto('texto')).toBe(null)
     expect(normalizarConfigReparto({ socios: [' Flor ', 'Valen', 'Valen', ''] }))
-      .toEqual({ socios: ['Flor', 'Valen'], meses: {} })
+      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [] })
   })
 })
 
@@ -115,5 +115,55 @@ describe('moverMes y nombreDelMes', () => {
   test('el nombre sale en castellano', () => {
     expect(nombreDelMes('2026-09')).toBe('Septiembre 2026')
     expect(nombreDelMes('2027-01')).toBe('Enero 2027')
+  })
+})
+
+// CapCut: Valen pagó 300 € el 1/9. A cada uno le tocan 100 €; Flor y Dol se los
+// devuelven de a 25 € por mes entre los dos (12,50 € cada uno), 8 meses.
+const capcut = { movimientoId: 'capcut', concepto: 'CapCut', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: '2026-09', porMes: 25 }
+
+describe('gastos que se devuelven en cuotas', () => {
+  test('septiembre: CapCut no entra entero y Flor y Dol le devuelven su cuota a Valen', () => {
+    const r = calcularReparto({
+      socios, cuentas, movimientos: septiembre, transferencias, cotizaciones: { USD: 1560, EUR: 1750 },
+      cuotas: [capcut], mes: '2026-09',
+    })
+    expect(r.gastos).toBeCloseTo(356302, 2)
+    expect(r.parte).toBeCloseTo(556649.33, 2)
+    expect(r.cuotas.map(c => [c.de, c.a, c.monto, c.numero, c.total])).toEqual([
+      ['Flor', 'Valen', 12.5, 1, 8],
+      ['Dol', 'Valen', 12.5, 1, 8],
+    ])
+    expect(r.pagos).toEqual([
+      { de: 'Dol', a: 'Valen', monto: 799349 },
+      { de: 'Dol', a: 'Flor', monto: 401876 },
+    ])
+  })
+
+  test('la última cuota es la de abril, y en mayo ya no hay nada', () => {
+    const abril = cuotasDelMes({ cuotas: [capcut], socios, mes: '2027-04' })
+    expect(abril.map(c => [c.de, c.monto, c.numero])).toEqual([['Flor', 12.5, 8], ['Dol', 12.5, 8]])
+    expect(cuotasDelMes({ cuotas: [capcut], socios, mes: '2027-05' })).toEqual([])
+    expect(cuotasDelMes({ cuotas: [capcut], socios, mes: '2026-08' })).toEqual([])
+  })
+
+  test('al final cada uno devolvió exactamente su parte', () => {
+    let total = 0
+    for (let i = 0; i < 12; i++) {
+      total += cuotasDelMes({ cuotas: [capcut], socios, mes: moverMes('2026-09', i) })
+        .filter(c => c.de === 'Flor').reduce((s, c) => s + c.monto, 0)
+    }
+    expect(total).toBeCloseTo(100, 2)
+  })
+
+  test('una cuota que no cierra justo termina con el resto', () => {
+    const c = { ...capcut, monto: 290 } // 96,67 € cada uno a 12,50 €: 7 cuotas y un resto
+    const octava = cuotasDelMes({ cuotas: [c], socios, mes: '2027-04' })
+    expect(octava[0].monto).toBeCloseTo(9.17, 2)
+    expect(octava[0].total).toBe(8)
+  })
+
+  test('ignora cuotas rotas en vez de romper la cuenta', () => {
+    expect(cuotasDelMes({ cuotas: [{ ...capcut, pagoDe: 'Nadie' }, { ...capcut, porMes: 0 }, null], socios, mes: '2026-09' })).toEqual([])
   })
 })

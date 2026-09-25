@@ -24,7 +24,8 @@ export const normalizarConfigReparto = (raw) => {
     .map(s => String(s || '').trim()).filter(Boolean))]
   if (socios.length < 2) return null
   const meses = raw.meses && typeof raw.meses === 'object' && !Array.isArray(raw.meses) ? raw.meses : {}
-  return { socios, meses }
+  const cuotas = Array.isArray(raw.cuotas) ? raw.cuotas.filter(c => c && typeof c === 'object') : []
+  return { socios, meses, cuotas }
 }
 
 export const socioDeLaCuenta = (cuenta, socios) => {
@@ -70,6 +71,47 @@ export const montoValido = (v) => {
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? n : null
 }
 
+const mesesEntre = (desde, hasta) => {
+  const [a1, m1] = String(desde).split('-').map(Number)
+  const [a2, m2] = String(hasta).split('-').map(Number)
+  return (a2 * 12 + m2) - (a1 * 12 + m1)
+}
+
+// GASTOS QUE SE DEVUELVEN EN CUOTAS.
+//
+// Un gasto grande que pagó un socio solo (CapCut anual: Valen puso 300 €) no
+// entra entero en el mes en que se pagó: ese mes pagarían todos de golpe algo
+// que sirve para el año entero. A cada socio le toca su parte del gasto (monto
+// entre socios); la del que pagó ya está puesta, y los demás le devuelven la
+// suya de a `porMes` por mes —entre todos ellos— hasta completarla. Con CapCut:
+// 100 € cada uno, Flor y Dol le devuelven 12,50 € por mes cada uno, 8 meses.
+//
+// Devuelve las cuotas que caen en `mes`, una por socio que devuelve.
+export const cuotasDelMes = ({ cuotas, socios, mes }) => {
+  const n = (socios || []).length
+  const res = []
+  for (const c of cuotas || []) {
+    const monto = montoValido(c?.monto)
+    const porMes = montoValido(c?.porMes)
+    if (!monto || !porMes || n < 2 || !socios.includes(c.pagoDe) || !rangoDelMes(c.desde) || !rangoDelMes(mes)) continue
+    const numero = mesesEntre(c.desde, mes)
+    if (numero < 0) continue
+    const parte = monto / n
+    const porSocio = porMes / (n - 1)
+    const total = Math.ceil(parte / porSocio - 1e-9)
+    const esteMes = Math.min(porSocio, parte - Math.min(parte, numero * porSocio))
+    if (esteMes < 0.005) continue
+    for (const s of socios) {
+      if (s === c.pagoDe) continue
+      res.push({
+        concepto: c.concepto || 'Gasto', de: s, a: c.pagoDe, moneda: c.moneda || 'ARS',
+        monto: Math.round(esteMes * 100) / 100, numero: numero + 1, total,
+      })
+    }
+  }
+  return res
+}
+
 // Quién le da cuánto a quién para que todos queden con su parte. El que más
 // tiene de más le paga primero al que más le falta: en el caso común (uno tiene
 // la plata, los demás pusieron de su bolsillo) salen las menos transferencias.
@@ -95,22 +137,29 @@ const saldarDiferencias = (porSocio) => {
 // movimientos: los del mes (solo cuentan ingresos y gastos; un neutro no es
 // plata ganada ni gastada). cotizaciones: pesos por unidad, ej. { USD: 1560 }.
 // transferencias: lo que los socios ya se pasaron entre ellos ese mes.
-export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias }) => {
+// cuotas + mes: los gastos que se devuelven en cuotas (ver cuotasDelMes). El
+// movimiento original no entra en su mes; entra la cuota que toca en `mes`.
+export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes }) => {
   const lista = [...new Set((socios || []).map(s => String(s || '').trim()).filter(Boolean))]
   const cuentaPorId = new Map((cuentas || []).map(c => [c.id, c]))
-  const base = Object.fromEntries(lista.map(s => [s, { socio: s, cobro: 0, pago: 0, transferencias: 0 }]))
+  const base = Object.fromEntries(lista.map(s => [s, { socio: s, cobro: 0, pago: 0, transferencias: 0, cuotas: 0 }]))
   const sinSocio = new Set()
   const sinCotizacion = new Set()
+  const enCuotas = new Set((cuotas || []).map(c => c?.movimientoId).filter(Boolean))
+  const aPesos = (monto, moneda = 'ARS') => {
+    const factor = moneda === 'ARS' ? 1 : montoValido(cotizaciones?.[moneda])
+    if (!factor) { sinCotizacion.add(moneda); return null }
+    return Math.abs(Number(monto) || 0) * factor
+  }
 
   for (const t of movimientos || []) {
     if (t.tipo !== 'ingreso' && t.tipo !== 'gasto') continue
-    const moneda = t.moneda || 'ARS'
-    const factor = moneda === 'ARS' ? 1 : montoValido(cotizaciones?.[moneda])
-    if (!factor) { sinCotizacion.add(moneda); continue }
+    if (enCuotas.has(t.id)) continue
+    const pesos = aPesos(t.monto, t.moneda || 'ARS')
+    if (pesos === null) continue
     const cuenta = cuentaPorId.get(t.account_id)
     const socio = socioDeLaCuenta(cuenta, lista)
     if (!socio) { sinSocio.add(cuenta?.nombre || 'Cuenta borrada'); continue }
-    const pesos = Math.abs(Number(t.monto) || 0) * factor
     if (t.tipo === 'ingreso') base[socio].cobro += pesos
     else base[socio].pago += pesos
   }
@@ -122,14 +171,24 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     base[tr.a].transferencias += monto
   }
 
+  const cuotasMes = cuotasDelMes({ cuotas, socios: lista, mes })
+    .map(c => ({ ...c, pesos: aPesos(c.monto, c.moneda) }))
+    .filter(c => c.pesos !== null)
+  for (const c of cuotasMes) {
+    base[c.de].cuotas -= c.pesos
+    base[c.a].cuotas += c.pesos
+  }
+
   const filas = Object.values(base)
   const ingresos = filas.reduce((s, f) => s + f.cobro, 0)
   const gastos = filas.reduce((s, f) => s + f.pago, 0)
   const neto = ingresos - gastos
   const parte = lista.length ? neto / lista.length : 0
+  // Lo que le toca a cada uno es su parte más (o menos) las cuotas del mes: el
+  // que devuelve termina con menos, el que adelantó el gasto con más.
   const porSocio = filas.map(f => {
     const tiene = f.cobro - f.pago + f.transferencias
-    return { ...f, tiene, diferencia: tiene - parte }
+    return { ...f, tiene, diferencia: tiene - (parte + f.cuotas) }
   })
 
   return {
@@ -139,6 +198,7 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     parte,
     porSocio,
     pagos: saldarDiferencias(porSocio),
+    cuotas: cuotasMes,
     sinSocio: [...sinSocio],
     sinCotizacion: [...sinCotizacion],
   }

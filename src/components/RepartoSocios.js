@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto } from '../lib/formato'
-import { calcularReparto, rangoDelMes, montoValido, moverMes, nombreDelMes } from '../lib/repartoSocios'
+import { calcularReparto, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta } from '../lib/repartoSocios'
 
 const mesLocal = () => {
   const d = new Date()
@@ -10,6 +10,14 @@ const mesLocal = () => {
 const NBSP = '\u00A0'
 const pesos = (n) => `$${NBSP}${formatMonto(Math.round(Math.abs(n)))}`
 const conSigno = (signo, n) => `${signo}${NBSP}${pesos(n)}`
+const SIMBOLO = { ARS: '$', USD: 'U$S', EUR: '€' }
+// Con centavos, siempre dos: "€ 12,50", no "€ 12,5".
+const enMoneda = (monto, moneda = 'ARS') => {
+  const decimales = Number.isInteger(Math.round(monto * 100) / 100) ? 0 : 2
+  const numero = new Intl.NumberFormat('es-AR', { minimumFractionDigits: decimales, maximumFractionDigits: 2 }).format(monto)
+  return `${SIMBOLO[moneda] || moneda}${NBSP}${numero}`
+}
+const listaDeNombres = (nombres) => nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}` : nombres.join('')
 
 // Calculadora del reparto entre socios (ver src/lib/repartoSocios.js). Lee los
 // movimientos del mes elegido; lo que no está en la base —las cotizaciones con
@@ -24,6 +32,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [usdTxt, setUsdTxt] = useState('')
   const [eurTxt, setEurTxt] = useState('')
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
+  const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
 
   const delMes = config.meses?.[mes] || {}
   const transferencias = Array.isArray(delMes.transferencias) ? delMes.transferencias : []
@@ -38,7 +47,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     let vigente = true
     setCargando(true)
     setError(null)
-    supabase.from('transactions').select('id, account_id, tipo, moneda, monto')
+    supabase.from('transactions').select('id, account_id, tipo, moneda, monto, nombre')
       .eq('user_id', userId).gte('fecha', rango.desde).lt('fecha', rango.hasta)
       .then(({ data, error: err }) => {
         if (!vigente) return
@@ -50,7 +59,42 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   }, [mes, userId, refreshKey])
 
   const cotizaciones = { USD: montoValido(usdTxt), EUR: montoValido(eurTxt) }
-  const r = calcularReparto({ socios: config.socios, cuentas: accounts, movimientos, cotizaciones, transferencias })
+  const cuotas = Array.isArray(config.cuotas) ? config.cuotas : []
+  const r = calcularReparto({ socios: config.socios, cuentas: accounts, movimientos, cotizaciones, transferencias, cuotas, mes })
+
+  // Gastos de este mes que se pueden pasar a cuotas: los que pagó un socio y
+  // todavía no están en cuotas.
+  const enCuotas = new Set(cuotas.map(c => c.movimientoId))
+  const cuentaPorId = new Map((accounts || []).map(a => [a.id, a]))
+  const gastosParaCuotas = movimientos
+    .filter(t => t.tipo === 'gasto' && !enCuotas.has(t.id))
+    .map(t => ({ ...t, socio: socioDeLaCuenta(cuentaPorId.get(t.account_id), config.socios) }))
+    .filter(t => t.socio)
+  const gastoElegido = gastosParaCuotas.find(t => t.id === nuevaCuota.movimientoId)
+  const guardarCuotas = (lista) => onCambiarConfig({ ...config, cuotas: lista })
+  const agregarCuota = (e) => {
+    e.preventDefault()
+    const porMes = montoValido(nuevaCuota.porMes)
+    if (!gastoElegido || !porMes) return
+    guardarCuotas([...cuotas, {
+      movimientoId: gastoElegido.id,
+      concepto: gastoElegido.nombre || 'Gasto',
+      pagoDe: gastoElegido.socio,
+      monto: Math.abs(Number(gastoElegido.monto) || 0),
+      moneda: gastoElegido.moneda || 'ARS',
+      desde: mes,
+      porMes,
+    }])
+    setNuevaCuota({ movimientoId: '', porMes: '' })
+  }
+  const estadoDeCuota = (c) => {
+    const delMes = cuotasDelMes({ cuotas: [c], socios: config.socios, mes })
+    if (delMes.length) {
+      const [primera] = delMes
+      return `Cuota ${primera.numero} de ${primera.total}: ${listaDeNombres(delMes.map(x => x.de))} le devuelven ${enMoneda(primera.monto, primera.moneda)} cada uno.`
+    }
+    return mes < c.desde ? `Arranca en ${nombreDelMes(c.desde)}.` : 'Ya está devuelto ✓'
+  }
 
   const guardarMes = (cambios) => {
     onCambiarConfig({ ...config, meses: { ...config.meses, [mes]: { ...delMes, ...cambios } } })
@@ -148,7 +192,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   </span>
                 </div>
                 <div style={{ ...fila, color: muted, fontSize: '12px' }}>
-                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}` : ''}</span>
+                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}` : ''}{Math.abs(s.cuotas) >= 1 ? ` · Cuotas ${conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}` : ''}</span>
                 </div>
               </div>
             ))}
@@ -187,6 +231,40 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
               <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }} disabled={!!errorNueva || !montoValido(nueva.monto)}>Agregar</button>
             </form>
             {errorNueva && <p style={{ fontSize: '12px', color: sem.negativo, margin: '6px 0 0' }}>{errorNueva}</p>}
+          </div>
+
+          <div style={caja}>
+            <p style={rotulo}>Gastos que se devuelven en cuotas</p>
+            <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
+              Un gasto grande que pagó uno solo no entra entero en su mes: los demás le devuelven su parte de a poco.
+            </p>
+            {cuotas.map((c, i) => (
+              <div key={c.movimientoId || i} style={{ ...fila, alignItems: 'flex-start' }}>
+                <span>
+                  <strong>{c.concepto}</strong> · pagó {c.pagoDe} {enMoneda(c.monto, c.moneda)} · {enMoneda(c.porMes, c.moneda)} por mes
+                  <br /><span style={{ fontSize: '12px', color: muted }}>{estadoDeCuota(c)}</span>
+                </span>
+                <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label={`Quitar ${c.concepto}`}
+                  onClick={() => guardarCuotas(cuotas.filter((_, k) => k !== i))}>×</button>
+              </div>
+            ))}
+            {gastosParaCuotas.length > 0 && (
+              <form onSubmit={agregarCuota} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginTop: '10px' }}>
+                <select style={{ ...styles.input, gridColumn: '1 / -1' }} value={nuevaCuota.movimientoId} aria-label="Gasto"
+                  onChange={e => setNuevaCuota(n => ({ ...n, movimientoId: e.target.value }))}>
+                  <option value="">— Elegí un gasto de este mes —</option>
+                  {gastosParaCuotas.map((t, i) => (
+                    <option key={t.id ?? i} value={t.id ?? ''} disabled={!t.id}>{t.nombre || 'Gasto'} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda || 'ARS')}</option>
+                  ))}
+                </select>
+                <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" value={nuevaCuota.porMes}
+                  placeholder={`Por mes${gastoElegido ? ` (${SIMBOLO[gastoElegido.moneda || 'ARS'] || ''})` : ''}`}
+                  aria-label="Cuánto se devuelve por mes, entre todos"
+                  onChange={e => setNuevaCuota(n => ({ ...n, porMes: e.target.value }))} />
+                <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
+                  disabled={!gastoElegido || !montoValido(nuevaCuota.porMes)}>Agregar</button>
+              </form>
+            )}
           </div>
         </>
       )}

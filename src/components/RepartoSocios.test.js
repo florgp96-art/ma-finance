@@ -74,3 +74,19 @@ test('las flechas cambian de mes y se leen los movimientos de ese mes', async ()
   await screen.findAllByRole('button', { name: 'Hecho' })
   expect(mockBase.consultas).toContainEqual(['gte', 'fecha', desde])
 })
+
+test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó', async () => {
+  const hoy = new Date()
+  const mes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+  mockBase.movimientos = [
+    { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
+    { id: 'cc', account_id: 'rev', tipo: 'gasto', moneda: 'EUR', monto: 300, nombre: 'CapCut (anual)' },
+  ]
+  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [] })
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Gasto' }), { target: { value: 'cc' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: /por mes/ }), { target: { value: '25' } })
+  fireEvent.click(screen.getAllByRole('button', { name: 'Agregar' }).at(-1))
+  expect(onCambiarConfig.mock.calls[0][0].cuotas).toEqual([{
+    movimientoId: 'cc', concepto: 'CapCut (anual)', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: mes, porMes: 25,
+  }])
+})
