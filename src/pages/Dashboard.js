@@ -14,6 +14,8 @@ import HijoDetail from '../components/HijoDetail'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
 import CambioMoneda from '../components/CambioMoneda'
+import RepartoSocios from '../components/RepartoSocios'
+import { normalizarConfigReparto } from '../lib/repartoSocios'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
@@ -184,6 +186,10 @@ export default function Dashboard() {
   }
   const [showUpsell, setShowUpsell] = useState(null) // razón del upsell (string) o null
   const [showMiPlan, setShowMiPlan] = useState(false)
+  // Reparto entre socios: solo existe en las cuentas que tienen la preferencia
+  // `reparto_socios` (ver src/lib/repartoSocios.js). null = la cuenta no la usa.
+  const [repartoSocios, setRepartoSocios] = useState(null)
+  const [showReparto, setShowReparto] = useState(false)
   const [suscribiendo, setSuscribiendo] = useState(false)
 
   // Vuelta del checkout de Mercado Pago (ver back_url en mp-create-subscription.js).
@@ -705,6 +711,7 @@ export default function Dashboard() {
         }
         const cuotaAlimentariaDB = readPref('cuota_alimentaria_activa')
         if (cuotaAlimentariaDB === false) setCuotaAlimentariaActiva(false)
+        setRepartoSocios(normalizarConfigReparto(readPref('reparto_socios')))
         prefsLoaded.current = true
       }
     })
@@ -4043,6 +4050,12 @@ export default function Dashboard() {
                 )}
               </div>
 
+              {repartoSocios && (
+                <button style={styles.sidebarBtnPrimary} onClick={() => { setShowReparto(true); setSidebarOpen(false) }}>
+                  🤝 Reparto entre socios
+                </button>
+              )}
+
               {/* Configuración colapsable — solo mobile (en desktop está en el header) */}
               {isMobile && (
                 <div ref={configMenuRef}>
@@ -4426,6 +4439,22 @@ export default function Dashboard() {
                 <button type="submit" style={styles.saveBtn} disabled={reportBugSending}>{reportBugSending ? 'Enviando...' : 'Enviar'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showReparto && repartoSocios && (
+        <div style={styles.overlay}>
+          <div style={{ ...styles.modal, maxWidth: '520px', width: '92%' }}>
+            <h3 style={styles.modalTitle}>🤝 Reparto entre socios</h3>
+            <RepartoSocios config={repartoSocios} accounts={accounts} userId={currentUserId}
+              cotizacionesVivas={{
+                USD: dolarRates.blue || parseFloat(tipoCambio) || null,
+                EUR: dolarRates.eur || parseFloat(tipoCambioEUR) || null,
+              }}
+              refreshKey={refreshKey} styles={styles} darkMode={darkMode} sem={sem}
+              onCambiarConfig={(nueva) => { setRepartoSocios(nueva); persistPref('reparto_socios', nueva) }}
+              onCerrar={() => setShowReparto(false)} />
           </div>
         </div>
       )}
