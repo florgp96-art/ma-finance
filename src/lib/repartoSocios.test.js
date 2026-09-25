@@ -1,6 +1,6 @@
 const {
   calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes, cuotasDelMes,
-  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo,
+  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo, fraccionesDeReparto, porcentajesTrabajo,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -93,7 +93,7 @@ describe('normalizarConfigReparto', () => {
     expect(normalizarConfigReparto(null)).toBe(null)
     expect(normalizarConfigReparto('texto')).toBe(null)
     expect(normalizarConfigReparto({ socios: [' Flor ', 'Valen', 'Valen', ''] }))
-      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [] })
+      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [], trabajos: [] })
   })
 })
 
@@ -212,5 +212,58 @@ describe('repartoDelMes y repartoDelPeriodo (calculadora y tarjeta "Socios")', (
     }
     // En octubre corre la cuota 2 de 8 de CapCut (Flor y Dol).
     expect(oct.cuotas.map(c => c.numero)).toEqual([2, 2])
+  })
+})
+
+// Los trabajos por fuera de septiembre: las páginas de Flor y el brunch de Valen,
+// 50 % para quien lo hizo y 25 % para cada uno de los otros dos (gastos incluidos).
+describe('trabajos por fuera', () => {
+  const cuentasConGalicia = [...cuentas, { id: 'gal', nombre: 'Flor Caja Ahorro Galicia' }]
+  const trabajosSep = [
+    { ...mov('gal', 'ingreso', 150000), id: 'pag1' },
+    { ...mov('gal', 'ingreso', 60, 'USD'), id: 'pag2' },
+    { ...mov('mc', 'gasto', 10, 'USD'), id: 'dom' },
+    { ...mov('rev', 'ingreso', 150, 'EUR'), id: 'brunch' },
+    { ...mov('rev', 'gasto', 75, 'EUR'), id: 'video' },
+  ]
+  const deFlor = porcentajesTrabajo('Flor', socios, 50)
+  const deValen = porcentajesTrabajo('Valen', socios, 50)
+  const trabajos = [
+    { movimientoId: 'pag1', porcentajes: deFlor }, { movimientoId: 'pag2', porcentajes: deFlor },
+    { movimientoId: 'dom', porcentajes: deFlor },
+    { movimientoId: 'brunch', porcentajes: deValen }, { movimientoId: 'video', porcentajes: deValen },
+  ]
+
+  test('el que lo hizo se queda con el 50 % y el resto va parejo', () => {
+    expect(deFlor).toEqual({ Flor: 50, Valen: 25, Dol: 25 })
+    expect(fraccionesDeReparto({ Flor: 2, Valen: 1, Dol: 1 }, socios)).toEqual({ Flor: 0.5, Valen: 0.25, Dol: 0.25 })
+    expect(fraccionesDeReparto({ Nadie: 100 }, socios)).toBe(null)
+  })
+
+  test('septiembre con las páginas de Flor y el brunch de Valen', () => {
+    const r = calcularReparto({
+      socios, cuentas: cuentasConGalicia, movimientos: [...septiembre, ...trabajosSep], transferencias,
+      cotizaciones: { USD: 1550, EUR: 1721 }, cuotas: [capcut], mes: '2026-09', trabajos,
+    })
+    // La parte común no cambia: los trabajos se reparten aparte.
+    expect(r.parte).toBeCloseTo(555272.5, 2)
+    const porSocio = Object.fromEntries(r.porSocio.map(s => [s.socio, s]))
+    expect(porSocio.Flor.leToca).toBeCloseTo(679778.75, 2)
+    expect(porSocio.Valen.leToca).toBeCloseTo(719710, 2)
+    expect(porSocio.Dol.leToca).toBeCloseTo(622903.75, 2)
+    // Lo que le toca a cada uno suma exactamente todo lo que hay.
+    expect(r.porSocio.reduce((s, x) => s + x.leToca, 0)).toBeCloseTo(r.neto, 2)
+    expect(r.pagos).toEqual([
+      { de: 'Dol', a: 'Valen', monto: 794120 },
+      { de: 'Dol', a: 'Flor', monto: 318976 },
+    ])
+  })
+
+  test('un movimiento en cuotas no se reparte además como trabajo', () => {
+    const r = calcularReparto({
+      socios, cuentas, movimientos: septiembre, transferencias, cotizaciones: { USD: 1560, EUR: 1750 },
+      cuotas: [capcut], mes: '2026-09', trabajos: [{ movimientoId: 'capcut', porcentajes: deValen }],
+    })
+    expect(r.netoTrabajos).toBeCloseTo(0, 6)
   })
 })
