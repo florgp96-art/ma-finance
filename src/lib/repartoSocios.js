@@ -48,6 +48,23 @@ export const rangoDelMes = (mes) => {
   return { desde: `${mes}-01`, hasta: `${siguiente}-01` }
 }
 
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto',
+  'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+// 'YYYY-MM' corrido `delta` meses. Se arma a mano en vez de con <input
+// type="month">: en el iPhone ese selector sale en el idioma del teléfono
+// ("September 2026") y es más ancho que su lugar en el celular.
+export const moverMes = (mes, delta) => {
+  const [anio, nro] = String(mes).split('-').map(Number)
+  const total = anio * 12 + (nro - 1) + delta
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+export const nombreDelMes = (mes) => {
+  const [anio, nro] = String(mes).split('-').map(Number)
+  return MESES[nro - 1] ? `${MESES[nro - 1]} ${anio}` : mes
+}
+
 export const montoValido = (v) => {
   const n = Number(v)
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? n : null

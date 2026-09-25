@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto } from '../lib/formato'
-import { calcularReparto, rangoDelMes, montoValido } from '../lib/repartoSocios'
+import { calcularReparto, rangoDelMes, montoValido, moverMes, nombreDelMes } from '../lib/repartoSocios'
 
 const mesLocal = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
-const pesos = (n) => `$ ${formatMonto(Math.round(Math.abs(n)))}`
+const NBSP = '\u00A0'
+const pesos = (n) => `$${NBSP}${formatMonto(Math.round(Math.abs(n)))}`
+const conSigno = (signo, n) => `${signo}${NBSP}${pesos(n)}`
 
 // Calculadora del reparto entre socios (ver src/lib/repartoSocios.js). Lee los
 // movimientos del mes elegido; lo que no está en la base —las cotizaciones con
@@ -83,7 +85,8 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const rotulo = { fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 8px' }
   const fila = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, margin: '3px 0' }
   const botonChico = { background: 'none', border: `1px solid ${borde}`, borderRadius: '6px', color: txt, cursor: 'pointer', fontSize: '12px', padding: '4px 8px', whiteSpace: 'nowrap' }
-  const etiqueta = { ...styles.label, fontSize: '12px', marginBottom: '4px' }
+  const etiqueta = { ...styles.label, fontSize: '12px', marginBottom: '4px', minWidth: 0 }
+  const flecha = { ...botonChico, fontSize: '20px', lineHeight: 1, padding: '6px 14px' }
 
   return (
     <div>
@@ -91,10 +94,13 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
         Todo lo que entró en el mes menos lo que se gastó, en partes iguales. Cada cuenta es del socio con el que empieza su nombre.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '14px' }}>
-        <label style={etiqueta}>Mes
-          <input style={styles.input} type="month" value={mes} onChange={e => e.target.value && setMes(e.target.value)} />
-        </label>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
+        <button type="button" style={flecha} aria-label="Mes anterior" onClick={() => setMes(m => moverMes(m, -1))}>‹</button>
+        <span style={{ fontSize: '16px', fontWeight: 600, color: txt }}>{nombreDelMes(mes)}</span>
+        <button type="button" style={flecha} aria-label="Mes siguiente" onClick={() => setMes(m => moverMes(m, 1))}>›</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '14px' }}>
         <label style={etiqueta}>U$S 1 = $
           <input style={styles.input} type="number" inputMode="decimal" min="0" step="0.01" value={usdTxt}
             onChange={e => setUsdTxt(e.target.value)} onBlur={e => guardarCotizacion('usd', e.target.value)} />
@@ -124,17 +130,17 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
           <div style={caja}>
             <p style={rotulo}>El mes</p>
             <div style={fila}><span>Ingresos</span><span>{pesos(r.ingresos)}</span></div>
-            <div style={fila}><span>Gastos</span><span>− {pesos(r.gastos)}</span></div>
-            <div style={fila}><span>Neto</span><span>{r.neto < 0 ? '− ' : ''}{pesos(r.neto)}</span></div>
+            <div style={fila}><span>Gastos</span><span>{conSigno('−', r.gastos)}</span></div>
+            <div style={fila}><span>Neto</span><span>{r.neto < 0 ? conSigno('−', r.neto) : pesos(r.neto)}</span></div>
             <div style={{ ...fila, marginTop: '8px', fontSize: '15px', fontWeight: 700 }}>
-              <span>A cada uno</span><span>{r.parte < 0 ? '− ' : ''}{pesos(r.parte)}</span>
+              <span>A cada uno</span><span>{r.parte < 0 ? conSigno('−', r.parte) : pesos(r.parte)}</span>
             </div>
           </div>
 
           <div style={caja}>
             <p style={rotulo}>Cada socio</p>
-            {r.porSocio.map(s => (
-              <div key={s.socio} style={{ padding: '6px 0', borderBottom: `1px solid ${borde}` }}>
+            {r.porSocio.map((s, i) => (
+              <div key={s.socio} style={{ padding: '6px 0', borderBottom: i < r.porSocio.length - 1 ? `1px solid ${borde}` : 'none' }}>
                 <div style={{ ...fila, fontWeight: 600 }}>
                   <span>{s.socio}</span>
                   <span style={{ color: s.diferencia >= 1 ? sem.negativo : s.diferencia <= -1 ? sem.positivo : muted }}>
@@ -142,7 +148,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   </span>
                 </div>
                 <div style={{ ...fila, color: muted, fontSize: '12px' }}>
-                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${s.transferencias > 0 ? '+' : '−'} ${pesos(s.transferencias)}` : ''}</span>
+                  <span>Cobró {pesos(s.cobro)} · Pagó {pesos(s.pago)}{s.transferencias ? ` · Entre ustedes ${conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}` : ''}</span>
                 </div>
               </div>
             ))}
@@ -155,7 +161,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             ) : r.pagos.map(p => (
               <div key={`${p.de}-${p.a}`} style={fila}>
                 <span><strong>{p.de}</strong> le da a <strong>{p.a}</strong> {pesos(p.monto)}</span>
-                <button type="button" style={botonChico} onClick={() => agregarTransferencia(p)}>Ya lo hice</button>
+                <button type="button" style={botonChico} onClick={() => agregarTransferencia(p)}>Hecho</button>
               </div>
             ))}
           </div>
@@ -169,7 +175,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                 <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label="Quitar" onClick={() => quitarTransferencia(i)}>×</button>
               </div>
             ))}
-            <form onSubmit={agregarNueva} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '8px', marginTop: '10px' }}>
+            <form onSubmit={agregarNueva} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginTop: '10px' }}>
               <select style={styles.input} value={nueva.de} onChange={e => setNueva(n => ({ ...n, de: e.target.value }))} aria-label="Quién da">
                 {config.socios.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -178,7 +184,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
               </select>
               <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="$"
                 value={nueva.monto} onChange={e => setNueva(n => ({ ...n, monto: e.target.value }))} aria-label="Monto en pesos" />
-              <button type="submit" style={{ ...botonChico, padding: '8px' }} disabled={!!errorNueva || !montoValido(nueva.monto)}>Agregar</button>
+              <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }} disabled={!!errorNueva || !montoValido(nueva.monto)}>Agregar</button>
             </form>
             {errorNueva && <p style={{ fontSize: '12px', color: sem.negativo, margin: '6px 0 0' }}>{errorNueva}</p>}
           </div>
