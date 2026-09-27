@@ -190,6 +190,160 @@ Las filas viejas quedan con `sentido` en null y siguen decidiéndose por el text
 app pregunta si la columna existe antes de escribirla (`hayColumnaSentido`), así
 que se puede correr en cualquier momento, incluso con la app abierta.
 
+### f) Liquidación del sueldo de la empleada (tablas + datos de arranque)
+
+La solapa **Liquidación** (debajo de Cuentas, solo para la cuenta de
+`src/config/features.js`) guarda en dos tablas propias: `liquidacion_meses` (tarifas
+del mes, si está cerrado y con qué total) y `liquidacion_dias` (cada día: tipo, horas,
+viajes). Sin las tablas, la pantalla abre con "No se pudo leer la liquidación" y el
+resto de la app sigue igual. El gate por mail es solo de visibilidad: lo que protege
+los datos son las políticas de abajo.
+
+**1. Tablas y políticas** (también en `supabase/migrations/20260927000000_liquidacion.sql`;
+se puede correr más de una vez):
+
+```sql
+-- Liquidación del sueldo mensual de la empleada (src/components/Liquidacion.js).
+-- Se corre a mano en Supabase → SQL Editor (ver docs/PENDIENTES.md). Se puede
+-- correr más de una vez.
+
+create table if not exists public.liquidacion_meses (
+  id             uuid          primary key default gen_random_uuid(),
+  user_id        uuid          not null references auth.users(id) on delete cascade,
+  clave          text          not null check (clave ~ '^\d{4}-(0[1-9]|1[0-2])$'),  -- 'YYYY-MM'
+  valor_hora     numeric(12,2) not null default 7500  check (valor_hora >= 0),
+  valor_viatico  numeric(12,2) not null default 1200  check (valor_viatico >= 0),
+  valor_jornada  numeric(12,2) not null default 25000 check (valor_jornada >= 0),
+  cerrado        boolean       not null default false,
+  total_cerrado  numeric(14,2),
+  created_at     timestamptz   not null default now(),
+  updated_at     timestamptz   not null default now(),
+  unique (user_id, clave)
+);
+
+create table if not exists public.liquidacion_dias (
+  id          uuid         primary key default gen_random_uuid(),
+  mes_id      uuid         not null references public.liquidacion_meses(id) on delete cascade,
+  dia         smallint     not null check (dia between 1 and 31),
+  tipo        text         not null default 'horas' check (tipo in ('horas', 'jornada')),
+  horas       numeric(5,2) not null default 0 check (horas >= 0),
+  viajes      smallint     not null default 0 check (viajes >= 0),
+  created_at  timestamptz  not null default now()
+);
+
+create index if not exists liquidacion_dias_mes_idx on public.liquidacion_dias (mes_id);
+
+alter table public.liquidacion_meses enable row level security;
+alter table public.liquidacion_dias  enable row level security;
+
+-- Meses: cada uno ve y toca solo los suyos.
+drop policy if exists "cada uno ve sus meses de liquidación" on public.liquidacion_meses;
+create policy "cada uno ve sus meses de liquidación" on public.liquidacion_meses
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "cada uno carga sus meses de liquidación" on public.liquidacion_meses;
+create policy "cada uno carga sus meses de liquidación" on public.liquidacion_meses
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "cada uno edita sus meses de liquidación" on public.liquidacion_meses;
+create policy "cada uno edita sus meses de liquidación" on public.liquidacion_meses
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "cada uno borra sus meses de liquidación" on public.liquidacion_meses;
+create policy "cada uno borra sus meses de liquidación" on public.liquidacion_meses
+  for delete using (auth.uid() = user_id);
+
+-- Días: solo los de un mes propio. El "with check" del update impide además
+-- mover un día a un mes de otra persona cambiándole el mes_id.
+drop policy if exists "cada uno ve los días de sus meses" on public.liquidacion_dias;
+create policy "cada uno ve los días de sus meses" on public.liquidacion_dias
+  for select using (exists (
+    select 1 from public.liquidacion_meses m where m.id = liquidacion_dias.mes_id and m.user_id = auth.uid()));
+
+drop policy if exists "cada uno carga días en sus meses" on public.liquidacion_dias;
+create policy "cada uno carga días en sus meses" on public.liquidacion_dias
+  for insert with check (exists (
+    select 1 from public.liquidacion_meses m where m.id = liquidacion_dias.mes_id and m.user_id = auth.uid()));
+
+drop policy if exists "cada uno edita los días de sus meses" on public.liquidacion_dias;
+create policy "cada uno edita los días de sus meses" on public.liquidacion_dias
+  for update
+  using (exists (
+    select 1 from public.liquidacion_meses m where m.id = liquidacion_dias.mes_id and m.user_id = auth.uid()))
+  with check (exists (
+    select 1 from public.liquidacion_meses m where m.id = liquidacion_dias.mes_id and m.user_id = auth.uid()));
+
+drop policy if exists "cada uno borra los días de sus meses" on public.liquidacion_dias;
+create policy "cada uno borra los días de sus meses" on public.liquidacion_dias
+  for delete using (exists (
+    select 1 from public.liquidacion_meses m where m.id = liquidacion_dias.mes_id and m.user_id = auth.uid()));
+```
+
+**2. Datos de arranque** (también en `supabase/seed_liquidacion.sql`): marzo a agosto de
+2026 cerrados con su total, y los 16 días de agosto. No duplica si se corre dos veces.
+
+```sql
+-- Datos de arranque de la liquidación, solo para florgp96@gmail.com. Correr
+-- después de la migración 20260927000000_liquidacion.sql. Es idempotente: un mes
+-- que ya tiene total no se toca, y los días de agosto se cargan solo si agosto no
+-- tiene ninguno.
+do $$
+declare
+  v_uid     uuid := (select id from auth.users where email = 'florgp96@gmail.com');
+  v_agosto  uuid;
+  n_meses   integer;
+  n_dias    integer;
+begin
+  if v_uid is null then
+    raise exception 'No existe el usuario florgp96@gmail.com';
+  end if;
+
+  insert into public.liquidacion_meses (user_id, clave, valor_hora, valor_viatico, valor_jornada, cerrado, total_cerrado)
+  select v_uid, m.clave, 7500, 1200, 25000, true, m.total
+  from (values
+    ('2026-03', 142200::numeric),
+    ('2026-04', 584800),
+    ('2026-05', 622500),
+    ('2026-06', 420000),
+    ('2026-07', 431250),
+    ('2026-08', 482400)
+  ) as m(clave, total)
+  -- Si el mes ya existía abierto y sin total (se abrió en la app antes de correr
+  -- esto), se cierra con su total; uno que ya tiene total no se toca.
+  on conflict (user_id, clave) do update
+    set cerrado = true, total_cerrado = excluded.total_cerrado, updated_at = now()
+    where public.liquidacion_meses.total_cerrado is null;
+  get diagnostics n_meses = row_count;
+
+  select id into v_agosto from public.liquidacion_meses where user_id = v_uid and clave = '2026-08';
+
+  insert into public.liquidacion_dias (mes_id, dia, tipo, horas, viajes)
+  select v_agosto, d.dia, 'horas', d.horas, d.viajes
+  from (values
+    (4, 3::numeric, 2), (5, 3, 2), (6, 7.5, 2), (7, 4, 2), (11, 3, 2), (13, 3, 0), (14, 3, 2), (18, 5, 2),
+    (20, 3, 2), (21, 4.5, 2), (24, 3, 1), (25, 3.5, 2), (26, 3, 1), (27, 2.5, 2), (28, 6, 2), (31, 3, 1)
+  ) as d(dia, horas, viajes)
+  where not exists (select 1 from public.liquidacion_dias x where x.mes_id = v_agosto);
+  get diagnostics n_dias = row_count;
+
+  raise notice 'Listo: % meses cargados o cerrados y % días nuevos', n_meses, n_dias;
+end $$;
+
+-- Para comprobarlo: 6 meses cerrados, y agosto con 16 días que suman $ 482.400.
+select m.clave, m.cerrado, m.total_cerrado,
+       count(d.id) as dias,
+       coalesce(sum(case when d.tipo = 'jornada' then m.valor_jornada else 0 end
+                    + d.horas * m.valor_hora + d.viajes * m.valor_viatico), 0) as total_de_los_dias
+from public.liquidacion_meses m
+left join public.liquidacion_dias d on d.mes_id = m.id
+where m.user_id = (select id from auth.users where email = 'florgp96@gmail.com')
+group by m.id
+order by m.clave;
+```
+
+La consulta del final tiene que mostrar los 6 meses cerrados, y agosto con 16 días y
+`total_de_los_dias` = 482400, igual a su `total_cerrado`.
+
 ---
 
 ### b) Rate limit compartido — **esta es la que más conviene**
