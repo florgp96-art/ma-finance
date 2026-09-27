@@ -1,0 +1,120 @@
+// Liquidación del sueldo mensual de una empleada que cobra por hora más viáticos
+// por viaje. Solo cálculo, sin Supabase ni React (ver liquidacionDatos.js y
+// components/Liquidacion.js).
+//
+// Cada día es de uno de dos tipos:
+// - horas:   horas × valor_hora + viajes × valor_viatico
+// - jornada: valor_jornada + horas × valor_hora + viajes × valor_viatico; acá
+//            horas y viajes son los extras por encima de la jornada.
+import { moverMes } from './repartoSocios'
+
+export const TARIFAS_POR_DEFECTO = Object.freeze({ valor_hora: 7500, valor_viatico: 1200, valor_jornada: 25000 })
+export const CAMPOS_TARIFA = Object.keys(TARIFAS_POR_DEFECTO)
+export const TIPOS_DE_DIA = ['horas', 'jornada']
+
+// Topes de validación. Las columnas aguantan más; esto frena un dedo de más.
+export const LIMITES = Object.freeze({ horas: 24, viajes: 99, tarifa: 100000000 })
+
+export const claveValida = (clave) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(clave || ''))
+
+export const mesDeHoy = (hoy = new Date()) =>
+  `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
+
+export const diasDelMes = (clave) => {
+  if (!claveValida(clave)) return 0
+  const [anio, mes] = clave.split('-').map(Number)
+  return new Date(anio, mes, 0).getDate()
+}
+
+// Número válido dentro de [min, max], o null. Acepta coma decimal: "2,5" → 2.5.
+export const numeroValido = (valor, { min = 0, max = Infinity, entero = false } = {}) => {
+  if (valor === null || valor === undefined) return null
+  const texto = String(valor).trim().replace(',', '.')
+  if (texto === '') return null
+  const n = Number(texto)
+  if (!Number.isFinite(n) || n < min || n > max) return null
+  if (entero && !Number.isInteger(n)) return null
+  return n
+}
+
+const cantidad = (v) => {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+export const tarifasDe = (mes) => Object.fromEntries(CAMPOS_TARIFA.map(c => [c, cantidad(mes?.[c])]))
+
+export const subtotalDia = (dia, tarifas) => {
+  const t = tarifasDe(tarifas)
+  const base = dia?.tipo === 'jornada' ? t.valor_jornada : 0
+  return base + cantidad(dia?.horas) * t.valor_hora + cantidad(dia?.viajes) * t.valor_viatico
+}
+
+const trabajado = (dia) => dia.tipo === 'jornada' || cantidad(dia.horas) > 0 || cantidad(dia.viajes) > 0
+
+export const resumenMes = (dias, tarifas) => {
+  const lista = Array.isArray(dias) ? dias : []
+  return {
+    total: lista.reduce((suma, d) => suma + subtotalDia(d, tarifas), 0),
+    jornadas: lista.filter(d => d.tipo === 'jornada').length,
+    horas: lista.reduce((suma, d) => suma + cantidad(d.horas), 0),
+    viajes: lista.reduce((suma, d) => suma + cantidad(d.viajes), 0),
+    // Dos filas del mismo día cuentan como un día trabajado.
+    diasTrabajados: new Set(lista.filter(trabajado).map(d => d.dia)).size,
+  }
+}
+
+// Por número de día; a igual día, el que se cargó primero.
+export const ordenarDias = (dias) => [...(dias || [])].sort((a, b) =>
+  a.dia - b.dia || String(a.created_at || '').localeCompare(String(b.created_at || '')))
+
+// La fila que agrega "Sumar un día": el día siguiente al último cargado, con su tipo.
+export const nuevoDia = (dias, clave) => {
+  const ultimo = ordenarDias(dias).at(-1)
+  const tope = diasDelMes(clave) || 31
+  return {
+    dia: ultimo ? Math.min(ultimo.dia + 1, tope) : 1,
+    tipo: ultimo?.tipo === 'jornada' ? 'jornada' : 'horas',
+    horas: 0,
+    viajes: 0,
+  }
+}
+
+// Un mes nuevo arranca con las tarifas del último mes anterior que exista.
+export const tarifasHeredadas = (meses, clave) => {
+  const anterior = (meses || []).filter(m => m.clave < clave).sort((a, b) => b.clave.localeCompare(a.clave))[0]
+  return anterior ? tarifasDe(anterior) : { ...TARIFAS_POR_DEFECTO }
+}
+
+// El mes que se abre al entrar (y después de cerrar uno): el primero abierto
+// después del último cerrado; si no hay, el siguiente al último cerrado. Un mes
+// viejo que se reabrió para corregir no cuenta, y tampoco uno futuro que se
+// creó solo por mirarlo con el selector.
+export const mesParaAbrir = (meses, hoy = mesDeHoy()) => {
+  const ordenados = [...(meses || [])].sort((a, b) => a.clave.localeCompare(b.clave))
+  const ultimoCerrado = ordenados.filter(m => m.cerrado).at(-1)?.clave
+  if (!ultimoCerrado && ordenados.some(m => m.clave === hoy)) return hoy
+  const abierto = ordenados.find(m => !m.cerrado && (!ultimoCerrado || m.clave > ultimoCerrado))
+  if (abierto) return abierto.clave
+  return ultimoCerrado ? moverMes(ultimoCerrado, 1) : hoy
+}
+
+// Cerrado: el total guardado. Abierto: la suma de los días. Un mes sin días que ya
+// tenía total (los cargados solo con el total, de antes de esta pantalla) lo
+// conserva, así reabrirlo y volver a cerrarlo no lo deja en cero.
+export const totalDelMes = (mes, dias) => {
+  if (mes?.cerrado) return cantidad(mes.total_cerrado)
+  const lista = Array.isArray(dias) ? dias : []
+  if (lista.length === 0 && cantidad(mes?.total_cerrado) > 0) return cantidad(mes.total_cerrado)
+  return resumenMes(lista, mes).total
+}
+
+export const historialCerrados = (meses) => {
+  const cerrados = (meses || []).filter(m => m.cerrado)
+    .sort((a, b) => b.clave.localeCompare(a.clave))
+    .map(m => ({ id: m.id, clave: m.clave, total: cantidad(m.total_cerrado) }))
+  return { meses: cerrados, acumulado: cerrados.reduce((suma, m) => suma + m.total, 0) }
+}
+
+// numeric(14,2) en la base: se guarda redondeado a centavos.
+export const aCentavos = (n) => Math.round(cantidad(n) * 100) / 100

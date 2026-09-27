@@ -15,6 +15,8 @@ import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
 import CambioMoneda from '../components/CambioMoneda'
 import RepartoSocios from '../components/RepartoSocios'
+import Liquidacion from '../components/Liquidacion'
+import { puedeVerLiquidacion } from '../config/features'
 import { normalizarConfigReparto } from '../lib/repartoSocios'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
@@ -4027,6 +4029,16 @@ export default function Dashboard() {
                       </>
                     )
                   })()}
+
+                  {/* Liquidación del sueldo: solo para una cuenta (ver src/config/features.js) */}
+                  {puedeVerLiquidacion(userEmail) && (
+                    <div role="button" tabIndex={0} style={{ ...styles.accountCard, ...(selectedAccount === 'liquidacion' ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px', marginTop: cuentasOpen ? 0 : '12px' }}
+                      onClick={() => { setSelectedAccount(selectedAccount === 'liquidacion' ? null : 'liquidacion'); setSidebarOpen(false) }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedAccount('liquidacion'); setSidebarOpen(false) } }}>
+                      <p style={{ ...styles.accountType, marginBottom: '4px' }}>🧾 LIQUIDACIÓN</p>
+                      <p style={styles.accountName}>Sueldo del mes</p>
+                    </div>
+                  )}
                 </>
               )
             })()}
@@ -4109,7 +4121,13 @@ export default function Dashboard() {
 
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
-            {selectedAccount === 'all' ? (
+            {selectedAccount === 'liquidacion' ? (
+              puedeVerLiquidacion(userEmail) && (
+                <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
+                  <Liquidacion userId={currentUserId} darkMode={darkMode} styles={styles} />
+                </div>
+              )
+            ) : selectedAccount === 'all' ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 {/* Tabs — patrón pill/segmented */}
                 <div style={{ position: 'relative', marginBottom: '24px' }}>
