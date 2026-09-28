@@ -140,7 +140,7 @@ test('borrar el pago que fijó la cotización (un "Hecho" sin querer) la devuelv
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
 })
 
-test('un trabajo por fuera: quien lo hizo 50 % y los otros dos 25 % cada uno', async () => {
+test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', async () => {
   mockBase.movimientos = [
     { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
     { id: 'br', account_id: 'rev', tipo: 'ingreso', moneda: 'EUR', monto: 150, nombre: 'Classic Brunch Party' },
@@ -148,10 +148,10 @@ test('un trabajo por fuera: quien lo hizo 50 % y los otros dos 25 % cada uno', a
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [] })
   const select = await screen.findByRole('combobox', { name: 'Movimiento del trabajo' })
   fireEvent.change(select, { target: { value: 'br' } })
-  expect(screen.getByText('Flor 25 % · Valen 50 % · Dol 25 %')).toBeInTheDocument()
+  expect(screen.getByText('Flor 20 % · Valen 60 % · Dol 20 %')).toBeInTheDocument()
   fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
     movimientoId: 'br', concepto: 'Classic Brunch Party', socio: 'Valen',
-    porcentajes: { Flor: 25, Valen: 50, Dol: 25 },
+    porcentajes: { Flor: 20, Valen: 60, Dol: 20 },
   }])
 })
