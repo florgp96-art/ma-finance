@@ -236,6 +236,8 @@ describe('trabajos por fuera', () => {
 
   test('el que lo hizo se queda con el 50 % y el resto va parejo', () => {
     expect(deFlor).toEqual({ Flor: 50, Valen: 25, Dol: 25 })
+    // Sin porcentaje, el que lo hizo se queda con el 60 %.
+    expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 60, Valen: 20, Dol: 20 })
     expect(fraccionesDeReparto({ Flor: 2, Valen: 1, Dol: 1 }, socios)).toEqual({ Flor: 0.5, Valen: 0.25, Dol: 0.25 })
     expect(fraccionesDeReparto({ Nadie: 100 }, socios)).toBe(null)
   })

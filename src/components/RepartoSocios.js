@@ -40,7 +40,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [error, setError] = useState(null)
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
-  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', propio: '50' })
+  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', propio: '60' })
 
   const delMes = config.meses?.[mes] || {}
 

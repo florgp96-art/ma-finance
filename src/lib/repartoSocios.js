@@ -114,7 +114,7 @@ export const cuotasDelMes = ({ cuotas, socios, mes }) => {
 }
 
 // TRABAJOS POR FUERA: un movimiento que no se reparte en partes iguales. El que
-// hizo el trabajo se queda con más (ej. 50 %) y el resto se divide entre los
+// hizo el trabajo se queda con más (60 % por defecto) y el resto se divide entre los
 // demás; vale para el ingreso y para los gastos de ese trabajo. La plata la
 // sigue teniendo quien la cobró o la pagó: lo que cambia es a quién le toca.
 //
@@ -129,7 +129,7 @@ export const fraccionesDeReparto = (porcentajes, socios) => {
 }
 
 // El que hizo el trabajo se queda con `propio` % y el resto va parejo a los demás.
-export const porcentajesTrabajo = (socio, socios, propio = 50) => {
+export const porcentajesTrabajo = (socio, socios, propio = 60) => {
   const otros = (socios || []).filter(s => s !== socio)
   const p = Math.min(100, Math.max(0, Number(propio) || 0))
   return Object.fromEntries((socios || []).map(s => [s, s === socio ? p : (otros.length ? (100 - p) / otros.length : 0)]))
