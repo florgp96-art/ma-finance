@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto, formatFecha } from '../lib/formato'
-import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo } from '../lib/repartoSocios'
+import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo, conTrabajo } from '../lib/repartoSocios'
 
 const hoyLocal = () => {
   const d = new Date()
@@ -40,7 +40,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [error, setError] = useState(null)
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
-  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', propio: '60' })
+  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: '60' })
 
   const delMes = config.meses?.[mes] || {}
 
@@ -94,21 +94,22 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     }])
     setNuevaCuota({ movimientoId: '', porMes: '' })
   }
-  // Trabajos por fuera: quien lo hizo (el dueño de la cuenta) se queda con
-  // `propio` % y el resto va parejo a los demás.
+  // Trabajos por fuera: quien lo hizo se queda con `propio` % y el resto va parejo
+  // a los demás. Si no se elige quién, es el dueño de la cuenta del movimiento.
   const trabajoElegido = deSocios.find(t => t.id === nuevoTrabajo.movimientoId)
+  const socioDelTrabajo = nuevoTrabajo.socio || trabajoElegido?.socio
   const propioValido = Number(nuevoTrabajo.propio) >= 0 && Number(nuevoTrabajo.propio) <= 100 && nuevoTrabajo.propio !== ''
   const guardarTrabajos = (lista) => onCambiarConfig({ ...config, trabajos: lista })
   const agregarTrabajo = (e) => {
     e.preventDefault()
     if (!trabajoElegido || !propioValido) return
-    guardarTrabajos([...trabajos, {
+    onCambiarConfig(conTrabajo(config, {
       movimientoId: trabajoElegido.id,
       concepto: trabajoElegido.nombre || (trabajoElegido.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
-      socio: trabajoElegido.socio,
-      porcentajes: porcentajesTrabajo(trabajoElegido.socio, config.socios, Number(nuevoTrabajo.propio)),
-    }])
-    setNuevoTrabajo(n => ({ ...n, movimientoId: '' }))
+      socio: socioDelTrabajo,
+      propio: Number(nuevoTrabajo.propio),
+    }))
+    setNuevoTrabajo(n => ({ ...n, movimientoId: '', socio: '' }))
   }
   const movimientoPorId = new Map(movimientos.map(t => [t.id, t]))
   const trabajosDelMes = trabajos
@@ -310,8 +311,8 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             {trabajosDelMes.map(t => (
               <div key={t.movimientoId} style={{ ...fila, alignItems: 'flex-start' }}>
                 <span>
-                  <strong>{t.concepto}</strong> · {t.movimiento.tipo === 'ingreso' ? 'cobró' : 'pagó'} {t.socio} {enMoneda(Math.abs(Number(t.movimiento.monto) || 0), t.movimiento.moneda || 'ARS')}
-                  <br /><span style={{ fontSize: '12px', color: muted }}>{textoPorcentajes(t.porcentajes)}</span>
+                  <strong>{t.concepto}</strong> · {t.movimiento.tipo === 'ingreso' ? '+' : '−'}{enMoneda(Math.abs(Number(t.movimiento.monto) || 0), t.movimiento.moneda || 'ARS')}
+                  <br /><span style={{ fontSize: '12px', color: muted }}>Laburo de {t.socio}: {textoPorcentajes(t.porcentajes)}</span>
                 </span>
                 <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label={`Quitar ${t.concepto}`}
                   onClick={() => guardarTrabajos(trabajos.filter((_, k) => k !== t.indice))}>×</button>
@@ -320,7 +321,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             {deSocios.length > 0 && (
               <form onSubmit={agregarTrabajo} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginTop: '10px' }}>
                 <select style={{ ...styles.input, gridColumn: '1 / -1' }} value={nuevoTrabajo.movimientoId} aria-label="Movimiento del trabajo"
-                  onChange={e => setNuevoTrabajo(n => ({ ...n, movimientoId: e.target.value }))}>
+                  onChange={e => setNuevoTrabajo(n => ({ ...n, movimientoId: e.target.value, socio: '' }))}>
                   <option value="">— Elegí un movimiento del mes —</option>
                   {deSocios.map((t, i) => (
                     <option key={t.id ?? i} value={t.id ?? ''} disabled={!t.id}>
@@ -328,14 +329,19 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                     </option>
                   ))}
                 </select>
+                <select style={styles.input} value={socioDelTrabajo || ''} aria-label="De quién fue el laburo"
+                  disabled={!trabajoElegido} onChange={e => setNuevoTrabajo(n => ({ ...n, socio: e.target.value }))}>
+                  {!trabajoElegido && <option value="">Laburo de…</option>}
+                  {config.socios.map(s => <option key={s} value={s}>Laburo de {s}</option>)}
+                </select>
                 <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1" value={nuevoTrabajo.propio}
                   aria-label="Porcentaje para quien hizo el trabajo" placeholder="% propio"
                   onChange={e => setNuevoTrabajo(n => ({ ...n, propio: e.target.value }))} />
-                <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
+                <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px', gridColumn: '1 / -1' }}
                   disabled={!trabajoElegido || !propioValido}>Agregar</button>
                 <p style={{ gridColumn: '1 / -1', fontSize: '11px', color: muted, margin: 0 }}>
                   {trabajoElegido && propioValido
-                    ? textoPorcentajes(porcentajesTrabajo(trabajoElegido.socio, config.socios, Number(nuevoTrabajo.propio)))
+                    ? textoPorcentajes(porcentajesTrabajo(socioDelTrabajo, config.socios, Number(nuevoTrabajo.propio)))
                     : '% para quien lo hizo; el resto va parejo a los demás.'}
                 </p>
               </form>
