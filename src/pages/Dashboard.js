@@ -17,7 +17,7 @@ import CambioMoneda from '../components/CambioMoneda'
 import RepartoSocios from '../components/RepartoSocios'
 import Liquidacion from '../components/Liquidacion'
 import { puedeVerLiquidacion } from '../config/features'
-import { normalizarConfigReparto } from '../lib/repartoSocios'
+import { normalizarConfigReparto, conTrabajo } from '../lib/repartoSocios'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
@@ -279,7 +279,7 @@ export default function Dashboard() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1' })
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '' })
   // Ingreso/Neutro suelen tener una sola categoría real (ej. "Ingresos"), lo
   // que hacía el selector de Categoría redundante: había que elegir la única
   // opción solo para desbloquear Subcategoría, que es donde está la elección
@@ -959,7 +959,15 @@ export default function Dashboard() {
       return
     }
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId })
+    // Laburo de un socio en particular (cuentas con reparto): queda marcado como
+    // trabajo por fuera, 60 % para quien lo hizo y el resto parejo.
+    if (repartoSocios && efectivo.trabajoDe && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto')) {
+      const nueva = conTrabajo(repartoSocios, { movimientoId: movInsertado[0].id, concepto: efectivo.nombre, socio: efectivo.trabajoDe })
+      setRepartoSocios(nueva)
+      persistPref('reparto_socios', nueva)
+    }
+
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '' })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
     if (tipoMovimiento === 'ingreso') {
@@ -5492,6 +5500,16 @@ export default function Dashboard() {
                   ))}
                 </select>
               </div>
+              {repartoSocios && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto') && (
+                <div style={styles.field}>
+                  <label style={styles.label}>¿De quién es el laburo?</label>
+                  <select style={styles.input} value={efectivo.trabajoDe || ''} aria-label="De quién es el laburo"
+                    onChange={e => setEfectivo({...efectivo, trabajoDe: e.target.value})}>
+                    <option value="">De la agencia (partes iguales)</option>
+                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s} (60 % para {s}, el resto parejo)</option>)}
+                  </select>
+                </div>
+              )}
               <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
                 {categoriasDelTipoMovimiento.length > 1 && (
                   <div style={styles.field}>

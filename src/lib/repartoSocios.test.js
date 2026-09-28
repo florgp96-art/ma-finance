@@ -1,6 +1,6 @@
 const {
   calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes, cuotasDelMes,
-  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo, fraccionesDeReparto, porcentajesTrabajo,
+  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo, fraccionesDeReparto, porcentajesTrabajo, conTrabajo,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -238,6 +238,22 @@ describe('trabajos por fuera', () => {
     expect(deFlor).toEqual({ Flor: 50, Valen: 25, Dol: 25 })
     // Sin porcentaje, el que lo hizo se queda con el 60 %.
     expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 60, Valen: 20, Dol: 20 })
+  })
+
+  test('conTrabajo: marca, re-marca y desmarca un movimiento', () => {
+    const base = { socios, meses: {}, cuotas: [], trabajos: [{ movimientoId: 'x', concepto: 'Otro', socio: 'Valen', porcentajes: { Valen: 100 } }] }
+    const marcado = conTrabajo(base, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol' })
+    expect(marcado.trabajos).toEqual([
+      base.trabajos[0],
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol', porcentajes: { Flor: 20, Valen: 20, Dol: 60 } },
+    ])
+    expect(base.trabajos).toHaveLength(1) // no toca la configuración que recibe
+    const otraVez = conTrabajo(marcado, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor' })
+    expect(otraVez.trabajos.filter(t => t.movimientoId === 'maxi')).toEqual([
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
+    ])
+    expect(conTrabajo(otraVez, { movimientoId: 'maxi', socio: '' }).trabajos).toEqual([base.trabajos[0]])
+    expect(conTrabajo(base, { movimientoId: 'y', socio: 'Nadie' }).trabajos).toEqual(base.trabajos)
     expect(fraccionesDeReparto({ Flor: 2, Valen: 1, Dol: 1 }, socios)).toEqual({ Flor: 0.5, Valen: 0.25, Dol: 0.25 })
     expect(fraccionesDeReparto({ Nadie: 100 }, socios)).toBe(null)
   })

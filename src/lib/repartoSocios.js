@@ -135,6 +135,18 @@ export const porcentajesTrabajo = (socio, socios, propio = 60) => {
   return Object.fromEntries((socios || []).map(s => [s, s === socio ? p : (otros.length ? (100 - p) / otros.length : 0)]))
 }
 
+// La configuración con `movimientoId` marcado como trabajo de `socio` (el que hizo
+// el laburo, que no tiene por qué ser el dueño de la cuenta donde entró la plata).
+// Reemplaza la marca anterior de ese movimiento; sin socio válido, lo desmarca.
+export const conTrabajo = (config, { movimientoId, concepto, socio, propio = 60 }) => {
+  const trabajos = (Array.isArray(config?.trabajos) ? config.trabajos : []).filter(t => t.movimientoId !== movimientoId)
+  if (!movimientoId || !(config?.socios || []).includes(socio)) return { ...config, trabajos }
+  return {
+    ...config,
+    trabajos: [...trabajos, { movimientoId, concepto: concepto || 'Movimiento', socio, porcentajes: porcentajesTrabajo(socio, config.socios, propio) }],
+  }
+}
+
 // Quién le da cuánto a quién para que todos queden con su parte. El que más
 // tiene de más le paga primero al que más le falta: en el caso común (uno tiene
 // la plata, los demás pusieron de su bolsillo) salen las menos transferencias.

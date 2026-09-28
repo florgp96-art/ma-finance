@@ -155,3 +155,22 @@ test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', a
     porcentajes: { Flor: 20, Valen: 60, Dol: 20 },
   }])
 })
+
+test('se puede elegir de quién fue el laburo aunque la plata haya entrado en la cuenta de otro', async () => {
+  mockBase.movimientos = [
+    { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
+    { id: 'pag', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 150000, nombre: 'Página web' },
+  ]
+  const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [] })
+  const select = await screen.findByRole('combobox', { name: 'Movimiento del trabajo' })
+  fireEvent.change(select, { target: { value: 'pag' } })
+  const quien = screen.getByRole('combobox', { name: 'De quién fue el laburo' })
+  expect(quien).toHaveValue('Dol') // por defecto, el dueño de la cuenta
+  fireEvent.change(quien, { target: { value: 'Flor' } })
+  expect(screen.getByText('Flor 60 % · Valen 20 % · Dol 20 %')).toBeInTheDocument()
+  fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
+  expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
+    movimientoId: 'pag', concepto: 'Página web', socio: 'Flor',
+    porcentajes: { Flor: 60, Valen: 20, Dol: 20 },
+  }])
+})
