@@ -183,8 +183,13 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   const fraccionesPorId = new Map((trabajos || [])
     .map(tb => [tb?.movimientoId, fraccionesDeReparto(tb?.porcentajes, lista)])
     .filter(([id, fracciones]) => id && fracciones))
+  const trabajoPorId = new Map((trabajos || []).filter(tb => tb?.movimientoId).map(tb => [tb.movimientoId, tb]))
   let ingresosComunes = 0
   let gastosComunes = 0
+  // El detalle de cada número, para poder mostrar de dónde sale.
+  const detalleIngresos = []
+  const detalleGastos = []
+  const gruposTrabajo = new Map() // quién hizo el laburo → { neto, reparto por socio, movimientos }
   const sinSocio = new Set()
   const sinCotizacion = new Set()
   const enCuotas = new Set((cuotas || []).map(c => c?.movimientoId).filter(Boolean))
@@ -204,12 +209,29 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     if (!socio) { sinSocio.add(cuenta?.nombre || 'Cuenta borrada'); continue }
     if (t.tipo === 'ingreso') base[socio].cobro += pesos
     else base[socio].pago += pesos
+    const item = {
+      id: t.id, tipo: t.tipo, nombre: t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
+      socio, moneda: t.moneda || 'ARS', monto: Math.abs(Number(t.monto) || 0), pesos,
+    }
     const fracciones = fraccionesPorId.get(t.id)
     if (fracciones) {
       const signo = t.tipo === 'ingreso' ? 1 : -1
-      for (const [s, f] of Object.entries(fracciones)) base[s].trabajos += signo * pesos * f
-    } else if (t.tipo === 'ingreso') ingresosComunes += pesos
-    else gastosComunes += pesos
+      const quien = lista.includes(trabajoPorId.get(t.id)?.socio) ? trabajoPorId.get(t.id).socio : socio
+      const grupo = gruposTrabajo.get(quien) || { socio: quien, neto: 0, reparto: Object.fromEntries(lista.map(s => [s, 0])), movimientos: [] }
+      grupo.neto += signo * pesos
+      grupo.movimientos.push(item)
+      for (const [s, f] of Object.entries(fracciones)) {
+        base[s].trabajos += signo * pesos * f
+        grupo.reparto[s] += signo * pesos * f
+      }
+      gruposTrabajo.set(quien, grupo)
+    } else if (t.tipo === 'ingreso') {
+      ingresosComunes += pesos
+      detalleIngresos.push(item)
+    } else {
+      gastosComunes += pesos
+      detalleGastos.push(item)
+    }
   }
 
   for (const tr of transferencias || []) {
@@ -237,18 +259,29 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   // Lo que le toca a cada uno: la parte común, más o menos las cuotas del mes (el
   // que devuelve termina con menos, el que adelantó el gasto con más), más su
   // porción de los trabajos por fuera.
+  // ganancia: lo que ganó cada uno en el mes (parte común + su porción de los
+  // trabajos por fuera). leToca le suma las cuotas, que son devoluciones.
   const porSocio = filas.map(f => {
     const tiene = f.cobro - f.pago + f.transferencias
-    const leToca = parte + f.cuotas + f.trabajos
-    return { ...f, tiene, leToca, diferencia: tiene - leToca }
+    const ganancia = parte + f.trabajos
+    const leToca = ganancia + f.cuotas
+    return { ...f, tiene, ganancia, leToca, diferencia: tiene - leToca }
   })
+  const porPesos = (a, b) => b.pesos - a.pesos
 
   return {
     ingresos,
     gastos,
     neto,
+    ingresosComunes,
+    gastosComunes,
     netoTrabajos,
     parte,
+    detalle: {
+      ingresos: detalleIngresos.sort(porPesos),
+      gastos: detalleGastos.sort(porPesos),
+      trabajos: [...gruposTrabajo.values()],
+    },
     porSocio,
     pagos: saldarDiferencias(porSocio),
     cuotas: cuotasMes,
@@ -290,7 +323,7 @@ export const repartoDelMes = ({ config, mes, movimientos, cuentas, cotizacionesV
 // cotización, sus pagos y sus cuotas, y después se suma lo de cada socio.
 export const repartoDelPeriodo = ({ config, meses, movimientos, cuentas, cotizacionesVivas }) => {
   const socios = config?.socios || []
-  const porSocio = new Map(socios.map(s => [s, { socio: s, tiene: 0, leToca: 0, trabajos: 0, diferencia: 0 }]))
+  const porSocio = new Map(socios.map(s => [s, { socio: s, tiene: 0, ganancia: 0, leToca: 0, trabajos: 0, diferencia: 0 }]))
   let parte = 0
   let netoTrabajos = 0
   for (const mes of meses || []) {
@@ -301,6 +334,7 @@ export const repartoDelPeriodo = ({ config, meses, movimientos, cuentas, cotizac
     for (const s of r.porSocio) {
       const acumulado = porSocio.get(s.socio)
       acumulado.tiene += s.tiene
+      acumulado.ganancia += s.ganancia
       acumulado.leToca += s.leToca
       acumulado.trabajos += s.trabajos
       acumulado.diferencia += s.diferencia

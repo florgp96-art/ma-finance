@@ -4057,8 +4057,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         <span>{sc.socio}</span>
                         <span style={{ fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{sc.tiene < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.tiene)))}</span>
                       </div>
-                      <div style={{ fontSize: '11px', textAlign: 'right', color: sc.diferencia >= 1 ? sem.negativo : sc.diferencia <= -1 ? sem.positivo : gris }}>
-                        {sc.diferencia >= 1 ? `da $ ${formatMonto(Math.round(sc.diferencia))}` : sc.diferencia <= -1 ? `recibe $ ${formatMonto(Math.round(-sc.diferencia))}` : 'a mano'}
+                      <div style={{ fontSize: '11px', textAlign: 'right', color: gris }}>
+                        se queda con {sc.leToca < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.leToca)))}
+                        {' · '}
+                        <span style={{ color: sc.diferencia >= 1 ? sem.negativo : sc.diferencia <= -1 ? sem.positivo : gris }}>
+                          {sc.diferencia >= 1 ? `da $ ${formatMonto(Math.round(sc.diferencia))}` : sc.diferencia <= -1 ? `recibe $ ${formatMonto(Math.round(-sc.diferencia))}` : 'a mano'}
+                        </span>
                       </div>
                     </div>
                   ))}

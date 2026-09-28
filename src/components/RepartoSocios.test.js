@@ -22,6 +22,8 @@ const cuentas = [
 const styles = { input: {}, label: {}, modalButtons: {}, cancelBtn: {} }
 const sem = { negativo: 'red', positivo: 'green' }
 
+const texto = (el) => el.textContent.replace(/\u00A0/g, ' ')
+
 const montar = (config) => {
   const onCambiarConfig = jest.fn()
   render(<RepartoSocios config={config} onCambiarConfig={onCambiarConfig} accounts={cuentas} userId="u1"
@@ -47,7 +49,7 @@ test('usa la cotización del primer pago del mes y dice quién le da a quién', 
   // Neto con el dólar a 1.560: 900.000 − 156.000 − 30.000 = 714.000 → 238.000 cada
   // uno. Dol tiene 900.000 menos los 100.000 que ya le pasó a Valen; Valen puso
   // 156.000 de su bolsillo y Flor 30.000.
-  expect(await screen.findByText('$ 238.000')).toBeInTheDocument()
+  expect(texto((await screen.findByText('A cada uno (÷ 3)')).nextSibling)).toBe('$ 238.000')
   expect(screen.getAllByText(/le da a/).map(el => el.textContent.replace(/\u00A0/g, ' '))).toEqual([
     'Dol le da a Valen $ 294.000',
     'Dol le da a Flor $ 268.000',
@@ -106,7 +108,7 @@ test('la cotización no se edita: es la del día (promedio compra/venta) y las c
   // Los únicos campos numéricos son los de montos (transferencias), no cotizaciones.
   expect(screen.getAllByRole('spinbutton').map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
   // Neto con el dólar a 1.500: 900.000 − 150.000 − 30.000 = 720.000 → 240.000 cada uno.
-  expect(screen.getByText('$ 240.000')).toBeInTheDocument()
+  expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 240.000')
 })
 
 test('con la cotización ya fija, un pago nuevo usa la misma', async () => {
@@ -173,4 +175,25 @@ test('se puede elegir de quién fue el laburo aunque la plata haya entrado en la
     movimientoId: 'pag', concepto: 'Página web', socio: 'Flor',
     porcentajes: { Flor: 60, Valen: 20, Dol: 20 },
   }])
+})
+
+test('muestra de dónde sale cada número y con cuánto se queda cada uno', async () => {
+  mockBase.movimientos = [
+    { id: 'nas', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Nasello Cables' },
+    { id: 'hig', account_id: 'rev', tipo: 'gasto', moneda: 'USD', monto: 100, nombre: 'Higgsfield' },
+    { id: 'pag', account_id: 'mc', tipo: 'ingreso', moneda: 'ARS', monto: 150000, nombre: 'Página web (Flor)' },
+  ]
+  montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [
+    { movimientoId: 'pag', concepto: 'Página web (Flor)', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
+  ] })
+  // La agencia: 900.000 − (100 × 1.500) = 750.000 → 250.000 cada uno. La página va aparte.
+  expect(await screen.findByText('Nasello Cables · Dol')).toBeInTheDocument()
+  expect(texto(screen.getByText('Higgsfield · Valen').nextSibling)).toBe('U$S 100 → $ 150.000')
+  expect(texto(screen.getByText('Ganancia de la agencia').nextSibling)).toBe('$ 750.000')
+  expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 250.000')
+  expect(texto(screen.getByText('Flor $ 90.000 · Valen $ 30.000 · Dol $ 30.000'))).toBeTruthy()
+  const quedan = screen.getAllByText(/^se queda con/).map(texto)
+  expect(quedan).toEqual(['se queda con $ 340.000', 'se queda con $ 280.000', 'se queda con $ 280.000'])
+  fireEvent.click(screen.getByRole('button', { name: /Ingresos \(1\)/ }))
+  expect(screen.queryByText('Nasello Cables · Dol')).not.toBeInTheDocument()
 })
