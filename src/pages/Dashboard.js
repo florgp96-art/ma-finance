@@ -4181,7 +4181,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} />
+                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -4330,7 +4330,7 @@ export default function Dashboard() {
                     📊 {selectedAccount.nombre}
                   </h2>
                 </div>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} />
+                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
               </div>
             ) : (
               <div style={styles.emptyState}>
