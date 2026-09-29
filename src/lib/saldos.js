@@ -141,6 +141,8 @@ export const movimientosDesdeAncla = (transactions, accountId, moneda, ancla, ha
   const tope = norm(hasta)
   return (transactions || []).filter(t =>
     enLaCuenta(t, accountId) &&
+    // "A cobrar" / "a pagar": la plata todavía no entró ni salió, no mueve el saldo.
+    !t.pendiente &&
     (t.moneda || 'ARS') === moneda &&
     esPosteriorAlAncla(t, ancla) &&
     (!tope || norm(t.fecha) <= tope))

@@ -95,6 +95,20 @@ describe('saldo a partir del ancla', () => {
     expect(r.cantidadMovimientos).toBe(3)
   })
 
+  test('lo pendiente (a cobrar / a pagar) no mueve el saldo hasta que se marca cobrado o pagado', () => {
+    const r = saldoDeCuenta({
+      anclas: [ancla('2026-09-01', 500000)],
+      transactions: [
+        mov('2026-09-03', 120000, 'ingreso'),
+        mov('2026-09-04', 600000, 'ingreso', { pendiente: true }),
+        mov('2026-09-05', 25000, 'gasto', { pendiente: true }),
+      ],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(620000)
+    expect(r.cantidadMovimientos).toBe(1)
+  })
+
   test('lo del mismo día del ancla ya está adentro: no se cuenta de nuevo', () => {
     const r = saldoDeCuenta({
       anclas: [ancla('2026-09-01', 500000)],

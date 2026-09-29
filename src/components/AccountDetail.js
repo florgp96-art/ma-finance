@@ -9,6 +9,7 @@ import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { repartoDelPeriodo } from '../lib/repartoSocios'
+import { puedeVerCobroFacturacion } from '../config/features'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -2169,6 +2170,14 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             {reparto && (
               <span style={{ fontSize: '11px', color: '#5C8AA8', marginLeft: '6px' }}>🔀</span>
             )}
+            {verCobroFacturacion && tx.pendiente && (tx.tipo === 'ingreso' || tx.tipo === 'gasto') && (
+              <span style={{ fontSize: '11px', color: '#B7791F', marginLeft: '6px', fontWeight: '600' }}>
+                ⏳ {tx.tipo === 'ingreso' ? 'A cobrar' : 'A pagar'}
+              </span>
+            )}
+            {verCobroFacturacion && tx.facturado && (
+              <span style={{ fontSize: '11px', color: '#4a9e7a', marginLeft: '6px', fontWeight: '600' }}>🧾 Facturado</span>
+            )}
           </td>
           {colVisible.categoria && (
             <td style={ellipsisCell}>
@@ -2248,6 +2257,20 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <p style={detailLabel}>Moneda</p>
                   <p style={detailValue}>{tx.moneda || 'ARS'}</p>
                 </div>
+                {verCobroFacturacion && (tx.tipo === 'ingreso' || tx.tipo === 'gasto') && (
+                  <div>
+                    <p style={detailLabel}>Estado</p>
+                    <p style={detailValue}>
+                      {tx.tipo === 'ingreso' ? (tx.pendiente ? '⏳ A cobrar' : '✅ Cobrado') : (tx.pendiente ? '⏳ A pagar' : '✅ Pagado')}
+                    </p>
+                  </div>
+                )}
+                {verCobroFacturacion && tx.tipo === 'ingreso' && (
+                  <div>
+                    <p style={detailLabel}>Facturado</p>
+                    <p style={detailValue}>{tx.facturado ? '🧾 Sí' : 'No'}</p>
+                  </div>
+                )}
                 {reparto && (
                   <div style={{ width: '100%' }}>
                     <p style={detailLabel}>Reparto</p>
@@ -2257,6 +2280,18 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                {verCobroFacturacion && (tx.tipo === 'ingreso' || tx.tipo === 'gasto') && (
+                  <button style={styles.accionBtn} onClick={() => handleToggleMarca(tx, 'pendiente')}>
+                    {tx.tipo === 'ingreso'
+                      ? (tx.pendiente ? '✅ Marcar cobrado' : '⏳ Marcar a cobrar')
+                      : (tx.pendiente ? '✅ Marcar pagado' : '⏳ Marcar a pagar')}
+                  </button>
+                )}
+                {verCobroFacturacion && tx.tipo === 'ingreso' && (
+                  <button style={styles.accionBtn} onClick={() => handleToggleMarca(tx, 'facturado')}>
+                    {tx.facturado ? '↩️ Quitar facturado' : '🧾 Marcar facturado'}
+                  </button>
+                )}
                 {tx.tipo === 'gasto' && !esVistaIngresos && children.length > 0 && (
                   <button style={styles.accionBtn} onClick={() => abrirModalReparto(tx)}>🔀 Dividir</button>
                 )}
@@ -2372,6 +2407,15 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     await supabase.from('transactions').delete().eq('id', deleteConfirmTx.id)
     setTransactions(prev => prev.filter(t => t.id !== deleteConfirmTx.id))
     setDeleteConfirmTx(null)
+  }
+
+  // Cobrado / a cobrar, pagado / a pagar y facturado (solo la cuenta de GPK, ver config/features).
+  const verCobroFacturacion = puedeVerCobroFacturacion(userEmail)
+  const handleToggleMarca = async (tx, campo) => {
+    const valor = !tx[campo]
+    const { error } = await supabase.from('transactions').update({ [campo]: valor }).eq('id', tx.id)
+    if (error) { window.alert('No se pudo guardar: ' + error.message + '\nProbá de nuevo.'); return }
+    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, [campo]: valor } : t))
   }
 
   const handleMarcarNeutro = async (tx) => {
