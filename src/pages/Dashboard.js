@@ -8,6 +8,7 @@ import { filtrarYaCargados } from '../lib/duplicados'
 import { sentidoDelExtracto } from '../lib/saldos'
 import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
 import { hayColumnaSentido } from '../lib/columnaSentido'
+import { ESTADOS_FACTURACION, hayColumnaFacturacion } from '../lib/facturacion'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
@@ -279,7 +280,10 @@ export default function Dashboard() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '' })
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '', facturacion: '' })
+  // ¿La base ya guarda si se facturó cada ingreso? (ver lib/facturacion.js)
+  const [conFacturacion, setConFacturacion] = useState(false)
+  useEffect(() => { hayColumnaFacturacion().then(setConFacturacion) }, [])
   // Ingreso/Neutro suelen tener una sola categoría real (ej. "Ingresos"), lo
   // que hacía el selector de Categoría redundante: había que elegir la única
   // opción solo para desbloquear Subcategoría, que es donde está la elección
@@ -950,6 +954,7 @@ export default function Dashboard() {
       // TC congelado al momento de cargar el movimiento — el equivalente en ARS de
       // este movimiento en USD nunca cambia después, aunque se actualice el TC.
       fx_rate: efectivo.moneda === 'USD' ? (parseFloat(tipoCambioEfectivo) || null) : null,
+      ...(tipoMovimiento === 'ingreso' && conFacturacion ? { facturacion: efectivo.facturacion || null } : {}),
     }
     const { data: movInsertado, error: errMov } = await supabase.from('transactions')
       .insert(aplicarReglasReparto([movimientoNuevo], repartoRules)).select('id')
@@ -967,7 +972,7 @@ export default function Dashboard() {
       persistPref('reparto_socios', nueva)
     }
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '' })
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '', facturacion: '' })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
     if (tipoMovimiento === 'ingreso') {
@@ -5500,6 +5505,16 @@ export default function Dashboard() {
                   ))}
                 </select>
               </div>
+              {tipoMovimiento === 'ingreso' && conFacturacion && (
+                <div style={styles.field}>
+                  <label style={styles.label}>¿Lo facturaste? <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <select style={styles.input} value={efectivo.facturacion || ''} aria-label="Lo facturaste"
+                    onChange={e => setEfectivo({...efectivo, facturacion: e.target.value})}>
+                    <option value="">— Sin indicar —</option>
+                    {ESTADOS_FACTURACION.map(e => <option key={e.valor} value={e.valor}>{e.etiqueta}</option>)}
+                  </select>
+                </div>
+              )}
               {repartoSocios && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto') && (
                 <div style={styles.field}>
                   <label style={styles.label}>¿De quién es el laburo?</label>

@@ -344,6 +344,21 @@ order by m.clave;
 La consulta del final tiene que mostrar los 6 meses cerrados, y agosto con 16 días y
 `total_de_los_dias` = 482400, igual a su `total_cerrado`.
 
+### g) Facturación de los ingresos (para el reporte al contador/a)
+
+```sql
+alter table public.transactions add column if not exists facturacion text
+  check (facturacion in ('facturado', 'sin_facturar', 'no_corresponde'));
+```
+
+También en `supabase/migrations/20261001000000_facturacion.sql`. Cada ingreso puede
+marcarse como Facturado, Sin facturar o No corresponde (sueldo, cuota alimentaria…);
+null es "sin indicar". Con la columna aparecen: los botones en cada ingreso abierto,
+"¿Lo facturaste?" al cargar un ingreso a mano y, en la vista Ingresos, el botón
+"Reporte para tu contador/a" (un Excel con el resumen y la lista, para compartir).
+Sin la columna no se muestra nada de esto y el resto de la app sigue igual (ver
+`hayColumnaFacturacion`). Se puede correr con la app abierta.
+
 ---
 
 ### b) Rate limit compartido — **esta es la que más conviene**
