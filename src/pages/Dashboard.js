@@ -9,6 +9,7 @@ import { sentidoDelExtracto } from '../lib/saldos'
 import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { ESTADOS_FACTURACION, hayColumnaFacturacion } from '../lib/facturacion'
+import { controlDeLectura, lineasDelControl } from '../lib/controlLectura'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
@@ -1929,6 +1930,13 @@ export default function Dashboard() {
           result.periodo = `${MESES_LARGOS[+mFact[2] - 1]} ${mFact[1]}`
         }
       }
+      // Un resumen cerrado que no cierra con su total: se avisa en el mail (además
+      // de en la pantalla, antes de confirmar). Mismo criterio de "cerrado" que abajo.
+      const cierreParaControl = parseFechaArgentina(result.fecha_facturacion)
+      const ahora = new Date()
+      const hoyParaControl = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
+      const cerradoParaControl = !!parseFechaArgentina(result.fecha_vencimiento) && (!cierreParaControl || cierreParaControl <= hoyParaControl)
+      const control = controlDeLectura(result)
       logImportAttempt({
         tipo: isImage ? 'imagen' : 'pdf',
         nombreArchivo: archivo.name,
@@ -1936,6 +1944,7 @@ export default function Dashboard() {
         tarjetaDetectada: result.tarjeta_detectada || null,
         tipoDocumento: result.tipo_documento || null,
         transaccionesDetectadas: result.transacciones?.length ?? null,
+        ...(cerradoParaControl && control.cuadra === false ? { aviso: lineasDelControl(control).join(' ') } : {}),
       })
       setStatementData(result)
       // Un resumen cerrado siempre trae fecha de vencimiento; una captura de movimientos,
@@ -4885,6 +4894,22 @@ export default function Dashboard() {
                         {totalEURprev > 0 && <div style={styles.previewStat}><span style={styles.previewStatLabel}>Total EUR</span><span style={styles.previewStatValue}>€ {formatMontoFull(totalEURprev)}</span></div>}
                       </>}
                       <div style={styles.previewStat}><span style={styles.previewStatLabel}>Seleccionadas</span><span style={styles.previewStatValue}>{pdfTxSelections.size} / {statementData.transacciones.length}</span></div>
+                    </div>
+                  )
+                })()}
+                {/* Control de lectura (ver lib/controlLectura.js): en un resumen cerrado,
+                    lo leído tiene que cerrar con el total que informa el banco. */}
+                {statementData?.tipo_documento === 'tarjeta' && esResumenCerrado && (() => {
+                  const control = controlDeLectura(statementData)
+                  if (control.cuadra !== false) return null
+                  return (
+                    <div role="alert" style={{ background: sem.alerta + '1A', border: `1px solid ${sem.alerta}66`, borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', fontSize: '13px', color: txtSecundario }}>
+                      <p style={{ margin: '0 0 4px', fontWeight: 600, color: sem.alerta }}>⚠️ Revisá antes de confirmar: lo leído no cuadra con el total del resumen</p>
+                      {lineasDelControl(control).map(l => <p key={l} style={{ margin: '2px 0' }}>{l}</p>)}
+                      <p style={{ margin: '6px 0 0', fontSize: '12px' }}>
+                        Puede faltar algún movimiento o cargo (intereses, impuestos, percepciones). Si falta algo, cargalo a mano después de importar.
+                        {control.monedas.some(m => !m.cuadra && !m.conSaldoAnterior) ? ' También puede ser saldo del resumen anterior que quedó sin pagar.' : ''}
+                      </p>
                     </div>
                   )
                 })()}

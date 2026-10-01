@@ -11,15 +11,19 @@ const supabaseAdmin = createClient(
 // archivo o error con markup se inyecta tal cual en el mail que llega al owner.
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas, userEmail }) {
+async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas, aviso, userEmail }) {
   const notifyEmail = process.env.NOTIFY_EMAIL
   const resendKey = process.env.RESEND_API_KEY
   if (!notifyEmail || !resendKey) return
 
   const esError = estado === 'error'
+  // Leído sin error pero sin cerrar con el total del resumen (ver
+  // src/lib/controlLectura.js): puede faltar algún movimiento.
   const asunto = esError
     ? `❌ Error leyendo ${tipo} — ${userEmail}`
-    : `✅ Resumen leído — ${userEmail}`
+    : aviso
+      ? `⚠️ Resumen leído, pero no cuadra con el total — ${userEmail}`
+      : `✅ Resumen leído — ${userEmail}`
   const filas = esError
     ? [
         ['Usuario', esc(userEmail)],
@@ -34,6 +38,7 @@ async function enviarNotificacion({ estado, tipo, nombreArchivo, errorMensaje, t
         ['Detectado', esc(tarjetaDetectada || '—')],
         ['Documento', esc(tipoDocumento || '—')],
         ['Transacciones', transaccionesDetectadas ?? '—'],
+        ...(aviso ? [['No cuadra', esc(aviso)]] : []),
       ]
   const html = `<div style="font-family: sans-serif; font-size: 14px;">
     ${filas.map(([k, v]) => `<p style="margin:4px 0"><strong>${k}:</strong> ${v}</p>`).join('')}
@@ -70,6 +75,7 @@ export default async function handler(req, res) {
   if (!await checkRateLimit(`logImport:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
 
   const { tipo, nombreArchivo, estado, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas } = req.body
+  const aviso = typeof req.body.aviso === 'string' ? req.body.aviso.slice(0, 500) : null
   if (!tipo || !estado || (estado !== 'exito' && estado !== 'error')) {
     return res.status(400).json({ error: 'Faltan campos o estado inválido' })
   }
@@ -87,7 +93,7 @@ export default async function handler(req, res) {
   if (insertError) console.error('Error guardando import_log:', insertError.message)
 
   await enviarNotificacion({
-    estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas,
+    estado, tipo, nombreArchivo, errorMensaje, tarjetaDetectada, tipoDocumento, transaccionesDetectadas, aviso,
     userEmail: user.email,
   })
 
