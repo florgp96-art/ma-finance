@@ -131,7 +131,7 @@ ${exText}
 
   return `Analizá este extracto financiero argentino${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Devolvé SOLO JSON válido con esta estructura exacta:
 
-{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_cierre":"09/07/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"hijo":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"titular":"GALLO PROT FLORENCIA"}]}
+{"tipo_documento":"tarjeta","tarjeta_detectada":"Mastercard Galicia","periodo":"Mayo 2026","fecha_facturacion":"09/06/26","fecha_vencimiento":"18/06/26","proximo_cierre":"09/07/26","proximo_vencimiento":"16/07/26","total_pesos":3929478.22,"total_dolares":1.99,"saldo_anterior_pesos":3512040.5,"saldo_anterior_dolares":0,"adicionales":["FEDERICO GALLO PROT"],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"CARO CUORE 99999999","nombre_limpio":"Caro Cuore","categoria_sugerida":"Ropa","subcategoria_sugerida":null,"hijo":null,"monto":59900.01,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"titular":"GALLO PROT FLORENCIA"}]}
 
 ═══════════════════════════════
 CAMPO contexto_detectado:
@@ -217,6 +217,11 @@ REGLAS GENERALES:
   informa un SALDO A FAVOR en esa moneda (el cliente pagó de más y el banco le debe a él,
   no al revés) devolvé ese total como número NEGATIVO — no lo omitas ni lo pongas en 0.
   Esto es común en dólares cuando hubo un pago en esa moneda que superó lo consumido.
+- saldo_anterior_pesos y saldo_anterior_dolares (resúmenes de tarjeta): el SALDO ANTERIOR
+  que informa el resumen en cada moneda — lo que se debía del resumen anterior, antes de
+  restarle los pagos ("SALDO ANTERIOR", "Saldo pendiente anterior"). Copialo tal cual
+  figura (en negativo si era saldo a favor). Si el resumen no lo muestra, devolvé null:
+  NUNCA lo calcules. La app lo usa para controlar que la lectura cierre con el total.
 
 ═══════════════════════════════
 CATEGORÍAS PARA TARJETAS DE CRÉDITO (usar nombres exactos):
