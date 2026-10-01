@@ -8,8 +8,10 @@ import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
-import { repartoDelPeriodo } from '../lib/repartoSocios'
+import { repartoDelPeriodo, nombreDelMes } from '../lib/repartoSocios'
 import { puedeVerCobroFacturacion } from '../config/features'
+import { ESTADOS_FACTURACION, estadoFacturacion, hayColumnaFacturacion } from '../lib/facturacion'
+import ReporteContador from './ReporteContador'
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -813,6 +815,15 @@ export const getLast6Months = () => {
 
 function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto }) {
   const [transactions, setTransactions] = useState([])
+  // Si se facturó cada ingreso (ver lib/facturacion.js): sin la columna en la
+  // base, no se muestra nada de esto.
+  const [conFacturacion, setConFacturacion] = useState(false)
+  const [showReporte, setShowReporte] = useState(false)
+  useEffect(() => {
+    let vigente = true
+    hayColumnaFacturacion().then(si => { if (vigente) setConFacturacion(si) })
+    return () => { vigente = false }
+  }, [])
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
   const [statements, setStatements] = useState([])
@@ -1443,6 +1454,22 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       } : t))
     setEditingTx(null)
     setFilaExpandida(prev => prev === tx.id ? null : prev)
+  }
+
+  // Tocar la opción que ya estaba elegida la desmarca. Se ve al instante y, si la
+  // base no lo guarda, vuelve a como estaba.
+  const cambiarFacturacion = async (tx, valor) => {
+    const previo = { facturacion: tx.facturacion ?? null, ...('facturado' in tx ? { facturado: tx.facturado } : {}) }
+    const nuevo = estadoFacturacion(tx) === valor ? null : valor
+    // Donde también está la columna vieja facturado (GPK; la lee su oficina), se
+    // mantiene igual a lo que se marca acá.
+    const cambios = { facturacion: nuevo, ...('facturado' in tx ? { facturado: nuevo === 'facturado' } : {}) }
+    setTransactions(prev => prev.map(t => (t.id === tx.id ? { ...t, ...cambios } : t)))
+    const { error } = await supabase.from('transactions').update(cambios).eq('id', tx.id)
+    if (error) {
+      setTransactions(prev => prev.map(t => (t.id === tx.id ? { ...t, ...previo } : t)))
+      window.alert('No se pudo guardar si se facturó: ' + error.message + '\nProbá de nuevo.')
+    }
   }
 
   const startEdit = (tx) => {
@@ -2159,6 +2186,14 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         >
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(tx.fecha)}</td>
           <td style={ellipsisCell} title={tx.nombre || tx.detalle}>
+            {/* Delante del nombre y como ícono: en el celular la columna es angosta y
+                una etiqueta al final quedaba cortada ("Si…"). */}
+            {esIngresoTx && conFacturacion && (estadoFacturacion(tx) === 'facturado' || estadoFacturacion(tx) === 'sin_facturar') && (
+              <span role="img" aria-label={estadoFacturacion(tx) === 'facturado' ? 'Facturado' : 'Sin facturar'}
+                title={estadoFacturacion(tx) === 'facturado' ? 'Facturado' : 'Sin facturar'} style={{ marginRight: '4px' }}>
+                {estadoFacturacion(tx) === 'facturado' ? '🧾' : '⏳'}
+              </span>
+            )}
             {tx.nombre || tx.detalle}
             {/* Hijo/a asignado — en un gasto puede venir por child_id o por tag
                 (modelo viejo); en un ingreso el tag ya está ocupado por la
@@ -2175,7 +2210,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 ⏳ {tx.tipo === 'ingreso' ? 'A cobrar' : 'A pagar'}
               </span>
             )}
-            {verCobroFacturacion && tx.facturado && (
+            {verCobroFacturacion && !conFacturacion && tx.facturado && (
               <span style={{ fontSize: '11px', color: '#4a9e7a', marginLeft: '6px', fontWeight: '600' }}>🧾 Facturado</span>
             )}
           </td>
@@ -2265,10 +2300,28 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                     </p>
                   </div>
                 )}
-                {verCobroFacturacion && tx.tipo === 'ingreso' && (
+                {/* GPK tenía su propio "facturado" sí/no: con la facturación de todas las
+                    cuentas ya en la base, se marca con los mismos botones que el resto. */}
+                {verCobroFacturacion && !conFacturacion && tx.tipo === 'ingreso' && (
                   <div>
                     <p style={detailLabel}>Facturado</p>
                     <p style={detailValue}>{tx.facturado ? '🧾 Sí' : 'No'}</p>
+                  </div>
+                )}
+                {esIngresoTx && conFacturacion && (
+                  <div style={{ width: '100%' }}>
+                    <p style={detailLabel}>¿Lo facturaste?</p>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {ESTADOS_FACTURACION.map(e => {
+                        const activo = estadoFacturacion(tx) === e.valor
+                        return (
+                          <button key={e.valor} type="button" aria-pressed={activo} onClick={() => cambiarFacturacion(tx, e.valor)}
+                            style={{ padding: '6px 12px', borderRadius: '16px', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: activo ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: activo ? 600 : 400 }}>
+                            {activo ? '✓ ' : ''}{e.etiqueta}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
                 {reparto && (
@@ -2287,7 +2340,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       : (tx.pendiente ? '✅ Marcar pagado' : '⏳ Marcar a pagar')}
                   </button>
                 )}
-                {verCobroFacturacion && tx.tipo === 'ingreso' && (
+                {verCobroFacturacion && !conFacturacion && tx.tipo === 'ingreso' && (
                   <button style={styles.accionBtn} onClick={() => handleToggleMarca(tx, 'facturado')}>
                     {tx.facturado ? '↩️ Quitar facturado' : '🧾 Marcar facturado'}
                   </button>
@@ -4551,11 +4604,18 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               <InfoTooltip darkMode={darkMode} text={'"Ingresos" no es una cuenta donde viva la plata: es la vista que junta todos tus ingresos, estén en la cuenta que estén. Cuando le asignás a un ingreso la cuenta donde entró la plata, esa plata pasa a sumar al saldo de esa cuenta y el ingreso se sigue viendo acá — la columna Cuenta te dice en cuál quedó, y el filtro de arriba te deja ver una sola.'} />
             )}
           </h3>
-          {txFiltradas.length > 0 && (
-            <button onClick={handleExportCSV} style={styles.exportBtn}>
-              ↓ Exportar CSV
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {esVistaIngresos && conFacturacion && (
+              <button onClick={() => setShowReporte(true)} style={styles.exportBtn}>
+                🧾 Reporte para tu contador/a
+              </button>
+            )}
+            {txFiltradas.length > 0 && (
+              <button onClick={handleExportCSV} style={styles.exportBtn}>
+                ↓ Exportar CSV
+              </button>
+            )}
+          </div>
         </div>
         {/* Filtros de columna activos. Sin esto, un filtro puesto en una columna
             que después se oculta por ancho de pantalla dejaría la tabla recortada
@@ -4797,6 +4857,23 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         </div>
       )}
 
+      {showReporte && (() => {
+        // Los ingresos del período elegido arriba, sin los filtros de búsqueda ni
+        // de columna: el reporte para el/la contador/a tiene que estar completo.
+        const meses = [...selectedMeses].sort()
+        const ingresosDelPeriodo = transactions.filter(t => t.tipo === 'ingreso' && (meses.length === 0 || meses.some(m => t.fecha?.startsWith(m))))
+        const periodo = meses.length === 0 ? 'Todos los meses'
+          : meses.length === 1 ? nombreDelMes(meses[0])
+            : `${nombreDelMes(meses[0])} a ${nombreDelMes(meses[meses.length - 1])}`
+        const aPesos = (t) => {
+          const monto = Math.abs(Number(t.monto) || 0)
+          const moneda = t.moneda || 'ARS'
+          if (moneda === 'ARS') return monto
+          const tc = moneda === 'USD' ? tcDeMovimiento(t, tcMap, tipoCambio) : moneda === 'EUR' ? tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR) : 0
+          return tc > 0 ? monto * tc : null
+        }
+        return <ReporteContador ingresos={ingresosDelPeriodo} aPesos={aPesos} periodo={periodo} darkMode={darkMode} onCerrar={() => setShowReporte(false)} />
+      })()}
       {deleteConfirmTx && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '400px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', boxSizing: 'border-box' }}>
