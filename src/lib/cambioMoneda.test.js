@@ -66,8 +66,39 @@ describe('armarCambioDeMoneda', () => {
     expect(movimientos.map(m => [m.account_id, m.moneda])).toEqual([[USD, 'USD'], [USD, 'ARS']])
   })
 
-  test('rechaza lo que no es un cambio', () => {
-    expect(armarCambioDeMoneda(venta({ destino: { accountId: ARS, moneda: 'USD', monto: 10 } })).error).toMatch(/monedas/)
+  // Del efectivo a la caja de ahorro, en pesos: la misma plata en otra cuenta.
+  test('con la misma moneda es una transferencia: sale de una cuenta y entra en la otra por el mismo monto', () => {
+    const { movimientos, error } = armarCambioDeMoneda(venta({
+      origen: { accountId: 'efectivo', moneda: 'ARS', monto: '478000', nombre: 'Efectivo' },
+      destino: { accountId: ARS, moneda: 'ARS', monto: '', nombre: 'Caja de Ahorro Galicia' },
+    }))
+    expect(error).toBeUndefined()
+    const [sale, entra] = movimientos
+    expect(sale).toMatchObject({ account_id: 'efectivo', moneda: 'ARS', monto: 478000, tipo: 'neutro', sentido: 'sale', nombre: 'Transferencia a Caja de Ahorro Galicia', fx_rate: null })
+    expect(entra).toMatchObject({ account_id: ARS, moneda: 'ARS', monto: 478000, tipo: 'neutro', sentido: 'entra', nombre: 'Transferencia desde Efectivo' })
+    const anclas = [
+      { id: 'a1', account_id: 'efectivo', moneda: 'ARS', fecha: '2026-09-01', saldo: 500000 },
+      { id: 'a2', account_id: ARS, moneda: 'ARS', fecha: '2026-09-01', saldo: 10000 },
+    ]
+    expect(saldoDeCuenta({ anclas, transactions: movimientos, accountId: 'efectivo' }).saldo).toBe(22000)
+    expect(saldoDeCuenta({ anclas, transactions: movimientos, accountId: ARS }).saldo).toBe(488000)
+  })
+
+  test('una transferencia en dólares no se rompe por no tener tipo de cambio propio', () => {
+    const { movimientos, error } = armarCambioDeMoneda(venta({
+      destino: { accountId: 'mp', moneda: 'USD', monto: '' }, tipoCambioUSD: 1450,
+    }))
+    expect(error).toBeUndefined()
+    expect(movimientos.map(m => [m.monto, m.fx_rate])).toEqual([[181, 1450], [181, 1450]])
+    // Sin el sentido en la base, el texto de la pata que entra igual la hace sumar.
+    const { movimientos: sinColumna } = armarCambioDeMoneda(venta({ destino: { accountId: 'mp', moneda: 'USD', monto: '' }, conSentido: false }))
+    const anclas = [{ id: 'a1', account_id: 'mp', moneda: 'USD', fecha: '2026-09-01', saldo: 0 }]
+    expect(saldoDeCuenta({ anclas, transactions: sinColumna, accountId: 'mp', moneda: 'USD' }).saldo).toBe(181)
+  })
+
+  test('rechaza lo que no es un cambio ni una transferencia', () => {
+    expect(armarCambioDeMoneda(venta({ destino: { accountId: USD, moneda: 'USD', monto: 10 } })).error).toMatch(/dos cuentas distintas/)
+    expect(armarCambioDeMoneda(venta({ destino: { accountId: ARS, moneda: 'USD', monto: 10 }, origen: { accountId: USD, moneda: 'USD', monto: '' } })).error).toMatch(/monto/)
     expect(armarCambioDeMoneda(venta({ origen: { accountId: USD, moneda: 'USD', monto: '0' } })).error).toMatch(/montos/)
     expect(armarCambioDeMoneda(venta({ origen: { accountId: USD, moneda: 'USD', monto: '-5' } })).error).toMatch(/montos/)
     expect(armarCambioDeMoneda(venta({ destino: { accountId: ARS, moneda: 'ARS', monto: 'abc' } })).error).toMatch(/montos/)

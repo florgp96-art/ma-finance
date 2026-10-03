@@ -62,7 +62,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
       .filter(a => a.tipo === 'credito' && a.cuenta_pago_id === account.id)
     if (tarjetasQuePago.length === 0) { setPagosDeTarjeta([]); return }
     const { data: pagos } = await supabase.from('transactions')
-      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id')
+      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id, created_at')
       .in('account_id', tarjetasQuePago.map(a => a.id)).eq('tipo', 'neutro')
     setPagosDeTarjeta(pagos || [])
   }, [account?.id])
@@ -133,7 +133,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   // El detalle sale de la card y entra acá: de qué saldo parte cada moneda, qué se
   // contó desde entonces y cuántos movimientos fueron.
   const textoDelTooltip = useMemo(() => {
-    const comoFunciona = 'Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número.'
+    const comoFunciona = 'Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número. Tampoco lo que ya tenías cargado con fecha de más adelante cuando lo pusiste: ya lo conocías.'
     if (saldos.length === 0) return comoFunciona
     const detalle = saldos.map(s => {
       const desde = `Desde ${fmt(s.ancla.saldo, s.moneda)} del ${formatFecha(s.ancla.fecha)}`
