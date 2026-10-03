@@ -186,12 +186,23 @@ test('muestra de dónde sale cada número y con cuánto se queda cada uno', asyn
   montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [
     { movimientoId: 'pag', concepto: 'Página web (Flor)', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
   ] })
-  // La agencia: 900.000 − (100 × 1.500) = 750.000 → 250.000 cada uno. La página va aparte.
+  // En partes iguales: 900.000 − (100 × 1.500) = 750.000 → 250.000 cada uno. La página va aparte:
+  // es laburo de Flor (60 % de 150.000 = 90.000) y los otros dos se llevan 20 % cada uno (30.000).
   expect(await screen.findByText('Nasello Cables · Dol')).toBeInTheDocument()
   expect(texto(screen.getByText('Higgsfield · Valen').nextSibling)).toBe('U$S 100 → $ 150.000')
-  expect(texto(screen.getByText('Ganancia de la agencia').nextSibling)).toBe('$ 750.000')
+  expect(texto(screen.getByText('Total en partes iguales').nextSibling)).toBe('$ 750.000')
   expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 250.000')
-  expect(texto(screen.getByText('Flor $ 90.000 · Valen $ 30.000 · Dol $ 30.000'))).toBeTruthy()
+  const laburo = within(screen.getByText('Laburo de cada uno').parentElement)
+  expect(texto(laburo.getByText('Laburo de Flor').nextSibling)).toBe('$ 90.000')
+  expect(laburo.getByText('Laburo de Valen')).toBeInTheDocument()
+  expect(laburo.getByText('60 % de $ 150.000')).toBeInTheDocument()
+  const deLosDemas = laburo.getAllByRole('button', { name: /Su parte de lo que laburaron los demás \(1\)/ })
+  expect(deLosDemas.map(b => texto(b.lastChild))).toEqual(['+ $ 30.000', '+ $ 30.000'])
+  fireEvent.click(deLosDemas[0])
+  expect(screen.getAllByText('20 % de $ 150.000')).toHaveLength(1)
+  // Lo que entró y salió de las cuentas de cada uno.
+  expect(texto(screen.getByText('Cuentas de Flor').nextSibling)).toBe('tiene $ 150.000')
+  expect(texto(screen.getByText('Cuentas de Valen').nextSibling)).toBe('tiene − $ 150.000')
   const quedan = screen.getAllByText(/^se queda con/).map(texto)
   expect(quedan).toEqual(['se queda con $ 340.000', 'se queda con $ 280.000', 'se queda con $ 280.000'])
   fireEvent.click(screen.getByRole('button', { name: /Ingresos \(1\)/ }))

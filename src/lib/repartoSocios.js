@@ -190,6 +190,11 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   const detalleIngresos = []
   const detalleGastos = []
   const gruposTrabajo = new Map() // quién hizo el laburo → { neto, reparto por socio, movimientos }
+  // Lo de cada socio, para mostrarlo por persona:
+  // laburo: los movimientos con porcentaje propio y la parte que le toca (lo que laburó él, y su
+  // parte de lo que laburaron los demás); cuentas: lo que entró y salió de sus cuentas.
+  const laburo = Object.fromEntries(lista.map(s => [s, { propios: [], deLosDemas: [] }]))
+  const cuentasDe = Object.fromEntries(lista.map(s => [s, { entradas: [], salidas: [] }]))
   const sinSocio = new Set()
   const sinCotizacion = new Set()
   const enCuotas = new Set((cuotas || []).map(c => c?.movimientoId).filter(Boolean))
@@ -213,6 +218,7 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
       id: t.id, tipo: t.tipo, nombre: t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
       socio, moneda: t.moneda || 'ARS', monto: Math.abs(Number(t.monto) || 0), pesos,
     }
+    cuentasDe[socio][t.tipo === 'ingreso' ? 'entradas' : 'salidas'].push(item)
     const fracciones = fraccionesPorId.get(t.id)
     if (fracciones) {
       const signo = t.tipo === 'ingreso' ? 1 : -1
@@ -220,9 +226,12 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
       const grupo = gruposTrabajo.get(quien) || { socio: quien, neto: 0, reparto: Object.fromEntries(lista.map(s => [s, 0])), movimientos: [] }
       grupo.neto += signo * pesos
       grupo.movimientos.push(item)
+      // Lo laburó quien se lleva la parte más grande (los dos, si empatan: 47,5 % y 47,5 %).
+      const mayor = Math.max(...Object.values(fracciones))
       for (const [s, f] of Object.entries(fracciones)) {
         base[s].trabajos += signo * pesos * f
         grupo.reparto[s] += signo * pesos * f
+        laburo[s][f >= mayor - 1e-9 ? 'propios' : 'deLosDemas'].push({ ...item, porcentaje: f * 100, parte: signo * pesos * f })
       }
       gruposTrabajo.set(quien, grupo)
     } else if (t.tipo === 'ingreso') {
@@ -268,6 +277,10 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     return { ...f, tiene, ganancia, leToca, diferencia: tiene - leToca }
   })
   const porPesos = (a, b) => b.pesos - a.pesos
+  // Primero lo que entró, de mayor a menor; después los gastos.
+  const porParte = (a, b) => ((a.parte > 0) === (b.parte > 0) ? Math.abs(b.parte) - Math.abs(a.parte) : b.parte - a.parte)
+  const sumaPartes = (lineas) => lineas.reduce((suma, l) => suma + l.parte, 0)
+  const sumaPesos = (lineas) => lineas.reduce((suma, l) => suma + l.pesos, 0)
 
   return {
     ingresos,
@@ -281,6 +294,20 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
       ingresos: detalleIngresos.sort(porPesos),
       gastos: detalleGastos.sort(porPesos),
       trabajos: [...gruposTrabajo.values()],
+      laburo: lista.map(s => ({
+        socio: s,
+        propios: laburo[s].propios.sort(porParte),
+        deLosDemas: laburo[s].deLosDemas.sort(porParte),
+        totalPropios: sumaPartes(laburo[s].propios),
+        totalDeLosDemas: sumaPartes(laburo[s].deLosDemas),
+      })),
+      cuentas: lista.map(s => ({
+        socio: s,
+        entradas: cuentasDe[s].entradas.sort(porPesos),
+        salidas: cuentasDe[s].salidas.sort(porPesos),
+        totalEntradas: sumaPesos(cuentasDe[s].entradas),
+        totalSalidas: sumaPesos(cuentasDe[s].salidas),
+      })),
     },
     porSocio,
     pagos: saldarDiferencias(porSocio),
