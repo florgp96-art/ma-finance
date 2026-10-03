@@ -285,3 +285,41 @@ describe('trabajos por fuera', () => {
     expect(r.netoTrabajos).toBeCloseTo(0, 6)
   })
 })
+
+describe('lo de cada socio: su laburo, su parte del de los demás y sus cuentas', () => {
+  test('el laburo es de quien se lleva más (los dos si empatan); el resto es su parte del de los demás', () => {
+    const r = calcularReparto({
+      socios, cuentas, cotizaciones: { USD: 1000 }, mes: '2026-09',
+      movimientos: [
+        { id: 'nas', account_id: 'mc', tipo: 'ingreso', monto: 600000, moneda: 'ARS', nombre: 'Nasello' },
+        { id: 'gab', account_id: 'rev', tipo: 'ingreso', monto: 100, moneda: 'USD', nombre: 'Gabri' },
+        { id: 'hig', account_id: 'rev', tipo: 'gasto', monto: 100, moneda: 'USD', nombre: 'Higgsfield' },
+        { id: 'icl', account_id: 'mc', tipo: 'gasto', monto: 9000, moneda: 'ARS', nombre: 'iCloud' },
+      ],
+      trabajos: [
+        { movimientoId: 'nas', socio: 'Flor', porcentajes: { Flor: 47.5, Dol: 47.5, Valen: 5 } },
+        { movimientoId: 'gab', socio: 'Valen', porcentajes: { Flor: 47.5, Valen: 47.5, Dol: 5 } },
+        { movimientoId: 'hig', socio: 'Valen', porcentajes: { Valen: 90, Flor: 5, Dol: 5 } },
+      ],
+    })
+    const de = (s) => r.detalle.laburo.find(l => l.socio === s)
+    expect(de('Flor').propios.map(l => [l.nombre, l.porcentaje, Math.round(l.parte)])).toEqual([
+      ['Nasello', 47.5, 285000], ['Gabri', 47.5, 47500],
+    ])
+    expect(de('Flor').deLosDemas.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Higgsfield', -5000]])
+    expect(de('Valen').propios.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Gabri', 47500], ['Higgsfield', -90000]])
+    expect(de('Valen').deLosDemas.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Nasello', 30000]])
+    expect(de('Dol').propios.map(l => l.nombre)).toEqual(['Nasello'])
+    // Lo de cada uno suma lo mismo que su parte de los trabajos.
+    for (const s of r.porSocio) {
+      expect(Math.round(de(s.socio).totalPropios + de(s.socio).totalDeLosDemas)).toBe(Math.round(s.trabajos))
+    }
+    // Cuentas: lo que entró y salió de las de cada uno (con lo común también).
+    const cuentasDe = (s) => r.detalle.cuentas.find(c => c.socio === s)
+    expect(cuentasDe('Flor').entradas.map(m => m.nombre)).toEqual(['Nasello'])
+    expect(cuentasDe('Flor').salidas.map(m => m.nombre)).toEqual(['iCloud'])
+    expect(cuentasDe('Valen').totalEntradas).toBe(100000)
+    expect(cuentasDe('Valen').totalSalidas).toBe(100000)
+    expect(cuentasDe('Dol').entradas).toEqual([])
+  })
+})
