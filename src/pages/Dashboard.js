@@ -5453,7 +5453,7 @@ export default function Dashboard() {
                 { v: 'gasto', label: '💸 Gasto' },
                 { v: 'ingreso', label: '💰 Ingreso' },
                 { v: 'neutro', label: '🔄 Neutro' },
-                { v: 'cambio', label: '💱 Cambio' },
+                { v: 'cambio', label: '🔁 Transferir' },
               ].map(opt => (
                 <button key={opt.v} type="button" onClick={() => { setTipoMovimiento(opt.v); setEfectivo(prev => ({ ...prev, categoria: '', subcategoria: '', cuenta: opt.v === 'ingreso' ? '' : (cuentaEfectivoId || '') })) }}
                   style={{
@@ -5473,10 +5473,10 @@ export default function Dashboard() {
               <CambioMoneda accounts={accounts} styles={styles} darkMode={darkMode} sem={sem}
                 tipoCambio={tipoCambioEfectivo}
                 onCancelar={() => setShowMovimiento(false)}
-                onGuardado={() => {
+                onGuardado={({ esTransferencia } = {}) => {
                   setShowMovimiento(false)
                   setRefreshKey(k => k + 1)
-                  showToast('Cambio registrado.')
+                  showToast(esTransferencia ? 'Transferencia registrada.' : 'Cambio registrado.')
                 }} />
             ) : (
             <form onSubmit={handleGuardarMovimiento}>

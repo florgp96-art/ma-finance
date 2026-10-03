@@ -75,13 +75,30 @@ test('sin la columna en la base guarda igual, sin mandarla', async () => {
   mockBase.inserts[0].forEach(fila => expect(fila).not.toHaveProperty('sentido'))
 })
 
-test('con la misma moneda de los dos lados avisa y no guarda', async () => {
+// Pasar plata de una cuenta a otra en la misma moneda (del efectivo a la caja).
+test('con la misma moneda es una transferencia: un solo monto y las dos patas', async () => {
   const { onGuardado } = montar()
-  const [, , , monedaEntra] = screen.getAllByRole('combobox')
+  const [cuentaSale, monedaSale] = screen.getAllByRole('combobox')
+  fireEvent.change(cuentaSale, { target: { value: 'usd' } })
+  fireEvent.change(monedaSale, { target: { value: 'ARS' } })
+  // El lado que entra no pide monto: es el mismo que sale.
+  expect(screen.getAllByRole('spinbutton')).toHaveLength(1)
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '478000' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar transferencia' }))
+  await waitFor(() => expect(onGuardado).toHaveBeenCalledWith({ esTransferencia: true }))
+  const [sale, entra] = mockBase.inserts[0]
+  expect(sale).toMatchObject({ account_id: 'usd', moneda: 'ARS', monto: 478000, sentido: 'sale', nombre: 'Transferencia a Caja de ahorro Galicia' })
+  expect(entra).toMatchObject({ account_id: 'pesos', moneda: 'ARS', monto: 478000, sentido: 'entra', nombre: 'Transferencia desde Caja de ahorro USD' })
+})
+
+test('la misma cuenta y la misma moneda de los dos lados avisa y no guarda', async () => {
+  const { onGuardado } = montar()
+  const [, , cuentaEntra, monedaEntra] = screen.getAllByRole('combobox')
+  fireEvent.change(cuentaEntra, { target: { value: 'usd' } })
   fireEvent.change(monedaEntra, { target: { value: 'USD' } })
-  completarMontos('100', '100')
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambio' }))
-  expect(await screen.findByText(/las dos monedas tienen que ser distintas/)).toBeInTheDocument()
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '100' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar transferencia' }))
+  expect(await screen.findByText(/elegí dos cuentas distintas/)).toBeInTheDocument()
   expect(mockBase.inserts).toHaveLength(0)
   expect(onGuardado).not.toHaveBeenCalled()
 })

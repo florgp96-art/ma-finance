@@ -611,12 +611,55 @@ describe('un movimiento del mismo día que el ancla', () => {
     expect(r.saldo).toBe(400000)
   })
 
-  test('un movimiento posterior cuenta siempre, con o sin created_at', () => {
+  test('un movimiento posterior sin created_at cuenta por la fecha, como antes', () => {
     const r = saldoDeCuenta({
       anclas: [ancla10],
       transactions: [{ id: 'g3', account_id: CA, tipo: 'gasto', fecha: '2026-09-12', monto: 20000, moneda: 'ARS' }],
       accountId: CA,
     })
     expect(r.saldo).toBe(480000)
+  })
+})
+
+// Caso real: el pago de la niñera fechado el lunes 05/10, hecho y cargado el sábado
+// 03/10, y enseguida "hoy tengo $34.072,23" — con ese pago ya descontado. Se restaba
+// igual y el saldo daba -$131.028.
+describe('un movimiento con fecha posterior al día en que se puso el saldo', () => {
+  const anclaHoy = { id: 'a1', account_id: CA, moneda: 'ARS', fecha: '2026-10-03', saldo: 34072.23, created_at: '2026-10-03T15:58:01.26958+00:00' }
+  const pagoDelLunes = (created_at) =>
+    ({ id: 'g1', account_id: CA, tipo: 'gasto', fecha: '2026-10-05', monto: 165100, moneda: 'ARS', nombre: 'Renata', created_at })
+
+  test('si ya estaba cargado cuando se puso el saldo, ya está en el número', () => {
+    const r = saldoDeCuenta({ anclas: [anclaHoy], transactions: [pagoDelLunes('2026-10-03T15:56:58.506012')], accountId: CA })
+    expect(r.saldo).toBe(34072.23)
+    expect(r.cantidadMovimientos).toBe(0)
+  })
+
+  test('si se cargó después de poner el saldo, se resta', () => {
+    const r = saldoDeCuenta({ anclas: [anclaHoy], transactions: [pagoDelLunes('2026-10-03T16:10:00')], accountId: CA })
+    expect(r.saldo).toBe(-131027.77)
+  })
+
+  test('lo mismo con un pago de tarjeta', () => {
+    const tarjeta = { id: 'mc', nombre: 'Mastercard', tipo: 'credito', cuenta_pago_id: CA }
+    const r = saldoDeCuenta({
+      anclas: [anclaHoy],
+      transactions: [{ id: 'p1', account_id: 'mc', tipo: 'neutro', fecha: '2026-10-05', monto: 50000, moneda: 'ARS', nombre: 'Pago Mastercard', created_at: '2026-10-03T12:00:00' }],
+      accounts: [{ id: CA, tipo: 'debito' }, tarjeta],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(34072.23)
+  })
+
+  // Un saldo de una fecha pasada ("el 10/09 tenía $X", puesto el 20/09): lo que pasó
+  // entre el 10 y el 20 vino después de ese número, aunque ya estuviera cargado.
+  test('con un saldo de fecha pasada, lo de entre esa fecha y el día que se puso cuenta', () => {
+    const anclaVieja = { id: 'a2', account_id: CA, moneda: 'ARS', fecha: '2026-09-10', saldo: 500000, created_at: '2026-09-20T15:00:00Z' }
+    const r = saldoDeCuenta({
+      anclas: [anclaVieja],
+      transactions: [{ id: 'g2', account_id: CA, tipo: 'gasto', fecha: '2026-09-15', monto: 30000, moneda: 'ARS', created_at: '2026-09-16T12:00:00' }],
+      accountId: CA,
+    })
+    expect(r.saldo).toBe(470000)
   })
 })
