@@ -8,6 +8,7 @@
 // - jornada: valor_jornada + horas × valor_hora + viajes × valor_viatico; acá
 //            horas y viajes son los extras por encima de la jornada.
 import { moverMes } from './repartoSocios'
+import { parseMonto } from './formato'
 
 export const TARIFAS_POR_DEFECTO = Object.freeze({ valor_hora: 7500, valor_viatico: 1200, valor_jornada: 25000 })
 // Una liquidación nueva arranca sin tarifas: las de la empleada no tienen nada que ver
@@ -41,13 +42,11 @@ export const diasDelMes = (clave) => {
   return new Date(anio, mes, 0).getDate()
 }
 
-// Número válido dentro de [min, max], o null. Acepta coma decimal: "2,5" → 2.5.
+// Número válido dentro de [min, max], o null. Acepta coma decimal ("2,5" → 2.5) y
+// puntos de miles ("7.500" → 7500), ver parseMonto.
 export const numeroValido = (valor, { min = 0, max = Infinity, entero = false } = {}) => {
-  if (valor === null || valor === undefined) return null
-  const texto = String(valor).trim().replace(',', '.')
-  if (texto === '') return null
-  const n = Number(texto)
-  if (!Number.isFinite(n) || n < min || n > max) return null
+  const n = parseMonto(valor)
+  if (n === null || n < min || n > max) return null
   if (entero && !Number.isInteger(n)) return null
   return n
 }

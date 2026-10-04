@@ -33,7 +33,7 @@ const montar = (props = {}) => {
 }
 
 const completarMontos = (sale, entra) => {
-  const [montoSale, montoEntra] = screen.getAllByRole('spinbutton')
+  const [montoSale, montoEntra] = screen.getAllByRole('textbox')
   fireEvent.change(montoSale, { target: { value: sale } })
   fireEvent.change(montoEntra, { target: { value: entra } })
 }
@@ -82,8 +82,8 @@ test('con la misma moneda es una transferencia: un solo monto y las dos patas', 
   fireEvent.change(cuentaSale, { target: { value: 'usd' } })
   fireEvent.change(monedaSale, { target: { value: 'ARS' } })
   // El lado que entra no pide monto: es el mismo que sale.
-  expect(screen.getAllByRole('spinbutton')).toHaveLength(1)
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '478000' } })
+  expect(screen.getAllByRole('textbox')).toHaveLength(1)
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '478000' } })
   fireEvent.click(screen.getByRole('button', { name: 'Guardar transferencia' }))
   await waitFor(() => expect(onGuardado).toHaveBeenCalledWith({ esTransferencia: true }))
   const [sale, entra] = mockBase.inserts[0]
@@ -96,7 +96,7 @@ test('la misma cuenta y la misma moneda de los dos lados avisa y no guarda', asy
   const [, , cuentaEntra, monedaEntra] = screen.getAllByRole('combobox')
   fireEvent.change(cuentaEntra, { target: { value: 'usd' } })
   fireEvent.change(monedaEntra, { target: { value: 'USD' } })
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '100' } })
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '100' } })
   fireEvent.click(screen.getByRole('button', { name: 'Guardar transferencia' }))
   expect(await screen.findByText(/elegí dos cuentas distintas/)).toBeInTheDocument()
   expect(mockBase.inserts).toHaveLength(0)
@@ -106,4 +106,16 @@ test('la misma cuenta y la misma moneda de los dos lados avisa y no guarda', asy
 test('sin cuentas con saldo explica qué falta', () => {
   montar({ accounts: [cuentas[0]] })
   expect(screen.getByText(/hace falta al menos una cuenta que no sea tarjeta/)).toBeInTheDocument()
+})
+
+// El teclado numérico del iPhone en español solo trae coma: antes el campo era
+// type="number" y la rechazaba, así que no había forma de cargar centavos.
+test('acepta la coma del teclado del celular y los puntos de miles', async () => {
+  const { onGuardado } = montar()
+  completarMontos('497,50', '898.212,75')
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambio' }))
+  await waitFor(() => expect(onGuardado).toHaveBeenCalled())
+  const [sale, entra] = mockBase.inserts[0]
+  expect(sale.monto).toBe(497.5)
+  expect(entra.monto).toBe(898212.75)
 })

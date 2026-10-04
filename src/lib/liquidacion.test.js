@@ -44,6 +44,8 @@ describe('resumenMes', () => {
 
 test('numeroValido: acepta coma decimal y rechaza NaN, negativos y fuera de rango', () => {
   expect(numeroValido('2,5')).toBe(2.5)
+  expect(numeroValido('7.500')).toBe(7500)
+  expect(numeroValido('25.000,50')).toBe(25000.5)
   expect(numeroValido('7.5', { max: 24 })).toBe(7.5)
   expect(numeroValido('')).toBe(null)
   expect(numeroValido('abc')).toBe(null)

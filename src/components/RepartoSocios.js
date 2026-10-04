@@ -396,7 +396,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
               <select style={styles.input} value={nueva.a} onChange={e => setNueva(n => ({ ...n, a: e.target.value }))} aria-label="A quién">
                 {config.socios.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="$"
+              <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" placeholder="$"
                 value={nueva.monto} onChange={e => setNueva(n => ({ ...n, monto: e.target.value }))} aria-label="Monto en pesos" />
               <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }} disabled={!!errorNueva || !montoValido(nueva.monto)}>Agregar</button>
             </form>
@@ -427,7 +427,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                     <option key={t.id ?? i} value={t.id ?? ''} disabled={!t.id}>{t.nombre || 'Gasto'} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda || 'ARS')}</option>
                   ))}
                 </select>
-                <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" value={nuevaCuota.porMes}
+                <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" value={nuevaCuota.porMes}
                   placeholder={`Por mes${gastoElegido ? ` (${SIMBOLO[gastoElegido.moneda || 'ARS'] || ''})` : ''}`}
                   aria-label="Cuánto se devuelve por mes, entre todos"
                   onChange={e => setNuevaCuota(n => ({ ...n, porMes: e.target.value }))} />
@@ -473,7 +473,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   {!trabajoElegido && <option value="">Laburo de…</option>}
                   {config.socios.map(s => <option key={s} value={s}>Laburo de {s}</option>)}
                 </select>
-                <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1" value={nuevoTrabajo.propio}
+                <input style={styles.input} type="number" inputMode="numeric" min="0" max="100" step="1" value={nuevoTrabajo.propio}
                   aria-label="Porcentaje para quien hizo el trabajo" placeholder="% propio"
                   onChange={e => setNuevoTrabajo(n => ({ ...n, propio: e.target.value }))} />
                 <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px', gridColumn: '1 / -1' }}

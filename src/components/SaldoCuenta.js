@@ -2,20 +2,17 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
 import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
-import { formatMonto, formatMontoFull, formatFecha } from '../lib/formato'
+import { formatMonto, formatMontoFull, formatFecha, parseMonto } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
 const SIMBOLO = { ARS: '$', USD: 'U$S', EUR: '€' }
 const hoyISO = () => new Date().toISOString().slice(0, 10)
 
-// El input es type="number", así que el valor ya llega canónico ("1234.56"): no hay
-// que interpretar separadores de miles. Un saldo puede ser negativo (una cuenta en
-// descubierto), así que no se acota el signo — solo se exige que sea un número.
-const parseSaldo = (valor) => {
-  if (valor === '' || valor === null || valor === undefined) return null
-  const n = parseFloat(valor)
-  return Number.isFinite(n) ? n : null
-}
+// El campo es de texto (el teclado del iPhone solo trae coma, ver parseMonto): se
+// aceptan "1234,56", "1.234,56" y "1234.56". Un saldo puede ser negativo (una
+// cuenta en descubierto), así que no se acota el signo — solo se exige que sea un
+// número.
+const parseSaldo = (valor) => parseMonto(valor)
 const fmt = (monto, moneda) => `${SIMBOLO[moneda] || '$'} ${moneda === 'ARS' ? formatMonto(monto) : formatMontoFull(monto)}`
 
 // Se re-exporta para no romper los imports que ya apuntaban acá.
@@ -216,7 +213,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
               <option value="USD">U$S</option>
               <option value="EUR">€</option>
             </select>
-            <input type="number" step="0.01" autoFocus value={valor} placeholder="saldo de hoy"
+            <input type="text" inputMode="decimal" autoComplete="off" autoFocus value={valor} placeholder="saldo de hoy"
               onChange={e => setValor(e.target.value)} style={inputStyle(darkMode)} />
           </div>
           <input type="date" value={fecha} max={hoyISO()} onChange={e => setFecha(e.target.value)} style={inputStyle(darkMode)} />
