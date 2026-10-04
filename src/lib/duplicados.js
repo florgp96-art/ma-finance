@@ -44,6 +44,21 @@ const coincide = (cand, e) => {
 // que la app no se daba cuenta de que ese pago ya estaba.
 export const esElMismoPago = (cand, e) => esPago(cand) && coincide(cand, e)
 
+// ¿Este gasto del PDF es uno que ya está cargado con OTRO nombre? Misma cuenta,
+// moneda y monto al centavo, y el MISMO día. Solo lo usa la vista previa: ahí la
+// fila sale tachada y, si de verdad eran dos compras, el usuario la vuelve a marcar.
+// El guardado no lo usa a propósito: lo que el usuario deja marcado, se importa.
+//
+// Caso real: la nafta cargada a mano entraba otra vez con el nombre que le pone el
+// banco, el mismo día y por el mismo monto, porque la vista previa exigía que los
+// nombres se parecieran. Lo mismo "MERPAGO*PERAZOLI" contra "Perazoli Destapa Cañeria".
+export const esElMismoGasto = (cand, e) =>
+  cand.tipo === 'gasto' && e.tipo === 'gasto' &&
+  !(cand.account_id && e.account_id && cand.account_id !== e.account_id) &&
+  (e.moneda || 'ARS') === (cand.moneda || 'ARS') &&
+  Math.abs(Number(e.monto) - Number(cand.monto)) < 0.01 &&
+  norm(e.fecha) === norm(cand.fecha)
+
 // Devuelve los candidatos que NO están cargados todavía, y cuántos se omitieron.
 //
 // Cada fila ya cargada tapa como máximo UN candidato. Antes esto era un `.some()`,
