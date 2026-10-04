@@ -143,7 +143,7 @@ test('borrar el pago que fijó la cotización (un "Hecho" sin querer) la devuelv
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
 })
 
-test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', async () => {
+test('un trabajo por fuera: quien lo hizo 90 % y los otros dos 5 % cada uno', async () => {
   mockBase.movimientos = [
     { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
     { id: 'br', account_id: 'rev', tipo: 'ingreso', moneda: 'EUR', monto: 150, nombre: 'Classic Brunch Party' },
@@ -151,11 +151,11 @@ test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', a
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [] })
   const select = await screen.findByRole('combobox', { name: 'Movimiento del trabajo' })
   fireEvent.change(select, { target: { value: 'br' } })
-  expect(screen.getByText('Flor 20 % · Valen 60 % · Dol 20 %')).toBeInTheDocument()
+  expect(screen.getByText('Flor 5 % · Valen 90 % · Dol 5 %')).toBeInTheDocument()
   fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
     movimientoId: 'br', concepto: 'Classic Brunch Party', socio: 'Valen',
-    porcentajes: { Flor: 20, Valen: 60, Dol: 20 },
+    porcentajes: { Flor: 5, Valen: 90, Dol: 5 },
   }])
 })
 
@@ -170,11 +170,11 @@ test('se puede elegir de quién fue el laburo aunque la plata haya entrado en la
   const quien = screen.getByRole('combobox', { name: 'De quién fue el laburo' })
   expect(quien).toHaveValue('Dol') // por defecto, el dueño de la cuenta
   fireEvent.change(quien, { target: { value: 'Flor' } })
-  expect(screen.getByText('Flor 60 % · Valen 20 % · Dol 20 %')).toBeInTheDocument()
+  expect(screen.getByText('Flor 90 % · Valen 5 % · Dol 5 %')).toBeInTheDocument()
   fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
     movimientoId: 'pag', concepto: 'Página web', socio: 'Flor',
-    porcentajes: { Flor: 60, Valen: 20, Dol: 20 },
+    porcentajes: { Flor: 90, Valen: 5, Dol: 5 },
   }])
 })
 

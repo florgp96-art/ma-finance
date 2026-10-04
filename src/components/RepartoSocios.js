@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto, formatFecha } from '../lib/formato'
-import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo, conTrabajo } from '../lib/repartoSocios'
+import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo, conTrabajo, PROPIO_POR_DEFECTO } from '../lib/repartoSocios'
 
 const hoyLocal = () => {
   const d = new Date()
@@ -83,7 +83,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [error, setError] = useState(null)
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
-  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: '60' })
+  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: String(PROPIO_POR_DEFECTO) })
   const [nuevoCambio, setNuevoCambio] = useState({ movimientoId: '', pesos: '' })
   const [abiertos, setAbiertos] = useState({ ingresos: true, gastos: true })
   const estaAbierto = (clave, porDefecto = false) => (clave in abiertos ? abiertos[clave] : porDefecto)

@@ -264,8 +264,8 @@ describe('trabajos por fuera', () => {
 
   test('el que lo hizo se queda con el 50 % y el resto va parejo', () => {
     expect(deFlor).toEqual({ Flor: 50, Valen: 25, Dol: 25 })
-    // Sin porcentaje, el que lo hizo se queda con el 60 %.
-    expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 60, Valen: 20, Dol: 20 })
+    // Sin porcentaje, el que lo hizo se queda con el 90 % y los otros con el 5 % cada uno.
+    expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 90, Valen: 5, Dol: 5 })
   })
 
   test('conTrabajo: marca, re-marca y desmarca un movimiento', () => {
@@ -273,12 +273,12 @@ describe('trabajos por fuera', () => {
     const marcado = conTrabajo(base, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol' })
     expect(marcado.trabajos).toEqual([
       base.trabajos[0],
-      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol', porcentajes: { Flor: 20, Valen: 20, Dol: 60 } },
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol', porcentajes: { Flor: 5, Valen: 5, Dol: 90 } },
     ])
     expect(base.trabajos).toHaveLength(1) // no toca la configuración que recibe
     const otraVez = conTrabajo(marcado, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor' })
     expect(otraVez.trabajos.filter(t => t.movimientoId === 'maxi')).toEqual([
-      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor', porcentajes: { Flor: 90, Valen: 5, Dol: 5 } },
     ])
     expect(conTrabajo(otraVez, { movimientoId: 'maxi', socio: '' }).trabajos).toEqual([base.trabajos[0]])
     expect(conTrabajo(base, { movimientoId: 'y', socio: 'Nadie' }).trabajos).toEqual(base.trabajos)
