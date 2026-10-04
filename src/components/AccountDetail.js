@@ -8,6 +8,7 @@ import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
+import { subcategoriasParaElegir } from '../lib/perfil'
 import { repartoDelPeriodo, nombreDelMes } from '../lib/repartoSocios'
 import { puedeVerCobroFacturacion } from '../config/features'
 import { ESTADOS_FACTURACION, estadoFacturacion, hayColumnaFacturacion } from '../lib/facturacion'
@@ -839,7 +840,7 @@ export const getLast6Months = () => {
   return months
 }
 
-function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto }) {
+function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto }) {
   const [transactions, setTransactions] = useState([])
   // Si se facturó cada ingreso (ver lib/facturacion.js): sin la columna en la
   // base, no se muestra nada de esto.
@@ -1335,7 +1336,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   const filteredSubcats = () => {
     const catObj = categories.find(c => c.nombre === editCategoria)
     if (!catObj) return []
-    return subcategories.filter(s => s.category_id === catObj.id)
+    return subcategoriasParaElegir(subcategories.filter(s => s.category_id === catObj.id), { tieneAuto })
   }
 
   // Guardar clasificación manual y aprender la regla

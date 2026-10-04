@@ -23,6 +23,7 @@ import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } fr
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo } from '../lib/repartoSocios'
 import { parseMonto } from '../lib/formato'
+import { subcategoriasParaElegir } from '../lib/perfil'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
@@ -370,6 +371,11 @@ export default function Dashboard() {
     persistPref('tc_manual', valor)
   }
 
+  const guardarTieneAuto = (tiene) => {
+    setTieneAuto(tiene)
+    persistPref('tiene_auto', tiene)
+  }
+
   const guardarCuotaAlimentariaActiva = (activa) => {
     setCuotaAlimentariaActiva(activa)
     persistPref('cuota_alimentaria_activa', activa)
@@ -422,6 +428,9 @@ export default function Dashboard() {
   // activada para no romper el comportamiento de cuentas que ya la usan;
   // se puede desactivar desde "Mis hijos" y queda guardado como preferencia.
   const [cuotaAlimentariaActiva, setCuotaAlimentariaActiva] = useState(true)
+  // Lo que contestó en el alta (ver lib/perfil.js). null = no contestó.
+  const [tieneAuto, setTieneAuto] = useState(null)
+  const [showPerfil, setShowPerfil] = useState(false)
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
 
@@ -763,6 +772,8 @@ export default function Dashboard() {
         }
         const cuotaAlimentariaDB = readPref('cuota_alimentaria_activa')
         if (cuotaAlimentariaDB === false) setCuotaAlimentariaActiva(false)
+        const tieneAutoDB = readPref('tiene_auto')
+        if (typeof tieneAutoDB === 'boolean') setTieneAuto(tieneAutoDB)
         setRepartoSocios(normalizarConfigReparto(readPref('reparto_socios')))
         prefsLoaded.current = true
       }
@@ -2939,7 +2950,7 @@ export default function Dashboard() {
   const subcatsParaIdentificar = () => {
     const catObj = categoriasDB.find(c => c.nombre === txEditTemp.categoria)
     if (!catObj) return []
-    return subcategoriasDB.filter(s => s.category_id === catObj.id)
+    return subcategoriasParaElegir(subcategoriasDB.filter(s => s.category_id === catObj.id), { tieneAuto })
   }
 
   const isMobile = windowWidth < 640
@@ -4005,6 +4016,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>CREAR CUENTA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>EDITAR CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>HIJOS</button>}
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowPerfil(true) }}>MI PERFIL</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>REGLAS DE CLASIFICACIÓN</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>CAMBIAR CONTRASEÑA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
@@ -4240,6 +4252,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>CREAR CUENTA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>EDITAR CATEGORÍAS</button>
                       {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>HIJOS</button>}
+                        <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowPerfil(true) }}>MI PERFIL</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openAliases()}>REGLAS DE CLASIFICACIÓN</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCambiarClave()}>CAMBIAR CONTRASEÑA</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
@@ -4326,7 +4339,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} userEmail={userEmail} />
+                  <AccountDetail tieneAuto={tieneAuto} accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -4334,7 +4347,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                  <AccountDetail tieneAuto={tieneAuto} accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
@@ -4475,7 +4488,7 @@ export default function Dashboard() {
                     📊 {selectedAccount.nombre}
                   </h2>
                 </div>
-                <AccountDetail account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                <AccountDetail tieneAuto={tieneAuto} account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -4602,6 +4615,25 @@ export default function Dashboard() {
           </div>
         )
       })()}
+
+      {/* Lo que se contestó en el alta y se puede cambiar (ver lib/perfil.js). */}
+      {showPerfil && (
+        <div style={styles.overlay} onClick={() => setShowPerfil(false)}>
+          <div style={{ ...styles.modal, maxWidth: '380px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={styles.modalTitle}>🙋 Mi perfil</h3>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer' }}>
+              <input type="checkbox" checked={tieneAuto !== false} onChange={e => guardarTieneAuto(e.target.checked)} />
+              Tengo auto
+            </label>
+            <p style={{ margin: '6px 0 18px', fontSize: '12px', color: txtTerciario }}>
+              Sin auto, al cargar un gasto no te ofrecemos Auto, Nafta, Service, Telepase ni Estacionamiento.
+            </p>
+            <div style={styles.modalButtons}>
+              <button type="button" style={styles.cancelBtn} onClick={() => setShowPerfil(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showReportBug && (
         <div style={styles.overlay}>
@@ -5569,7 +5601,7 @@ export default function Dashboard() {
                               onChange={e => updateExcelPreviewRow(i, { subcat: e.target.value || null })}
                               style={{ ...styles.excelPreviewSelect, backgroundColor: 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                               <option value="">— Sin subcategoría</option>
-                              {subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === row.cat)?.id).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                              {subcategoriasParaElegir(subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === row.cat)?.id), { tieneAuto }).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                             </select>
                           </td>
                           {childrenDB.length > 0 && <td style={{ padding: '7px 10px', color: txtTerciario, whiteSpace: 'nowrap' }}>{row.hijo || '—'}</td>}
@@ -5721,7 +5753,7 @@ export default function Dashboard() {
                     <option value="">— Elegir —</option>
                     {(tipoMovimiento === 'ingreso'
                       ? subcategoriasDeIngreso(categoriasDB, subcategoriasDB)
-                      : subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id)
+                      : subcategoriasParaElegir(subcategoriasDB.filter(s => s.category_id === categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)?.id), { tieneAuto })
                     ).map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
                   </select>
                 </div>
