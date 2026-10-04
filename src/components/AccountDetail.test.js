@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -351,5 +351,37 @@ describe('totalConSigno — el total se escribe igual que cada fila', () => {
   })
   test('en una lista de un solo signo (signed=false) no lleva signo', () => {
     expect(totalConSigno(45000, '€', false)).toBe('€ 45.000,00')
+  })
+})
+
+// Ordenar por monto mezclaba pesos, dólares y euros como si fueran comparables.
+describe('compararPorMonto — primero la moneda, después el monto', () => {
+  const movs = [
+    { id: 'eur-gasto', moneda: 'EUR', tipo: 'gasto', monto: 50 },
+    { id: 'ars-gasto-chico', moneda: 'ARS', tipo: 'gasto', monto: 40 },
+    { id: 'usd-ingreso', moneda: 'USD', tipo: 'ingreso', monto: 10 },
+    { id: 'ars-ingreso', moneda: 'ARS', tipo: 'ingreso', monto: 1000 },
+    { id: 'usd-gasto', moneda: 'USD', tipo: 'gasto', monto: 300 },
+    { id: 'ars-gasto-grande', moneda: 'ARS', tipo: 'gasto', monto: 60000 },
+  ]
+  const ordenar = (dir) => [...movs].sort((a, b) => compararPorMonto(a, b, dir)).map(t => t.id)
+
+  test('ascendente: pesos, dólares y euros, cada uno de menor a mayor', () => {
+    expect(ordenar('asc')).toEqual([
+      'ars-gasto-grande', 'ars-gasto-chico', 'ars-ingreso',
+      'usd-gasto', 'usd-ingreso',
+      'eur-gasto',
+    ])
+  })
+  test('descendente: las monedas siguen en el mismo orden, solo se da vuelta el monto', () => {
+    expect(ordenar('desc')).toEqual([
+      'ars-ingreso', 'ars-gasto-chico', 'ars-gasto-grande',
+      'usd-ingreso', 'usd-gasto',
+      'eur-gasto',
+    ])
+  })
+  test('sin moneda cargada cuenta como pesos', () => {
+    const sinMoneda = { tipo: 'gasto', monto: 5 }
+    expect(compararPorMonto(sinMoneda, { moneda: 'USD', tipo: 'gasto', monto: 5 })).toBeLessThan(0)
   })
 })
