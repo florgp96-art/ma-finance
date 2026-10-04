@@ -16,7 +16,7 @@
 // nombre de los titulares, por si la IA no obedeció.
 //
 // Este archivo lo usan la app (src/) y la función del servidor
-// (api/revisarLectura.js): por eso no importa nada del navegador ni de Supabase.
+// (api/_lib/revisarLectura.js): por eso no importa nada del navegador ni de Supabase.
 
 import { controlDeLectura, lineasDelControl } from './controlLectura.js'
 

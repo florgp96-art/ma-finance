@@ -1,4 +1,5 @@
-// Prueba de punta a punta de api/revisarLectura.js, con la API de Claude y
+// Prueba de punta a punta de la revisión de lectura (api/_lib/revisarLectura.js),
+// entrando por /api/analyze?revision=1 como lo hace la app, con la API de Claude y
 // Supabase simulados. Vive en src/ porque los tests corren solo desde acá.
 
 const mockCrear = jest.fn()
@@ -46,7 +47,7 @@ jest.mock('@supabase/supabase-js', () => {
 })
 jest.mock('../../api/_lib/rateLimit.js', () => ({ checkRateLimit: async () => true }))
 
-const { default: handler } = require('../../api/revisarLectura.js')
+const { default: handler } = require('../../api/analyze.js')
 
 const consumo = (fecha, nombre, monto) =>
   ({ fecha, nombre_original: nombre, nombre_limpio: nombre, categoria_sugerida: 'A Identificar', subcategoria_sugerida: null, hijo: null, monto, moneda: 'ARS', tipo: 'gasto', es_credito: false, cuotas_total: 1, cuota_numero: 1, titular: 'GALLO PROT FLORENCIA' })
@@ -57,7 +58,7 @@ const resultado = {
 
 const pedir = async (body) => {
   const res = { statusCode: 200, cuerpo: null, status(c) { this.statusCode = c; return this }, json(b) { this.cuerpo = b; return this }, end() { return this } }
-  await handler({ method: 'POST', headers: { authorization: 'Bearer t' }, body }, res)
+  await handler({ method: 'POST', query: { revision: '1' }, headers: { authorization: 'Bearer t' }, body }, res)
   return res
 }
 const respuestaIA = (revision, stop_reason = 'end_turn') => ({ stop_reason, content: [{ type: 'text', text: JSON.stringify(revision) }] })
