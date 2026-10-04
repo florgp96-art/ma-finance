@@ -16,6 +16,8 @@ jest.mock('../lib/liquidacionDatos', () => ({
   insertarDia: jest.fn(),
   actualizarDia: jest.fn(),
   borrarDia: jest.fn(),
+  actualizarLiquidacion: jest.fn(),
+  borrarLiquidacion: jest.fn(),
 }))
 
 const resultado = (op, data = null) =>
@@ -41,12 +43,15 @@ beforeEach(() => {
   datos.insertarDia.mockImplementation(() => resultado('insertarDia'))
   datos.actualizarDia.mockImplementation(() => resultado('actualizarDia'))
   datos.borrarDia.mockImplementation(() => resultado('borrarDia'))
+  datos.actualizarLiquidacion.mockImplementation(() => resultado('actualizarLiquidacion'))
+  datos.borrarLiquidacion.mockImplementation(() => resultado('borrarLiquidacion'))
   mockDb.dias = AGOSTO.map(([dia, horas, viajes], i) => ({
     id: `a${i}`, mes_id: 'm08', dia, tipo: 'horas', horas, viajes, created_at: `2026-08-${String(dia).padStart(2, '0')}T12:00:00Z`,
   }))
 })
 
-const montar = () => render(<Liquidacion userId="u1" darkMode={false} styles={{ input: {} }} />)
+const EMPLEADA = { id: 'liq-1', nombre: 'Sueldo de la empleada', tipo: 'pago' }
+const montar = (props = {}) => render(<Liquidacion userId="u1" liquidacion={EMPLEADA} darkMode={false} styles={{ input: {} }} {...props} />)
 const abrirSeptiembre = async () => {
   montar()
   await screen.findByRole('heading', { name: 'Septiembre 2026' })
@@ -56,7 +61,8 @@ const texto = (el) => el.textContent.replace(/ /g, ' ')
 
 test('abre el mes siguiente al último cerrado, con las tarifas heredadas, y muestra el historial', async () => {
   await abrirSeptiembre()
-  expect(datos.crearMes).toHaveBeenCalledWith({ id: 'id-1', user_id: 'u1', clave: '2026-09', valor_hora: 7500, valor_viatico: 1200, valor_jornada: 25000 })
+  expect(datos.leerMeses).toHaveBeenCalledWith('liq-1')
+  expect(datos.crearMes).toHaveBeenCalledWith({ id: 'id-1', user_id: 'u1', liquidacion_id: 'liq-1', clave: '2026-09', valor_hora: 7500, valor_viatico: 1200, valor_jornada: 25000 })
   expect(screen.getByText('0 jornadas · 0 hs · 0 viajes · 0 días')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Agosto 2026' })).toBeInTheDocument()
   expect(screen.getByText('$ 482.400')).toBeInTheDocument()
@@ -211,4 +217,68 @@ test('si no se puede leer la liquidación, lo dice y deja reintentar', async () 
   mockDb.fallar.delete('leerMeses')
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
   expect(await screen.findByRole('heading', { name: 'Septiembre 2026' })).toBeInTheDocument()
+})
+
+// La liquidación de la empleada se veía como si fuera la de la dueña de la cuenta:
+// ahora cada una dice qué es, y el nombre se cambia tocándolo, como el de una cuenta.
+describe('nombre y tipo de la liquidación', () => {
+  test('el encabezado dice de quién es y si la pagás o te la pagan', async () => {
+    await abrirSeptiembre()
+    expect(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' })).toHaveTextContent('Sueldo de la empleada · pagás')
+    expect(screen.getByText('Acumulado pagado')).toBeInTheDocument()
+  })
+
+  test('tocar el nombre deja cambiarlo y el tipo, y avisa con lo guardado', async () => {
+    const onCambiada = jest.fn()
+    montar({ onCambiada })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: '  Sueldo   de Renata ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Te la pagan/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(datos.actualizarLiquidacion).toHaveBeenCalledWith('liq-1', { nombre: 'Sueldo de Renata', tipo: 'cobro' }))
+    expect(onCambiada).toHaveBeenCalledWith({ id: 'liq-1', nombre: 'Sueldo de Renata', tipo: 'cobro' })
+    await waitFor(() => expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument())
+  })
+
+  test('un nombre vacío no se guarda', async () => {
+    montar()
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(await screen.findByText(/Poné un nombre/)).toBeInTheDocument()
+    expect(datos.actualizarLiquidacion).not.toHaveBeenCalled()
+  })
+
+  test('borrarla pide confirmación con cuántos meses se lleva', async () => {
+    const onBorrada = jest.fn()
+    const confirmar = jest.spyOn(window, 'confirm')
+    montar({ onBorrada })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+
+    confirmar.mockReturnValueOnce(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Borrar esta liquidación' }))
+    expect(confirmar).toHaveBeenLastCalledWith('¿Borrar "Sueldo de la empleada" con sus 7 meses? No se puede deshacer.')
+    expect(datos.borrarLiquidacion).not.toHaveBeenCalled()
+
+    confirmar.mockReturnValueOnce(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Borrar esta liquidación' }))
+    await waitFor(() => expect(onBorrada).toHaveBeenCalledWith('liq-1'))
+    expect(datos.borrarLiquidacion).toHaveBeenCalledWith('liq-1')
+    confirmar.mockRestore()
+  })
+
+  // Las tarifas de la empleada no tienen nada que ver con lo que cobra otro trabajo.
+  test('una liquidación nueva arranca sin tarifas, con el nombre para editar y las tarifas a la vista', async () => {
+    mockDb.meses = []
+    montar({ liquidacion: { id: 'liq-2', nombre: 'Nueva liquidación', tipo: 'cobro' }, editarAlAbrir: true })
+    await screen.findByRole('heading', { name: /2026/ })
+    expect(datos.crearMes).toHaveBeenCalledWith(expect.objectContaining({ liquidacion_id: 'liq-2', valor_hora: 0, valor_viatico: 0, valor_jornada: 0 }))
+    expect(screen.getByLabelText('Nombre')).toHaveValue('Nueva liquidación')
+    expect(screen.getByText('Cargá cuánto vale la hora, el viaje o la jornada.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Hora')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar Nueva liquidación' })).toHaveTextContent('Nueva liquidación · cobrás')
+  })
 })

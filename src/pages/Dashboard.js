@@ -19,6 +19,8 @@ import CambioMoneda from '../components/CambioMoneda'
 import RepartoSocios from '../components/RepartoSocios'
 import Liquidacion from '../components/Liquidacion'
 import { puedeVerLiquidacion } from '../config/features'
+import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } from '../lib/liquidacionDatos'
+import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo } from '../lib/repartoSocios'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
@@ -210,6 +212,10 @@ export default function Dashboard() {
   const [showAddAccount, setShowAddAccount] = useState(false)
   const [newAccount, setNewAccount] = useState({ nombre: '', tipo: 'credito' })
   const [editAccount, setEditAccount] = useState(null)
+  // Liquidaciones (sueldo de la empleada, trabajos propios): cada una es una tarjeta
+  // de la barra lateral y se elige con selectedAccount = 'liquidacion:<id>'.
+  const [liquidaciones, setLiquidaciones] = useState([])
+  const [liquidacionNueva, setLiquidacionNueva] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
   const [showReportBug, setShowReportBug] = useState(false)
@@ -586,6 +592,28 @@ export default function Dashboard() {
       } catch {}
     })()
   }, [currentUserId])
+
+  const verLiquidaciones = puedeVerLiquidacion(userEmail)
+  useEffect(() => {
+    if (!currentUserId || !verLiquidaciones) return
+    let vigente = true
+    leerLiquidaciones(currentUserId).then(({ data, error }) => {
+      if (vigente && !error) setLiquidaciones(data || [])
+    })
+    return () => { vigente = false }
+  }, [currentUserId, verLiquidaciones])
+
+  const agregarLiquidacion = async () => {
+    if (!currentUserId) return
+    // Arranca como "te la pagan": las nuevas son para llevar lo que cobrás por tus
+    // trabajos. Se abre con el nombre para editar, y ahí se puede cambiar.
+    const { data, error } = await crearLiquidacion({ id: nuevoIdLiquidacion(), user_id: currentUserId, nombre: NOMBRE_NUEVA, tipo: 'cobro' })
+    if (error || !data) { showToast('No se pudo crear la liquidación. Probá de nuevo.', 'error'); return }
+    setLiquidaciones(ls => [...ls, data])
+    setLiquidacionNueva(data.id)
+    setSelectedAccount(`liquidacion:${data.id}`)
+    setSidebarOpen(false)
+  }
 
   // No vaciar accountTransactions acá: alimenta los widgets del costado
   // (Evolución, Cuotas pendientes), que deben seguir mostrando datos de
@@ -4052,13 +4080,26 @@ export default function Dashboard() {
                     )
                   })()}
 
-                  {/* Liquidación del sueldo: solo para una cuenta (ver src/config/features.js) */}
-                  {puedeVerLiquidacion(userEmail) && (
-                    <div role="button" tabIndex={0} style={{ ...styles.accountCard, ...(selectedAccount === 'liquidacion' ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '12px', marginTop: cuentasOpen ? 0 : '12px' }}
-                      onClick={() => { setSelectedAccount(selectedAccount === 'liquidacion' ? null : 'liquidacion'); setSidebarOpen(false) }}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedAccount('liquidacion'); setSidebarOpen(false) } }}>
-                      <p style={{ ...styles.accountType, marginBottom: '4px' }}>🧾 LIQUIDACIÓN</p>
-                      <p style={styles.accountName}>Sueldo del mes</p>
+                  {/* Liquidaciones: solo para una cuenta (ver src/config/features.js). Cada
+                      una dice si es plata que se paga (la empleada) o que se cobra. */}
+                  {verLiquidaciones && (
+                    <div style={{ marginTop: cuentasOpen ? 0 : '12px', marginBottom: '12px' }}>
+                      {liquidaciones.map(liq => {
+                        const valor = `liquidacion:${liq.id}`
+                        const elegida = selectedAccount === valor
+                        return (
+                          <div key={liq.id} role="button" tabIndex={0} style={{ ...styles.accountCard, ...(elegida ? styles.accountCardSelected : {}), textAlign: 'center', marginBottom: '8px' }}
+                            onClick={() => { setSelectedAccount(elegida ? null : valor); setSidebarOpen(false) }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedAccount(valor); setSidebarOpen(false) } }}>
+                            <p style={{ ...styles.accountType, marginBottom: '4px' }}>{liq.tipo === 'cobro' ? '💰 LIQUIDACIÓN · COBRÁS' : '🧾 LIQUIDACIÓN · PAGÁS'}</p>
+                            <p style={styles.accountName}>{liq.nombre}</p>
+                          </div>
+                        )
+                      })}
+                      <button type="button" onClick={agregarLiquidacion}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', width: '100%', padding: '2px 0', fontSize: '11px', fontStyle: 'italic', color: txtTerciario, fontFamily: 'inherit' }}>
+                        + Agregar liquidación
+                      </button>
                     </div>
                   )}
                 </>
@@ -4143,12 +4184,23 @@ export default function Dashboard() {
 
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
-            {selectedAccount === 'liquidacion' ? (
-              puedeVerLiquidacion(userEmail) && (
-                <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
-                  <Liquidacion userId={currentUserId} darkMode={darkMode} styles={styles} />
-                </div>
-              )
+            {typeof selectedAccount === 'string' && selectedAccount.startsWith('liquidacion:') ? (
+              verLiquidaciones && (() => {
+                const liq = liquidaciones.find(l => `liquidacion:${l.id}` === selectedAccount)
+                if (!liq) return null
+                return (
+                  <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
+                    <Liquidacion key={liq.id} userId={currentUserId} liquidacion={liq} editarAlAbrir={liq.id === liquidacionNueva}
+                      darkMode={darkMode} styles={styles}
+                      onCambiada={cambiada => setLiquidaciones(ls => ls.map(l => (l.id === cambiada.id ? cambiada : l)))}
+                      onBorrada={id => {
+                        setLiquidaciones(ls => ls.filter(l => l.id !== id))
+                        setSelectedAccount(null)
+                        showToast('Liquidación borrada.')
+                      }} />
+                  </div>
+                )
+              })()
             ) : selectedAccount === 'all' ? (
               <div style={{...styles.section, padding: isMobile ? '16px' : '24px'}}>
                 {/* Tabs — patrón pill/segmented */}
