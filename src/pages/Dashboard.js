@@ -1027,7 +1027,7 @@ export default function Dashboard() {
     }
 
     // Laburo de un socio en particular (cuentas con reparto): queda marcado como
-    // trabajo por fuera, 60 % para quien lo hizo y el resto parejo.
+    // trabajo por fuera, 90 % para quien lo hizo y el resto parejo (5 % cada uno de los otros dos).
     if (repartoSocios && efectivo.trabajoDe && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto')) {
       const nueva = conTrabajo(repartoSocios, { movimientoId: movInsertado[0].id, concepto: efectivo.nombre, socio: efectivo.trabajoDe })
       setRepartoSocios(nueva)
@@ -5730,7 +5730,7 @@ export default function Dashboard() {
                   <select style={styles.input} value={efectivo.trabajoDe || ''} aria-label="De quién es el laburo"
                     onChange={e => setEfectivo({...efectivo, trabajoDe: e.target.value})}>
                     <option value="">De la agencia (partes iguales)</option>
-                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s} (60 % para {s}, el resto parejo)</option>)}
+                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s} (90 % para {s}, 5 % para cada uno de los otros)</option>)}
                   </select>
                 </div>
               )}
