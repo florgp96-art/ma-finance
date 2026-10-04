@@ -424,7 +424,27 @@ export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
 }
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
-const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+
+// Ordenar la tabla por Monto mezclaba las monedas: un gasto de € 50 quedaba entre
+// dos de $ 40 y $ 60 como si fueran comparables. Ahora primero va la moneda, siempre
+// en el mismo orden (pesos, dólares, euros, sin importar si el orden es ascendente
+// o descendente), y adentro de cada moneda el monto con su signo (ingreso positivo,
+// gasto negativo). Sin moneda cargada se asume pesos, igual que en el resto de la app.
+const ORDEN_MONEDAS = ['ARS', 'USD', 'EUR']
+const posicionMoneda = (moneda) => {
+  const i = ORDEN_MONEDAS.indexOf(moneda || 'ARS')
+  return i === -1 ? ORDEN_MONEDAS.length : i
+}
+export const compararPorMonto = (a, b, dir = 'asc') => {
+  const porMoneda = posicionMoneda(a.moneda) - posicionMoneda(b.moneda)
+  if (porMoneda !== 0) return porMoneda
+  const valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
+  const valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
+  if (valA === valB) return 0
+  return (valA < valB ? -1 : 1) * (dir === 'asc' ? 1 : -1)
+}
+
+const norm =(s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
 // El PDF de un resumen no siempre trae la fecha de cierre/facturación (fecha_hasta) —
 // cuando falta, se aproxima restándole al vencimiento la brecha típica entre el cierre
@@ -1655,15 +1675,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
 
   const sortTx = useCallback((list) => {
     return [...list].sort((a, b) => {
+      if (sortKey === 'monto') return compararPorMonto(a, b, sortDir)
       let valA, valB
       if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
       else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
       else if (sortKey === 'categoria') { valA = etiquetaCategoria(a).toLowerCase(); valB = etiquetaCategoria(b).toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
-      else if (sortKey === 'monto') {
-        valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
-        valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
-      }
       else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
       else if (sortKey === 'moneda') { valA = a.moneda || ''; valB = b.moneda || '' }
       else if (sortKey === 'cuenta') { valA = (a.accounts?.nombre || '').toLowerCase(); valB = (b.accounts?.nombre || '').toLowerCase() }
@@ -2265,8 +2282,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           {colVisible.cuotas && (
             <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{esIngresoTx ? '—' : (tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—')}</td>
           )}
+          {/* Verde los ingresos y rojo los gastos, el mismo criterio que el signo
+              de adelante: con la tabla ordenada por monto se distinguen de un vistazo. */}
           <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal',
-            color: darkMode ? '#F0EDEC' : '#2d2d2d'}}
+            color: tx.tipo === 'ingreso' ? sem.positivo : sem.negativo}}
             title={tcTooltipDe(tx, tcMap, tipoCambio)}>
             {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </td>
@@ -2437,7 +2456,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}</td>
         )}
         <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal',
-          color: darkMode ? '#F0EDEC' : '#2d2d2d'}}>
+          color: sem.negativo}}>
           -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
         </td>
         <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>▸</td>
