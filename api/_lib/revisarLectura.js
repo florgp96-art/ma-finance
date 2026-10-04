@@ -1,18 +1,22 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { buildAnalysisPrompt } from './_lib/analyzePrompt.js'
-import { checkRateLimit } from './_lib/rateLimit.js'
-import { getUserPlan } from './_lib/plan.js'
-import { leerNotasFormato, guardarNotaFormato, avisarNotaNueva } from './_lib/formatosLectura.js'
-import { controlDeLectura } from '../src/lib/controlLectura.js'
+import { buildAnalysisPrompt } from './analyzePrompt.js'
+import { checkRateLimit } from './rateLimit.js'
+import { getUserPlan } from './plan.js'
+import { leerNotasFormato, guardarNotaFormato, avisarNotaNueva } from './formatosLectura.js'
+import { controlDeLectura } from '../../src/lib/controlLectura.js'
 import {
   bloqueRevision, ESQUEMA_REVISION, aplicarRevision, compararControles,
   claveDeFormato, etiquetaDeFormato, limpiarNotaFormato,
-} from '../src/lib/revisionLectura.js'
+} from '../../src/lib/revisionLectura.js'
 
 // Segunda lectura de un resumen de tarjeta cerrado que no cerró con su total (ver
 // src/lib/revisionLectura.js). La pide la app sola, antes de mostrar la vista
 // previa, con el mismo PDF (o el mismo texto) que leyó la primera vez.
+//
+// Entra por /api/analyze?revision=1 y no como función propia: el plan Hobby de
+// Vercel admite como máximo 12 funciones por despliegue, y con una más el
+// despliegue entero falla.
 //
 // No consume el resumen gratis del mes: es la corrección de una lectura que ya se
 // cobró. Para que no sirva de puerta trasera al cupo, un usuario del plan gratis
@@ -23,8 +27,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY })
-
-export const maxDuration = 300
 
 // Margen para que la función responda (con la primera lectura) antes de que
 // Vercel la corte a los 300 s.
@@ -56,8 +58,7 @@ const nombresDelResumen = (resultado) => [
   ...resultado.transacciones.map(t => t.titular),
 ].filter(n => typeof n === 'string' && n.trim())
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end()
+export async function revisarLectura(req, res) {
 
   const authHeader = req.headers['authorization']
   if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })

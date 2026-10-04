@@ -63,7 +63,7 @@ export default async function handler(req, res) {
   }
 
   // Lo aprendido de los formatos de cada entidad en revisiones anteriores (ver
-  // api/revisarLectura.js). Si no se puede leer, se sigue sin notas.
+  // api/_lib/revisarLectura.js). Si no se puede leer, se sigue sin notas.
   const notasFormato = await leerNotasFormato(supabaseAdmin)
   const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, notasFormato, fechaHoy: new Date().toISOString().slice(0, 10) })
 

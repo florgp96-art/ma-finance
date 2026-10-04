@@ -238,7 +238,7 @@ export async function analyzePdfDocumentWithClaude(file, cardName, userRules, to
 }
 
 // Segunda lectura de un resumen que no cerró con su total (ver
-// src/lib/revisionLectura.js y api/revisarLectura.js). Se le manda lo mismo que
+// src/lib/revisionLectura.js y api/_lib/revisarLectura.js). Se le manda lo mismo que
 // leyó la primera vez: el texto si se leyó como texto, el PDF entero si no.
 // Devuelve { resultado, revision }; si algo falla tira error, y quien llama sigue
 // con la primera lectura.
@@ -246,7 +246,7 @@ export async function revisarLecturaConClaude({ resultado, pdfText, file, token,
   const fuente = pdfText ? { pdfText } : { pdfBase64: await leerComoBase64(file) }
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch('/api/revisarLectura', {
+  const res = await fetch('/api/analyze?revision=1', {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -254,6 +254,6 @@ export async function revisarLecturaConClaude({ resultado, pdfText, file, token,
       categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
     }),
   })
-  if (!res.ok) throw new Error(`revisarLectura respondió ${res.status}`)
+  if (!res.ok) throw new Error(`la revisión respondió ${res.status}`)
   return res.json()
 }

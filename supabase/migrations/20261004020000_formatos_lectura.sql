@@ -1,6 +1,6 @@
 -- Notas sobre el formato de los resúmenes de cada entidad, aprendidas en las
 -- revisiones automáticas de lecturas que no cerraban con el total (ver
--- src/lib/revisionLectura.js y api/revisarLectura.js).
+-- src/lib/revisionLectura.js y api/_lib/revisarLectura.js).
 --
 -- Son compartidas entre usuarios y solo describen el formato: nunca datos de
 -- quien subió el resumen. Solo las lee y las escribe el servidor con la service

@@ -1,5 +1,5 @@
 // Notas sobre el formato de los resúmenes de cada entidad, aprendidas en las
-// revisiones automáticas (ver src/lib/revisionLectura.js y api/revisarLectura.js).
+// revisiones automáticas (ver src/lib/revisionLectura.js y api/_lib/revisarLectura.js).
 //
 // Son compartidas: una nota que se escribió leyendo el resumen de un usuario se usa
 // en las lecturas de todos los demás con resúmenes de esa entidad. Por eso solo las
