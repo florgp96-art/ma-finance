@@ -7,6 +7,7 @@ import {
   totalDelMes,
 } from '../lib/liquidacion'
 import * as datos from '../lib/liquidacionDatos'
+import IngresosFuturos from './IngresosFuturos'
 import { conReintento } from '../lib/colaGuardado'
 import useGuardado from '../hooks/useGuardado'
 import { paleta, semaforo } from '../theme'
@@ -531,6 +532,12 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
             </button>
           )}
         </>
+      )}
+
+      {/* Solo en las que te pagan: en la de la empleada no hay nada que cobrar. */}
+      {cobro && liquidacionId && (
+        <IngresosFuturos userId={userId} liquidacionId={liquidacionId}
+          estilos={{ c, sem, input, caja, rotulo, botonChico }} />
       )}
 
       {historial.meses.length > 0 && (

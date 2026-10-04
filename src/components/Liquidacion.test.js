@@ -18,6 +18,11 @@ jest.mock('../lib/liquidacionDatos', () => ({
   borrarDia: jest.fn(),
   actualizarLiquidacion: jest.fn(),
   borrarLiquidacion: jest.fn(),
+  leerIngresosFuturos: jest.fn(),
+  leerIngresosDeCuentas: jest.fn(),
+  crearIngresoFuturo: jest.fn(),
+  actualizarIngresoFuturo: jest.fn(),
+  borrarIngresoFuturo: jest.fn(),
 }))
 
 const resultado = (op, data = null) =>
@@ -45,6 +50,8 @@ beforeEach(() => {
   datos.borrarDia.mockImplementation(() => resultado('borrarDia'))
   datos.actualizarLiquidacion.mockImplementation(() => resultado('actualizarLiquidacion'))
   datos.borrarLiquidacion.mockImplementation(() => resultado('borrarLiquidacion'))
+  datos.leerIngresosFuturos.mockImplementation(() => resultado('leerIngresosFuturos', []))
+  datos.leerIngresosDeCuentas.mockImplementation(() => resultado('leerIngresosDeCuentas', []))
   mockDb.dias = AGOSTO.map(([dia, horas, viajes], i) => ({
     id: `a${i}`, mes_id: 'm08', dia, tipo: 'horas', horas, viajes, created_at: `2026-08-${String(dia).padStart(2, '0')}T12:00:00Z`,
   }))
@@ -281,4 +288,10 @@ describe('nombre y tipo de la liquidación', () => {
     expect(screen.getByLabelText('Hora')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Editar Nueva liquidación' })).toHaveTextContent('Nueva liquidación · cobrás')
   })
+})
+
+test('los ingresos a futuro aparecen solo en las liquidaciones que te pagan', async () => {
+  montar()
+  await screen.findByRole('heading', { name: 'Septiembre 2026' })
+  expect(screen.queryByText('Ingresos a futuro')).not.toBeInTheDocument()
 })

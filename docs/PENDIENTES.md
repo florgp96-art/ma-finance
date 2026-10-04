@@ -351,6 +351,12 @@ columna `liquidacion_meses.liquidacion_id`. Los meses que ya existían pasan a u
 liquidación "Sueldo de la empleada" por usuario, y el mes pasa a ser único por
 liquidación (antes, por usuario).
 
+**4. Ingresos a futuro** (ya corrida el 4 de octubre de 2026;
+`supabase/migrations/20261004010000_ingresos_futuros.sql`). Tabla `ingresos_futuros`:
+lo que se espera cobrar dentro de una liquidación de las que "te pagan". No son
+movimientos ni tocan saldos; se tachan solos cuando el ingreso aparece en una cuenta
+(ver `src/lib/ingresosFuturos.js`) o a mano (`cobrado_a_mano`).
+
 ### g) Facturación de los ingresos (para el reporte al contador/a)
 
 ```sql
