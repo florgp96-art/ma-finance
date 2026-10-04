@@ -215,13 +215,15 @@ export async function analyzeStatementWithClaude(pdfText, cardName, userRules, t
 // Fallback: manda el PDF completo (base64) para que la IA lo lea como
 // documento. Cubre PDFs que pdf.js no puede abrir, escaneados, o cuya tabla
 // de movimientos no sale en la capa de texto.
+const leerComoBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = e => resolve(e.target.result.split(',')[1])
+  reader.onerror = () => reject(new Error('No se pudo leer el archivo'))
+  reader.readAsDataURL(file)
+})
+
 export async function analyzePdfDocumentWithClaude(file, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = e => resolve(e.target.result.split(',')[1])
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo'))
-    reader.readAsDataURL(file)
-  })
+  const base64 = await leerComoBase64(file)
 
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
@@ -233,4 +235,25 @@ export async function analyzePdfDocumentWithClaude(file, cardName, userRules, to
       categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
     })
   }))
+}
+
+// Segunda lectura de un resumen que no cerró con su total (ver
+// src/lib/revisionLectura.js y api/revisarLectura.js). Se le manda lo mismo que
+// leyó la primera vez: el texto si se leyó como texto, el PDF entero si no.
+// Devuelve { resultado, revision }; si algo falla tira error, y quien llama sigue
+// con la primera lectura.
+export async function revisarLecturaConClaude({ resultado, pdfText, file, token, cardName, userRules, incomeExamples, categories, subcategories, children, aliases }) {
+  const fuente = pdfText ? { pdfText } : { pdfBase64: await leerComoBase64(file) }
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch('/api/revisarLectura', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...fuente, resultado, cardName, userRules: userRules || [], incomeExamples: incomeExamples || [],
+      categories: categories || [], subcategories: subcategories || [], children: children || [], aliases: aliases || [],
+    }),
+  })
+  if (!res.ok) throw new Error(`revisarLectura respondió ${res.status}`)
+  return res.json()
 }

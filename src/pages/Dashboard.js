@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
+import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude, revisarLecturaConClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
 import { filtrarYaCargados, esElMismoPago, esElMismoGasto } from '../lib/duplicados'
@@ -77,6 +77,16 @@ const parseFechaArgentina = (fecha) => {
   if (parts.length !== 3) return fecha
   const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
   return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+}
+
+// ¿Es un resumen ya cerrado, que tiene que cerrar con su total? Un resumen cerrado
+// siempre trae vencimiento y cerró en el pasado; lo que muestra la app del banco a
+// mitad de ciclo cierra más adelante (ver controlLectura.js).
+const esResumenCerradoParaControl = (result) => {
+  const cierre = parseFechaArgentina(result?.fecha_facturacion)
+  const ahora = new Date()
+  const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
+  return !!parseFechaArgentina(result?.fecha_vencimiento) && (!cierre || cierre <= hoy)
 }
 
 const parseCuotaDesc = (texto) => {
@@ -280,6 +290,9 @@ export default function Dashboard() {
   })
 
   const [msgIndex, setMsgIndex] = useState(0)
+  // La primera lectura no cerró con el total y se está pidiendo la segunda (ver
+  // lib/revisionLectura.js): la pantalla de "procesando" lo dice.
+  const [revisandoLectura, setRevisandoLectura] = useState(false)
   const msgInterval = useRef(null)
   const [timer, setTimer] = useState(120)
   const timerInterval = useRef(null)
@@ -1929,10 +1942,11 @@ export default function Dashboard() {
 
       const isImage = archivo.type.startsWith('image/')
       let result
+      let pdfText = null
       if (isImage) {
         result = await analyzeImageWithClaude(archivo, rules || [], token)
       } else {
-        const pdfText = await extractTextFromPDF(archivo)
+        pdfText = await extractTextFromPDF(archivo)
         if (pdfText) {
           result = tryDirectParsePDF(pdfText)
           if (!result) {
@@ -1942,6 +1956,29 @@ export default function Dashboard() {
           // El PDF no se pudo leer como texto (dañado, escaneado, o la tabla
           // de movimientos no está en la capa de texto): la IA lo lee entero.
           result = await analyzePdfDocumentWithClaude(archivo, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
+        }
+      }
+      // Un resumen cerrado que no cierra con su total se vuelve a leer solo, con la
+      // diferencia concreta, antes de mostrar nada (ver lib/revisionLectura.js). Se
+      // hace sobre lo que devolvió la IA, antes de reglas y alias, porque es eso lo
+      // que se le muestra a la revisión. Si la revisión falla o no mejora nada, se
+      // sigue con la primera lectura y el aviso de "no cuadra" de siempre.
+      if (!isImage && result?.tipo_documento === 'tarjeta' && Array.isArray(result.transacciones) &&
+          esResumenCerradoParaControl(result) && controlDeLectura(result).cuadra === false) {
+        setRevisandoLectura(true)
+        setTimer(180)
+        try {
+          const r = await revisarLecturaConClaude({
+            resultado: result, pdfText, file: archivo, token, cardName: 'auto', userRules: rules || [],
+            incomeExamples, categories: categoriasDB, subcategories: subcategoriasDB, children: childrenDB, aliases: userAliases,
+          })
+          if (Array.isArray(r?.resultado?.transacciones) && ['cuadra', 'mejoro'].includes(r.revision?.estado)) {
+            result = { ...r.resultado, revision: r.revision }
+          }
+        } catch (e) {
+          console.warn('No se pudo revisar la lectura:', e.message)
+        } finally {
+          setRevisandoLectura(false)
         }
       }
       // Re-aplica reglas/alias por código (no depende de que la IA haya obedecido el prompt),
@@ -1969,10 +2006,7 @@ export default function Dashboard() {
       }
       // Un resumen cerrado que no cierra con su total: se avisa en el mail (además
       // de en la pantalla, antes de confirmar). Mismo criterio de "cerrado" que abajo.
-      const cierreParaControl = parseFechaArgentina(result.fecha_facturacion)
-      const ahora = new Date()
-      const hoyParaControl = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
-      const cerradoParaControl = !!parseFechaArgentina(result.fecha_vencimiento) && (!cierreParaControl || cierreParaControl <= hoyParaControl)
+      const cerradoParaControl = esResumenCerradoParaControl(result)
       const control = controlDeLectura(result)
       logImportAttempt({
         tipo: isImage ? 'imagen' : 'pdf',
@@ -2897,7 +2931,9 @@ export default function Dashboard() {
 
   const tipoLabel = (tipo) => tipo === 'credito' ? 'Crédito' : tipo === 'debito' ? 'Débito' : tipo === 'ingreso' ? 'Ingreso' : 'Efectivo'
   const formatMonto = (monto) => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
-  const currentMsg = PROCESSING_MSGS[msgIndex]
+  const currentMsg = revisandoLectura
+    ? { icon: '🔁', title: 'Revisando la lectura...', desc: 'Lo leído no cerraba con el total del resumen: lo estamos revisando para encontrar lo que faltó' }
+    : PROCESSING_MSGS[msgIndex]
 
   // Subcategorías filtradas para el paso identificar
   const subcatsParaIdentificar = () => {
@@ -4992,6 +5028,25 @@ export default function Dashboard() {
                     </div>
                   )
                 })()}
+                {/* Segunda lectura automática (ver lib/revisionLectura.js): se avisa que
+                    hubo una, y lo que encontró queda marcado con 🔁 para revisarlo. */}
+                {statementData?.revision && ['cuadra', 'mejoro'].includes(statementData.revision.estado) && (() => {
+                  const { estado, agregados = 0, quitados = 0 } = statementData.revision
+                  const cambios = [
+                    agregados > 0 ? `encontró ${agregados} movimiento${agregados === 1 ? '' : 's'} que faltaba${agregados === 1 ? '' : 'n'}` : null,
+                    quitados > 0 ? `sacó ${quitados} que estaba${quitados === 1 ? '' : 'n'} de más o mal leído${quitados === 1 ? '' : 's'}` : null,
+                  ].filter(Boolean)
+                  return (
+                    <div role="status" style={{ background: sem.positivo + '14', border: `1px solid ${sem.positivo}55`, borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', fontSize: '13px', color: txtSecundario }}>
+                      <p style={{ margin: 0 }}>
+                        🔁 La primera lectura no cerraba con el total del resumen, así que la app lo volvió a revisar
+                        {cambios.length > 0 ? `: ${cambios.join(' y ')}` : ''}.
+                        {estado === 'cuadra' ? ' Ahora cierra con el total.' : ' Quedó más cerca, pero todavía no cierra.'}
+                        {agregados > 0 ? ' Los que encontró están marcados con 🔁: fijate que estén bien.' : ''}
+                      </p>
+                    </div>
+                  )
+                })()}
                 {/* Control de lectura (ver lib/controlLectura.js): en un resumen cerrado,
                     lo leído tiene que cerrar con el total que informa el banco. */}
                 {statementData?.tipo_documento === 'tarjeta' && esResumenCerrado && (() => {
@@ -5072,6 +5127,7 @@ export default function Dashboard() {
                           <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {t.nombre_limpio || t.nombre_original}
                             {t.nombre_limpio === t.nombre_original && t.tipo !== 'neutro' && <span style={{ textDecoration: 'none' }}>❓</span>}
+                            {t.revisado && <span title="Lo encontró la revisión de la lectura" style={{ textDecoration: 'none' }}>🔁</span>}
                             {isDupe && <span title={cargadaComo || undefined} style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{cargadaComo ? `ya cargada como "${cargadaComo}"` : 'ya cargada'}</span>}
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
