@@ -1,9 +1,10 @@
-// Lectura y escritura de la liquidación en Supabase (tablas liquidacion_meses y
-// liquidacion_dias; ver docs/PENDIENTES.md). Cada función devuelve la promesa de
-// Supabase, { data, error }: quien llama decide qué hacer con el error.
+// Lectura y escritura de las liquidaciones en Supabase (tablas liquidaciones,
+// liquidacion_meses y liquidacion_dias; ver docs/PENDIENTES.md). Cada función devuelve
+// la promesa de Supabase, { data, error }: quien llama decide qué hacer con el error.
 import { supabase } from './supabase'
 
-const COLUMNAS_MES = 'id, clave, valor_hora, valor_viatico, valor_jornada, cerrado, total_cerrado'
+const COLUMNAS_LIQUIDACION = 'id, nombre, tipo, created_at'
+const COLUMNAS_MES = 'id, liquidacion_id, clave, valor_hora, valor_viatico, valor_jornada, cerrado, total_cerrado'
 const COLUMNAS_DIA = 'id, mes_id, dia, tipo, horas, viajes, created_at'
 
 // El id de las filas nuevas se arma acá para poder mostrarlas (y editarlas) antes
@@ -22,8 +23,23 @@ export const nuevoId = () => {
 
 const ahoraISO = () => new Date().toISOString()
 
-export const leerMeses = (userId) =>
-  supabase.from('liquidacion_meses').select(COLUMNAS_MES).eq('user_id', userId).order('clave')
+// En el orden en que se crearon: la primera (la de siempre) queda arriba.
+export const leerLiquidaciones = (userId) =>
+  supabase.from('liquidaciones').select(COLUMNAS_LIQUIDACION).eq('user_id', userId)
+    .order('created_at').order('id')
+
+export const crearLiquidacion = ({ id, user_id, nombre, tipo }) =>
+  supabase.from('liquidaciones').insert({ id, user_id, nombre, tipo }).select(COLUMNAS_LIQUIDACION).single()
+
+export const actualizarLiquidacion = (id, cambios) =>
+  supabase.from('liquidaciones').update(cambios).eq('id', id)
+
+// Se lleva sus meses y los días de esos meses (on delete cascade).
+export const borrarLiquidacion = (id) =>
+  supabase.from('liquidaciones').delete().eq('id', id)
+
+export const leerMeses = (liquidacionId) =>
+  supabase.from('liquidacion_meses').select(COLUMNAS_MES).eq('liquidacion_id', liquidacionId).order('clave')
 
 export const leerDias = (mesId) =>
   supabase.from('liquidacion_dias').select(COLUMNAS_DIA).eq('mes_id', mesId).order('dia').order('created_at')
@@ -31,8 +47,8 @@ export const leerDias = (mesId) =>
 export const crearMes = (mes) =>
   supabase.from('liquidacion_meses').insert(mes).select(COLUMNAS_MES).single()
 
-export const leerMesPorClave = (userId, clave) =>
-  supabase.from('liquidacion_meses').select(COLUMNAS_MES).eq('user_id', userId).eq('clave', clave).maybeSingle()
+export const leerMesPorClave = (liquidacionId, clave) =>
+  supabase.from('liquidacion_meses').select(COLUMNAS_MES).eq('liquidacion_id', liquidacionId).eq('clave', clave).maybeSingle()
 
 export const actualizarMes = (id, cambios) =>
   supabase.from('liquidacion_meses').update({ ...cambios, updated_at: ahoraISO() }).eq('id', id)

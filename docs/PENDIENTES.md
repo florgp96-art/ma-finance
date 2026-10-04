@@ -344,6 +344,13 @@ order by m.clave;
 La consulta del final tiene que mostrar los 6 meses cerrados, y agosto con 16 días y
 `total_de_los_dias` = 482400, igual a su `total_cerrado`.
 
+**3. Varias liquidaciones con nombre** (ya corrida el 4 de octubre de 2026; el archivo es
+`supabase/migrations/20261004000000_liquidaciones.sql` y se puede correr más de una vez).
+Agrega la tabla `liquidaciones` (nombre, y si es plata que se paga o que se cobra) y la
+columna `liquidacion_meses.liquidacion_id`. Los meses que ya existían pasan a una
+liquidación "Sueldo de la empleada" por usuario, y el mes pasa a ser único por
+liquidación (antes, por usuario).
+
 ### g) Facturación de los ingresos (para el reporte al contador/a)
 
 ```sql

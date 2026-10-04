@@ -1,5 +1,6 @@
-// Liquidación del sueldo mensual de una empleada que cobra por hora más viáticos
-// por viaje. Solo cálculo, sin Supabase ni React (ver liquidacionDatos.js y
+// Liquidación de un sueldo mensual que se cobra por hora más viáticos por viaje: el
+// de la empleada (plata que se paga) o el de un trabajo propio (plata que se cobra).
+// Solo cálculo, sin Supabase ni React (ver liquidacionDatos.js y
 // components/Liquidacion.js).
 //
 // Cada día es de uno de dos tipos:
@@ -9,6 +10,20 @@
 import { moverMes } from './repartoSocios'
 
 export const TARIFAS_POR_DEFECTO = Object.freeze({ valor_hora: 7500, valor_viatico: 1200, valor_jornada: 25000 })
+// Una liquidación nueva arranca sin tarifas: las de la empleada no tienen nada que ver
+// con lo que cobra otro trabajo, y heredarlas daría un total que parece real.
+export const TARIFAS_EN_CERO = Object.freeze({ valor_hora: 0, valor_viatico: 0, valor_jornada: 0 })
+
+// Pago: la pagás vos (la empleada). Cobro: te la pagan (un trabajo tuyo).
+export const TIPOS_DE_LIQUIDACION = ['pago', 'cobro']
+export const LARGO_MAXIMO_NOMBRE = 60
+export const NOMBRE_NUEVA = 'Nueva liquidación'
+
+// El nombre que se guarda, o null si no sirve (vacío o demasiado largo).
+export const nombreValido = (nombre) => {
+  const limpio = String(nombre ?? '').replace(/\s+/g, ' ').trim()
+  return limpio.length >= 1 && limpio.length <= LARGO_MAXIMO_NOMBRE ? limpio : null
+}
 export const CAMPOS_TARIFA = Object.keys(TARIFAS_POR_DEFECTO)
 export const TIPOS_DE_DIA = ['horas', 'jornada']
 
@@ -80,10 +95,11 @@ export const nuevoDia = (dias, clave) => {
   }
 }
 
-// Un mes nuevo arranca con las tarifas del último mes anterior que exista.
-export const tarifasHeredadas = (meses, clave) => {
+// Un mes nuevo arranca con las tarifas del último mes anterior que exista; si no hay
+// ninguno, con `porDefecto`.
+export const tarifasHeredadas = (meses, clave, porDefecto = TARIFAS_POR_DEFECTO) => {
   const anterior = (meses || []).filter(m => m.clave < clave).sort((a, b) => b.clave.localeCompare(a.clave))[0]
-  return anterior ? tarifasDe(anterior) : { ...TARIFAS_POR_DEFECTO }
+  return anterior ? tarifasDe(anterior) : { ...porDefecto }
 }
 
 // El mes que se abre al entrar (y después de cerrar uno): el primero abierto
