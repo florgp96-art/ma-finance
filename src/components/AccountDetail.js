@@ -324,6 +324,12 @@ export const totalesDeLista = (txs, tcMap, tipoCambioActual, tcMapEUR, tipoCambi
   return { ars, usd, eur, unificado }
 }
 
+// Un total con el signo adelante del símbolo y con centavos, igual que cada fila de
+// la tabla ("-$ 32.505,89"). Antes salía "$ -681.901": el signo quedaba en el medio y
+// el número, redondeado, no coincidía a simple vista con la suma de las filas.
+export const totalConSigno = (valor, simbolo, signed = true) =>
+  `${valor < 0 ? '-' : signed && valor > 0 ? '+' : ''}${simbolo} ${formatMontoFull(Math.abs(valor))}`
+
 // Pie de tabla reutilizable con el total en vivo de lo que se ve — mobile-first,
 // nunca más de 2 líneas (ver tarea 3). signed=false para listas de un solo signo
 // (ej. gastos de un hijo), donde no tiene sentido mostrar el total en negativo.
@@ -343,10 +349,10 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
             display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline'
           }}>
             <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
-            {Math.round(ars) !== 0 && <span>$ {formatMonto(ars)}</span>}
-            {Math.round(usd * 100) !== 0 && <span style={{ color: sem.usd }}>U$S {formatMontoFull(usd)}</span>}
-            {Math.round(eur * 100) !== 0 && <span style={{ color: sem.positivo }}>€ {formatMontoFull(eur)}</span>}
-            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#75757a', fontWeight: '500' }}>≈ $ {formatMonto(unificado)} unificado</span>}
+            {Math.round(ars) !== 0 && <span>{totalConSigno(ars, '$', signed)}</span>}
+            {Math.round(usd * 100) !== 0 && <span style={{ color: sem.usd }}>{totalConSigno(usd, 'U$S', signed)}</span>}
+            {Math.round(eur * 100) !== 0 && <span style={{ color: sem.positivo }}>{totalConSigno(eur, '€', signed)}</span>}
+            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#75757a', fontWeight: '500' }}>≈ {totalConSigno(unificado, '$', signed)} unificado</span>}
           </div>
         </td>
       </tr>
