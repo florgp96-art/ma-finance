@@ -18,6 +18,8 @@
 // las palabras con las que signoEnSaldo reconoce plata que vuelve, y la que sale no
 // dice ninguna.
 
+import { parseMonto } from './formato'
+
 export const MONEDAS_CAMBIO = ['ARS', 'USD', 'EUR']
 export const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
 const MONTO_MAXIMO = 1e12
@@ -25,7 +27,7 @@ const MONTO_MAXIMO = 1e12
 const redondear = (n) => Math.round(n * 100) / 100
 
 const montoValido = (v) => {
-  const n = Number(v)
+  const n = parseMonto(v)
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? redondear(n) : null
 }
 

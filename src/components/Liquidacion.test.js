@@ -139,7 +139,7 @@ test('un día fuera del mes no se guarda y vuelve al anterior', async () => {
   fireEvent.focus(dia)
   fireEvent.change(dia, { target: { value: '31' } })
   fireEvent.blur(dia)
-  expect(dia).toHaveValue(1)
+  expect(dia).toHaveValue('1')
   fireEvent.focus(dia)
   fireEvent.change(dia, { target: { value: '15' } })
   fireEvent.blur(dia)
@@ -207,7 +207,7 @@ test('las tarifas se editan y se guardan; el subtotal usa la nueva', async () =>
   await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('id-1', { valor_hora: 8000, valor_viatico: 1200, valor_jornada: 25000 }))
   fireEvent.change(screen.getByLabelText('Hora'), { target: { value: '-5' } })
   fireEvent.blur(screen.getByLabelText('Hora'))
-  expect(screen.getByLabelText('Hora')).toHaveValue(8000)
+  expect(screen.getByLabelText('Hora')).toHaveValue('8000')
 })
 
 test('si no se puede leer la liquidación, lo dice y deja reintentar', async () => {

@@ -22,6 +22,7 @@ import { puedeVerLiquidacion } from '../config/features'
 import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } from '../lib/liquidacionDatos'
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo } from '../lib/repartoSocios'
+import { parseMonto } from '../lib/formato'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento } from '../theme'
@@ -925,6 +926,11 @@ export default function Dashboard() {
 
   const handleGuardarMovimiento = async (e) => {
     e.preventDefault()
+    const montoMovimiento = parseMonto(efectivo.monto)
+    if (montoMovimiento === null || montoMovimiento <= 0) {
+      showToast('Poné un monto válido, por ejemplo 1500 o 1500,50.', 'error')
+      return
+    }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)
@@ -954,7 +960,7 @@ export default function Dashboard() {
       fecha: efectivo.fecha,
       nombre: efectivo.nombre,
       detalle: efectivo.nota || efectivo.nombre,
-      monto: parseFloat(efectivo.monto),
+      monto: montoMovimiento,
       moneda: efectivo.moneda,
       tipo: tipoMovimiento,
       category_id: catObj?.id || null,
@@ -3536,11 +3542,11 @@ export default function Dashboard() {
               const fmt = v => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.round(v))
               const sym = m => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
               const totalAhorro = cuentasAhorro.reduce((s, c) => {
-                const m = parseFloat(c.monto) || 0
+                const m = parseMonto(c.monto) || 0
                 return s + (c.moneda === 'ARS' ? m : c.moneda === 'USD' ? m * tc : c.moneda === 'EUR' ? m * tcE : 0)
               }, 0)
               const addAhorro = () => {
-                const m = parseFloat(newCuentaAhorro.monto)
+                const m = parseMonto(newCuentaAhorro.monto)
                 if (!newCuentaAhorro.cuenta.trim() || !m || m <= 0) return
                 setCuentasAhorro(prev => [...prev, { id: Date.now(), ...newCuentaAhorro, monto: m }])
                 setNewCuentaAhorro({ cuenta: '', monto: '', moneda: newCuentaAhorro.moneda })
@@ -3567,7 +3573,7 @@ export default function Dashboard() {
                   {showAddCuentaAhorro && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
                       <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} placeholder="Nombre de la cuenta" value={newCuentaAhorro.cuenta} onChange={e => setNewCuentaAhorro(p => ({ ...p, cuenta: e.target.value }))} />
-                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} type="number" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
+                      <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} type="text" inputMode="decimal" autoComplete="off" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
                       <div style={{ display: 'flex', gap: '4px' }}>
                         {['ARS','USD','EUR'].map(m => (
                           <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: newCuentaAhorro.moneda === m ? '#5C4F5C' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
@@ -3585,7 +3591,7 @@ export default function Dashboard() {
                         <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmt(totalAhorro)}</span>
                       </div>
                       {['ARS','USD','EUR'].map(mon => {
-                        const sub = cuentasAhorro.filter(c => c.moneda === mon).reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+                        const sub = cuentasAhorro.filter(c => c.moneda === mon).reduce((s, c) => s + (parseMonto(c.monto) || 0), 0)
                         if (!sub) return null
                         return <div key={mon} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
                           <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>{mon}</span>
@@ -3599,7 +3605,7 @@ export default function Dashboard() {
 
                   <div style={styles.savingsField}>
                     <label style={styles.savingsLabel}>Monto mensual</label>
-                    <input style={styles.savingsInput} type="number" min="0" placeholder="500"
+                    <input style={styles.savingsInput} type="text" inputMode="decimal" autoComplete="off" placeholder="500"
                       value={ahorro.monto} onChange={e => setAhorro({...ahorro, monto: e.target.value})} />
                   </div>
 
@@ -3622,18 +3628,18 @@ export default function Dashboard() {
 
                   <div style={styles.savingsField}>
                     <label style={styles.savingsLabel}>Tasa anual % <span style={{fontWeight:400, color: txtTerciario}}>(opcional)</span></label>
-                    <input style={styles.savingsInput} type="number" min="0" step="0.1" placeholder="Sin tasa = cálculo simple"
+                    <input style={styles.savingsInput} type="text" inputMode="decimal" autoComplete="off" placeholder="Sin tasa = cálculo simple"
                       value={ahorro.tasa} onChange={e => setAhorro({...ahorro, tasa: e.target.value})} />
                   </div>
 
                   {(() => {
-                    const monto = parseFloat(ahorro.monto)
-                    const anos = parseFloat(ahorro.anos)
+                    const monto = parseMonto(ahorro.monto)
+                    const anos = parseMonto(ahorro.anos)
                     if (!monto || !anos || monto <= 0 || anos <= 0) return (
                       <p style={styles.savingsHint}>Completá los campos para ver tu proyección</p>
                     )
                     let total
-                    const tasa = parseFloat(ahorro.tasa)
+                    const tasa = parseMonto(ahorro.tasa)
                     if (tasa && tasa > 0) {
                       const r = tasa / 100 / 12
                       const n = anos * 12
@@ -5557,9 +5563,9 @@ export default function Dashboard() {
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Monto <span style={{color:sem.negativo}}>*</span></label>
-                <input style={styles.input} type="number" step="0.01" value={efectivo.monto}
+                <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" value={efectivo.monto}
                   onChange={e => setEfectivo({...efectivo, monto: e.target.value})}
-                  placeholder="0.00" required />
+                  placeholder="0,00" required />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>

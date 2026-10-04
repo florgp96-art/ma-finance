@@ -37,7 +37,7 @@ function CampoNumero({ valor, onValor, onSalir, min = 0, max, entero = false, al
 
   return (
     <input
-      type="number" inputMode={entero ? 'numeric' : 'decimal'} min={min} max={max}
+      type="text" inputMode={entero ? 'numeric' : 'decimal'} autoComplete="off"
       value={texto}
       aria-invalid={numeroValido(texto, limites) === null || undefined}
       onFocus={() => setEnfocado(true)}

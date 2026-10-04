@@ -3,6 +3,7 @@ import { matchRepartoRule, aplicarReglaReparto } from '../lib/repartoRules'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountDetail'
 import { semaforo } from '../theme'
+import { parseMonto, montoParaEditar } from '../lib/formato'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -238,7 +239,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     openAliases: () => { fetchUserAliases(); fetchRepartoRules(); setShowAliases(true) },
     openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
     openIconos: () => { setCatTab('iconos'); setShowCategorias(true) },
-    openTipoCambio: () => { setTcInput(tcManual?.valor != null ? String(tcManual.valor) : ''); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
+    openTipoCambio: () => { setTcInput(montoParaEditar(tcManual?.valor)); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
   }))
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleSaveTC = (e) => {
     e.preventDefault()
-    const valor = parseFloat(tcInput)
+    const valor = parseMonto(tcInput)
     if (!valor || valor <= 0) { showToast?.('Ingresá un tipo de cambio válido.', 'error'); return }
     onSaveTC?.({ valor, enabled: tcEnabledInput })
     setShowTipoCambio(false)
@@ -1092,8 +1093,9 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               <div>
                 <label style={s.label}>Dólar manual (ARS por USD)</label>
                 <input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   style={s.input}
                   placeholder="Ej: 1250"
                   value={tcInput}

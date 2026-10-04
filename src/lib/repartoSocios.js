@@ -13,6 +13,8 @@
 // persistPref en Dashboard). Que exista es lo que hace aparecer la calculadora:
 // solo la ven las cuentas que la tienen.
 
+import { parseMonto } from './formato'
+
 const normalizar = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 const MONTO_MAXIMO = 1e12
 
@@ -68,7 +70,7 @@ export const nombreDelMes = (mes) => {
 }
 
 export const montoValido = (v) => {
-  const n = Number(v)
+  const n = parseMonto(v)
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? n : null
 }
 

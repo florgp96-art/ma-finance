@@ -98,7 +98,7 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
         </select>
       </div>
       {conMonto && (
-        <input style={styles.input} type="number" inputMode="decimal" step="0.01" min="0.01" required
+        <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" required
           value={valor.monto} placeholder="0.00"
           onChange={e => setValor(v => ({ ...v, monto: e.target.value }))} />
       )}

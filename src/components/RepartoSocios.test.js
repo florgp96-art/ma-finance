@@ -90,7 +90,7 @@ test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [] })
   const selectGasto = await screen.findByRole('combobox', { name: 'Gasto' })
   fireEvent.change(selectGasto, { target: { value: 'cc' } })
-  fireEvent.change(screen.getByRole('spinbutton', { name: /por mes/ }), { target: { value: '25' } })
+  fireEvent.change(screen.getByRole('textbox', { name: /por mes/ }), { target: { value: '25' } })
   fireEvent.click(within(selectGasto.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].cuotas).toEqual([{
     movimientoId: 'cc', concepto: 'CapCut (anual)', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: mes, porMes: 25,
@@ -106,7 +106,8 @@ test('la cotización no se edita: es la del día (promedio compra/venta) y las c
   expect(screen.getByText('Euro').nextSibling).toHaveTextContent('$ 1.700')
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
   // Los únicos campos numéricos son los de montos (transferencias), no cotizaciones.
-  expect(screen.getAllByRole('spinbutton').map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
+  const campos = [...screen.queryAllByRole('textbox'), ...screen.queryAllByRole('spinbutton')]
+  expect(campos.map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
   // Neto con el dólar a 1.500: 900.000 − 150.000 − 30.000 = 720.000 → 240.000 cada uno.
   expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 240.000')
 })

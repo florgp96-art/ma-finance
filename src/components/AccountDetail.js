@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
 import { semaforo } from '../theme'
-import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta } from '../lib/formato'
+import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta, parseMonto, montoParaEditar } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
@@ -1324,8 +1324,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     // tener que borrar el movimiento y cargar uno nuevo) — siempre positivo, el
     // tipo determina el signo en pantalla. Si el campo quedó vacío o inválido,
     // no se toca el monto original.
-    const editMontoNum = parseFloat(String(editMonto).replace(',', '.'))
-    const montoCorregido = !isNaN(editMontoNum) && editMontoNum > 0 && Math.abs(editMontoNum - Math.abs(tx.monto)) > 0.001
+    const editMontoNum = parseMonto(editMonto)
+    const montoCorregido = editMontoNum !== null && editMontoNum > 0 && Math.abs(editMontoNum - Math.abs(tx.monto)) > 0.001
       ? editMontoNum
       : (tx.monto < 0 ? Math.abs(tx.monto) : undefined)
     // Fecha editable a mano (ej. corregir una cuota que quedó en el mes
@@ -1514,7 +1514,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     // no en tag (que en un ingreso ya guarda la subcategoría elegida).
     setEditHijoIngreso(children.find(c => c.id === tx.child_id)?.nombre || '')
     setEditTipo(tx.tipo === 'ingreso' ? 'ingreso' : 'gasto')
-    setEditMonto(String(Math.abs(Number(tx.monto)) || ''))
+    setEditMonto(Number(tx.monto) ? montoParaEditar(Math.abs(Number(tx.monto))) : '')
     setEditCuotasTotal(String(tx.cuotas_total || 1))
     setEditCuotaNum(String(tx.cuota_numero || 1))
   }
@@ -1729,8 +1729,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // dupliquen los números. El nombre del mes (periodo) se renombra en TODOS
   // los resúmenes del grupo, para que sigan agrupados juntos.
   const guardarTotalFacturadoMes = async (barMes) => {
-    const valor = parseFloat(editBarValor.replace(',', '.'))
-    if (isNaN(valor) || valor < 0) return
+    const valor = parseMonto(editBarValor)
+    if (valor === null || valor < 0) return
     const periodo = editBarPeriodo.trim()
     if (!periodo) return
     const [primero, ...resto] = barMes.statementIds
@@ -1754,9 +1754,9 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // sin transacciones asociadas) que solo existe para guardar el total de
   // ese mes en la moneda elegida.
   const agregarMesFacturado = async () => {
-    const valor = parseFloat(String(nuevoMes.valor).replace(',', '.'))
+    const valor = parseMonto(nuevoMes.valor)
     const periodo = nuevoMes.periodo.trim()
-    if (!periodo || isNaN(valor) || valor < 0) return
+    if (!periodo || valor === null || valor < 0) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data, error } = await supabase.from('statements').insert({
@@ -1841,8 +1841,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // a partir de las compras nuevas en dólares de ese resumen, ignorando el
   // saldo arrastrado. Acepta negativo a propósito (saldo a favor).
   const guardarTotalDolaresStatement = async (statementId) => {
-    const valor = parseFloat(String(editUsdValor).replace(',', '.'))
-    if (isNaN(valor)) return
+    const valor = parseMonto(editUsdValor)
+    if (valor === null) return
     const { error } = await supabase.from('statements').update({ total_dolares: valor }).eq('id', statementId)
     if (error) { window.alert('No se pudo guardar el cambio: ' + error.message); return }
     setStatements(prev => prev.map(s => s.id === statementId ? { ...s, total_dolares: valor } : s))
@@ -2550,7 +2550,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           )}
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} value={editNombre}
             onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" />
-          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="number" step="0.01" min="0" value={editMonto}
+          <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="text" inputMode="decimal" autoComplete="off" value={editMonto}
             onChange={e => setEditMonto(e.target.value)} placeholder="Monto" />
           <input style={{ ...styles.editInput, width: '100%', boxSizing: 'border-box' }} type="date" value={editFecha}
             onChange={e => setEditFecha(e.target.value)} title="Fecha del movimiento" />
@@ -3447,7 +3447,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             )}
             {editUsdStatementId === s.id ? (
               <span onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', justifyContent: 'flex-end' }}>
-                <input type="number" step="0.01" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
+                <input type="text" autoComplete="off" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
                   placeholder="negativo si es a favor"
                   style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                 <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
@@ -3468,7 +3468,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       s._virtual) no tiene fila propia en la base para guardar nada, su
                       id ni siquiera es un uuid real. */}
                   {!s._virtual && (
-                    <button onClick={e => { e.stopPropagation(); setEditUsdStatementId(s.id); setEditUsdValor(s.total_dolares != null ? String(s.total_dolares) : '') }}
+                    <button onClick={e => { e.stopPropagation(); setEditUsdStatementId(s.id); setEditUsdValor(montoParaEditar(s.total_dolares)) }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '11px', padding: 0 }}>✏️</button>
                   )}
                 </p>
@@ -4254,7 +4254,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         <option value="ARS">$</option>
                         <option value="USD">U$S</option>
                       </select>
-                      <input type="number" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
+                      <input type="text" inputMode="decimal" autoComplete="off" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
                         style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                       <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
                       <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
@@ -4327,7 +4327,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 <option value="ARS">$</option>
                 <option value="USD">U$S</option>
               </select>
-              <input type="number" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
+              <input type="text" inputMode="decimal" autoComplete="off" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
                 placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
               <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
               <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>

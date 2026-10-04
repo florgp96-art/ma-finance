@@ -414,18 +414,25 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             las dos pantallas no pueden discrepar. */}
         {totalDisponible.porMoneda.length > 0 && (
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: txt, padding: '4px 0' }}>
+            {/* Una moneda por renglón y cada importe entero: todos en una línea con "·"
+                no entraban en el celular y se cortaban por la mitad ("$ 190.500 · U$S"
+                arriba y "30,08" abajo), así que los dólares parecían otro número. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', fontSize: '14px', color: txt, padding: '4px 0' }}>
               <span>Plata que tenés{esMesEnCurso ? ' hoy' : ' al cierre del mes'}</span>
-              <span style={{ fontWeight: '700' }}>
-                {totalDisponible.porMoneda.map(s => `${SIMBOLO_MONEDA[s.moneda] || '$'} ${s.moneda === 'ARS' ? formatMonto(s.saldo) : formatMontoFull(s.saldo)}`).join('  ·  ')}
+              <span style={{ fontWeight: '700', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                {totalDisponible.porMoneda.map(s => (
+                  <span key={s.moneda} style={{ whiteSpace: 'nowrap' }}>
+                    {SIMBOLO_MONEDA[s.moneda] || '$'} {s.moneda === 'ARS' ? formatMonto(s.saldo) : formatMontoFull(s.saldo)}
+                  </span>
+                ))}
               </span>
             </div>
             {totalDisponible.detalle.length > 1 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
                 {totalDisponible.detalle.map(d => (
-                  <div key={`${d.account_id}-${d.moneda}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+                  <div key={`${d.account_id}-${d.moneda}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '12px', color: muted }}>
                     <span>{d.nombre}{d.moneda !== 'ARS' ? ` (${d.moneda})` : ''}</span>
-                    <span>{SIMBOLO_MONEDA[d.moneda] || '$'} {d.moneda === 'ARS' ? formatMonto(d.saldo) : formatMontoFull(d.saldo)}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}>{SIMBOLO_MONEDA[d.moneda] || '$'} {d.moneda === 'ARS' ? formatMonto(d.saldo) : formatMontoFull(d.saldo)}</span>
                   </div>
                 ))}
               </div>
