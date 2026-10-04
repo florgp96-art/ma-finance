@@ -185,6 +185,11 @@ export const movimientosDesdeAncla = (transactions, accountId, moneda, ancla, ha
 // calcularEstadoStatement) y cuenta_pago_id_usd para dólares.
 const campoVinculoPago = (moneda) => moneda === 'USD' ? 'cuenta_pago_id_usd' : 'cuenta_pago_id'
 
+// ¿Esta cuenta es una tarjeta que se paga desde `accountId`, en alguna moneda? Para
+// saber a qué tarjetas ir a buscar los pagos antes de saber en qué moneda vienen.
+export const esTarjetaQueSePagaDesde = (accountId) => (a) =>
+  Boolean(accountId) && a?.tipo === 'credito' && (a.cuenta_pago_id === accountId || a.cuenta_pago_id_usd === accountId)
+
 const DIAS_TOLERANCIA = 3
 const PARECE_PAGO_TARJETA = /tarjeta|pago\s*tc\b|visa|master|amex|cabal/i
 
@@ -205,7 +210,8 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
   const tarjetas = (accounts || []).filter(a => a.tipo === 'credito' && a[campo] === accountId)
   if (tarjetas.length === 0) return []
   const idsTarjeta = new Set(tarjetas.map(a => a.id))
-  const enVentana = (t) => esPosteriorAlAncla(t, desde) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
+  // Sin `desde` no hay ventana: todos los pagos (es lo que lista pagosDeTarjetaDeLaCuenta).
+  const enVentana = (t) => (!desde || esPosteriorAlAncla(t, desde)) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
   const mismaMoneda = (t) => (t.moneda || 'ARS') === moneda
 
   const pagos = (transactions || []).filter(t =>
@@ -222,6 +228,16 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
     disponibles.splice(i, 1)
     return false
   })
+}
+
+// Los pagos de tarjeta que salieron de esta cuenta, en todas las monedas y sin ventana:
+// lo que se lista en "Movimientos neutros" de una caja de ahorro. Viven en la cuenta de
+// la tarjeta, así que sin esto la caja de la que salió la plata no los mostraba nunca.
+// Los que el extracto ya trajo como su propia línea quedan afuera: esa línea ya está en
+// la lista, y verlos dos veces haría pensar que se pagó dos veces.
+export const pagosDeTarjetaDeLaCuenta = ({ transactions, accounts, accountId }) => {
+  const monedas = [...new Set((transactions || []).map(t => t.moneda || 'ARS'))].sort()
+  return monedas.flatMap(moneda => pagosDeTarjetaDesde({ transactions, accounts, accountId, moneda, desde: null }))
 }
 
 // Saldo estimado de una cuenta en una moneda. null si no hay ancla: sin un punto

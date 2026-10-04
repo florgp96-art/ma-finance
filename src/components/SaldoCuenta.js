@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
-import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta } from '../lib/saldos'
+import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
 import { formatMonto, formatMontoFull, formatFecha } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -58,8 +58,9 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     // Los pagos de tarjeta viven en la cuenta de CRÉDITO, no en esta: hay que ir a
     // buscarlos a las tarjetas que se pagan desde acá. Es la plata más grande que
     // sale de la cuenta en el mes, así que sin esto el saldo queda muy de más.
-    const tarjetasQuePago = (accountsRef.current || [])
-      .filter(a => a.tipo === 'credito' && a.cuenta_pago_id === account.id)
+    // En pesos o en dólares: una caja en dólares es la cuenta de pago en dólares
+    // (cuenta_pago_id_usd) y antes no se buscaba, así que esos pagos no se restaban.
+    const tarjetasQuePago = (accountsRef.current || []).filter(esTarjetaQueSePagaDesde(account.id))
     if (tarjetasQuePago.length === 0) { setPagosDeTarjeta([]); return }
     const { data: pagos } = await supabase.from('transactions')
       .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id, created_at')
