@@ -267,10 +267,10 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
   // que se usa una versión más clara del mismo tono.
-  const chartLine = darkMode ? '#C4B4DC' : '#5C4F5C'
+  const chartLine = darkMode ? 'var(--m-c4b4dc)' : 'var(--m-5c4f5c)'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
-  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
-  const border = darkMode ? '#3A333A' : '#E2DDE0'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
+  const border = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const sem = semaforo(darkMode)
   const panel = darkMode ? '#2A272A' : '#F0EDEC'
   const cardBg = darkMode ? '#1C1A1C' : 'white'
@@ -327,7 +327,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
           <div className="hide-scroll" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '10px', padding: '6px', maxHeight: '260px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', minWidth: '180px' }}>
             {mesesDisponibles.map(m => (
               <div key={m} onClick={() => { setSelectedMonth(m); setMesDropdownOpen(false) }}
-                style={{ padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: txt, backgroundColor: m === selectedMonth ? (darkMode ? '#3A333A' : '#EDE8EC') : 'transparent' }}>
+                style={{ padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: txt, backgroundColor: m === selectedMonth ? (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)') : 'transparent' }}>
                 {mesLabel(m)}
               </div>
             ))}

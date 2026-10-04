@@ -23,7 +23,7 @@ export { tieneSaldo } from '../lib/saldos'
 // porqué del modelo de anclas.
 export default function SaldoCuenta({ account, accounts, transactions, darkMode, styles, onSaved }) {
   const sem = semaforo(darkMode)
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const [anclas, setAnclas] = useState([])
   const [pagosDeTarjeta, setPagosDeTarjeta] = useState([])
   // null = la columna/tabla todavía no existen (migración sin correr). Se avisa en
@@ -200,7 +200,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
         <button onClick={() => { setEditando(true); setFecha(hoyISO()); setMoneda(monedaDefault); setError(null) }}
           style={{
             marginTop: '10px', width: '100%', padding: '6px', borderRadius: '8px', cursor: 'pointer',
-            border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
+            border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'transparent',
             color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif',
           }}>
           {saldos.length === 0 ? 'Cargar saldo' : 'Actualizar saldo'}
@@ -249,12 +249,12 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
 
 const inputStyle = (darkMode, width) => ({
   flex: width ? undefined : 1, width, padding: '5px 8px', borderRadius: '8px', fontSize: '12px',
-  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+  border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
   backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
 })
 
 const botonStyle = (darkMode) => ({
   flex: 1, padding: '5px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
-  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
+  border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'transparent',
   fontFamily: '"Montserrat", sans-serif',
 })

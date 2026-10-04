@@ -26,8 +26,7 @@ import { parseMonto } from '../lib/formato'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
-import { semaforo, aplicarTemaAlDocumento } from '../theme'
-const logo = process.env.PUBLIC_URL + '/logo.png'
+import { semaforo, aplicarTemaAlDocumento, aplicarModoAlDocumento, leerModo, logoDelModo, MODOS } from '../theme'
 
 // Los nombres que baja el home banking son larguísimos y sin espacios
 // (ej. "PTCFD65320260827066272428H1788074919768.PDF"): el navegador no tiene
@@ -371,6 +370,12 @@ export default function Dashboard() {
     persistPref('tc_manual', valor)
   }
 
+  const guardarModo = (nuevo) => {
+    setModo(nuevo)
+    aplicarModoAlDocumento(nuevo)
+    persistPref('modo', nuevo)
+  }
+
   const guardarTieneAuto = (tiene) => {
     setTieneAuto(tiene)
     persistPref('tiene_auto', tiene)
@@ -430,6 +435,8 @@ export default function Dashboard() {
   const [cuotaAlimentariaActiva, setCuotaAlimentariaActiva] = useState(true)
   // Lo que contestó en el alta (ver lib/perfil.js). null = no contestó.
   const [tieneAuto, setTieneAuto] = useState(null)
+  // Mom's Assist o Dad's Assist (ver MODOS en theme.js).
+  const [modo, setModo] = useState(leerModo)
   const [showPerfil, setShowPerfil] = useState(false)
   const [contextoAskingHijoNombre, setContextoAskingHijoNombre] = useState(false)
   const [contextoHijoNombre, setContextoHijoNombre] = useState('')
@@ -774,6 +781,8 @@ export default function Dashboard() {
         if (cuotaAlimentariaDB === false) setCuotaAlimentariaActiva(false)
         const tieneAutoDB = readPref('tiene_auto')
         if (typeof tieneAutoDB === 'boolean') setTieneAuto(tieneAutoDB)
+        const modoDB = readPref('modo')
+        if (modoDB === 'mom' || modoDB === 'dad') { setModo(modoDB); aplicarModoAlDocumento(modoDB) }
         setRepartoSocios(normalizarConfigReparto(readPref('reparto_socios')))
         prefsLoaded.current = true
       }
@@ -2959,8 +2968,8 @@ export default function Dashboard() {
   // mano: en modo oscuro esos textos quedan entre 2,3:1 y 2,9:1 sobre el panel
   // (#2A272A) y en modo claro '#aaa' sobre blanco da 2,3:1. En los dos temas
   // había texto que no se leía.
-  const txtSecundario = darkMode ? '#C0B0C0' : '#4a4a4f'
-  const txtTerciario = darkMode ? '#9A8A9A' : '#6e6e73'
+  const txtSecundario = darkMode ? 'var(--m-c0b0c0)' : '#4a4a4f'
+  const txtTerciario = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
   const sem = semaforo(darkMode)
   // Cotizaciones del reparto entre socios (calculadora y tarjeta "Socios" del
   // resumen): siempre blue y euro, promedio entre compra y venta (así los guarda
@@ -3146,7 +3155,7 @@ export default function Dashboard() {
     // compartido (mapeo manual o determinístico). "total" usa un color neutro fijo,
     // el mismo que tenía el viejo gráfico de barras.
     const colorDeKey = (key) => {
-      if (key === 'total') return '#5C4F5C'
+      if (key === 'total') return 'var(--m-5c4f5c)'
       if (key.startsWith('ingreso:')) return resolveCategoryColor(key.slice(8), { isIncome: true })
       if (key.startsWith('sub:')) { const [, sub] = key.slice(4).split('::'); return resolveCategoryColor(sub) }
       if (key.startsWith('hijo:')) return resolveCategoryColor(key.slice(5))
@@ -3312,7 +3321,7 @@ export default function Dashboard() {
               // El violeta de marca es un color de modo claro: sobre el panel
               // oscuro (#2A272A) los montos quedaban en 1,9:1, prácticamente
               // invisibles. En oscuro va la variante clara de la misma familia.
-              const montoClr = darkMode ? '#D6C6D6' : '#5C4F5C'
+              const montoClr = darkMode ? 'var(--m-d6c6d6)' : 'var(--m-5c4f5c)'
 
               return (
                 <div style={{ ...styles.savingsPanel }}>
@@ -3331,9 +3340,9 @@ export default function Dashboard() {
                           <span style={{ fontSize: '13px', fontWeight: '700', color: montoClr }}>$ {fmt(data.total_ars)}</span>
                         </div>
                         {expandido && (
-                          <div style={{ marginTop: '6px', paddingLeft: '8px', borderLeft: `2px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+                          <div style={{ marginTop: '6px', paddingLeft: '8px', borderLeft: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
                             {data.items.map((it, ii) => (
-                              <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', padding: '2px 0' }}>
+                              <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', padding: '2px 0' }}>
                                 <span style={{ flex: 1, minWidth: 0 }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
                                 <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
                               </div>
@@ -3348,8 +3357,8 @@ export default function Dashboard() {
                       cerraban contra "Cuotas comprometidas a futuro" y parecía
                       que un número estaba mal. */}
                   {mesesOcultos > 0 && (
-                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
+                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>
                         Total, con {mesesOcultos} mes{mesesOcultos === 1 ? '' : 'es'} más
                       </span>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: montoClr, whiteSpace: 'nowrap' }}>$ {fmt(totalFuturo)}</span>
@@ -3359,8 +3368,8 @@ export default function Dashboard() {
                       sola: acá se completan de una vez. Después de esto el widget
                       y los movimientos muestran lo mismo siempre. */}
                   {faltan > 0 && (
-                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                      <p style={{ margin: '0 0 8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', lineHeight: 1.4 }}>
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+                      <p style={{ margin: '0 0 8px', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', lineHeight: 1.4 }}>
                         {faltan === 1
                           ? 'Hay 1 cuota de tus compras que todavía no está cargada como movimiento.'
                           : `Hay ${faltan} cuotas de tus compras que todavía no están cargadas como movimientos.`}
@@ -3370,8 +3379,8 @@ export default function Dashboard() {
                         disabled={creandoCuotas}
                         style={{
                           width: '100%', padding: '8px', borderRadius: '8px', cursor: creandoCuotas ? 'default' : 'pointer',
-                          border: `1.5px solid ${darkMode ? '#8C7B8C' : '#5C4F5C'}`, background: 'transparent',
-                          color: darkMode ? '#E8D8E8' : '#5C4F5C', fontSize: '12px', fontWeight: '500',
+                          border: `1.5px solid ${darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)'}`, background: 'transparent',
+                          color: darkMode ? 'var(--m-e8d8e8)' : 'var(--m-5c4f5c)', fontSize: '12px', fontWeight: '500',
                           fontFamily: '"Montserrat", sans-serif', opacity: creandoCuotas ? 0.6 : 1,
                         }}
                       >
@@ -3385,9 +3394,9 @@ export default function Dashboard() {
 
             {(() => {
               const { categoriasConTx, subcatsConTx, ingresosConTx, hijosConTx, cuentasConTx, evolData, seleccion, calculadora } = evolucionCategoriaMemo
-              const borderClr = darkMode ? '#3A333A' : '#E2DDE0'
+              const borderClr = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
               const bgClr = darkMode ? '#1C1A1C' : '#F0EDEC'
-              const txtClr = darkMode ? '#F0EDEC' : '#5C4F5C'
+              const txtClr = darkMode ? '#F0EDEC' : 'var(--m-5c4f5c)'
               // Este widget vive en una columna angosta: con varias series
               // elegidas, el tooltip de recharts se hacía más ancho que la card
               // y quedaba cortado (los montos no se leían completos). Se le da
@@ -3481,7 +3490,7 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${borderClr}`, overflow: 'hidden', margin: '10px 0 12px' }}>
                     {[{ v: 'gasto', label: 'Gastos' }, { v: 'ingreso', label: 'Ingresos' }].map(opt => (
                       <button key={opt.v} onClick={() => cambiarTipo(opt.v)}
-                        style={{ flex: 1, padding: '6px 0', border: 'none', background: evolucionTipo === opt.v ? '#5C4F5C' : 'transparent', color: evolucionTipo === opt.v ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
+                        style={{ flex: 1, padding: '6px 0', border: 'none', background: evolucionTipo === opt.v ? 'var(--m-5c4f5c)' : 'transparent', color: evolucionTipo === opt.v ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}>
                         {opt.label}
                       </button>
                     ))}
@@ -3492,8 +3501,8 @@ export default function Dashboard() {
                   <div ref={evolDropdownRef} style={{ position: 'relative', marginBottom: '14px' }}>
                     <button type="button" onClick={() => setEvolDropdownOpen(o => !o)}
                       style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
-                        border: `1.5px solid ${!soloTotal ? '#5C4F5C' : borderClr}`,
-                        backgroundColor: !soloTotal ? '#5C4F5C' : 'transparent',
+                        border: `1.5px solid ${!soloTotal ? 'var(--m-5c4f5c)' : borderClr}`,
+                        backgroundColor: !soloTotal ? 'var(--m-5c4f5c)' : 'transparent',
                         color: !soloTotal ? 'white' : txtClr,
                         fontSize: '12px', fontFamily: '"Montserrat", sans-serif', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -3503,7 +3512,7 @@ export default function Dashboard() {
                     </button>
                     {evolDropdownOpen && (
                       <div className="hide-scroll"
-                        style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
+                        style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px', background: darkMode ? 'var(--m-2a232a)' : '#fff', border: `1px solid ${borderClr}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: '260px', overflowY: 'auto', padding: '4px 0' }}>
                         {opciones.map((op, i) => {
                           if (op.separador) return <div key={`sep-${i}`} style={{ borderTop: `1px solid ${borderClr}`, margin: '4px 0' }} />
                           // Una subcategoría se ve si su categoría está desplegada,
@@ -3511,11 +3520,11 @@ export default function Dashboard() {
                           if (op.padre && !catAbierta(op.padre) && !sidebarCatEvol.includes(op.key)) return null
                           const activo = sidebarCatEvol.includes(op.key)
                           const marca = (
-                            <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : borderClr}`, background: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
+                            <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${activo ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : borderClr}`, background: activo ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
                               {activo ? '✓' : ''}
                             </span>
                           )
-                          const filaBase = { background: activo ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', color: activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : txtClr, fontFamily: '"Montserrat", sans-serif' }
+                          const filaBase = { background: activo ? (darkMode ? 'var(--m-3a2f3a)' : 'var(--m-f3eef3)') : 'none', border: 'none', cursor: 'pointer', color: activo ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : txtClr, fontFamily: '"Montserrat", sans-serif' }
                           // Categoría con subcategorías: la fila tiene dos acciones
                           // separadas — elegir la categoría (checkbox + nombre) y
                           // abrir/cerrar sus subcategorías (la flechita).
@@ -3550,17 +3559,17 @@ export default function Dashboard() {
                   {/* Calculadora: el total sumado de todo lo elegido en un mes.
                       Con varias series elegidas es el número que no se puede
                       leer del gráfico (hay que sumar las líneas a ojo). */}
-                  <div style={{ backgroundColor: darkMode ? '#2A232A' : '#F7F5F6', borderRadius: '10px', padding: '10px 12px', marginBottom: '14px' }}>
+                  <div style={{ backgroundColor: darkMode ? 'var(--m-2a232a)' : 'var(--m-f7f5f6)', borderRadius: '10px', padding: '10px 12px', marginBottom: '14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
+                      <span style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>
                         {calculadora.cantidadSeries > 1 ? `Total de los ${calculadora.cantidadSeries} · ${calculadora.mesLabel}` : `Total · ${calculadora.mesLabel}`}
                       </span>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#5C4F5C', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : 'var(--m-5c4f5c)', whiteSpace: 'nowrap' }}>
                         $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(calculadora.total)}
                       </span>
                     </div>
                     {calculadora.esMesAnterior && (
-                      <div style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', marginTop: '4px', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', marginTop: '4px', lineHeight: 1.4 }}>
                         El mes en curso todavía no tiene movimientos cargados de lo elegido.
                       </div>
                     )}
@@ -3575,10 +3584,10 @@ export default function Dashboard() {
                           formatter={v => [`$ ${formatMontoFull(v)}`, evolucionTipo === 'ingreso' ? 'Ingresos' : 'Gastos']}
                           cursor={{ fill: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
                         />
-                        <ReferenceLine y={promedioTotal} stroke={darkMode ? '#9A8A9A' : '#8C7B8C'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? '#9A8A9A' : '#8C7B8C', fontFamily: '"Montserrat", sans-serif' }} />
+                        <ReferenceLine y={promedioTotal} stroke={darkMode ? 'var(--m-9a8a9a)' : 'var(--m-8c7b8c)'} strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Prom ${abrev(promedioTotal)}`, position: 'insideTopLeft', fontSize: 9, fill: darkMode ? 'var(--m-9a8a9a)' : 'var(--m-8c7b8c)', fontFamily: '"Montserrat", sans-serif' }} />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                           {evolData.map((_, i) => (
-                            <Cell key={i} fill={i === evolData.length - 1 ? '#5C4F5C' : (darkMode ? '#4A3F4A' : '#C4B8C4')} />
+                            <Cell key={i} fill={i === evolData.length - 1 ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-4a3f4a)' : 'var(--m-c4b8c4)')} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -3643,14 +3652,14 @@ export default function Dashboard() {
                     <p style={{ fontSize: '12px', color: txtTerciario, textAlign: 'center', margin: '4px 0 8px' }}>Sin cuentas cargadas</p>
                   )}
                   {cuentasAhorro.map(c => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: `1px solid ${darkMode ? '#2A272A' : '#F0EDF0'}` }}>
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: `1px solid ${darkMode ? '#2A272A' : 'var(--m-f0edf0)'}` }}>
                       <span style={{ fontSize: '12px', color: darkMode ? '#e0e0e0' : '#3a3a3c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{c.cuenta}</span>
                       <span style={{ fontSize: '12px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginLeft: '8px', flexShrink: 0 }}>{sym(c.moneda)} {fmt(c.monto)}</span>
                       <button onClick={() => setCuentasAhorro(prev => prev.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: txtTerciario, fontSize: '14px', padding: '0 0 0 6px', outline: 'none', flexShrink: 0 }}>×</button>
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'center', margin: cuentasAhorro.length > 0 ? '10px 0 0' : '0' }}>
-                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid #5C4F5C`, borderRadius: '6px', color: '#5C4F5C', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
+                    <button onClick={() => setShowAddCuentaAhorro(v => !v)} style={{ background: 'none', border: `1px solid var(--m-5c4f5c)`, borderRadius: '6px', color: 'var(--m-5c4f5c)', cursor: 'pointer', fontSize: '16px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', lineHeight: 1 }}>
                       {showAddCuentaAhorro ? '✕' : '+'}
                     </button>
                   </div>
@@ -3660,32 +3669,32 @@ export default function Dashboard() {
                       <input style={{ ...styles.savingsInput, fontSize: '12px', padding: '6px 8px' }} type="text" inputMode="decimal" autoComplete="off" placeholder="Monto" value={newCuentaAhorro.monto} onChange={e => setNewCuentaAhorro(p => ({ ...p, monto: e.target.value }))} />
                       <div style={{ display: 'flex', gap: '4px' }}>
                         {['ARS','USD','EUR'].map(m => (
-                          <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: newCuentaAhorro.moneda === m ? '#5C4F5C' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
+                          <button key={m} onClick={() => setNewCuentaAhorro(p => ({ ...p, moneda: m }))} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: `1px solid ${newCuentaAhorro.moneda === m ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: newCuentaAhorro.moneda === m ? 'var(--m-5c4f5c)' : 'transparent', color: newCuentaAhorro.moneda === m ? '#fff' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', fontWeight: newCuentaAhorro.moneda === m ? '600' : '400', outline: 'none' }}>
                             {m}
                           </button>
                         ))}
                       </div>
-                      <button onClick={addAhorro} style={{ ...styles.savingsInput, backgroundColor: '#5C4F5C', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '12px', textAlign: 'center', padding: '7px' }}>Agregar</button>
+                      <button onClick={addAhorro} style={{ ...styles.savingsInput, backgroundColor: 'var(--m-5c4f5c)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '12px', textAlign: 'center', padding: '7px' }}>Agregar</button>
                     </div>
                   )}
                   {cuentasAhorro.length > 0 && (
-                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Total equiv.</span>
+                        <span style={{ fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>Total equiv.</span>
                         <span style={{ fontSize: '15px', fontWeight: '700', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {fmt(totalAhorro)}</span>
                       </div>
                       {['ARS','USD','EUR'].map(mon => {
                         const sub = cuentasAhorro.filter(c => c.moneda === mon).reduce((s, c) => s + (parseMonto(c.monto) || 0), 0)
                         if (!sub) return null
                         return <div key={mon} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                          <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>{mon}</span>
-                          <span style={{ fontSize: '12px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>{sym(mon)} {fmt(sub)}</span>
+                          <span style={{ fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>{mon}</span>
+                          <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c4f5c)' }}>{sym(mon)} {fmt(sub)}</span>
                         </div>
                       })}
                     </div>
                   )}
 
-                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, textAlign: 'center', margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>Proyección</p>
+                  <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel, textAlign: 'center', margin: '18px 0 12px', paddingTop: '14px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>Proyección</p>
 
                   <div style={styles.savingsField}>
                     <label style={styles.savingsLabel}>Monto mensual</label>
@@ -3697,7 +3706,7 @@ export default function Dashboard() {
                     <label style={styles.savingsLabel}>Moneda</label>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       {['ARS', 'USD', 'EUR'].map(m => (
-                        <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: ahorro.moneda === m ? '#5C4F5C' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
+                        <button key={m} onClick={() => setAhorro({...ahorro, moneda: m})} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `1px solid ${ahorro.moneda === m ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: ahorro.moneda === m ? 'var(--m-5c4f5c)' : 'transparent', color: ahorro.moneda === m ? '#fff' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: ahorro.moneda === m ? '600' : '400', outline: 'none', transition: 'all 0.15s' }}>
                           {m}
                         </button>
                       ))}
@@ -3771,8 +3780,8 @@ export default function Dashboard() {
           const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
           const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
           const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }
-          const cardBg = darkMode ? '#1C1A1C' : '#F7F5F8'
-          const cardBorder = darkMode ? '#3A333A' : '#E2DDE0'
+          const cardBg = darkMode ? '#1C1A1C' : 'var(--m-f7f5f8)'
+          const cardBorder = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
           // "Vencimientos" junta servicios (chequeo manual, día del mes) y tarjetas de
           // crédito con saldo pendiente (fecha real, misma fuente que "A pagar":
           // calcularStatementsPendientes — nunca se recalcula el pendiente acá aparte).
@@ -3800,7 +3809,7 @@ export default function Dashboard() {
           const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
           const fmtMonto = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v))
           const manualActivo = tcManual?.enabled && tcManual?.valor
-          const monedasTituloStyle = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }
+          const monedasTituloStyle = { fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }
           const monedasResumen = rateActivo && eurValor
             ? `USD $${fmtMonto(rateActivo)} · EUR $${fmtMonto(eurValor)}`
             : rateActivo ? `USD $${fmtMonto(rateActivo)}`
@@ -3813,39 +3822,39 @@ export default function Dashboard() {
           const monedasPanel = (
             <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '210px' }}>
               <div>
-                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Dólar</p>
+                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Dólar</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '6px 0' }}>
                   {['blue','mep','oficial','tarjeta'].map(t => (
                     <button key={t} type="button" onClick={() => { setTcTipo(t); localStorage.setItem('tc_tipo_ma', t) }}
-                      style={{ flex: '1 1 42%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? '#5C4F5C' : cardBorder}`, backgroundColor: tcTipo === t ? '#5C4F5C' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), textTransform: 'uppercase' }}>
+                      style={{ flex: '1 1 42%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${tcTipo === t ? 'var(--m-5c4f5c)' : cardBorder}`, backgroundColor: tcTipo === t ? 'var(--m-5c4f5c)' : 'transparent', color: tcTipo === t ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), textTransform: 'uppercase' }}>
                       {tiposLabel[t]}
                     </button>
                   ))}
                   {manualActivo && (
                     <div title="Tipo de cambio manual activo (se configura en Configuración) — se usa para los totales del período actual en vez de la cotización elegida arriba"
-                      style={{ flex: '1 1 100%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', fontFamily: '"Montserrat", sans-serif', border: '1px solid #8C7B8C', backgroundColor: darkMode ? '#3A2E42' : '#EDE3F2', color: '#8C7B8C', textAlign: 'center', textTransform: 'uppercase', cursor: 'default' }}>
+                      style={{ flex: '1 1 100%', padding: '5px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '6px', fontFamily: '"Montserrat", sans-serif', border: '1px solid var(--m-8c7b8c)', backgroundColor: darkMode ? 'var(--m-3a2e42)' : 'var(--m-ede3f2)', color: 'var(--m-8c7b8c)', textAlign: 'center', textTransform: 'uppercase', cursor: 'default' }}>
                       🔒 Manual: $ {fmtMonto(Number(tcManual.valor))}
                     </div>
                   )}
                 </div>
                 {rateActivo ? (
                   <div>
-                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>U$S 1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(rateActivo)}</strong></p>
+                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>U$S 1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(rateActivo)}</strong></p>
                     {rateVivo && <p style={{ margin: '2px 0 0', fontSize: '9px', color: sem.teal }}>● en vivo · prom.</p>}
                   </div>
                 ) : (
-                  <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>{cotizacionesIntentadas ? 'No se pudo consultar la cotización' : 'Cargando...'}</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>{cotizacionesIntentadas ? 'No se pudo consultar la cotización' : 'Cargando...'}</p>
                 )}
               </div>
               <div style={{ borderTop: `1px solid ${cardBorder}`, paddingTop: '10px' }}>
-                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Euro</p>
+                <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Euro</p>
                 {eurValor ? (
                   <div style={{ marginTop: '6px' }}>
-                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
+                    <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
                     {dolarRates.eur && <p style={{ margin: '2px 0 0', fontSize: '9px', color: sem.teal }}>● en vivo · prom.</p>}
                   </div>
                 ) : (
-                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>{cotizacionesIntentadas ? 'No se pudo consultar la cotización' : 'Cargando...'}</p>
+                  <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>{cotizacionesIntentadas ? 'No se pudo consultar la cotización' : 'Cargando...'}</p>
                 )}
               </div>
             </div>
@@ -3903,12 +3912,12 @@ export default function Dashboard() {
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px' }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧾 {v.nombre}</p>
-                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', margin: 0 }}>día {v.dia}</p>
+                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: 0 }}>día {v.dia}</p>
                 </div>
                 <div style={{
                   width: '16px', height: '16px', borderRadius: '5px', flexShrink: 0,
-                  border: `1.5px solid ${v.pagado ? '#5C4F5C' : (darkMode ? '#5A4F5A' : '#c9c2c9')}`,
-                  backgroundColor: v.pagado ? '#5C4F5C' : 'transparent',
+                  border: `1.5px solid ${v.pagado ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-5a4f5a)' : 'var(--m-c9c2c9)')}`,
+                  backgroundColor: v.pagado ? 'var(--m-5c4f5c)' : 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
                   {v.pagado && <span style={{ color: 'white', fontSize: '11px', lineHeight: 1 }}>✓</span>}
@@ -3928,7 +3937,7 @@ export default function Dashboard() {
                 disabled={vencList.length === 0}
                 style={{ width: '100%', textAlign: 'left', borderRadius: '14px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '10px', display: 'flex', flexDirection: 'column', gap: '5px', cursor: vencList.length === 0 ? 'default' : 'pointer', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }}>
                 <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                  <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</span>
+                  <span style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</span>
                   {vencList.length > 0 && <span style={{ fontSize: '9px', opacity: 0.6, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{vencExpanded ? '▴' : '▾'}</span>}
                 </span>
                 <span style={{ fontSize: '13px', fontWeight: 700, color: vencList.length === 0 ? txtTerciario : pendientes.length > 0 ? sem.alerta : sem.teal }}>
@@ -3953,7 +3962,7 @@ export default function Dashboard() {
     <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar'); setSidebarOpen(false) }}
       style={{ borderRadius: '10px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '8px 10px', cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}>
       <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: pendientes.length > 0 ? sem.alerta : sem.teal }}>
-        <span style={{ fontSize: '9px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
+        <span style={{ fontSize: '9px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700, marginRight: '4px' }}>📅 Venc.</span>
         {pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
       </p>
     </div>
@@ -3984,7 +3993,7 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '6px', zIndex: 1, alignItems: 'flex-start', flexWrap: 'wrap', maxWidth: sinLogo ? undefined : '34%' }}>
                   <div onClick={() => { setSelectedAccount('all'); setDashboardTab('apagar') }}
                     style={{ borderRadius: '8px', border: `1px solid ${cardBorder}`, backgroundColor: cardBg, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '80px', cursor: 'pointer' }}>
-                    <p style={{ margin: 0, fontSize: '9px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
+                    <p style={{ margin: 0, fontSize: '9px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }}>Vencimientos</p>
                     <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: vencList.length === 0 ? txtTerciario : pendientes.length > 0 ? sem.alerta : sem.teal }}>
                       {vencList.length === 0 ? '—' : pendientes.length > 0 ? `${pendientes.length} pend.` : '✓ Al día'}
                     </p>
@@ -3999,7 +4008,7 @@ export default function Dashboard() {
               )}
               {/* Centro: logo — no va con el teléfono acostado (ver `sinLogo`) */}
               {!sinLogo && (
-                <img src={logo} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none', filter: darkMode ? 'invert(1)' : 'none' }} />
+                <img src={logoDelModo(modo)} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none', filter: darkMode ? 'invert(1)' : 'none' }} />
               )}
               {/* Derecha: luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
@@ -4008,11 +4017,11 @@ export default function Dashboard() {
                  </button>
                 {!isMobile && (
                   <div ref={configMenuRef} style={{ display: 'flex', gap: '8px', position: 'relative' }}>
-                    <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: configOpen ? (darkMode ? '#3A333A' : '#EDE8EC') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <button onClick={() => setConfigOpen(o => !o)} style={{ padding: '7px 13px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: configOpen ? (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)') : 'none', cursor: 'pointer', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', fontFamily: '"Montserrat", sans-serif', letterSpacing: '0.04em', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       ⚙️ Configuración <span style={{ fontSize: '9px', opacity: 0.7 }}>{configOpen ? '▴' : '▾'}</span>
                     </button>
                     {configOpen && (
-                      <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
+                      <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: darkMode ? '#1C1A1C' : 'var(--m-f7f5f8)', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, borderRadius: '10px', padding: '8px', minWidth: '220px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}>
                         <button style={styles.sidebarBtnSecondary} onClick={handleClickCrearCuenta}>CREAR CUENTA</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openCategorias()}>EDITAR CATEGORÍAS</button>
                         {tieneHijos !== false && <button style={styles.sidebarBtnSecondary} onClick={() => configPanelRef.current?.openHijos()}>HIJOS</button>}
@@ -4022,7 +4031,7 @@ export default function Dashboard() {
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>REPORTAR UN ERROR</button>
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
-                        <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, margin: '2px 0' }} />
+                        <div style={{ borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, margin: '2px 0' }} />
                         <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); handleLogout() }}>Cerrar sesión</button>
                       </div>
                     )}
@@ -4145,7 +4154,7 @@ export default function Dashboard() {
                           {/* Header INGRESOS — izquierda, sin flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             onClick={handleClickIngresos}>
-                            <span style={{ ...styles.sidebarTitle, ...rotuloLabel, ...(isIngresosSelected ? { color: darkMode ? '#8C7B8C' : '#5C4F5C', fontWeight: '600' } : {}) }}>Ingresos</span>
+                            <span style={{ ...styles.sidebarTitle, ...rotuloLabel, ...(isIngresosSelected ? { color: darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)', fontWeight: '600' } : {}) }}>Ingresos</span>
                           </div>
                           {/* Header CUENTAS — derecha, con flecha */}
                           <div style={{ flex: 1, ...styles.sidebarHeader, marginBottom: 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
@@ -4199,7 +4208,7 @@ export default function Dashboard() {
             </div>{/* fin zona media scrollable */}
 
             {/* Zona bottom fija: botones de acción — siempre visible */}
-            <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+            <div style={{ borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`, paddingTop: '12px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
               {/* Cargar movimiento (gasto / ingreso / neutro) */}
               <button style={styles.sidebarBtnPrimary} onClick={async () => {
                 const { data: { user } } = await supabase.auth.getUser()
@@ -4258,7 +4267,7 @@ export default function Dashboard() {
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setTutorialStep(0); setShowTutorial(true) }}>VER TUTORIAL</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowReportBug(true) }}>REPORTAR UN ERROR</button>
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); setShowMiPlan(true) }}>MI PLAN{isPremium ? ' (PREMIUM)' : ''}</button>
-                      <div style={{ borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, margin: '2px 0' }} />
+                      <div style={{ borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, margin: '2px 0' }} />
                       <button style={styles.sidebarBtnSecondary} onClick={() => { setConfigOpen(false); handleLogout() }}>Cerrar sesión</button>
                     </div>
                   )}
@@ -4302,7 +4311,7 @@ export default function Dashboard() {
                     className="tabs-scroll"
                     style={{
                       display: 'flex', gap: '3px', overflowX: 'auto',
-                      background: darkMode ? '#2A272A' : '#EDE8EC',
+                      background: darkMode ? '#2A272A' : 'var(--m-ede8ec)',
                       borderRadius: '12px', padding: '3px'
                     }}
                   >
@@ -4322,8 +4331,8 @@ export default function Dashboard() {
                         style={{
                           padding: isMobile ? '7px 9px' : '9px 16px', border: 'none', cursor: 'pointer', borderRadius: '9px',
                           fontSize: isMobile ? '11.5px' : '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
-                          color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
-                          background: dashboardTab === tab.key ? '#5C4F5C' : 'transparent',
+                          color: dashboardTab === tab.key ? '#FFFFFF' : (darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c5560)'),
+                          background: dashboardTab === tab.key ? 'var(--m-5c4f5c)' : 'transparent',
                           outline: 'none', whiteSpace: 'nowrap', flex: isMobile ? '0 0 auto' : '1', textAlign: 'center',
                           transition: 'background-color 0.2s ease, color 0.2s ease', ...rotuloLabel
                         }}
@@ -4334,7 +4343,7 @@ export default function Dashboard() {
                   </div>
                   {/* Gradiente para indicar que hay más tabs a la derecha en mobile */}
                   {isMobile && (
-                    <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '28px', borderRadius: '0 12px 12px 0', background: `linear-gradient(to right, transparent, ${darkMode ? '#2A272A' : '#EDE8EC'})`, pointerEvents: 'none' }} />
+                    <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: '28px', borderRadius: '0 12px 12px 0', background: `linear-gradient(to right, transparent, ${darkMode ? '#2A272A' : 'var(--m-ede8ec)'})`, pointerEvents: 'none' }} />
                   )}
                 </div>
 
@@ -4364,8 +4373,8 @@ export default function Dashboard() {
                             style={{
                               padding: '8px 16px', border: 'none', borderRadius: '20px', cursor: 'pointer',
                               fontSize: '13.5px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif',
-                              color: activo ? '#FFFFFF' : (darkMode ? '#C0B0C0' : '#5C5560'),
-                              background: activo ? '#5C4F5C' : (darkMode ? '#2A272A' : '#EDE8EC'),
+                              color: activo ? '#FFFFFF' : (darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c5560)'),
+                              background: activo ? 'var(--m-5c4f5c)' : (darkMode ? '#2A272A' : 'var(--m-ede8ec)'),
                               transition: 'background-color 0.2s ease, color 0.2s ease',
                               display: 'flex', alignItems: 'center', gap: '6px'
                             }}
@@ -4399,7 +4408,7 @@ export default function Dashboard() {
                         <h3 style={{ fontSize: '16px', fontWeight: '500', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: 0 }}>
                           🔌 Servicios
                         </h3>
-                        <button onClick={() => setShowAddServicio(o => !o)} style={{ padding: '6px 14px', borderRadius: '8px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#5C4F5C', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}>
+                        <button onClick={() => setShowAddServicio(o => !o)} style={{ padding: '6px 14px', borderRadius: '8px', border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'none', color: darkMode ? '#F0EDEC' : 'var(--m-5c4f5c)', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif' }}>
                           + Agregar
                         </button>
                       </div>
@@ -4409,13 +4418,13 @@ export default function Dashboard() {
                             placeholder="Nombre (ej. Gas)"
                             value={newServicio.nombre}
                             onChange={e => setNewServicio(s => ({ ...s, nombre: e.target.value }))}
-                            style={{ flex: 1, minWidth: '120px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                            style={{ flex: 1, minWidth: '120px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
                           />
                           <input
                             placeholder="Link de pago (opcional)"
                             value={newServicio.link}
                             onChange={e => setNewServicio(s => ({ ...s, link: e.target.value }))}
-                            style={{ flex: 2, minWidth: '160px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                            style={{ flex: 2, minWidth: '160px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
                           />
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             <label style={{ fontSize: '10px', color: txtTerciario, fontFamily: '"Montserrat", sans-serif', paddingLeft: '2px' }}>Día de vencimiento</label>
@@ -4424,7 +4433,7 @@ export default function Dashboard() {
                               placeholder="ej. 15"
                               value={newServicio.vencimiento}
                               onChange={e => setNewServicio(s => ({ ...s, vencimiento: e.target.value }))}
-                              style={{ width: '90px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
+                              style={{ width: '90px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', outline: 'none' }}
                             />
                           </div>
                           <button onClick={async () => {
@@ -4435,7 +4444,7 @@ export default function Dashboard() {
                             await persistServicios(user.id, updated)
                             setNewServicio({ nombre: '', link: '', vencimiento: '' })
                             setShowAddServicio(false)
-                          }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', alignSelf: 'flex-end' }}>
+                          }} style={{ padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--m-5c4f5c)', color: 'white', border: 'none', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', alignSelf: 'flex-end' }}>
                             Guardar
                           </button>
                         </div>
@@ -4446,7 +4455,7 @@ export default function Dashboard() {
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '14px 18px', borderRadius: '12px',
                             backgroundColor: darkMode ? '#2A272A' : '#F0EDEC',
-                            border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+                            border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
                           }}>
                             <div>
                               <p style={{ margin: 0, fontWeight: '500', fontSize: '15px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{s.nombre}</p>
@@ -4455,7 +4464,7 @@ export default function Dashboard() {
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               {s.link && (
                                 <a href={s.link} target="_blank" rel="noopener noreferrer" style={{
-                                  padding: '8px 16px', borderRadius: '8px', backgroundColor: '#5C4F5C', color: 'white',
+                                  padding: '8px 16px', borderRadius: '8px', backgroundColor: 'var(--m-5c4f5c)', color: 'white',
                                   fontSize: '13px', fontWeight: '500', textDecoration: 'none', fontFamily: '"Montserrat", sans-serif'
                                 }}>
                                   Pagar →
@@ -4600,11 +4609,11 @@ export default function Dashboard() {
             <div style={{ ...styles.modal, maxWidth: '440px' }}>
               <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px' }}>
                 {steps.map((_, i) => (
-                  <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: i === tutorialStep ? styles.saveBtn.backgroundColor : (darkMode ? '#3A333A' : '#E2DDE0') }} />
+                  <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: i === tutorialStep ? styles.saveBtn.backgroundColor : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)') }} />
                 ))}
               </div>
               <h3 style={{ ...styles.modalTitle, textAlign: 'center' }}>{step.icon} {step.title}</h3>
-              <div style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? '#C0B0C0' : '#444', fontFamily: '"Montserrat", sans-serif' }}>{step.body}</div>
+              <div style={{ fontSize: '14px', lineHeight: 1.5, color: darkMode ? 'var(--m-c0b0c0)' : '#444', fontFamily: '"Montserrat", sans-serif' }}>{step.body}</div>
               <div style={styles.modalButtons}>
                 {tutorialStep > 0
                   ? <button type="button" style={styles.cancelBtn} onClick={() => setTutorialStep(s => s - 1)}>Anterior</button>
@@ -4621,6 +4630,18 @@ export default function Dashboard() {
         <div style={styles.overlay} onClick={() => setShowPerfil(false)}>
           <div style={{ ...styles.modal, maxWidth: '380px' }} onClick={e => e.stopPropagation()}>
             <h3 style={styles.modalTitle}>🙋 Mi perfil</h3>
+            <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 600, color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>Cómo se ve la app</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+              {Object.entries(MODOS).map(([clave, m]) => (
+                <button key={clave} type="button" aria-pressed={modo === clave} onClick={() => guardarModo(clave)}
+                  style={{ flex: 1, padding: '10px 8px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif',
+                    border: `2px solid ${modo === clave ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`,
+                    background: modo === clave ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent',
+                    color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: modo === clave ? 700 : 500 }}>
+                  {clave === 'dad' ? '💙' : '💜'} {m.nombre}
+                </button>
+              ))}
+            </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: darkMode ? '#F0EDEC' : '#1d1d1f', cursor: 'pointer' }}>
               <input type="checkbox" checked={tieneAuto !== false} onChange={e => guardarTieneAuto(e.target.checked)} />
               Tengo auto
@@ -4715,7 +4736,7 @@ export default function Dashboard() {
                   <li>Un resumen por mes que la app lee sola (PDF o foto)</li>
                 </ul>
                 <p style={{ fontSize: '13px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px 0' }}>Con Premium, $3.999 por mes</p>
-                <ul style={{ margin: '0 0 20px 0', padding: '0 0 0 18px', fontSize: '13px', lineHeight: 1.6, color: darkMode ? '#C0B0C0' : '#5C5560' }}>
+                <ul style={{ margin: '0 0 20px 0', padding: '0 0 0 18px', fontSize: '13px', lineHeight: 1.6, color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c5560)' }}>
                   <li>Todas las cuentas y tarjetas que necesites</li>
                   <li>Todos los resúmenes que quieras, sin tope mensual</li>
                   <li>Se cancela cuando quieras, desde acá mismo</li>
@@ -4788,7 +4809,7 @@ export default function Dashboard() {
                       <option key={a.id} value={a.id}>{a.nombre}</option>
                     ))}
                   </select>
-                  <p style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '6px 0 0' }}>
+                  <p style={{ fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '6px 0 0' }}>
                     Sirve para que los pagos de esta tarjeta se resten del saldo de esa cuenta, cada moneda de la suya.
                   </p>
                 </div>
@@ -4843,7 +4864,7 @@ export default function Dashboard() {
                     <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG, JPG · Máx. 10MB</p></>
                   )}
                 </div>
-                <label htmlFor="uploadInput" title={archivo ? archivo.name : undefined} style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : '#5C4F5C', color: archivo ? '#5C4F5C' : 'white', border: `2px solid #5C4F5C`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                <label htmlFor="uploadInput" title={archivo ? archivo.name : undefined} style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : 'var(--m-5c4f5c)', color: archivo ? 'var(--m-5c4f5c)' : 'white', border: `2px solid var(--m-5c4f5c)`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                   {archivo ? `✅ ${acortarNombreArchivo(archivo.name)}` : '📁 Seleccionar archivo'}
                 </label>
                 <input id="uploadInput" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,image/png,image/jpeg" style={{display:'none'}}
@@ -4868,12 +4889,12 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <div style={styles.timerBar}>
-                  <div style={{...styles.timerFill, width: timer > 0 ? `${(timer / 180) * 100}%` : '100%', backgroundColor: timer === 0 ? '#b8a8c8' : timer < 30 ? '#e07b39' : '#5C4F5C', ...(timer === 0 ? { opacity: 0.7 } : {})}} />
+                  <div style={{...styles.timerFill, width: timer > 0 ? `${(timer / 180) * 100}%` : '100%', backgroundColor: timer === 0 ? 'var(--m-b8a8c8)' : timer < 30 ? '#e07b39' : 'var(--m-5c4f5c)', ...(timer === 0 ? { opacity: 0.7 } : {})}} />
                 </div>
                 <p style={styles.timerText}>
                   {timer > 0 ? `${timer}s restantes` : 'El extracto es largo y está tardando un poco más... seguimos procesando, no cierres la página'}
                 </p>
-                <div style={{ marginTop: '18px', padding: '12px 14px', borderRadius: '10px', backgroundColor: darkMode ? '#2A232A' : '#F7F2F5', border: `1px solid ${darkMode ? '#3A2F3A' : '#E8DEE5'}`, fontSize: '12.5px', lineHeight: '1.5', color: darkMode ? '#C8BCC8' : '#5C4F5C', textAlign: 'left' }}>
+                <div style={{ marginTop: '18px', padding: '12px 14px', borderRadius: '10px', backgroundColor: darkMode ? 'var(--m-2a232a)' : 'var(--m-f7f2f5)', border: `1px solid ${darkMode ? 'var(--m-3a2f3a)' : 'var(--m-e8dee5)'}`, fontSize: '12.5px', lineHeight: '1.5', color: darkMode ? 'var(--m-c8bcc8)' : 'var(--m-5c4f5c)', textAlign: 'left' }}>
                   ⚠️ No cierres ni salgas de esta página mientras se procesa.<br />
                   Aunque lo analiza una IA, siempre puede haber errores — revisá los movimientos cargados antes de darlos por buenos.
                 </div>
@@ -5102,7 +5123,7 @@ export default function Dashboard() {
                     todavía no facturado. */}
                 {statementData?.tipo_documento !== 'banco' && (
                   <div style={{ marginBottom: '12px' }}>
-                    <p style={{ margin: '0 0 6px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                    <p style={{ margin: '0 0 6px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                       ¿Qué estás cargando?
                     </p>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -5114,12 +5135,12 @@ export default function Dashboard() {
                           style={{
                             flex: '1 1 200px', textAlign: 'left', padding: '8px 10px', borderRadius: '8px', cursor: 'pointer',
                             fontFamily: '"Montserrat", sans-serif',
-                            border: esResumenCerrado === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
-                            background: esResumenCerrado === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                            border: esResumenCerrado === opt.v ? '2px solid var(--m-5c4f5c)' : `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
+                            background: esResumenCerrado === opt.v ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent',
                             color: darkMode ? '#F0EDEC' : '#1d1d1f',
                           }}>
                           <span style={{ display: 'block', fontSize: '12px', fontWeight: esResumenCerrado === opt.v ? '600' : '500' }}>{opt.label}</span>
-                          <span style={{ display: 'block', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a', marginTop: '2px' }}>{opt.hint}</span>
+                          <span style={{ display: 'block', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', marginTop: '2px' }}>{opt.hint}</span>
                         </button>
                       ))}
                     </div>
@@ -5131,11 +5152,11 @@ export default function Dashboard() {
                     )}
                   </div>
                 )}
-                <div style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
+                <div style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '24px' }}>
                   <span>{pdfTxDuplicadas.size > 0 ? 'Las tachadas ya podrían estar cargadas. Marcalas si querés importarlas igual.' : ''}</span>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: darkMode ? '#3A2F4A' : '#f0ebfa', border: `1px solid ${darkMode ? '#5C4F8C' : '#c9b8f0'}`, borderRadius: '6px', color: '#7c5cbf', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Seleccionar todo</button>
-                    <button onClick={() => setPdfTxSelections(new Set())} style={{ background: darkMode ? '#2A232A' : '#f5f5f5', border: `1px solid ${darkMode ? '#3A333A' : '#ddd'}`, borderRadius: '6px', color: darkMode ? '#9e9e9e' : '#6e6e73', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Ninguna</button>
+                    <button onClick={() => setPdfTxSelections(new Set(statementData.transacciones.map((_, i) => i)))} style={{ background: darkMode ? 'var(--m-3a2f4a)' : 'var(--m-f0ebfa)', border: `1px solid ${darkMode ? '#5C4F8C' : 'var(--m-c9b8f0)'}`, borderRadius: '6px', color: 'var(--m-7c5cbf)', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Seleccionar todo</button>
+                    <button onClick={() => setPdfTxSelections(new Set())} style={{ background: darkMode ? 'var(--m-2a232a)' : '#f5f5f5', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : '#ddd'}`, borderRadius: '6px', color: darkMode ? '#9e9e9e' : '#6e6e73', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif', padding: '3px 8px', fontWeight: '600' }}>Ninguna</button>
                   </div>
                 </div>
                 <div className="hide-scroll" style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto', scrollbarWidth: 'none' }}>
@@ -5154,13 +5175,13 @@ export default function Dashboard() {
                           textDecoration: isDupe && !isSelected ? 'line-through' : 'none',
                           backgroundColor: isSelected ? undefined : isDupe ? 'rgba(0,0,0,0.05)' : undefined }}>
                         <input type="checkbox" checked={isSelected} readOnly
-                          style={{ marginRight: '10px', accentColor: '#7c5cbf', flexShrink: 0, cursor: 'pointer' }} />
+                          style={{ marginRight: '10px', accentColor: 'var(--m-7c5cbf)', flexShrink: 0, cursor: 'pointer' }} />
                         <div style={styles.transactionLeft}>
                           <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {t.nombre_limpio || t.nombre_original}
                             {t.nombre_limpio === t.nombre_original && t.tipo !== 'neutro' && <span style={{ textDecoration: 'none' }}>❓</span>}
                             {t.revisado && <span title="Lo encontró la revisión de la lectura" style={{ textDecoration: 'none' }}>🔁</span>}
-                            {isDupe && <span title={cargadaComo || undefined} style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{cargadaComo ? `ya cargada como "${cargadaComo}"` : 'ya cargada'}</span>}
+                            {isDupe && <span title={cargadaComo || undefined} style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{cargadaComo ? `ya cargada como "${cargadaComo}"` : 'ya cargada'}</span>}
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                         </div>
@@ -5194,7 +5215,7 @@ export default function Dashboard() {
             {step === 'identificar' && txActual && (
               <>
                 <h3 style={styles.modalTitle}>¿Qué es este gasto? 🔍</h3>
-                <p style={{fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '-8px 0 20px 0'}}>
+                <p style={{fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '-8px 0 20px 0'}}>
                   {txIdentificarIdx + 1} de {txSinIdentificar.length} sin identificar
                 </p>
 
@@ -5203,7 +5224,7 @@ export default function Dashboard() {
                   <div style={{
                     ...styles.timerFill,
                     width: `${((txIdentificarIdx + 1) / txSinIdentificar.length) * 100}%`,
-                    backgroundColor: '#5C4F5C',
+                    backgroundColor: 'var(--m-5c4f5c)',
                     transition: 'width 0.3s'
                   }} />
                 </div>
@@ -5255,7 +5276,7 @@ export default function Dashboard() {
                   </div>
                   <button
                     onClick={() => handleMarcarNeutro(txActual.id)}
-                    style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid #C4B8C4', background: 'none', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer' }}>
+                    style={{ width: '100%', padding: '9px', borderRadius: '10px', border: '1px solid var(--m-c4b8c4)', background: 'none', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', cursor: 'pointer' }}>
                     ↩ Es neutro (pago, transferencia, etc.)
                   </button>
                 </div>
@@ -5327,7 +5348,7 @@ export default function Dashboard() {
             {/* Qué se va a reemplazar, con números: confirmar sobre un nombre de mes no
                 alcanza para saber si es el mismo resumen o uno distinto. */}
             {resumenDupConfirm.existente && (
-              <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', lineHeight: '1.5', margin: '10px 0 0' }}>
+              <p style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', lineHeight: '1.5', margin: '10px 0 0' }}>
                 El que está cargado cierra el {formatFecha(cierreDe(resumenDupConfirm.existente))} · $ {formatMonto(Number(resumenDupConfirm.existente.total_resumen) || 0)}
                 {resumenDupConfirm.existente.total_dolares ? ` + U$S ${formatMontoFull(Number(resumenDupConfirm.existente.total_dolares))}` : ''}
               </p>
@@ -5349,11 +5370,11 @@ export default function Dashboard() {
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: '640px', maxHeight: '85vh', overflowY: 'auto' }}>
             <h3 style={styles.modalTitle}>⚠️ Posibles duplicados</h3>
-            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', margin: '-12px 0 16px 0' }}>
+            <p style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', margin: '-12px 0 16px 0' }}>
               {excelDupReview.potentialDupes.length} transacción{excelDupReview.potentialDupes.length !== 1 ? 'es' : ''} con mismo monto y fecha que algo ya cargado.
               Marcá las que querés importar igual.
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', paddingBottom: '12px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', paddingBottom: '12px', borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
               {(() => {
                 const allSelected = excelDupReview.potentialDupes.every((_, i) => excelDupSelections.has(i))
                 return (
@@ -5361,7 +5382,7 @@ export default function Dashboard() {
                     <input type="checkbox" checked={allSelected} onChange={() => {
                       if (allSelected) setExcelDupSelections(new Set())
                       else setExcelDupSelections(new Set(excelDupReview.potentialDupes.map((_, i) => i)))
-                    }} style={{ accentColor: '#5C4F5C', width: '16px', height: '16px' }} />
+                    }} style={{ accentColor: 'var(--m-5c4f5c)', width: '16px', height: '16px' }} />
                     {allSelected ? 'Deseleccionar todas' : 'Seleccionar todas'}
                   </label>
                 )
@@ -5371,14 +5392,14 @@ export default function Dashboard() {
               {excelDupReview.potentialDupes.map((item, i) => {
                 const checked = excelDupSelections.has(i)
                 return (
-                  <div key={i} style={{ border: `1px solid ${checked ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, borderRadius: '10px', padding: '12px 14px', backgroundColor: checked ? (darkMode ? '#2A202A' : '#F5F0F5') : (darkMode ? '#1C1A1C' : '#fafafa'), cursor: 'pointer' }}
+                  <div key={i} style={{ border: `1px solid ${checked ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, borderRadius: '10px', padding: '12px 14px', backgroundColor: checked ? (darkMode ? 'var(--m-2a202a)' : 'var(--m-f5f0f5)') : (darkMode ? '#1C1A1C' : '#fafafa'), cursor: 'pointer' }}
                     onClick={() => {
                       const next = new Set(excelDupSelections)
                       if (next.has(i)) next.delete(i); else next.add(i)
                       setExcelDupSelections(next)
                     }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                      <input type="checkbox" checked={checked} onChange={() => {}} style={{ marginTop: '2px', accentColor: '#5C4F5C', width: '16px', height: '16px', flexShrink: 0 }} />
+                      <input type="checkbox" checked={checked} onChange={() => {}} style={{ marginTop: '2px', accentColor: 'var(--m-5c4f5c)', width: '16px', height: '16px', flexShrink: 0 }} />
                       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
                           <p style={{ fontSize: '10px', color: txtTerciario, margin: '0 0 4px 0', ...rotuloLabel }}>Ya existe</p>
@@ -5397,7 +5418,7 @@ export default function Dashboard() {
               })}
             </div>
             {excelDupReview.newRows.length > 0 && (
-              <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '16px' }}>
+              <p style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', marginBottom: '16px' }}>
                 ✅ {excelDupReview.newRows.length} transacción{excelDupReview.newRows.length !== 1 ? 'es' : ''} nueva{excelDupReview.newRows.length !== 1 ? 's' : ''} se importarán automáticamente.
               </p>
             )}
@@ -5508,11 +5529,11 @@ export default function Dashboard() {
                         ))}
                       </div>
                       <div style={styles.timerBar}>
-                        <div style={{ ...styles.timerFill, width: `${barPct}%`, backgroundColor: excelTimer < 10 ? '#e07b39' : '#5C4F5C' }} />
+                        <div style={{ ...styles.timerFill, width: `${barPct}%`, backgroundColor: excelTimer < 10 ? '#e07b39' : 'var(--m-5c4f5c)' }} />
                       </div>
                       <p style={styles.timerText}>{excelTimer}s restantes</p>
                       {excelBackgroundMode && (
-                        <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a', marginTop: '8px', textAlign: 'center' }}>
+                        <p style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', marginTop: '8px', textAlign: 'center' }}>
                           🔄 Esto está tardando más de lo esperado. El procesamiento continúa en segundo plano...
                         </p>
                       )}
@@ -5524,7 +5545,7 @@ export default function Dashboard() {
                       <p style={{ fontSize: '13px', color: txtTerciario, margin: 0 }}>
                         Si el archivo tiene varias hojas, usamos la que se llame <strong>GASTOS</strong> (sin importar mayúsculas); si no, la primera.
                       </p>
-                      <button onClick={downloadExcelTemplate} style={{ fontSize: '12px', color: '#5C4F5C', background: 'none', border: '1px solid #5C4F5C', borderRadius: '8px', padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '10px' }}>
+                      <button onClick={downloadExcelTemplate} style={{ fontSize: '12px', color: 'var(--m-5c4f5c)', background: 'none', border: '1px solid var(--m-5c4f5c)', borderRadius: '8px', padding: '5px 10px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '10px' }}>
                         ⬇ Plantilla
                       </button>
                     </div>
@@ -5563,17 +5584,17 @@ export default function Dashboard() {
                     <thead>
                       <tr>
                         {['Fecha', 'Descripción', 'Tipo', 'Cuenta', 'Monto', 'Categoría', 'Subcategoría', ...(childrenDB.length > 0 ? ['Hijo'] : [])].map(h => (
-                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', ...rotuloLabel, fontSize: '11px' }}>{h}</th>
+                          <th key={h} style={{ textAlign: 'left', padding: '7px 10px', borderBottom: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`, color: '#6e6e73', fontWeight: '400', ...rotuloLabel, fontSize: '11px' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {excelPreview.map((row, i) => (
-                        <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
+                        <tr key={i} style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : '#f0f2f8'}` }}>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{row.fecha}</td>
                           <td style={{ padding: '7px 10px', color: darkMode ? '#F0EDEC' : '#1d1d1f', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nombre || row.notas || '—'}</td>
                           <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: '11px' }}>
-                            <span style={{ padding: '2px 7px', borderRadius: '8px', fontWeight: '500', backgroundColor: row.tipo === 'ingreso' ? '#e8f5e9' : row.tipo === 'neutro' ? '#f3f3f3' : (darkMode ? '#3A333A' : '#EDE8EC'), color: row.tipo === 'ingreso' ? '#2e7d32' : row.tipo === 'neutro' ? '#75757a' : '#5C4F5C' }}>
+                            <span style={{ padding: '2px 7px', borderRadius: '8px', fontWeight: '500', backgroundColor: row.tipo === 'ingreso' ? '#e8f5e9' : row.tipo === 'neutro' ? '#f3f3f3' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'), color: row.tipo === 'ingreso' ? '#2e7d32' : row.tipo === 'neutro' ? '#75757a' : 'var(--m-5c4f5c)' }}>
                               {row.tipo || 'gasto'}
                             </span>
                           </td>
@@ -5644,8 +5665,8 @@ export default function Dashboard() {
                     flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px',
                     fontFamily: '"Montserrat", sans-serif',
                     fontWeight: tipoMovimiento === opt.v ? '600' : '400',
-                    border: tipoMovimiento === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
-                    background: tipoMovimiento === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                    border: tipoMovimiento === opt.v ? '2px solid var(--m-5c4f5c)' : `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
+                    background: tipoMovimiento === opt.v ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent',
                     color: darkMode ? '#F0EDEC' : '#1d1d1f',
                   }}>
                   {opt.label}
@@ -5664,7 +5685,7 @@ export default function Dashboard() {
                 }} />
             ) : (
             <form onSubmit={handleGuardarMovimiento}>
-              <p style={{fontSize:'12px', color: darkMode ? '#9A8A9A' : '#75757a', margin:'0 0 16px 0'}}>Los campos con <span style={{color:sem.negativo}}>*</span> son obligatorios</p>
+              <p style={{fontSize:'12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin:'0 0 16px 0'}}>Los campos con <span style={{color:sem.negativo}}>*</span> son obligatorios</p>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
                 <div style={styles.field}>
                   <label style={styles.label}>Fecha <span style={{color:sem.negativo}}>*</span></label>
@@ -5696,7 +5717,7 @@ export default function Dashboard() {
               <div style={styles.field}>
                 <label style={styles.label}>
                   Cuenta <span style={{color:sem.negativo}}>*</span>
-                  {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
+                  {tipoMovimiento === 'ingreso' && <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontWeight:'400'}}> — ¿a qué cuenta entró?</span>}
                 </label>
                 {/* En un ingreso hay que elegir la cuenta, no hay default. Antes el
                     selector arrancaba en la cuenta "Ingresos" y bastaba con no tocarlo:
@@ -5716,7 +5737,7 @@ export default function Dashboard() {
               </div>
               {tipoMovimiento === 'ingreso' && conFacturacion && (
                 <div style={styles.field}>
-                  <label style={styles.label}>¿Lo facturaste? <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <label style={styles.label}>¿Lo facturaste? <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.facturacion || ''} aria-label="Lo facturaste"
                     onChange={e => setEfectivo({...efectivo, facturacion: e.target.value})}>
                     <option value="">— Sin indicar —</option>
@@ -5737,7 +5758,7 @@ export default function Dashboard() {
               <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
                 {categoriasDelTipoMovimiento.length > 1 && (
                   <div style={styles.field}>
-                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                    <label style={styles.label}>Categoría <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                     <select style={styles.input} value={efectivo.categoria}
                       onChange={e => setEfectivo({...efectivo, categoria: e.target.value, subcategoria: ''})}>
                       <option value="">— Elegir —</option>
@@ -5746,7 +5767,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={styles.field}>
-                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <label style={styles.label}>Subcategoría <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.subcategoria}
                     onChange={e => setEfectivo({...efectivo, subcategoria: e.target.value})}
                     disabled={!efectivo.categoria}>
@@ -5760,14 +5781,14 @@ export default function Dashboard() {
               </div>
               {childrenDB.length > 0 && (tipoMovimiento !== 'ingreso' || cuotaAlimentariaActiva) && (
                 <div style={styles.field}>
-                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <label style={styles.label}>Hijo/a <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                   <select style={styles.input} value={efectivo.hijo}
                     onChange={e => setEfectivo({...efectivo, hijo: e.target.value})}>
                     <option value="">— Ninguno —</option>
                     {childrenDB.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                   </select>
                   {tipoMovimiento === 'ingreso' && (
-                    <p style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
+                    <p style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin:'4px 0 0'}}>Para registrar una cuota alimentaria que cobrás, elegí acá a qué hijo/a corresponde.</p>
                   )}
                 </div>
               )}
@@ -5778,26 +5799,26 @@ export default function Dashboard() {
                   movimientos, otra como cuota a vencer). */}
               {tipoMovimiento === 'gasto' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>¿Es en cuotas? <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <label style={styles.label}>¿Es en cuotas? <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', whiteSpace: 'nowrap' }}>Cuota</span>
+                    <span style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', whiteSpace: 'nowrap' }}>Cuota</span>
                     <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
                       type="number" min="1" step="1" value={efectivo.cuotaNum}
                       onChange={e => setEfectivo({...efectivo, cuotaNum: e.target.value})}
                       disabled={Math.trunc(Number(efectivo.cuotasTotal)) <= 1} />
-                    <span style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a' }}>de</span>
+                    <span style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>de</span>
                     <input style={{ ...styles.input, width: '70px', textAlign: 'center' }}
                       type="number" min="1" step="1" value={efectivo.cuotasTotal}
                       onChange={e => setEfectivo({...efectivo, cuotasTotal: e.target.value})} />
                   </div>
-                  <p style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a', margin:'4px 0 0'}}>
+                  <p style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin:'4px 0 0'}}>
                     Dejalo en 1 de 1 si fue un pago único. La fecha de arriba es la de ESTA cuota.
                   </p>
                 </div>
               )}
               {tipoMovimiento !== 'ingreso' && (
                 <div style={styles.field}>
-                  <label style={styles.label}>Nota <span style={{fontSize:'11px', color: darkMode ? '#9A8A9A' : '#75757a'}}>(opcional)</span></label>
+                  <label style={styles.label}>Nota <span style={{fontSize:'11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a'}}>(opcional)</span></label>
                   <input style={styles.input} type="text" value={efectivo.nota}
                     onChange={e => setEfectivo({...efectivo, nota: e.target.value})}
                     placeholder="Detalles adicionales..." />
@@ -5862,12 +5883,12 @@ export default function Dashboard() {
 }
 
 const getStyles = (dark, mobile = false) => {
-  const p = dark ? '#8C7B8C' : '#5C4F5C'
+  const p = dark ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)'
   const bg = dark ? '#1C1A1C' : '#F0EDEC'
   const panel = dark ? '#2A272A' : 'white'
   const txt = dark ? '#F0EDEC' : '#1d1d1f'
-  const muted = dark ? '#9A8A9A' : '#6e6e73'
-  const border = dark ? '#3A333A' : '#E2DDE0'
+  const muted = dark ? 'var(--m-9a8a9a)' : '#6e6e73'
+  const border = dark ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const cardBg = dark ? '#1A181A' : '#F0EDEC'
   const inputBg = dark ? '#1C1A1C' : '#fafafa'
   const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
@@ -5898,7 +5919,7 @@ const getStyles = (dark, mobile = false) => {
     accountsList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' },
     emptyText: { fontSize: '13px', color: muted, textAlign: 'center', padding: '16px 0' },
     accountCard: { backgroundColor: cardBg, borderRadius: '12px', padding: '14px', border: `1px solid ${border}`, cursor: 'pointer', transition: 'all 0.2s' },
-    accountCardSelected: { border: `2px solid ${p}`, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
+    accountCardSelected: { border: `2px solid ${p}`, backgroundColor: dark ? 'var(--m-2a202a)' : 'var(--m-ede8ec)' },
     accountCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
     accountType: { fontSize: '11px', color: muted, margin: 0, fontWeight: '400' },
     accountName: { fontSize: '16px', fontWeight: '500', color: txt, margin: 0 },
@@ -5926,13 +5947,13 @@ const getStyles = (dark, mobile = false) => {
     },
     modalTitle: { fontSize: mobile ? '17px' : '20px', fontWeight: '500', color: txt, margin: mobile ? '0 0 16px 0' : '0 0 24px 0' },
     field: { marginBottom: '16px' },
-    label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? '#C0B0C0' : '#444', marginBottom: '6px' },
+    label: { display: 'block', fontSize: '14px', fontWeight: '400', color: dark ? 'var(--m-c0b0c0)' : '#444', marginBottom: '6px' },
     input: { width: '100%', padding: '11px', borderRadius: '10px', border: `1px solid ${border}`, fontSize: mobile ? '16px' : '14px', outline: 'none', boxSizing: 'border-box', backgroundColor: inputBg, color: txt, colorScheme: dark ? 'dark' : 'light' },
     dropzone: { border: `2px dashed ${border}`, borderRadius: '12px', padding: '40px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', backgroundColor: inputBg, marginBottom: '16px', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden' },
-    dropzoneActive: { borderColor: p, backgroundColor: dark ? '#2A202A' : '#EDE8EC' },
+    dropzoneActive: { borderColor: p, backgroundColor: dark ? 'var(--m-2a202a)' : 'var(--m-ede8ec)' },
     dropzoneDone: { borderColor: '#27AE60', backgroundColor: dark ? '#1A2A1A' : '#f0faf5' },
     dropzoneIcon: { fontSize: '32px', margin: '0 0 8px 0' },
-    dropzoneText: { fontSize: '14px', color: dark ? '#C0B0C0' : '#444', margin: '0 0 4px 0', fontWeight: '500', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+    dropzoneText: { fontSize: '14px', color: dark ? 'var(--m-c0b0c0)' : '#444', margin: '0 0 4px 0', fontWeight: '500', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' },
     dropzoneHint: { fontSize: '12px', color: muted, margin: 0 },
     modalButtons: { display: 'flex', gap: '12px', marginTop: '24px' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none' },
@@ -5946,12 +5967,12 @@ const getStyles = (dark, mobile = false) => {
     processingDots: { display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px' },
     dot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: border },
     dotActive: { backgroundColor: p },
-    timerBar: { width: '100%', height: '4px', backgroundColor: dark ? '#3A333A' : '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
+    timerBar: { width: '100%', height: '4px', backgroundColor: dark ? 'var(--m-3a333a)' : '#e8e8f0', borderRadius: '2px', marginBottom: '8px', overflow: 'hidden' },
     timerFill: { height: '100%', borderRadius: '2px', transition: 'width 1s linear, background-color 0.3s' },
     timerText: { fontSize: '12px', color: muted, margin: 0 },
     stepSubtitle: { fontSize: '14px', color: muted, marginBottom: '16px' },
     adicionalesList: { marginBottom: '20px' },
-    adicionalItem: { padding: '10px 14px', backgroundColor: dark ? '#2A202A' : '#EDE8EC', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: p, fontWeight: '500' },
+    adicionalItem: { padding: '10px 14px', backgroundColor: dark ? 'var(--m-2a202a)' : 'var(--m-ede8ec)', borderRadius: '8px', marginBottom: '8px', fontSize: '14px', color: p, fontWeight: '500' },
     stepQuestion: { fontSize: '15px', fontWeight: '500', color: txt, marginBottom: '16px' },
     opcionesGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
     opcionBtn: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', border: `2px solid ${border}`, borderRadius: '12px', backgroundColor: panel, cursor: 'pointer', gap: '4px' },

@@ -1,3 +1,109 @@
+/* Colores de marca: los violetas de la interfaz, como variables. Con Dad's Assist
+   (data-modo="dad" en <html>, ver aplicarModoAlDocumento en theme.js) pasan a un azul
+   acero con el mismo brillo, así el contraste de cada texto sobre su fondo no cambia.
+   Generado a partir de los colores que usa la app: --m-xxxxxx vale #xxxxxx en Mom's
+   Assist. */
+:root {
+  --m-241f24: #241F24;
+  --m-242024: #242024;
+  --m-2a202a: #2A202A;
+  --m-2a232a: #2A232A;
+  --m-2d1f2d: #2D1F2D;
+  --m-2e262e: #2E262E;
+  --m-3a2e42: #3A2E42;
+  --m-3a2f3a: #3A2F3A;
+  --m-3a2f4a: #3A2F4A;
+  --m-3a303a: #3A303A;
+  --m-3a333a: #3A333A;
+  --m-4a3f4a: #4A3F4A;
+  --m-5a4f5a: #5A4F5A;
+  --m-5c4f5c: #5C4F5C;
+  --m-5c5560: #5C5560;
+  --m-6a5a6a: #6A5A6A;
+  --m-7c5cbf: #7C5CBF;
+  --m-8a7a8a: #8A7A8A;
+  --m-8c7b8c: #8C7B8C;
+  --m-9a8a9a: #9A8A9A;
+  --m-b8a8c8: #B8A8C8;
+  --m-c0b0c0: #C0B0C0;
+  --m-c0b8c0: #C0B8C0;
+  --m-c4b4dc: #C4B4DC;
+  --m-c4b8c4: #C4B8C4;
+  --m-c8b4e8: #C8B4E8;
+  --m-c8bcc8: #C8BCC8;
+  --m-c8c0cc: #C8C0CC;
+  --m-c9b8f0: #C9B8F0;
+  --m-c9c2c9: #C9C2C9;
+  --m-d0c8cc: #D0C8CC;
+  --m-d6c6d6: #D6C6D6;
+  --m-e2dde0: #E2DDE0;
+  --m-e8d8e8: #E8D8E8;
+  --m-e8dee5: #E8DEE5;
+  --m-e8e0e8: #E8E0E8;
+  --m-ede3f2: #EDE3F2;
+  --m-ede8ec: #EDE8EC;
+  --m-ede8f4: #EDE8F4;
+  --m-f0ebfa: #F0EBFA;
+  --m-f0edf0: #F0EDF0;
+  --m-f3e5f5: #F3E5F5;
+  --m-f3eef3: #F3EEF3;
+  --m-f4eff4: #F4EFF4;
+  --m-f5f0f5: #F5F0F5;
+  --m-f7f2f5: #F7F2F5;
+  --m-f7f5f6: #F7F5F6;
+  --m-f7f5f8: #F7F5F8;
+}
+:root[data-modo="dad"] {
+  --m-241f24: #1D2126;
+  --m-242024: #1E2226;
+  --m-2a202a: #1B242F;
+  --m-2a232a: #20262E;
+  --m-2d1f2d: #182534;
+  --m-2e262e: #222932;
+  --m-3a2e42: #24374C;
+  --m-3a2f3a: #2A343F;
+  --m-3a2f4a: #213B58;
+  --m-3a303a: #2B343F;
+  --m-3a333a: #30363E;
+  --m-4a3f4a: #3A4450;
+  --m-5a4f5a: #4A5460;
+  --m-5c4f5c: #495562;
+  --m-5c5560: #4F5A66;
+  --m-6a5a6a: #526172;
+  --m-7c5cbf: #4989D2;
+  --m-8a7a8a: #728192;
+  --m-8c7b8c: #738294;
+  --m-9a8a9a: #8291A2;
+  --m-b8a8c8: #98B6D8;
+  --m-c0b0c0: #A8B7C8;
+  --m-c0b8c0: #B4BBC4;
+  --m-c4b4dc: #A7C6E9;
+  --m-c4b8c4: #B2BDCA;
+  --m-c8b4e8: #B1CCEB;
+  --m-c8bcc8: #B6C1CE;
+  --m-c8c0cc: #BAC5D2;
+  --m-c9b8f0: #BAD2EE;
+  --m-c9c2c9: #BEC5CC;
+  --m-d0c8cc: #C4CBD4;
+  --m-d6c6d6: #BECDDE;
+  --m-e2dde0: #DBDFE4;
+  --m-e8d8e8: #D0DFF0;
+  --m-e8dee5: #D9E2ED;
+  --m-e8e0e8: #DCE3EC;
+  --m-ede3f2: #DEEAF7;
+  --m-ede8ec: #E6EAF0;
+  --m-ede8f4: #E4EDF8;
+  --m-f0ebfa: #EBF2FA;
+  --m-f0edf0: #ECEEF2;
+  --m-f3e5f5: #E2ECF8;
+  --m-f3eef3: #ECF0F5;
+  --m-f4eff4: #ECF1F7;
+  --m-f5f0f5: #EDF2F8;
+  --m-f7f2f5: #EFF4FA;
+  --m-f7f5f6: #F4F6F8;
+  --m-f7f5f8: #F4F6F9;
+}
+
 .tabs-scroll,
 .sidebar-scroll,
 .hide-scroll {
