@@ -51,7 +51,10 @@ function LineasDeLaburo({ lineas, estilos }) {
     <div key={`${m.id ?? i}-${i}`} style={{ ...fila, fontSize: '12px', margin: '3px 0 3px 10px', alignItems: 'flex-start' }}>
       <span>
         {m.nombre}
-        <br /><span style={{ color: muted, fontSize: '11px' }}>{porcentajeTexto(m.porcentaje)} de {m.moneda && m.moneda !== 'ARS' ? enMoneda(m.monto, m.moneda) : pesos(m.pesos)}</span>
+        <br /><span style={{ color: muted, fontSize: '11px' }}>
+          {porcentajeTexto(m.porcentaje)} de {m.moneda && m.moneda !== 'ARS' ? enMoneda(m.monto, m.moneda) : pesos(m.pesos)}
+          {m.cambiado && ` (cambiados a ${pesos(m.pesos)})`}
+        </span>
       </span>
       <span style={{ whiteSpace: 'nowrap' }}>{conSigno(m.parte < 0 ? '−' : '+', m.parte)}</span>
     </div>
@@ -81,6 +84,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
   const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: '60' })
+  const [nuevoCambio, setNuevoCambio] = useState({ movimientoId: '', pesos: '' })
   const [abiertos, setAbiertos] = useState({ ingresos: true, gastos: true })
   const estaAbierto = (clave, porDefecto = false) => (clave in abiertos ? abiertos[clave] : porDefecto)
   const alternar = (clave, porDefecto = false) => setAbiertos(a => ({ ...a, [clave]: !(clave in a ? a[clave] : porDefecto) }))
@@ -166,6 +170,29 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     .map(s => `${s} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(Number(porcentajes[s]))} %`)
     .join(' · ')
   const hayTrabajos = Math.abs(r.netoTrabajos) >= 1
+
+  // Cobros o pagos en otra moneda que ya se cambiaron a pesos: el reparto usa lo que
+  // realmente dieron, no la cotización del mes.
+  const enPesosGuardados = config.enPesos && typeof config.enPesos === 'object' ? config.enPesos : {}
+  const enOtraMoneda = movimientos
+    .filter(t => (t.tipo === 'gasto' || t.tipo === 'ingreso') && (t.moneda || 'ARS') !== 'ARS' && t.id)
+    .map(t => ({ ...t, socio: socioDeLaCuenta(cuentaPorId.get(t.account_id), config.socios) }))
+    .filter(t => t.socio)
+  const cambiadosDelMes = enOtraMoneda.filter(t => montoValido(enPesosGuardados[t.id]))
+  const paraCambiar = enOtraMoneda.filter(t => !montoValido(enPesosGuardados[t.id]))
+  const cambioElegido = paraCambiar.find(t => t.id === nuevoCambio.movimientoId)
+  const guardarEnPesos = (mapa) => onCambiarConfig({ ...config, enPesos: mapa })
+  const agregarCambio = (e) => {
+    e.preventDefault()
+    const monto = montoValido(nuevoCambio.pesos)
+    if (!cambioElegido || !monto) return
+    guardarEnPesos({ ...enPesosGuardados, [cambioElegido.id]: Math.round(monto * 100) / 100 })
+    setNuevoCambio({ movimientoId: '', pesos: '' })
+  }
+  const quitarCambio = (id) => {
+    const { [id]: _quitado, ...resto } = enPesosGuardados
+    guardarEnPesos(resto)
+  }
 
   const estadoDeCuota = (c) => {
     const delMes = cuotasDelMes({ cuotas: [c], socios: config.socios, mes })
@@ -402,6 +429,42 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             </form>
             {errorNueva && <p style={{ fontSize: '12px', color: sem.negativo, margin: '6px 0 0' }}>{errorNueva}</p>}
           </div>
+
+          {enOtraMoneda.length > 0 && (
+            <div style={caja}>
+              <p style={rotulo}>Euros o dólares que ya cambiaste a pesos</p>
+              <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
+                Poné cuántos pesos te dieron: los porcentajes salen de esa plata y no de la cotización del mes.
+              </p>
+              {cambiadosDelMes.map(t => (
+                <div key={t.id} style={{ ...fila, alignItems: 'flex-start' }}>
+                  <span>
+                    <strong>{t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto')}</strong> · {t.socio}
+                    <br /><span style={{ fontSize: '12px', color: muted }}>{enMoneda(Math.abs(Number(t.monto) || 0), t.moneda)} → {pesos(enPesosGuardados[t.id])}</span>
+                  </span>
+                  <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label={`Quitar el cambio de ${t.nombre || 'este movimiento'}`}
+                    onClick={() => quitarCambio(t.id)}>×</button>
+                </div>
+              ))}
+              {paraCambiar.length > 0 && (
+                <form onSubmit={agregarCambio} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', marginTop: '10px' }}>
+                  <select style={{ ...styles.input, gridColumn: '1 / -1' }} value={nuevoCambio.movimientoId} aria-label="Movimiento en otra moneda"
+                    onChange={e => setNuevoCambio(n => ({ ...n, movimientoId: e.target.value }))}>
+                    <option value="">— Elegí el cobro o pago —</option>
+                    {paraCambiar.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.tipo === 'ingreso' ? '＋' : '−'} {t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto')} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda)}
+                      </option>
+                    ))}
+                  </select>
+                  <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" placeholder="Pesos que te dieron"
+                    value={nuevoCambio.pesos} onChange={e => setNuevoCambio(n => ({ ...n, pesos: e.target.value }))} aria-label="Pesos que te dieron" />
+                  <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
+                    disabled={!cambioElegido || !montoValido(nuevoCambio.pesos)}>Guardar</button>
+                </form>
+              )}
+            </div>
+          )}
 
           <div style={caja}>
             <p style={rotulo}>Gastos que se devuelven en cuotas</p>

@@ -78,6 +78,34 @@ describe('calcularReparto', () => {
   })
 })
 
+describe('euros o dólares ya cambiados a pesos', () => {
+  const cuentasDani = [...cuentas, { id: 'eur', nombre: 'Flor ARQ EUR' }]
+  const dani = { ...mov('eur', 'ingreso', 497, 'EUR'), id: 'dani' }
+  const trabajos = [{ movimientoId: 'dani', socio: 'Flor', porcentajes: { Flor: 90, Valen: 5, Dol: 5 } }]
+
+  test('los porcentajes salen de los pesos que dieron, no de la cotización del mes', () => {
+    const r = calcularReparto({
+      socios, cuentas: cuentasDani, movimientos: [dani], cotizaciones: { EUR: 1706 }, trabajos, enPesos: { dani: 898212 },
+    })
+    const flor = r.detalle.laburo.find(l => l.socio === 'Flor').propios[0]
+    expect(flor.pesos).toBe(898212)
+    expect(flor.parte).toBeCloseTo(808390.8, 1)
+    expect(flor.cambiado).toBe(true)
+    expect(r.porSocio.find(s => s.socio === 'Flor').tiene).toBeCloseTo(898212, 2)
+  })
+
+  test('sin el cambio cargado, sigue con la cotización del mes', () => {
+    const r = calcularReparto({ socios, cuentas: cuentasDani, movimientos: [dani], cotizaciones: { EUR: 1706 }, trabajos })
+    expect(r.detalle.laburo.find(l => l.socio === 'Flor').propios[0].pesos).toBeCloseTo(847882, 2)
+  })
+
+  test('repartoDelMes lo toma de la configuración', () => {
+    const config = { socios, meses: {}, trabajos, enPesos: { dani: 898212 } }
+    const r = repartoDelMes({ config, mes: '2026-10', movimientos: [dani], cuentas: cuentasDani, cotizacionesVivas: { EUR: 1706 } })
+    expect(r.detalle.laburo.find(l => l.socio === 'Flor').propios[0].pesos).toBe(898212)
+  })
+})
+
 describe('socioDeLaCuenta', () => {
   test('el nombre de la cuenta empieza con el del socio', () => {
     expect(socioDeLaCuenta({ nombre: 'Dol Mercado Pago' }, socios)).toBe('Dol')
