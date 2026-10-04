@@ -31,8 +31,8 @@ export function InfoTooltip({ text, darkMode }) {
         onClick={(e) => { e.stopPropagation(); if (!hoverCapaz) setOpen(o => !o) }}
         style={{
           width: '15px', height: '15px', borderRadius: '50%', padding: 0, boxSizing: 'border-box',
-          border: `1px solid ${darkMode ? '#8A7A8A' : '#75757a'}`, background: 'none',
-          color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '10px', lineHeight: '13px',
+          border: `1px solid ${darkMode ? 'var(--m-8a7a8a)' : '#75757a'}`, background: 'none',
+          color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize: '10px', lineHeight: '13px',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'help', fontFamily: 'Georgia, serif', fontStyle: 'italic',
           textTransform: 'none', letterSpacing: 'normal', fontWeight: '400',
@@ -43,8 +43,8 @@ export function InfoTooltip({ text, darkMode }) {
           position: 'absolute', top: '20px', right: 0, zIndex: 60, minWidth: '200px', maxWidth: '260px',
           padding: '8px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: '400',
           textTransform: 'none', letterSpacing: 'normal', lineHeight: '1.4', textAlign: 'left',
-          backgroundColor: darkMode ? '#2A232A' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
-          border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          backgroundColor: darkMode ? 'var(--m-2a232a)' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
+          border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
         }}>
           {text}
         </div>

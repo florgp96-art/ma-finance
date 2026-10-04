@@ -224,9 +224,9 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     setNueva(n => ({ ...n, monto: '' }))
   }
 
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
-  const borde = darkMode ? '#3A333A' : '#E2DDE0'
+  const borde = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const caja = { border: `1px solid ${borde}`, borderRadius: '10px', padding: '12px', marginBottom: '14px' }
   const rotulo = { fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 8px' }
   const fila = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, margin: '3px 0' }

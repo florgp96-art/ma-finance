@@ -36,7 +36,7 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
   // Misma moneda: transferencia, y lo que sale es lo que entra (un solo monto).
   const esTransferencia = origen.moneda === destino.moneda
   const nombreDe = (id) => cuentas.find(c => c.id === id)?.nombre || ''
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const obligatorio = <span style={{ color: sem.negativo }}>*</span>
 
   const guardar = async (e) => {

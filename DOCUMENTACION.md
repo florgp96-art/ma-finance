@@ -128,8 +128,10 @@ subo y Vercel lo despliega. No necesitás tener nada instalado.
 ma-finance/
 ├── src/                         ← TODO lo que se ve en pantalla
 │   ├── App.js                   Las rutas: /login, /register, /onboarding, /dashboard
-│   ├── theme.js                 ⭐ Colores y tipografía. Si querés cambiar un color, es acá
-│   ├── index.js / index.css     Arranque de la app y estilos globales
+│   ├── theme.js                 ⭐ Colores y tipografía, y los modos Mom's / Dad's Assist (MODOS)
+│   ├── index.js / index.css     Arranque de la app y estilos globales. Los colores de marca son
+│   │                            variables (--m-xxxxxx) en index.css: arriba los de Mom's Assist
+│   │                            y en [data-modo="dad"] los azules de Dad's Assist
 │   ├── pages/
 │   │   ├── Dashboard.js         ⭐ La pantalla principal — el archivo más grande de todos
 │   │   ├── Login.js             Pantalla de ingreso

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { paleta, leerDarkMode, FONT as FONT_THEME } from '../theme'
+import { paleta, leerDarkMode, FONT as FONT_THEME, MODOS, leerModo, aplicarModoAlDocumento } from '../theme'
 import { BANCOS, BILLETERAS, TARJETAS, CATEGORIA_MASCOTAS, SUBCATEGORIAS_MASCOTAS, cuentasDelAlta } from '../lib/perfil'
 
 const FONT = FONT_THEME.family
@@ -15,6 +15,9 @@ const guardarPreferencia = (userId, clave, valor) =>
   }, { onConflict: 'user_id,texto_original' })
 
 export default function Onboarding() {
+  // Se aplica al tocarlo: la pantalla cambia de colores en el momento.
+  const [modo, setModo] = useState(leerModo)
+  const elegirModo = (nuevo) => { setModo(nuevo); aplicarModoAlDocumento(nuevo) }
   const [tieneHijos, setTieneHijos] = useState(false)
   const [hijos, setHijos] = useState([''])
   // null = no contestó: la app sigue como siempre en ese punto.
@@ -61,7 +64,7 @@ export default function Onboarding() {
       }
 
       // Preferencias: solo las que contestó.
-      const preferencias = []
+      const preferencias = [['modo', modo]]
       if (tieneHijos && cuotaAlimentaria !== null) preferencias.push(['cuota_alimentaria_activa', cuotaAlimentaria])
       if (tieneAuto !== null) preferencias.push(['tiene_auto', tieneAuto])
       if (tieneMascotas !== null) preferencias.push(['tiene_mascotas', tieneMascotas])
@@ -174,6 +177,18 @@ export default function Onboarding() {
             No se venden, no se comparten con terceros y no se usan para publicidad.
             Podés cambiarlas cuando quieras desde Configuración.
           </p>
+        </div>
+
+        <div style={bloque}>
+          <label style={labelStyle}>¿Cómo querés ver la app?</label>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {Object.entries(MODOS).map(([clave, m]) => (
+              <button key={clave} type="button" aria-pressed={modo === clave} onClick={() => elegirModo(clave)}
+                style={{ ...opcion(modo === clave), flex: 1 }}>
+                {clave === 'dad' ? '💙' : '💜'} {m.nombre}
+              </button>
+            ))}
+          </div>
         </div>
 
         {siNo('¿Tenés hijos?', tieneHijos, setTieneHijos)}

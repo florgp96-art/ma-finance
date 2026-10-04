@@ -45,7 +45,7 @@ export const CATEGORY_CONFIG = {
   'A Identificar':   { icon: '❓', color: 'hsl(40, 20%, 80%)' },
 }
 
-const BAR_COLOR = '#5C4F5C'
+const BAR_COLOR = 'var(--m-5c4f5c)'
 // Identidad por categoría de ingreso — mismo criterio que CATEGORY_CONFIG (icono +
 // color propio espaciado en el círculo de matices, corrido 13° respecto de
 // CATEGORY_CONFIG para no repetir tonos entre gasto e ingreso). Los nombres tienen
@@ -343,17 +343,17 @@ function TotalesFooterImpl({ txs, tcMap, tipoCambio, tcMapEUR, tipoCambioEUR, da
   return (
     <tfoot>
       <tr>
-        <td colSpan={colSpan} style={{ padding: 0, borderTop: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+        <td colSpan={colSpan} style={{ padding: 0, borderTop: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}` }}>
           <div style={{
             padding: '10px 10px', fontSize: '12px', fontWeight: '600',
             color: darkMode ? '#F0EDEC' : '#1d1d1f',
             display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline'
           }}>
-            <span style={{ fontWeight: '400', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
+            <span style={{ fontWeight: '400', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel, fontSize: '10px' }}>Total</span>
             {Math.round(ars) !== 0 && <span>{totalConSigno(ars, '$', signed)}</span>}
             {Math.round(usd * 100) !== 0 && <span style={{ color: sem.usd }}>{totalConSigno(usd, 'U$S', signed)}</span>}
             {Math.round(eur * 100) !== 0 && <span style={{ color: sem.positivo }}>{totalConSigno(eur, '€', signed)}</span>}
-            {hayMultiples && <span style={{ color: darkMode ? '#9A8A9A' : '#75757a', fontWeight: '500' }}>≈ {totalConSigno(unificado, '$', signed)} unificado</span>}
+            {hayMultiples && <span style={{ color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontWeight: '500' }}>≈ {totalConSigno(unificado, '$', signed)} unificado</span>}
           </div>
         </td>
       </tr>
@@ -2223,7 +2223,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     const ingresoLabel = tx.tag || tx.subcategories?.nombre || tx.categories?.nombre || '—'
     const reparto = !esIngresoTx ? desglosarReparto(tx) : null
     const expandido = filaExpandida === tx.id
-    const detailLabel = { fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }
+    const detailLabel = { fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }
     const detailValue = { margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }
     return (
       <React.Fragment key={tx.id}>
@@ -2247,7 +2247,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 subcategoría, así que ahí SOLO vale child_id (tx.children, el
                 join por FK). Antes esto no se mostraba nunca en un ingreso. */}
             {(esIngresoTx ? tx.children?.nombre : (tx.children?.nombre || tx.tag)) && (
-              <span style={{ fontSize: '11px', color: '#8C7B8C', marginLeft: '6px' }}>👧 {esIngresoTx ? tx.children?.nombre : (tx.children?.nombre || tx.tag)}</span>
+              <span style={{ fontSize: '11px', color: 'var(--m-8c7b8c)', marginLeft: '6px' }}>👧 {esIngresoTx ? tx.children?.nombre : (tx.children?.nombre || tx.tag)}</span>
             )}
             {reparto && (
               <span style={{ fontSize: '11px', color: '#5C8AA8', marginLeft: '6px' }}>🔀</span>
@@ -2264,7 +2264,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           {colVisible.categoria && (
             <td style={ellipsisCell}>
               {esIngresoTx ? (
-                <span title={ingresoLabel} style={{ backgroundColor: darkMode ? '#3A2F4A' : '#EDE8F4', color: darkMode ? '#C8B4E8' : '#5C4F5C', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
+                <span title={ingresoLabel} style={{ backgroundColor: darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)', color: darkMode ? 'var(--m-c8b4e8)' : 'var(--m-5c4f5c)', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
                   {ingresoLabel}
                 </span>
               ) : (
@@ -2290,11 +2290,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             title={tcTooltipDe(tx, tcMap, tipoCambio)}>
             {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </td>
-          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
+          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
         </tr>
         {expandido && (
           <tr style={styles.tr}>
-            <td colSpan={numColsTabla} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+            <td colSpan={numColsTabla} style={{ ...styles.td, backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                 <div style={{ flexBasis: '100%' }}>
                   <p style={detailLabel}>Nombre</p>
@@ -2365,7 +2365,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         const activo = estadoFacturacion(tx) === e.valor
                         return (
                           <button key={e.valor} type="button" aria-pressed={activo} onClick={() => cambiarFacturacion(tx, e.valor)}
-                            style={{ padding: '6px 12px', borderRadius: '16px', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${activo ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: activo ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: activo ? 600 : 400 }}>
+                            style={{ padding: '6px 12px', borderRadius: '16px', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', border: `1px solid ${activo ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: activo ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontWeight: activo ? 600 : 400 }}>
                             {activo ? '✓ ' : ''}{e.etiqueta}
                           </button>
                         )
@@ -2421,7 +2421,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             <td colSpan={numColsTabla} style={{ ...styles.td, paddingTop: '6px', paddingBottom: '6px' }}>
               <button
                 onClick={() => toggleGrupoExpandido(grupo.key, false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: darkMode ? '#8C7B8C' : '#5C4F5C', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, fontFamily: '"Montserrat", sans-serif' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, fontFamily: '"Montserrat", sans-serif' }}
               >
                 ▾ Dividido en {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''} — ocultar detalle
               </button>
@@ -2436,7 +2436,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{formatFechaCorta(repTx.fecha)}</td>
         <td style={ellipsisCell} title={repTx.nombre || repTx.detalle}>
           {repTx.nombre || repTx.detalle}
-          <span style={{ fontSize: '11px', color: darkMode ? '#C8B4E8' : '#5C4F5C', marginLeft: '6px' }}>
+          <span style={{ fontSize: '11px', color: darkMode ? 'var(--m-c8b4e8)' : 'var(--m-5c4f5c)', marginLeft: '6px' }}>
             🔀 {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
           </span>
         </td>
@@ -2460,7 +2460,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           color: sem.negativo}}>
           -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
         </td>
-        <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>▸</td>
+        <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>▸</td>
       </tr>
     )
   }
@@ -2543,9 +2543,9 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     const esIngresoTx = esVistaIngresos || editTipo === 'ingreso'
     const selStyle = { ...styles.editSelect, width: '100%', boxSizing: 'border-box' }
     return (
-      <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+      <td colSpan={colSpan} style={{ ...styles.td, backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '6px 2px' }}>
-          <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+          <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
             {formatFecha(tx.fecha)} · {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </span>
           {/* Tipo (gasto/ingreso): reemplaza el atajo viejo de elegir la categoría
@@ -2559,8 +2559,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   style={{
                     flex: 1, padding: '6px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
                     fontFamily: '"Montserrat", sans-serif', fontWeight: editTipo === opt.v ? '600' : '400',
-                    border: editTipo === opt.v ? '2px solid #5C4F5C' : `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
-                    background: editTipo === opt.v ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent',
+                    border: editTipo === opt.v ? '2px solid var(--m-5c4f5c)' : `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
+                    background: editTipo === opt.v ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent',
                     color: darkMode ? '#F0EDEC' : '#1d1d1f',
                   }}>
                   {opt.label}
@@ -2579,7 +2579,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               después aparece en el widget de cuotas pendientes. */}
           {!esIngresoTx && (
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, whiteSpace: 'nowrap' }}>Cuota</span>
+              <span style={{ fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel, whiteSpace: 'nowrap' }}>Cuota</span>
               <input
                 style={{ ...styles.editInput, width: '58px', boxSizing: 'border-box', textAlign: 'center' }}
                 type="number" min="1" step="1" value={editCuotaNum}
@@ -2587,7 +2587,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 disabled={Math.trunc(Number(editCuotasTotal)) === 1}
                 title="Número de cuota"
               />
-              <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>de</span>
+              <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>de</span>
               <input
                 style={{ ...styles.editInput, width: '58px', boxSizing: 'border-box', textAlign: 'center' }}
                 type="number" min="1" step="1" value={editCuotasTotal}
@@ -2600,8 +2600,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 style={{
                   marginLeft: 'auto', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer',
                   fontSize: '11px', fontFamily: '"Montserrat", sans-serif',
-                  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
-                  color: darkMode ? '#C0B0C0' : '#5C4F5C', whiteSpace: 'nowrap',
+                  border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'transparent',
+                  color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c4f5c)', whiteSpace: 'nowrap',
                 }}
                 title="Marcar como un solo pago, no en cuotas"
               >
@@ -2693,10 +2693,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               }}
               title={activo ? `Filtrando por ${ETIQUETA_COLUMNA[filtroKey] || label}` : `Filtrar por ${ETIQUETA_COLUMNA[filtroKey] || label}`}
               style={{
-                background: activo ? (darkMode ? '#4A3F4A' : '#E8E0E8') : 'none',
+                background: activo ? (darkMode ? 'var(--m-4a3f4a)' : 'var(--m-e8e0e8)') : 'none',
                 border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '1px 3px',
                 fontSize: '9px', lineHeight: 1, flexShrink: 0,
-                color: activo ? (darkMode ? '#E8D8E8' : '#5C4F5C') : (darkMode ? '#8A7A8A' : '#75757a'),
+                color: activo ? (darkMode ? 'var(--m-e8d8e8)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-8a7a8a)' : '#75757a'),
               }}
             >
               ▼
@@ -2727,8 +2727,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     const setSel = (nuevos) => nuevos.length === valores.length
       ? limpiar()
       : setFiltrosCol(prev => ({ ...prev, [key]: nuevos }))
-    const fondo = darkMode ? '#241F24' : 'white'
-    const borde = darkMode ? '#3A333A' : '#E2DDE0'
+    const fondo = darkMode ? 'var(--m-241f24)' : 'white'
+    const borde = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
     const texto = darkMode ? '#F0EDEC' : '#1d1d1f'
     return (
       <>
@@ -2760,7 +2760,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {visibles.length === 0 && (
-              <p style={{ margin: '6px 4px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+              <p style={{ margin: '6px 4px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
                 Nada que coincida.
               </p>
             )}
@@ -2780,7 +2780,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       const base = elegidos || valores
                       setSel(marcado ? base.filter(x => x !== v) : [...base, v])
                     }}
-                    style={{ accentColor: '#5C4F5C', flexShrink: 0 }}
+                    style={{ accentColor: 'var(--m-5c4f5c)', flexShrink: 0 }}
                   />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v}>{v}</span>
                 </label>
@@ -2798,7 +2798,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // Mismo gris secundario que usa getStyles internamente. Las celdas de cuenta/
   // subcategoría lo traían como '#888' o '#aaa' fijos: en oscuro se hunden
   // contra el panel y en claro '#aaa' sobre blanco da 2,3:1.
-  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
   const sem = semaforo(darkMode)
 
   // Corte de la tabla de movimientos (ver verTodosMovimientos). El corte es solo
@@ -3350,7 +3350,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // cierre y vencimiento del ciclo) comparten estilo: son la misma clase de control.
   const estiloInputFecha = {
     fontSize: '12px', padding: '2px 6px', borderRadius: '6px',
-    border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+    border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
     backgroundColor: darkMode ? '#1C1A1C' : 'white',
     color: darkMode ? '#F0EDEC' : '#1d1d1f',
     colorScheme: darkMode ? 'dark' : 'light',
@@ -3384,8 +3384,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     return (
       <div key={s.id} style={{
         backgroundColor: esVencida ? (darkMode ? '#3A2323' : '#FBEAEA') : (darkMode ? '#2A272A' : '#F0EDEC'),
-        border: `1px solid ${esVencida ? (darkMode ? '#5A3232' : '#F0C4C4') : (darkMode ? '#3A333A' : '#E2DDE0')}`,
-        borderLeft: esVencida ? '4px solid #c0392b' : (darkMode ? '1px solid #3A333A' : '1px solid #E2DDE0'),
+        border: `1px solid ${esVencida ? (darkMode ? '#5A3232' : '#F0C4C4') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`,
+        borderLeft: esVencida ? '4px solid #c0392b' : (darkMode ? '1px solid var(--m-3a333a)' : '1px solid var(--m-e2dde0)'),
         borderRadius: '14px', padding: '18px 20px',
       }}>
         <div onClick={() => toggleTarjetaAPagar(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tarjetaExpandida && items.length > 0 ? '14px' : 0, flexWrap: 'wrap', gap: '8px', cursor: 'pointer' }}>
@@ -3463,15 +3463,15 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 más ya quedó reflejado en el próximo PDF del banco, va a coincidir
                 solo, sin que la app tenga que hacer nada. */}
             {s._pagosPosterioresArs > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>Pagado $ {formatMonto(s._pagosPosterioresArs)}</p>
             )}
             {editUsdStatementId === s.id ? (
               <span onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', justifyContent: 'flex-end' }}>
                 <input type="text" autoComplete="off" autoFocus value={editUsdValor} onChange={e => setEditUsdValor(e.target.value)}
                   placeholder="negativo si es a favor"
-                  style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                  style={{ width: '130px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                 <button onClick={() => guardarTotalDolaresStatement(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
-                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
+                <button onClick={() => setEditUsdStatementId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize: '13px' }}>✕</button>
               </span>
             ) : (
               // Boolean() a propósito: si total_usd es 0 y total_dolares es 0,
@@ -3479,7 +3479,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               // texto — quedaba un "0" suelto colgando debajo del importe en
               // todo resumen que fuera solo en pesos, que son casi todos.
               Boolean(s.total_usd !== 0 || s.total_dolares) && (
-                <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
                   U$S {formatMontoFull(s.total_usd)}
                   {/* Si el total en dólares que informa el resumen no se leyó bien del
                       PDF (típicamente un saldo a favor, que viene como negativo), se
@@ -3495,7 +3495,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               )
             )}
             {s._pagosPosterioresUsd > 0 && (
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
             )}
             {/* Excedente informativo en esa moneda: puede ser saldo a favor que ya
                 informa el propio resumen del banco, o un pago que superó lo debido en
@@ -3546,7 +3546,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           <div
             onClick={() => toggleDetalleAPagar(s.id)}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginBottom: detalleAbierto.has(s.id) ? '10px' : 0 }}>
-            <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+            <span style={{ fontSize: '12px', fontWeight: '500', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
               {detalleAbierto.has(s.id) ? '▾' : '▸'} Detalle ({items.length})
             </span>
           </div>
@@ -3602,7 +3602,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
           {[{ key: 'movimientos', label: '🫧 Movimientos' }, { key: 'apagar', label: '📌 A pagar' }].map(t => (
             <button key={t.key} onClick={() => setVistaCuenta(t.key)}
-              style={{ padding: '7px 16px', borderRadius: '20px', border: `1.5px solid ${vistaCuenta === t.key ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: vistaCuenta === t.key ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: vistaCuenta === t.key ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+              style={{ padding: '7px 16px', borderRadius: '20px', border: `1.5px solid ${vistaCuenta === t.key ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: vistaCuenta === t.key ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'transparent', color: vistaCuenta === t.key ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
               {t.label}
             </button>
           ))}
@@ -3612,23 +3612,23 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       {mostrarTabAPagar && vistaApagarActiva && (
         <div style={{ marginBottom: '32px' }}>
           <h3 style={{ ...styles.chartTitle, margin: '0 0 16px' }}>📌 A pagar</h3>
-          <div style={{ textAlign: 'center', padding: '20px 16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, marginBottom: '20px' }}>
-            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Te falta pagar</p>
+          <div style={{ textAlign: 'center', padding: '20px 16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, marginBottom: '20px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>Te falta pagar</p>
             <p style={{ margin: 0, fontWeight: '700', fontSize: '32px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>$ {formatMonto(Math.max(0, totalAPagarGeneral))}</p>
             {totalAPagarGeneralUsd > 0 && (
-              <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '600', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                 + U$S {formatMontoFull(totalAPagarGeneralUsd)}{parseFloat(tipoCambio) > 0 ? ` (≈ $ ${formatMonto(totalAPagarGeneralUsd * parseFloat(tipoCambio))} · TC $ ${formatMontoFull(parseFloat(tipoCambio))})` : ''}
               </p>
             )}
             {allAccounts && totalBrutoBarra > 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+              <p style={{ margin: '10px 0 0', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
                 $ {formatMonto(Math.round(montoPagadoBarra))} pagado de $ {formatMonto(Math.round(totalBrutoBarra))} este mes · {pctPagadoBarra}%
               </p>
             )}
           </div>
           {allAccounts && totalBrutoBarra > 0 && (
             <div style={{ marginBottom: '20px' }}>
-              <div style={{ height: '8px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : '#EDE8EC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, overflow: 'hidden' }}>
+              <div style={{ height: '8px', borderRadius: '6px', backgroundColor: darkMode ? '#2A272A' : 'var(--m-ede8ec)', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pctPagadoBarra}%`, backgroundColor: '#3a7d44', transition: 'width 0.3s ease', borderRadius: '6px' }} />
               </div>
             </div>
@@ -3688,8 +3688,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               totalAPagarGeneral, así que termina siempre, por construcción, en el mismo
               número: no hay otra cuenta que concilie. */}
           {allAccounts && statementsFacturados.length > 0 && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>¿Qué compone lo que falta pagar?</p>
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>¿Qué compone lo que falta pagar?</p>
               <div style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 {statementsFacturados.map(s => {
                   const nombreCuenta = (accounts || []).find(a => a.id === s.account_id)?.nombre
@@ -3716,7 +3716,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                     </div>
                   )
                 })}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontWeight: '700', fontSize: '15px' }}>
                   <span>= Te falta pagar</span>
                   <span>$ {formatMonto(totalAPagarGeneral)}{totalAPagarGeneralUsd > 0 ? ` + U$S ${formatMontoFull(totalAPagarGeneralUsd)}` : ''}</span>
                 </div>
@@ -3728,8 +3728,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               informativo, no suma a "Te falta pagar": recién pasa a ser deuda exigible
               cuando el banco cierra ese resumen. */}
           {allAccounts && statementsSinResumen.length > 0 && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
                 🕐 Próximos vencimientos
                 <InfoTooltip darkMode={darkMode} text={'Todavía no facturado — se incluye en el próximo resumen de cada tarjeta. No suma a "Te falta pagar".'} />
               </p>
@@ -3749,7 +3749,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   )
                 })}
                 {(totalProximoResumenArs > 0 || totalProximoResumenUsd > 0) && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '15px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontWeight: '700', fontSize: '15px' }}>
                     <span>Total acumulado</span>
                     <span>$ {formatMonto(totalProximoResumenArs)}{totalProximoResumenUsd > 0 ? ` + U$S ${formatMontoFull(totalProximoResumenUsd)}` : ''}</span>
                   </div>
@@ -3759,8 +3759,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           )}
           {/* Ingresos de este mes: informativo, no resta de "Te falta pagar". */}
           {allAccounts && ingresosPorCategoriaMes.length > 0 && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', display: 'flex', alignItems: 'center', ...rotuloLabel }}>
                 Ingresos de este mes
                 <InfoTooltip darkMode={darkMode} text={'Informativo — no resta de "Te falta pagar".'} />
               </p>
@@ -3778,7 +3778,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontWeight: '700', fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>
                 <span>Total</span>
                 <span>
                   {(() => {
@@ -3796,13 +3796,13 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               se ve el desglose por subcategoría; al abrir una fila de hijo, el
               desglose por categoría de ese hijo. */}
           {(gastosCategoriaEHijoGeneral.length > 0 || gastosCategoriaEHijoGeneralUsd.length > 0) && (
-            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
+            <div style={{ marginBottom: '20px', padding: '16px', borderRadius: '14px', backgroundColor: darkMode ? '#2A272A' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+              <p style={{ margin: '0 0 10px', fontSize: '10px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>Gastos del mes por categoría</p>
               {gastosCategoriaEHijoGeneral.map(({ tipo, nombre, total }) => total > 0 && (
                 <React.Fragment key={`${tipo}-${nombre}`}>
                   <div
                     onClick={() => toggleGastoGeneralRow(tipo, nombre)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, cursor: 'pointer' }}>
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, cursor: 'pointer' }}>
                     <span style={{ fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                       <span style={{ opacity: 0.6, fontSize: '11px' }}>{(tipo === 'hijo' ? hijoGeneralSeleccionado : catGeneralSeleccionada) === nombre ? '▾' : '▸'}</span>
                       {tipo === 'hijo' ? (customIcons?.[nombre] || '👧') : resolveIcon(nombre)} {nombre}
@@ -3812,7 +3812,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {subcatsCatGeneral.map(([subcat, montoSub]) => (
-                        <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                        <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                           <span>{subcat}</span>
                           <span>$ {formatMonto(montoSub)}</span>
                         </div>
@@ -3822,7 +3822,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneral.length > 0 && (
                     <div style={{ padding: '6px 0 8px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {catsPorHijoGeneral.map(([cat, montoCat]) => (
-                        <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                        <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                           <span>{resolveIcon(cat)} {cat}</span>
                           <span>$ {formatMonto(montoCat)}</span>
                         </div>
@@ -3836,8 +3836,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 <span>$ {formatMonto(gastosCategoriaEHijoSubtotalArs)}</span>
               </div>
               {gastosCategoriaEHijoGeneralUsd.length > 0 && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? '#3A333A' : '#E2DDE0'}` }}>
-                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
+                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px dashed ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>💵 En USD</p>
                   {gastosCategoriaEHijoGeneralUsd.map(({ tipo, nombre, total }) => total > 0 && (
                     <React.Fragment key={`usd-${tipo}-${nombre}`}>
                       <div
@@ -3852,7 +3852,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       {tipo === 'categoria' && catGeneralSeleccionada === nombre && subcatsCatGeneralUsd.length > 0 && (
                         <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {subcatsCatGeneralUsd.map(([subcat, montoSub]) => (
-                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                            <div key={subcat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                               <span>{subcat}</span>
                               <span>U$S {formatMontoFull(montoSub)}</span>
                             </div>
@@ -3862,7 +3862,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       {tipo === 'hijo' && hijoGeneralSeleccionado === nombre && catsPorHijoGeneralUsd.length > 0 && (
                         <div style={{ padding: '4px 0 6px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {catsPorHijoGeneralUsd.map(([cat, montoCat]) => (
-                            <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>
+                            <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>
                               <span>{resolveIcon(cat)} {cat}</span>
                               <span>U$S {formatMontoFull(montoCat)}</span>
                             </div>
@@ -3896,7 +3896,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               )}
               {statementsSinResumen.length > 0 && (
                 <div>
-                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>
                     🕐 Próximos vencimientos (todavía no facturado)
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3973,12 +3973,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             {mesDropdownOpen && (
               <div
                 className="hide-scroll"
-                style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: '200px', maxHeight: '320px', overflowY: 'auto', padding: '6px 0' }}
+                style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: darkMode ? 'var(--m-2a232a)' : '#fff', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: '200px', maxHeight: '320px', overflowY: 'auto', padding: '6px 0' }}
                 onMouseLeave={() => setMesDropdownOpen(false)}
               >
                 <button
                   onClick={() => setSelectedMeses(selectedMeses.length === mesesDisponibles.length ? [] : [...mesesDisponibles])}
-                  style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: darkMode ? '#8C7B8C' : '#5C4F5C', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}` }}
+                  style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)', borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}` }}
                 >
                   {selectedMeses.length === mesesDisponibles.length ? '✕ Deseleccionar todos' : '✓ Seleccionar todos'}
                 </button>
@@ -3986,9 +3986,9 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <button
                     key={m}
                     onClick={() => toggleMes(m)}
-                    style={{ width: '100%', textAlign: 'left', padding: '7px 14px', background: selectedMeses.includes(m) ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#F0EDEC' : '#1d1d1f'), display: 'flex', alignItems: 'center', gap: '8px' }}
+                    style={{ width: '100%', textAlign: 'left', padding: '7px 14px', background: selectedMeses.includes(m) ? (darkMode ? 'var(--m-3a2f3a)' : 'var(--m-f3eef3)') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? '#F0EDEC' : '#1d1d1f'), display: 'flex', alignItems: 'center', gap: '8px' }}
                   >
-                    <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, background: selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
+                    <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, background: selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
                       {selectedMeses.includes(m) ? '✓' : ''}
                     </span>
                     {mesLabel(m)}
@@ -4047,7 +4047,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               <div style={styles.summaryCard}>
                 <p style={styles.summaryLabel}>Total Ingresos unificado (ARS)</p>
                 <p style={styles.summaryValue}>$ {formatMonto(ingresosEquivARS)}</p>
-                <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
+                <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '4px 0 0' }}>USD convertido al TC de cada movimiento</p>
               </div>
             )}
 
@@ -4168,10 +4168,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             {tcEfectivo > 0 && !esVistaIngresos && (
               <div style={styles.summaryCard}>
                 <p style={{ ...styles.summaryLabel, marginBottom: '8px' }}>Equiv. totales</p>
-                <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${darkMode ? '#4A3F4A' : '#C8C0CC'}`, overflow: 'hidden', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', borderRadius: '8px', border: `1.5px solid ${darkMode ? 'var(--m-4a3f4a)' : 'var(--m-c8c0cc)'}`, overflow: 'hidden', marginBottom: '10px' }}>
                   {['ARS', 'USD', ...(tcEUR > 0 ? ['EUR'] : [])].map(m => (
                     <button key={m} onClick={() => setEquivMoneda(m)}
-                      style={{ flex: 1, padding: '6px 0', border: 'none', background: monedaEquiv === m ? '#5C4F5C' : 'transparent', color: monedaEquiv === m ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                      style={{ flex: 1, padding: '6px 0', border: 'none', background: monedaEquiv === m ? 'var(--m-5c4f5c)' : 'transparent', color: monedaEquiv === m ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
                       {m}
                     </button>
                   ))}
@@ -4192,7 +4192,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 la calculadora "Reparto entre socios" (solo en las cuentas que la usan). */}
             {allAccounts && repartoSocios && !esVistaIngresos && (() => {
               const rp = repartoDelPeriodo({ config: repartoSocios, meses: selectedMeses, movimientos: mesTxs, cuentas: accounts, cotizacionesVivas: cotizacionesReparto })
-              const gris = darkMode ? '#9A8A9A' : '#6e6e73'
+              const gris = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
               return (
                 <div style={styles.summaryCard}>
                   <p style={styles.summaryLabel}>Socios</p>
@@ -4262,22 +4262,22 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {barData.map(b => (
               <div key={b.mes}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 2px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', gap: '8px' }}>
                 {editBarMes?.mes === b.mes ? (
                   <>
                     <input type="text" autoFocus value={editBarPeriodo} onChange={e => setEditBarPeriodo(e.target.value)}
                       placeholder="Ej: Junio 2026"
-                      style={{ flex: 1, minWidth: 0, padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                      style={{ flex: 1, minWidth: 0, padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       <select value={editBarMoneda} onChange={e => setEditBarMoneda(e.target.value)}
-                        style={{ padding: '3px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
+                        style={{ padding: '3px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
                         <option value="ARS">$</option>
                         <option value="USD">U$S</option>
                       </select>
                       <input type="text" inputMode="decimal" autoComplete="off" value={editBarValor} onChange={e => setEditBarValor(e.target.value)}
-                        style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                        style={{ width: '100px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
                       <button onClick={() => guardarTotalFacturadoMes(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
-                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
+                      <button onClick={() => setEditBarMes(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize: '13px' }}>✕</button>
                     </span>
                   </>
                 ) : (
@@ -4298,7 +4298,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       <button onClick={() => { setEditBarMes(b); setEditBarValor(String(Math.round(b.total))); setEditBarPeriodo(b.mes); setEditBarMoneda(b.moneda) }} style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '12px' }}>✏️</button>
                       {confirmDeleteMes === b.mes ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <button onClick={() => setConfirmDeleteMes(null)} style={{ padding: '3px 8px', background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
+                          <button onClick={() => setConfirmDeleteMes(null)} style={{ padding: '3px 8px', background: 'none', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
                           <button onClick={() => eliminarMesFacturado(b)} style={{ padding: '3px 8px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontFamily: '"Montserrat", sans-serif' }}>Sí, borrar</button>
                         </span>
                       ) : (
@@ -4311,7 +4311,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               {mesDesplegado === b.mes && b.resumenes.length > 1 && (
                 <div style={{ padding: '2px 2px 8px 16px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   {b.resumenes.map(r => (
-                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.nombre_archivo || undefined}>
                         {cierreDe(r) ? `Cierra ${formatFecha(cierreDe(r))}` : 'Sin fecha de cierre'}
                         {r.nombre_archivo ? ` · ${r.nombre_archivo}` : ' · cargado a mano'}
@@ -4323,7 +4323,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         </span>
                         {confirmDeleteResumen === r.id ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <button onClick={() => setConfirmDeleteResumen(null)} style={{ padding: '2px 7px', background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
+                            <button onClick={() => setConfirmDeleteResumen(null)} style={{ padding: '2px 7px', background: 'none', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif' }}>No</button>
                             <button onClick={() => borrarResumenSuelto(r.id)} style={{ padding: '2px 7px', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '10px', fontFamily: '"Montserrat", sans-serif' }}>Sí, borrar este</button>
                           </span>
                         ) : (
@@ -4341,16 +4341,16 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
               <input type="text" autoFocus value={nuevoMes.periodo} onChange={e => setNuevoMes({ ...nuevoMes, periodo: e.target.value })}
                 placeholder="Ej: Agosto 2026"
-                style={{ flex: 1, minWidth: '120px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                style={{ flex: 1, minWidth: '120px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
               <select value={nuevoMes.moneda} onChange={e => setNuevoMes({ ...nuevoMes, moneda: e.target.value })}
-                style={{ padding: '5px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
+                style={{ padding: '5px 4px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }}>
                 <option value="ARS">$</option>
                 <option value="USD">U$S</option>
               </select>
               <input type="text" inputMode="decimal" autoComplete="off" value={nuevoMes.valor} onChange={e => setNuevoMes({ ...nuevoMes, valor: e.target.value })}
-                placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
+                placeholder="Monto" style={{ width: '100px', padding: '5px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px' }} />
               <button onClick={agregarMesFacturado} style={{ background: 'none', border: 'none', cursor: 'pointer', color: sem.teal, fontSize: '13px' }}>✓</button>
-              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? '#9A8A9A' : '#75757a', fontSize: '13px' }}>✕</button>
+              <button onClick={() => { setShowAddMes(false); setNuevoMes({ periodo: '', valor: '', moneda: 'ARS' }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize: '13px' }}>✕</button>
             </div>
           ) : (
             <button onClick={() => setShowAddMes(true)} style={{ marginTop: '8px', background: 'none', border: 'none', cursor: 'pointer', color: BAR_COLOR, fontSize: '12px', padding: '4px 2px', textAlign: 'left' }}>+ Agregar mes</button>
@@ -4362,7 +4362,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <div style={{ textAlign: 'center', padding: '48px 24px' }}>
           <p style={{ fontSize: '32px', marginBottom: '12px' }}>💰</p>
           <p style={{ fontSize: '16px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', marginBottom: '8px' }}>Todavía no hay ingresos registrados</p>
-          <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
+          <p style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', marginBottom: '24px' }}>Registrá tu primer ingreso para ver los gráficos y totales</p>
         </div>
       )}
 
@@ -4413,7 +4413,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                             <Cell key={idx} fill={getChartColor(entry.name)} stroke="none" />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                        <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                       </PieChart>
                     </ResponsiveContainer>
                     {/* Sin paddingTop en desktop: existía para compensar la
@@ -4455,14 +4455,14 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   return (
                     <ResponsiveContainer width="100%" height={chartH}>
                       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-                        <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                        <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                         <YAxis type="category" dataKey="name" width={isMobile ? 90 : 130}
                           tickFormatter={(name) => {
                             const max = isMobile ? 13 : 19
                             return name && name.length > max ? `${name.slice(0, max - 1)}…` : name
                           }}
                           tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
-                        <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                        <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                           {data.map((entry, idx) => (
                             <Cell key={idx} fill={getChartColor(entry.name)} />
@@ -4479,11 +4479,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 {/* Selector de tipo de gráfico — solo Donut y Barras, compartido entre
                     los dos gráficos cuando se muestran los dos a la vez. */}
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
+                  <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
                   {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
                     <button key={opt.type}
                       onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
-                      style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                      style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${effectiveChartType === opt.type ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: effectiveChartType === opt.type ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'transparent', color: effectiveChartType === opt.type ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
                       {opt.label}
                     </button>
                   ))}
@@ -4500,7 +4500,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         // Línea sutil entre los dos donuts para que no se lean como un
                         // solo bloque — mismo color de borde que el resto de la app.
                         renderBubbleCard(personaBubbleData, 'Gastos por persona', !isMobile ? {
-                          borderLeft: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, paddingLeft: '20px'
+                          borderLeft: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, paddingLeft: '20px'
                         } : undefined),
                       ]
                     : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
@@ -4509,10 +4509,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             )
           })()}
           {selectedMeses.length > 0 && displayChartData.length === 0 && !esVistaIngresos && (
-            <p style={{color: darkMode ? '#9A8A9A' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
+            <p style={{color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin gastos en los meses seleccionados.</p>
           )}
           {selectedMeses.length > 0 && displayChartData.length === 0 && esVistaIngresos && (
-            <p style={{color: darkMode ? '#9A8A9A' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
+            <p style={{color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', fontSize:'14px', marginTop:'16px'}}>Sin ingresos en el mes seleccionado.</p>
           )}
         </div>
       )}
@@ -4523,7 +4523,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <input
           style={{
             flex: '1 1 260px', padding: '10px 14px', borderRadius: '12px',
-            border: `1.5px solid ${darkMode ? '#3A333A' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
+            border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
             boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f'
           }}
           placeholder="🔍 Buscar por nombre, cuenta, categoría, fecha, monto..."
@@ -4534,7 +4534,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           <select
             style={{
               flex: '0 1 200px', padding: '10px 14px', borderRadius: '12px',
-              border: `1.5px solid ${darkMode ? '#3A333A' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
+              border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : '#e0e0e0'}`, fontSize: '14px', outline: 'none',
               boxSizing: 'border-box', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f'
             }}
             value={filtroCuenta}
@@ -4603,26 +4603,26 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal'}}>
                         {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                       </td>
-                      <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
+                      <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                     </tr>
                     {expandido && (
                       <tr style={styles.tr}>
-                        <td colSpan={numColsSinId} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                        <td colSpan={numColsSinId} style={{ ...styles.td, backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                             <div style={{ flexBasis: '100%' }}>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Detalle original</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Detalle original</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.detalle || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                              <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
                             </div>
                           </div>
@@ -4685,7 +4685,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             ))}
             <button
               onClick={() => setFiltrosCol({})}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline', color: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }}
             >
               Limpiar todo
             </button>
@@ -4727,7 +4727,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         {hayMasMovimientos && (
           <button
             onClick={() => setVerTodosMovimientos(v => !v)}
-            style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? '#C0B0C0' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif' }}
+            style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c4f5c)', fontFamily: '"Montserrat", sans-serif' }}
           >
             {/* Se cuentan FILAS restantes, no transacciones: un gasto dividido
                 entre hijos ocupa una sola fila, así que decir "N transacciones"
@@ -4745,7 +4745,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <div style={{ marginBottom: '24px' }}>
           <button
             onClick={() => setShowNeutros(v => !v)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: darkMode ? '#6A5A6A' : '#9e9e9e', fontFamily: '"Montserrat", sans-serif', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: darkMode ? 'var(--m-6a5a6a)' : '#9e9e9e', fontFamily: '"Montserrat", sans-serif', padding: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             {showNeutros ? '▾' : '▸'} Movimientos neutros ({txNeutras.length}) — pagos, transferencias, inversiones
           </button>
@@ -4804,33 +4804,33 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                           {colVisible.cuenta && (
                             <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.accounts?.nombre || '—'}</span></td>
                           )}
-                          <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? '#6A5A6A' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
+                          <td style={{...styles.td, textAlign:'right', whiteSpace: 'nowrap', wordBreak: 'normal', color: darkMode ? 'var(--m-6a5a6a)' : '#9e9e9e'}} title={tcTooltipDe(tx, tcMap, tipoCambio)}>
                             {monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
                           </td>
-                          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
+                          <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                         </tr>
                         {expandido && (
                           <tr style={styles.tr}>
-                            <td colSpan={numColsNeutros} style={{ ...styles.td, backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                            <td colSpan={numColsNeutros} style={{ ...styles.td, backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', padding: '2px 2px 10px' }}>
                                 <div style={{ flexBasis: '100%' }}>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Nombre</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.nombre || tx.detalle || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Categoría</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Categoría</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.categories?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Subcategoría</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Subcategoría</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.subcategories?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Cuenta</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.accounts?.nombre || '—'}</p>
                                 </div>
                                 <div>
-                                  <p style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
+                                  <p style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, margin: '0 0 2px' }}>Moneda</p>
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
                                 </div>
                               </div>
@@ -4863,14 +4863,14 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: darkMode ? '#2A272A' : 'white', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', margin: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.20)', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 4px' }}>🔀 Dividir gasto</h3>
-            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
-            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? '#9A8A9A' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
+            <p style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '0 0 16px' }}>{repartoModalTx.nombre || repartoModalTx.detalle} · {monedaSymbol(repartoModalTx.moneda)} {formatMontoFull(repartoModalTx.monto)}</p>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel, margin: '0 0 8px' }}>Participantes</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: repartoModalSeleccion.length > 0 ? '12px' : '4px' }}>
               {opcionesParticipantesReparto.map(op => {
                 const activo = repartoModalSeleccion.some(sel => sel.key === op.key)
                 return (
                   <button key={op.key} type="button" onClick={() => toggleParticipanteReparto(op)}
-                    style={{ padding: '6px 14px', borderRadius: '20px', border: `1.5px solid ${activo ? '#5C4F5C' : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: activo ? '#5C4F5C' : 'transparent', color: activo ? 'white' : (darkMode ? '#F0EDEC' : '#1d1d1f'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400' }}>
+                    style={{ padding: '6px 14px', borderRadius: '20px', border: `1.5px solid ${activo ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: activo ? 'var(--m-5c4f5c)' : 'transparent', color: activo ? 'white' : (darkMode ? '#F0EDEC' : '#1d1d1f'), cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: activo ? '600' : '400' }}>
                     {op.tipo === 'yo' ? '🙋 Vos' : `👧 ${op.nombre}`}
                   </button>
                 )
@@ -4886,7 +4886,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                     <span style={{ flex: 1, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{sel.nombre}</span>
                     <input type="number" min="0" max="100" step="1" value={sel.porcentaje}
                       onChange={e => editarPorcentajeModalReparto(sel.key, e.target.value)}
-                      style={{ width: '70px', padding: '6px 8px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '13px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }} />
+                      style={{ width: '70px', padding: '6px 8px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '13px', outline: 'none', backgroundColor: darkMode ? '#1C1A1C' : '#fafafa', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box' }} />
                     <span style={{ fontSize: '13px', color: muted }}>%</span>
                   </div>
                 ))}
@@ -4904,10 +4904,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 )}
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setRepartoModalTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                <button type="button" onClick={() => setRepartoModalTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid var(--m-5c4f5c)', color: 'var(--m-5c4f5c)', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
                   Cancelar
                 </button>
-                <button type="button" onClick={guardarReparto} disabled={!sumaModalRepartoValida} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: sumaModalRepartoValida ? '#5C4F5C' : '#bbb', color: 'white', cursor: sumaModalRepartoValida ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+                <button type="button" onClick={guardarReparto} disabled={!sumaModalRepartoValida} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: sumaModalRepartoValida ? 'var(--m-5c4f5c)' : '#bbb', color: 'white', cursor: sumaModalRepartoValida ? 'pointer' : 'not-allowed', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
                   Guardar
                 </button>
               </div>
@@ -4939,11 +4939,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             <h3 style={{ fontSize: '17px', fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 8px' }}>
               🗑️ {deleteConfirmTx.tipo === 'ingreso' ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'}
             </h3>
-            <p style={{ fontSize: '13px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '0 0 20px' }}>
+            <p style={{ fontSize: '13px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '0 0 20px' }}>
               {deleteConfirmTx.nombre || deleteConfirmTx.detalle} · {monedaSymbol(deleteConfirmTx.moneda)} {formatMontoFull(deleteConfirmTx.monto)}
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setDeleteConfirmTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid #5C4F5C', color: '#5C4F5C', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
+              <button type="button" onClick={() => setDeleteConfirmTx(null)} style={{ padding: '10px 18px', borderRadius: '10px', border: '2px solid var(--m-5c4f5c)', color: 'var(--m-5c4f5c)', background: 'transparent', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
                 Cancelar
               </button>
               <button type="button" onClick={confirmarDeleteTx} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', backgroundColor: '#c0392b', color: 'white', cursor: 'pointer', fontSize: '14px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' }}>
@@ -4968,14 +4968,14 @@ export default React.memo(AccountDetail)
 
 const getStyles = (dark, mobile) => {
   const sem = semaforo(dark)
-  const p = dark ? '#8C7B8C' : '#5C4F5C'
+  const p = dark ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)'
   const panel = dark ? '#2A272A' : 'white'
   const txt = dark ? '#F0EDEC' : '#1d1d1f'
-  const muted = dark ? '#9A8A9A' : '#6e6e73'
-  const border = dark ? '#3A333A' : '#E2DDE0'
+  const muted = dark ? 'var(--m-9a8a9a)' : '#6e6e73'
+  const border = dark ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const cardBg = dark ? '#1A181A' : '#F0EDEC'
   const tdBorder = dark ? '#2A272A' : '#f0f2f8'
-  const hdrBorder = dark ? '#3A333A' : '#EDE8EC'
+  const hdrBorder = dark ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'
   const shadow = dark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 12px rgba(92,79,92,0.08)'
   return {
     loading: { padding: '24px', color: muted, fontSize: '14px' },
@@ -5022,7 +5022,7 @@ const getStyles = (dark, mobile) => {
       cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
       overflow: 'hidden', textOverflow: 'ellipsis'
     },
-    sortIcon: { fontSize: '10px', color: dark ? '#8A7A8A' : '#75757a' },
+    sortIcon: { fontSize: '10px', color: dark ? 'var(--m-8a7a8a)' : '#75757a' },
     filtroColAccion: {
       flex: 1, padding: '4px 6px', borderRadius: '6px', border: `1px solid ${hdrBorder}`,
       background: 'none', cursor: 'pointer', fontSize: '11px', color: muted,
@@ -5030,7 +5030,7 @@ const getStyles = (dark, mobile) => {
     },
     filtroColChip: {
       display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px',
-      borderRadius: '999px', border: `1px solid ${p}`, background: dark ? '#2E262E' : '#F4EFF4',
+      borderRadius: '999px', border: `1px solid ${p}`, background: dark ? 'var(--m-2e262e)' : 'var(--m-f4eff4)',
       fontSize: '11px', color: txt, fontFamily: '"Montserrat", sans-serif',
     },
     td: { padding: mobile ? '6px 8px' : '10px 12px', borderBottom: `1px solid ${tdBorder}`, verticalAlign: 'middle', color: txt, overflowWrap: 'break-word', wordBreak: 'break-word' },
@@ -5047,7 +5047,7 @@ const getStyles = (dark, mobile) => {
     accionBtn: { flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${border}`, backgroundColor: 'transparent', color: muted, cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' },
     accionBtnDanger: { border: `1px solid ${sem.negativo}`, color: sem.negativo },
     saveEditBtn: { padding: '3px 8px', backgroundColor: '#4a9e7a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
-    cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? '#3A333A' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
+    cancelEditBtn: { padding: '3px 8px', backgroundColor: dark ? 'var(--m-3a333a)' : '#e0e0e0', color: dark ? '#F0EDEC' : '#3a3a3c', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
     exportBtn: { padding: '7px 14px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', fontFamily: '"Montserrat", sans-serif' },
     stmtHistory: { marginBottom: '24px' },
     stmtHistoryTitle: { fontSize: '13px', fontWeight: '500', color: muted, margin: '0 0 10px 0', ...rotuloLabel },

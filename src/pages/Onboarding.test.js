@@ -60,7 +60,7 @@ test('guarda las respuestas y deja creadas las cuentas, la categoría de mascota
   expect(insertsDe('children')).toEqual([{ user_id: 'u1', nombre: 'Amelia' }])
   const prefs = Object.fromEntries(mockDb.upserts.filter(u => u.tabla === 'user_rules')
     .map(u => [u.fila.texto_original, JSON.parse(u.fila.nombre_asignado)]))
-  expect(prefs).toEqual({ __pref__cuota_alimentaria_activa: false, __pref__tiene_auto: false, __pref__tiene_mascotas: true })
+  expect(prefs).toEqual({ __pref__modo: 'mom', __pref__cuota_alimentaria_activa: false, __pref__tiene_auto: false, __pref__tiene_mascotas: true })
 
   expect(insertsDe('categories')).toEqual([expect.objectContaining({ user_id: 'u1', nombre: 'Mascotas', tipo: 'gasto' })])
   expect(insertsDe('subcategories').map(s => s.nombre)).toEqual(['Veterinaria', 'Alimento', 'Peluquería', 'Accesorios'])
@@ -85,6 +85,21 @@ test('con una sola cuenta de banco, la tarjeta ya queda pagándose desde ahí', 
   const caja = mockDb.inserts.find(i => i.tabla === 'accounts' && [].concat(i.filas).some(f => f.nombre === 'Caja de Ahorro Santander'))
   expect(caja).toBeTruthy()
   expect(cuentas.find(a => a.nombre === 'Mastercard Santander').cuenta_pago_id).toMatch(/^accounts-/)
-  // Sin contestar auto ni mascotas no se guarda nada de eso.
-  expect(mockDb.upserts.filter(u => u.tabla === 'user_rules')).toEqual([])
+  // Sin contestar auto ni mascotas no se guarda nada de eso: solo el modo, que siempre tiene uno elegido.
+  expect(mockDb.upserts.filter(u => u.tabla === 'user_rules').map(u => u.fila.texto_original)).toEqual(['__pref__modo'])
+})
+
+test("elegir Dad's Assist cambia la app en el momento y queda guardado", async () => {
+  render(<Onboarding />)
+  fireEvent.click(screen.getByRole('button', { name: /Dad's Assist/ }))
+  expect(document.documentElement.dataset.modo).toBe('dad')
+  expect(document.title).toBe("Dad's Assist Finance")
+  fireEvent.click(screen.getByRole('button', { name: 'Comenzar →' }))
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalled())
+  const modo = mockDb.upserts.find(u => u.fila.texto_original === '__pref__modo')
+  expect(JSON.parse(modo.fila.nombre_asignado)).toBe('dad')
+  // Para la próxima: que el login ya salga como Dad's Assist.
+  expect(localStorage.getItem('modo_ma')).toBe('dad')
+  localStorage.removeItem('modo_ma')
+  document.documentElement.dataset.modo = 'mom'
 })
