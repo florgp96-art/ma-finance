@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
-import { filtrarYaCargados } from '../lib/duplicados'
+import { filtrarYaCargados, esElMismoPago } from '../lib/duplicados'
 import { sentidoDelExtracto } from '../lib/saldos'
 import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
 import { hayColumnaSentido } from '../lib/columnaSentido'
@@ -2082,7 +2082,7 @@ export default function Dashboard() {
         supabase.from('transactions')
           // nombre/detalle hacen falta para comparar de qué compra se trata: sin
           // eso, dos compras distintas del mismo monto se marcaban como la misma.
-          .select('id, fecha, monto, moneda, account_id, nombre, detalle')
+          .select('id, fecha, monto, moneda, account_id, nombre, detalle, tipo')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
@@ -2130,7 +2130,22 @@ export default function Dashboard() {
 
       const dupes = new Set()
       const selec = new Set()
+      // Pagos de la tarjeta ("Su Pago"): se reconocen con la misma regla que usa el
+      // guardado (ver esElMismoPago), sin mirar el nombre, porque el que se cargó a
+      // mano casi nunca se llama como lo escribe el banco. Cada pago ya cargado tapa
+      // uno solo del PDF, igual que al guardar. Si no aparece por acá, sigue
+      // corriendo el chequeo general de abajo.
+      const pagosYaCargados = (txExistentes || []).filter(e => e.account_id === accountId && e.tipo === 'neutro')
       transacciones.forEach((t, i) => {
+        if (t.tipo === 'neutro') {
+          const cand = { account_id: accountId, tipo: 'neutro', fecha: t.fecha, moneda: t.moneda, monto: Math.abs(Number(t.monto)) }
+          const j = pagosYaCargados.findIndex(e => esElMismoPago(cand, e))
+          if (j !== -1) {
+            pagosYaCargados.splice(j, 1)
+            dupes.add(i)
+            return
+          }
+        }
         const esCuota = t.cuotas_total > 1
         const esIngreso = t.tipo === 'ingreso' || t.es_credito
         const cuentaEsperada = (esIngreso && ingresosAcc) ? ingresosAcc.id : accountId

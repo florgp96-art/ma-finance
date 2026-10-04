@@ -36,6 +36,14 @@ const coincide = (cand, e) => {
   return norm(e.fecha) === norm(cand.fecha) && normDet(e.detalle) === normDet(cand.detalle)
 }
 
+// ¿Este pago del PDF es uno que ya está cargado? Lo usa la vista previa de la
+// importación para tachar la fila, con la MISMA regla con la que después el
+// guardado lo descarta. La vista previa tenía su propio chequeo, que además exigía
+// que el nombre se pareciera: "Su Pago" contra "Pago Tarjeta Mastercard" se mostraba
+// como nuevo y marcado para importar —aunque al guardar se omitía igual—, y parecía
+// que la app no se daba cuenta de que ese pago ya estaba.
+export const esElMismoPago = (cand, e) => esPago(cand) && coincide(cand, e)
+
 // Devuelve los candidatos que NO están cargados todavía, y cuántos se omitieron.
 //
 // Cada fila ya cargada tapa como máximo UN candidato. Antes esto era un `.some()`,
