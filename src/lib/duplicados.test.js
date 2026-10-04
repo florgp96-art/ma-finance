@@ -1,4 +1,4 @@
-const { filtrarYaCargados, esElMismoPago } = require('./duplicados')
+const { filtrarYaCargados, esElMismoPago, esElMismoGasto } = require('./duplicados')
 
 const CARD = 'mastercard'
 const pago = (fecha, monto, detalle, extra = {}) =>
@@ -166,5 +166,30 @@ describe('esElMismoPago — lo que la vista previa tacha como ya cargado', () =>
   })
   test('solo aplica a pagos: un gasto del PDF sigue el chequeo general', () => {
     expect(esElMismoPago(gasto('2026-09-01', 5000, 'CAFE'), gasto('2026-09-01', 5000, 'CAFE'))).toBe(false)
+  })
+})
+
+// La nafta cargada a mano entraba otra vez con el nombre del banco: mismo día,
+// mismo monto, nombre distinto. La vista previa ahora la tacha.
+describe('esElMismoGasto — mismo día y monto, aunque se llame distinto', () => {
+  test('la nafta cargada a mano reconoce la línea del resumen', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF 4566 FULL'), gasto('2026-09-12', 45230.5, 'Nafta'))).toBe(true)
+  })
+  test('"MERPAGO*PERAZOLI" reconoce "Perazoli Destapa Cañeria"', () => {
+    expect(esElMismoGasto(gasto('2026-09-05', 23958.1, 'MERPAGO*PERAZOLI'), gasto('2026-09-05', 23958.1, 'Perazoli Destapa Cañeria'))).toBe(true)
+  })
+  test('otro día no: sin el nombre, la fecha tiene que ser la misma', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF'), gasto('2026-09-13', 45230.5, 'Nafta'))).toBe(false)
+  })
+  test('un centavo de diferencia ya es otro gasto', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF'), gasto('2026-09-12', 45230.49, 'Nafta'))).toBe(false)
+  })
+  test('otra moneda u otra cuenta no', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 20, 'APPLE', { moneda: 'USD' }), gasto('2026-09-12', 20, 'Apple'))).toBe(false)
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), gasto('2026-09-12', 5000, 'Nafta', { account_id: 'visa' }))).toBe(false)
+  })
+  test('un pago o un ingreso del mismo monto no es el mismo gasto', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), pago('2026-09-12', 5000, 'Pago'))).toBe(false)
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), gasto('2026-09-12', 5000, 'Reintegro', { tipo: 'ingreso' }))).toBe(false)
   })
 })

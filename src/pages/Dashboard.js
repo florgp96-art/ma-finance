@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
-import { filtrarYaCargados, esElMismoPago } from '../lib/duplicados'
+import { filtrarYaCargados, esElMismoPago, esElMismoGasto } from '../lib/duplicados'
 import { sentidoDelExtracto } from '../lib/saldos'
 import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
 import { hayColumnaSentido } from '../lib/columnaSentido'
@@ -252,7 +252,10 @@ export default function Dashboard() {
   const [separarAdicionales, setSepararAdicionales] = useState(null)
   const [targetAccount, setTargetAccount] = useState(null)
   const [pdfTxSelections, setPdfTxSelections] = useState(new Set())
-  const [pdfTxDuplicadas, setPdfTxDuplicadas] = useState(new Set())
+  // Índice de la fila del PDF → nombre con el que ya está cargada (o null si se
+  // llama igual). Un Map y no un Set: cuando el gasto ya cargado tiene otro nombre,
+  // la fila lo muestra, para que se vea contra qué se la dio por repetida.
+  const [pdfTxDuplicadas, setPdfTxDuplicadas] = useState(new Map())
 
   // Paso identificar: transacciones sin clasificar post-carga
   const [txSinIdentificar, setTxSinIdentificar] = useState([])
@@ -2010,7 +2013,7 @@ export default function Dashboard() {
       }
 
       if (result.tipo_documento === 'banco') {
-        setPdfTxDuplicadas(new Set())
+        setPdfTxDuplicadas(new Map())
         setPdfTxSelections(new Set(result.transacciones.map((_, i) => i)))
         setStep('select_account_banco')
       } else {
@@ -2082,7 +2085,7 @@ export default function Dashboard() {
         supabase.from('transactions')
           // nombre/detalle hacen falta para comparar de qué compra se trata: sin
           // eso, dos compras distintas del mismo monto se marcaban como la misma.
-          .select('id, fecha, monto, moneda, account_id, nombre, detalle, tipo')
+          .select('id, fecha, monto, moneda, account_id, nombre, detalle, tipo, cuotas_total')
           .eq('user_id', user.id)
           .in('account_id', accountIds)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
@@ -2128,7 +2131,7 @@ export default function Dashboard() {
         return a === b || a.includes(b) || b.includes(a)
       }
 
-      const dupes = new Set()
+      const dupes = new Map()
       const selec = new Set()
       // Pagos de la tarjeta ("Su Pago"): se reconocen con la misma regla que usa el
       // guardado (ver esElMismoPago), sin mirar el nombre, porque el que se cargó a
@@ -2136,20 +2139,24 @@ export default function Dashboard() {
       // uno solo del PDF, igual que al guardar. Si no aparece por acá, sigue
       // corriendo el chequeo general de abajo.
       const pagosYaCargados = (txExistentes || []).filter(e => e.account_id === accountId && e.tipo === 'neutro')
+      // Gastos sueltos (no cuotas) ya cargados en la cuenta, para el último chequeo:
+      // mismo día y monto con otro nombre (ver esElMismoGasto). Cada uno tapa una
+      // sola fila del PDF.
+      const gastosYaCargados = (txExistentes || []).filter(e => e.account_id === accountId && e.tipo === 'gasto' && !(e.cuotas_total > 1))
       transacciones.forEach((t, i) => {
         if (t.tipo === 'neutro') {
           const cand = { account_id: accountId, tipo: 'neutro', fecha: t.fecha, moneda: t.moneda, monto: Math.abs(Number(t.monto)) }
           const j = pagosYaCargados.findIndex(e => esElMismoPago(cand, e))
           if (j !== -1) {
             pagosYaCargados.splice(j, 1)
-            dupes.add(i)
+            dupes.set(i, null)
             return
           }
         }
         const esCuota = t.cuotas_total > 1
         const esIngreso = t.tipo === 'ingreso' || t.es_credito
         const cuentaEsperada = (esIngreso && ingresosAcc) ? ingresosAcc.id : accountId
-        const isDupe = txExistentes?.some(e => {
+        const yaCargada = txExistentes?.find(e => {
           if (e.account_id !== cuentaEsperada) return false
           if ((e.moneda || 'ARS').trim().toUpperCase() !== (t.moneda || 'ARS').trim().toUpperCase()) return false
           const montoMatch = Math.abs(Math.abs(Number(e.monto)) - Math.abs(Number(t.monto))) < 0.01
@@ -2179,15 +2186,30 @@ export default function Dashboard() {
           // original si el corte de ciclo cae distinto entre resúmenes.
           return fechaCercana(e.fecha, t.fecha, 7)
         })
-        if (isDupe) dupes.add(i)
-        else selec.add(i)
+        if (yaCargada) {
+          const k = gastosYaCargados.indexOf(yaCargada)
+          if (k !== -1) gastosYaCargados.splice(k, 1)
+          dupes.set(i, null)
+          return
+        }
+        // Mismo gasto cargado con otro nombre: el mismo día y por el mismo monto.
+        if (!esCuota && !esIngreso && t.tipo !== 'neutro') {
+          const cand = { account_id: accountId, tipo: 'gasto', fecha: t.fecha, moneda: (t.moneda || 'ARS').trim().toUpperCase(), monto: Math.abs(Number(t.monto)) }
+          const j = gastosYaCargados.findIndex(e => esElMismoGasto(cand, e))
+          if (j !== -1) {
+            const [e] = gastosYaCargados.splice(j, 1)
+            dupes.set(i, e.nombre || e.detalle || null)
+            return
+          }
+        }
+        selec.add(i)
       })
       setPdfTxDuplicadas(dupes)
       setPdfTxSelections(selec)
     } catch {
       const allIdx = new Set(transacciones.map((_, i) => i))
       setPdfTxSelections(allIdx)
-      setPdfTxDuplicadas(new Set())
+      setPdfTxDuplicadas(new Map())
     }
   }
 
@@ -5032,6 +5054,7 @@ export default function Dashboard() {
                 <div className="hide-scroll" style={{ ...styles.transactionsList, maxHeight: '320px', overflowY: 'auto', scrollbarWidth: 'none' }}>
                   {statementData.transacciones.map((t, i) => {
                     const isDupe = pdfTxDuplicadas.has(i)
+                    const cargadaComo = pdfTxDuplicadas.get(i)
                     const isSelected = pdfTxSelections.has(i)
                     return (
                       <div key={i}
@@ -5049,7 +5072,7 @@ export default function Dashboard() {
                           <p style={{ ...styles.transactionName, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             {t.nombre_limpio || t.nombre_original}
                             {t.nombre_limpio === t.nombre_original && t.tipo !== 'neutro' && <span style={{ textDecoration: 'none' }}>❓</span>}
-                            {isDupe && <span style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px' }}>ya cargada</span>}
+                            {isDupe && <span title={cargadaComo || undefined} style={{ textDecoration: 'none', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>{cargadaComo ? `ya cargada como "${cargadaComo}"` : 'ya cargada'}</span>}
                           </p>
                           <p style={styles.transactionDetail}>{t.fecha} · {t.categoria_sugerida}{t.cuotas_total > 1 && ` · Cuota ${t.cuota_numero}/${t.cuotas_total}`}{separarAdicionales && t.titular && ` · ${t.titular}`}</p>
                         </div>
