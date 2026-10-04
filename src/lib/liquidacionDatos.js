@@ -61,3 +61,26 @@ export const actualizarDia = (id, cambios) =>
 
 export const borrarDia = (id) =>
   supabase.from('liquidacion_dias').delete().eq('id', id)
+
+// Ingresos a futuro (ver lib/ingresosFuturos.js). Se leen todos los de la persona, no
+// solo los de una liquidación: un mismo ingreso de una cuenta no puede tachar dos
+// esperados de liquidaciones distintas.
+const COLUMNAS_INGRESO_FUTURO = 'id, liquidacion_id, concepto, monto, moneda, fecha, cobrado_a_mano, created_at'
+
+export const leerIngresosFuturos = (userId) =>
+  supabase.from('ingresos_futuros').select(COLUMNAS_INGRESO_FUTURO).eq('user_id', userId).order('fecha').order('id')
+
+export const crearIngresoFuturo = ({ id, user_id, liquidacion_id, concepto, monto, moneda, fecha }) =>
+  supabase.from('ingresos_futuros').insert({ id, user_id, liquidacion_id, concepto, monto, moneda, fecha })
+    .select(COLUMNAS_INGRESO_FUTURO).single()
+
+export const actualizarIngresoFuturo = (id, cambios) =>
+  supabase.from('ingresos_futuros').update(cambios).eq('id', id)
+
+export const borrarIngresoFuturo = (id) =>
+  supabase.from('ingresos_futuros').delete().eq('id', id)
+
+// Los ingresos cargados en las cuentas desde `desde`, para tachar los que ya entraron.
+export const leerIngresosDeCuentas = (userId, desde) =>
+  supabase.from('transactions').select('id, tipo, fecha, nombre, detalle, tag, monto, moneda, pendiente, accounts(nombre)')
+    .eq('user_id', userId).eq('tipo', 'ingreso').gte('fecha', desde).order('fecha')
