@@ -1,6 +1,7 @@
 const {
   signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
   saldoTotal, tieneSaldo, monedaDeLaCuenta, sentidoPorTipo, sentidoDelExtracto,
+  pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -661,5 +662,47 @@ describe('un movimiento con fecha posterior al día en que se puso el saldo', ()
       accountId: CA,
     })
     expect(r.saldo).toBe(470000)
+  })
+})
+
+// Los pagos de tarjeta viven en la cuenta de la tarjeta: la caja de ahorro de la que
+// salió la plata no los listaba nunca en sus "Movimientos neutros".
+describe('pagos de tarjeta que se listan en la cuenta que los paga', () => {
+  const CU = 'caja-usd'
+  const mc = { id: 'mc', nombre: 'Mastercard Galicia', tipo: 'credito', cuenta_pago_id: CA, cuenta_pago_id_usd: CU }
+  const amex = { id: 'amex', nombre: 'American Express', tipo: 'credito' }
+  const accounts = [{ id: CA, tipo: 'debito' }, { id: CU, tipo: 'debito' }, mc, amex]
+  const pagoPesos = { id: 'p1', account_id: 'mc', tipo: 'neutro', fecha: '2026-10-03', monto: 500000, moneda: 'ARS', nombre: 'Pago Mastercard' }
+  const pagoDolares = { id: 'p2', account_id: 'mc', tipo: 'neutro', fecha: '2026-10-03', monto: 23.6, moneda: 'USD', nombre: 'Pago tarjeta' }
+  const pagoAmex = { id: 'p3', account_id: 'amex', tipo: 'neutro', fecha: '2026-10-03', monto: 1000, moneda: 'ARS', nombre: 'Pago Amex' }
+  const todos = [pagoPesos, pagoDolares, pagoAmex]
+
+  test('qué tarjetas se pagan desde una cuenta, en pesos o en dólares', () => {
+    expect(accounts.filter(esTarjetaQueSePagaDesde(CA)).map(a => a.id)).toEqual(['mc'])
+    expect(accounts.filter(esTarjetaQueSePagaDesde(CU)).map(a => a.id)).toEqual(['mc'])
+    expect(accounts.filter(esTarjetaQueSePagaDesde(null))).toEqual([])
+  })
+
+  test('a la caja en pesos le tocan los pagos en pesos, y a la de dólares los de dólares', () => {
+    expect(pagosDeTarjetaDeLaCuenta({ transactions: todos, accounts, accountId: CA }).map(t => t.id)).toEqual(['p1'])
+    expect(pagosDeTarjetaDeLaCuenta({ transactions: todos, accounts, accountId: CU }).map(t => t.id)).toEqual(['p2'])
+  })
+
+  test('no tiene ventana: lista también los pagos viejos', () => {
+    const viejo = { ...pagoPesos, id: 'p0', fecha: '2025-01-10' }
+    expect(pagosDeTarjetaDeLaCuenta({ transactions: [viejo], accounts, accountId: CA }).map(t => t.id)).toEqual(['p0'])
+  })
+
+  // La línea "PAGO TARJETA" del extracto ya está en la lista de la caja: el mismo pago
+  // dos veces haría pensar que se pagó dos veces.
+  test('el pago que el extracto ya trajo como su propia línea no se repite', () => {
+    const lineaDelExtracto = { id: 'b1', account_id: CA, tipo: 'neutro', fecha: '2026-10-05', monto: 500000, moneda: 'ARS', nombre: 'PAGO TARJETA MASTERCARD' }
+    expect(pagosDeTarjetaDeLaCuenta({ transactions: [...todos, lineaDelExtracto], accounts, accountId: CA })).toEqual([])
+  })
+
+  // Antes el saldo de una caja en dólares no se enteraba de los pagos en dólares.
+  test('el saldo de la caja en dólares resta los pagos en dólares', () => {
+    const anclas = [{ id: 'a1', account_id: CU, moneda: 'USD', fecha: '2026-09-16', saldo: 303.49 }]
+    expect(saldoDeCuenta({ anclas, transactions: todos, accounts, accountId: CU, moneda: 'USD' }).saldo).toBe(279.89)
   })
 })

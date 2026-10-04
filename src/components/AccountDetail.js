@@ -6,7 +6,7 @@ import { semaforo } from '../theme'
 import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
-import { sentidoPorTipo } from '../lib/saldos'
+import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { repartoDelPeriodo, nombreDelMes } from '../lib/repartoSocios'
 import { puedeVerCobroFacturacion } from '../config/features'
@@ -922,6 +922,10 @@ function AccountDetail({ account, accounts, allAccounts, refreshKey, searchQuery
   const [selectedMeses, setSelectedMeses] = useState([])
 const [equivMoneda, setEquivMoneda] = useState('ARS')
   const [showNeutros, setShowNeutros] = useState(false)
+  // Pagos de las tarjetas que se pagan desde esta cuenta (caja de ahorro, efectivo).
+  // Viven en la cuenta de la tarjeta, no acá: se traen aparte y solo se listan en
+  // "Movimientos neutros". No entran en `transactions`, que es solo lo de esta cuenta.
+  const [pagosTarjetaDesdeAca, setPagosTarjetaDesdeAca] = useState([])
   // La tabla de movimientos se corta a los primeros MOVIMIENTOS_VISIBLES, con un
   // botón para ver el resto: con 100+ movimientos había que scrollear la lista
   // entera para llegar a cualquier cosa.
@@ -1191,7 +1195,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     // La vista Ingresos muestra todo lo marcado como ingreso sin importar en qué
     // cuenta real está; las demás cuentas siguen mostrando solo lo suyo.
     const esCuentaIngresos = account.tipo === 'ingreso'
-    const [txs, catRes, stmtRes] = await Promise.all([
+    const tarjetasQuePago = tieneSaldo(account) ? (accounts || []).filter(esTarjetaQueSePagaDesde(account.id)) : []
+    const [txs, catRes, stmtRes, pagosRes] = await Promise.all([
       fetchAllPages(() => {
         let q = supabase.from('transactions')
           .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
@@ -1210,6 +1215,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         .select('*')
         .eq('account_id', account.id)
         .order('fecha_hasta', { ascending: true }).order('id', { ascending: true }),
+      tarjetasQuePago.length > 0
+        ? supabase.from('transactions')
+          .select('*, categories(nombre, color), subcategories(nombre), accounts(nombre), children(id, nombre)')
+          .in('account_id', tarjetasQuePago.map(a => a.id)).eq('tipo', 'neutro')
+          .order('fecha', { ascending: false }).order('id', { ascending: true })
+        : { data: [] },
     ])
     const cats = catRes.data || []
     const catIds = cats.map(c => c.id)
@@ -1218,6 +1229,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       : { data: [] }
     await reconciliarSueltas(txs, stmtRes.data || [], [account.id])
     setTransactions(txs)
+    setPagosTarjetaDesdeAca(pagosRes.data || [])
     setCategories(cats)
     setSubcategories(subcatRes.data || [])
     setStatements(stmtRes.data || [])
@@ -2074,6 +2086,13 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     )
   }, [searchQuery])
 
+  // Los pagos de tarjeta que salieron de esta cuenta, sin los que el extracto ya trajo
+  // como su propia línea (esa ya está en la lista). Ver pagosDeTarjetaDeLaCuenta.
+  const pagosDeTarjetaVisibles = useMemo(() => pagosTarjetaDesdeAca.length === 0 || !account?.id ? [] :
+    pagosDeTarjetaDeLaCuenta({ transactions: [...transactions, ...pagosTarjetaDesdeAca], accounts, accountId: account.id })
+  , [transactions, pagosTarjetaDesdeAca, accounts, account?.id])
+  const idsPagosDeTarjeta = useMemo(() => new Set(pagosDeTarjetaVisibles.map(t => t.id)), [pagosDeTarjetaVisibles])
+
   // Pipeline de la tabla de movimientos (filtro por mes/cuenta/búsqueda, split
   // sin-identificar/identificadas, agrupado de gastos divididos en 3) — memoizado
   // como un todo porque filtra/ordena hasta 1000+ transacciones y antes se
@@ -2085,7 +2104,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     : transactions
   ).filter(t => !filtroCuenta || t.account_id === filtroCuenta)
   const txNoNeutras = txFiltradas.filter(t => t.tipo !== 'neutro')
-  const txNeutras = txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t))
+  const enMesesElegidos = (t) => selectedMeses.length === 0 || selectedMeses.some(m => t.fecha?.startsWith(m))
+  const txNeutras = [
+    ...txFiltradas.filter(t => t.tipo === 'neutro' && matchSearch(t)),
+    ...pagosDeTarjetaVisibles.filter(t => enMesesElegidos(t) && matchSearch(t)),
+  ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
 
   const sinIdentificar = txNoNeutras
     .filter(t => (t.estado === 'a_identificar' || t.categories?.nombre === 'A Identificar') && matchSearch(t))
@@ -2149,7 +2172,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   })
 
     return { txFiltradas, txNeutras, sinIdentificar, identificadas, identificadasSinFiltroCol, filasTabla }
-  }, [transactions, selectedMeses, filtroCuenta, matchSearch, sortTx, editingTx, expandedSplits, pasaFiltrosCol])
+  }, [transactions, pagosDeTarjetaVisibles, selectedMeses, filtroCuenta, matchSearch, sortTx, editingTx, expandedSplits, pasaFiltrosCol])
 
   const { txFiltradas, txNeutras, sinIdentificar, identificadas, identificadasSinFiltroCol, filasTabla } = tablaMemo
 
@@ -4734,6 +4757,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       )
                     }
                     const expandido = filaExpandida === tx.id
+                    // Pago de una tarjeta que se paga desde esta cuenta: vive en la tarjeta.
+                    const pagoDeTarjeta = idsPagosDeTarjeta.has(tx.id)
+                    // Sin la columna Cuenta (pantalla angosta) el nombre dice de qué tarjeta es.
+                    const nombreNeutro = `${tx.nombre || tx.detalle || ''}${pagoDeTarjeta && !colVisible.cuenta && tx.accounts?.nombre ? ` · ${tx.accounts.nombre}` : ''}`
                     return (
                       <React.Fragment key={tx.id}>
                         <tr
@@ -4741,7 +4768,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                           onClick={() => setFilaExpandida(prev => prev === tx.id ? null : tx.id)}
                         >
                           <td style={{...styles.td, whiteSpace:'nowrap', wordBreak: 'normal'}}>{formatFechaCorta(tx.fecha)}</td>
-                          <td style={ellipsisCell} title={tx.nombre || tx.detalle}>{tx.nombre || tx.detalle}</td>
+                          <td style={ellipsisCell} title={nombreNeutro}>{nombreNeutro}</td>
                           {colVisible.categoria && (
                             <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.categories?.nombre || '—'}</span></td>
                           )}
@@ -4781,10 +4808,16 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                                   <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{tx.moneda || 'ARS'}</p>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
-                                <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
-                              </div>
+                              {pagoDeTarjeta ? (
+                                <p style={{ margin: 0, fontSize: '12px', color: muted }}>
+                                  Es el pago de {tx.accounts?.nombre || 'una tarjeta'} que sale de esta cuenta. Se edita o se borra desde la tarjeta.
+                                </p>
+                              ) : (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  <button style={styles.accionBtn} onClick={() => startEdit(tx)}>✏️ Editar</button>
+                                  <button style={{...styles.accionBtn, ...styles.accionBtnDanger}} onClick={() => handleDeleteTx(tx)}>🗑️ Borrar</button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
