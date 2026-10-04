@@ -67,7 +67,19 @@ export default function Onboarding() {
       <div style={{ backgroundColor: c.surface, borderRadius: '20px', padding: '40px 36px', width: '100%', maxWidth: '420px', boxShadow: dark ? '0 4px 24px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.08)' }}>
 
         <h2 style={{ fontSize: '22px', fontWeight: 700, color: c.text, margin: '0 0 6px', fontFamily: FONT }}>¡Hola! 👋</h2>
-        <p style={{ color: c.textTertiary, fontSize: '14px', margin: '0 0 32px', fontFamily: FONT }}>Contanos un poco sobre vos</p>
+        <p style={{ color: c.textTertiary, fontSize: '14px', margin: '0 0 16px', fontFamily: FONT }}>Contanos un poco sobre vos</p>
+
+        {/* Para dar tranquilidad antes de preguntar cosas personales. Dice solo lo que
+            es cierto: no promete que "nadie lo ve" (los nombres de los hijos van a la IA
+            que lee los resúmenes para asignarles sus gastos). */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 14px', borderRadius: '12px', backgroundColor: c.primarySoft, margin: '0 0 28px' }}>
+          <span aria-hidden="true" style={{ fontSize: '16px', lineHeight: 1.4 }}>🔒</span>
+          <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: c.textSecondary, fontFamily: FONT }}>
+            Estas respuestas son solo para armar la app a tu medida y que te resulte más útil.
+            No se venden, no se comparten con terceros y no se usan para publicidad.
+            Podés cambiarlas cuando quieras desde Configuración.
+          </p>
+        </div>
 
         <div style={{ marginBottom: '28px' }}>
           <label style={labelStyle}>¿Tenés hijos?</label>
