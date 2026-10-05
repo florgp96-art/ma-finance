@@ -64,7 +64,9 @@ export default function Onboarding() {
       }
 
       // Preferencias: solo las que contestó.
-      const preferencias = [['modo', modo]]
+      // primera_carga_pendiente: muestra en el Dashboard la lista de cuentas a las que
+      // les falta un resumen (ver components/PrimeraCarga.js) hasta que la cierre.
+      const preferencias = [['modo', modo], ['primera_carga_pendiente', true]]
       if (tieneHijos && cuotaAlimentaria !== null) preferencias.push(['cuota_alimentaria_activa', cuotaAlimentaria])
       if (tieneAuto !== null) preferencias.push(['tiene_auto', tieneAuto])
       if (tieneMascotas !== null) preferencias.push(['tiene_mascotas', tieneMascotas])
