@@ -204,8 +204,14 @@ test('muestra de dónde sale cada número y con cuánto se queda cada uno', asyn
   // Lo que entró y salió de las cuentas de cada uno.
   expect(texto(screen.getByText('Cuentas de Flor').nextSibling)).toBe('tiene $ 150.000')
   expect(texto(screen.getByText('Cuentas de Valen').nextSibling)).toBe('tiene − $ 150.000')
-  const quedan = screen.getAllByText(/^se queda con/).map(texto)
-  expect(quedan).toEqual(['se queda con $ 340.000', 'se queda con $ 280.000', 'se queda con $ 280.000'])
+  // Lo que ganó cada uno, aparte de lo que falta pasarse para quedar a mano.
+  const ganaron = within(screen.getByText(/^Lo que ganó cada uno en [a-z]+$/).parentElement)
+  expect(['Flor', 'Valen', 'Dol'].map(s => texto(ganaron.getByText(`${s} ganó`).nextSibling)))
+    .toEqual(['$ 340.000', '$ 280.000', '$ 280.000'])
+  expect(texto(ganaron.getByText('Entre todos ganaron').nextSibling)).toBe('$ 900.000')
+  expect(ganaron.getAllByText('Para quedar a mano')).toHaveLength(3)
+  expect(ganaron.getAllByText(/^Le tienen que pasar$|^Le pasa a los demás$/).map(e => `${texto(e)} ${texto(e.nextSibling)}`))
+    .toEqual(['Le tienen que pasar $ 190.000', 'Le tienen que pasar $ 430.000', 'Le pasa a los demás $ 620.000'])
   fireEvent.click(screen.getByRole('button', { name: /Ingresos \(1\)/ }))
   expect(screen.queryByText('Nasello Cables · Dol')).not.toBeInTheDocument()
 })

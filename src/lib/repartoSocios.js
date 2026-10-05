@@ -28,7 +28,11 @@ export const normalizarConfigReparto = (raw) => {
   const meses = raw.meses && typeof raw.meses === 'object' && !Array.isArray(raw.meses) ? raw.meses : {}
   const cuotas = Array.isArray(raw.cuotas) ? raw.cuotas.filter(c => c && typeof c === 'object') : []
   const trabajos = Array.isArray(raw.trabajos) ? raw.trabajos.filter(t => t && typeof t === 'object') : []
-  return { socios, meses, cuotas, trabajos }
+  // Lo que dieron al cambiar a pesos un cobro o un pago en otra moneda (ver calcularReparto).
+  const enPesos = raw.enPesos && typeof raw.enPesos === 'object' && !Array.isArray(raw.enPesos)
+    ? Object.fromEntries(Object.entries(raw.enPesos).filter(([id, pesos]) => id && montoValido(pesos)))
+    : {}
+  return { socios, meses, cuotas, trabajos, enPesos }
 }
 
 export const socioDeLaCuenta = (cuenta, socios) => {

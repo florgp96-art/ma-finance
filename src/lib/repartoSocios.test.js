@@ -121,7 +121,13 @@ describe('normalizarConfigReparto', () => {
     expect(normalizarConfigReparto(null)).toBe(null)
     expect(normalizarConfigReparto('texto')).toBe(null)
     expect(normalizarConfigReparto({ socios: [' Flor ', 'Valen', 'Valen', ''] }))
-      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [], trabajos: [] })
+      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [], trabajos: [], enPesos: {} })
+  })
+
+  test('conserva lo que dieron al cambiar a pesos (si no, se pierde al guardar otra cosa)', () => {
+    const config = normalizarConfigReparto({ socios, enPesos: { dani: 898212, roto: 'abc', cero: 0 } })
+    expect(config.enPesos).toEqual({ dani: 898212 })
+    expect(normalizarConfigReparto({ socios, enPesos: [1, 2] }).enPesos).toEqual({})
   })
 })
 

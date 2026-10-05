@@ -358,41 +358,56 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
           </div>
 
           <div style={caja}>
-            <p style={rotulo}>Cada socio</p>
-            {r.porSocio.map((s, i) => (
-              <div key={s.socio} style={{ padding: '8px 0', borderBottom: i < r.porSocio.length - 1 ? `1px solid ${borde}` : 'none' }}>
-                <div style={{ ...fila, fontSize: '15px', fontWeight: 700 }}>
-                  <span>{s.socio}</span><span>se queda con {conSignoSiNegativo(s.leToca)}</span>
-                </div>
-                <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>En partes iguales</span><span>{conSignoSiNegativo(r.parte)}</span></div>
-                {(() => {
-                  const l = r.detalle.laburo.find(x => x.socio === s.socio)
-                  return (
+            <p style={rotulo}>Lo que ganó cada uno en {nombreDelMes(mes).split(' ')[0].toLowerCase()}</p>
+            {r.porSocio.map((s, i) => {
+              const l = r.detalle.laburo.find(x => x.socio === s.socio)
+              return (
+                <div key={s.socio} style={{ padding: '8px 0', borderBottom: i < r.porSocio.length - 1 ? `1px solid ${borde}` : 'none' }}>
+                  <div style={{ ...fila, fontSize: '15px', fontWeight: 700 }}>
+                    <span>{s.socio} ganó</span><span style={{ color: s.ganancia < 0 ? sem.negativo : txt }}>{conSignoSiNegativo(s.ganancia)}</span>
+                  </div>
+                  <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>En partes iguales</span><span>{conSignoSiNegativo(r.parte)}</span></div>
+                  {Math.abs(l?.totalPropios || 0) >= 1 && (
+                    <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Su laburo</span><span>{conSigno(l.totalPropios > 0 ? '+' : '−', l.totalPropios)}</span></div>
+                  )}
+                  {Math.abs(l?.totalDeLosDemas || 0) >= 1 && (
                     <>
-                      {Math.abs(l?.totalPropios || 0) >= 1 && (
-                        <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Su laburo</span><span>{conSigno(l.totalPropios > 0 ? '+' : '−', l.totalPropios)}</span></div>
-                      )}
-                      {Math.abs(l?.totalDeLosDemas || 0) >= 1 && (
-                        <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Su parte del laburo de los demás</span><span>{conSigno(l.totalDeLosDemas > 0 ? '+' : '−', l.totalDeLosDemas)}</span></div>
+                      <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
+                        <span>Su parte del laburo de los demás</span><span>{conSigno(l.totalDeLosDemas > 0 ? '+' : '−', l.totalDeLosDemas)}</span>
+                      </div>
+                      {l.totalDeLosDemas < 0 && (
+                        <p style={{ fontSize: '11px', color: muted, margin: '0 0 2px 10px' }}>
+                          Da negativo porque en el laburo de los demás hubo más gastos que cobros, y le toca su parte de los gastos.
+                        </p>
                       )}
                     </>
-                  )
-                })()}
-                {Math.abs(s.cuotas) >= 1 && (
-                  <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
-                    <span>Cuota {[...new Set(r.cuotas.map(c => c.concepto))].join(', ')}</span><span>{conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}</span>
+                  )}
+
+                  <div style={{ borderTop: `1px dashed ${borde}`, marginTop: '8px', paddingTop: '6px' }}>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 2px' }}>Para quedar a mano</p>
+                    <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0', alignItems: 'flex-start' }}>
+                      <span>Tiene en la mano: cobró {pesos(s.cobro)} − pagó {pesos(s.pago)}{s.transferencias ? ` ${s.transferencias > 0 ? '+' : '−'} adelantos ${pesos(s.transferencias)}` : ''}</span>
+                      <span style={{ whiteSpace: 'nowrap' }}>{conSignoSiNegativo(s.tiene)}</span>
+                    </div>
+                    {Math.abs(s.cuotas) >= 1 && (
+                      <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
+                        <span>Cuota {[...new Set(r.cuotas.map(c => c.concepto))].join(', ')}</span><span>{conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}</span>
+                      </div>
+                    )}
+                    <div style={{ ...fila, fontWeight: 600, color: s.diferencia >= 1 ? sem.negativo : s.diferencia <= -1 ? sem.positivo : muted }}>
+                      <span>{s.diferencia >= 1 ? 'Le pasa a los demás' : s.diferencia <= -1 ? 'Le tienen que pasar' : 'Está a mano'}</span>
+                      <span>{Math.abs(s.diferencia) >= 1 ? pesos(s.diferencia) : '✓'}</span>
+                    </div>
                   </div>
-                )}
-                <div style={{ ...fila, fontSize: '12px', color: muted, margin: '6px 0 2px', alignItems: 'flex-start' }}>
-                  <span>Ya tiene: cobró {pesos(s.cobro)} − pagó {pesos(s.pago)}{s.transferencias ? ` ${s.transferencias > 0 ? '+' : '−'} entre ustedes ${pesos(s.transferencias)}` : ''}</span>
-                  <span style={{ whiteSpace: 'nowrap' }}>{conSignoSiNegativo(s.tiene)}</span>
                 </div>
-                <div style={{ ...fila, fontWeight: 600, color: s.diferencia >= 1 ? sem.negativo : s.diferencia <= -1 ? sem.positivo : muted }}>
-                  <span>Para llegar</span>
-                  <span>{s.diferencia >= 1 ? `da ${pesos(s.diferencia)}` : s.diferencia <= -1 ? `recibe ${pesos(s.diferencia)}` : 'a mano'}</span>
-                </div>
-              </div>
-            ))}
+              )
+            })}
+            <div style={{ ...fila, borderTop: `1px solid ${borde}`, paddingTop: '8px', marginTop: '4px', fontWeight: 600 }}>
+              <span>Entre todos ganaron</span><span>{conSignoSiNegativo(r.neto)}</span>
+            </div>
+            <p style={{ fontSize: '11px', color: muted, margin: '4px 0 0' }}>
+              Lo que ganó cada uno es lo suyo del mes. Los adelantos no lo cambian: ya son plata de su parte, solo cambian cuánto falta pasarse para quedar a mano.
+            </p>
           </div>
 
           <div style={caja}>

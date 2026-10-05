@@ -4188,23 +4188,23 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               </div>
             )}
 
-            {/* Socios: cuánto tiene cada uno en el período, con el mismo cálculo que
-                la calculadora "Reparto entre socios" (solo en las cuentas que la usan). */}
+            {/* Socios: cuánto ganó cada uno en el período (y cuánto tiene y le falta pasarse),
+                con el mismo cálculo que la calculadora "Reparto entre socios" (solo en las cuentas que la usan). */}
             {allAccounts && repartoSocios && !esVistaIngresos && (() => {
               const rp = repartoDelPeriodo({ config: repartoSocios, meses: selectedMeses, movimientos: mesTxs, cuentas: accounts, cotizacionesVivas: cotizacionesReparto })
               const gris = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
               return (
                 <div style={styles.summaryCard}>
                   <p style={styles.summaryLabel}>Socios</p>
-                  <p style={{ fontSize: '11px', color: gris, margin: '2px 0 0' }}>Lo que tiene cada uno</p>
+                  <p style={{ fontSize: '11px', color: gris, margin: '2px 0 0' }}>Lo que ganó cada uno</p>
                   {rp.porSocio.map(sc => (
                     <div key={sc.socio} style={{ marginTop: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', fontSize: '13px', color: darkMode ? '#e0e0e0' : '#3a3a3c' }}>
                         <span>{sc.socio}</span>
-                        <span style={{ fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{sc.tiene < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.tiene)))}</span>
+                        <span style={{ fontWeight: 700, color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap' }}>{sc.ganancia < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.ganancia)))}</span>
                       </div>
                       <div style={{ fontSize: '11px', textAlign: 'right', color: gris }}>
-                        se queda con {sc.leToca < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.leToca)))}
+                        tiene {sc.tiene < 0 ? '−' : ''}$ {formatMonto(Math.abs(Math.round(sc.tiene)))}
                         {' · '}
                         <span style={{ color: sc.diferencia >= 1 ? sem.negativo : sc.diferencia <= -1 ? sem.positivo : gris }}>
                           {sc.diferencia >= 1 ? `da $ ${formatMonto(Math.round(sc.diferencia))}` : sc.diferencia <= -1 ? `recibe $ ${formatMonto(Math.round(-sc.diferencia))}` : 'a mano'}
