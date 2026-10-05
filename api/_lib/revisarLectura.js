@@ -10,8 +10,8 @@ import {
   claveDeFormato, etiquetaDeFormato, limpiarNotaFormato,
 } from '../../src/lib/revisionLectura.js'
 
-// Segunda lectura de un resumen de tarjeta cerrado que no cerró con su total (ver
-// src/lib/revisionLectura.js). La pide la app sola, antes de mostrar la vista
+// Segunda lectura de un resumen de tarjeta cerrado o un extracto de banco que no
+// cerró con su total (ver src/lib/revisionLectura.js). La pide la app sola, antes de mostrar la vista
 // previa, con el mismo PDF (o el mismo texto) que leyó la primera vez.
 //
 // Entra por /api/analyze?revision=1 y no como función propia: el plan Hobby de
@@ -69,7 +69,7 @@ export async function revisarLectura(req, res) {
   if (!await checkRateLimit(`revisarLectura:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
 
   const { pdfText, pdfBase64, resultado, cardName, userRules, incomeExamples, categories, subcategories, children, aliases } = req.body || {}
-  if (resultado?.tipo_documento !== 'tarjeta' || !Array.isArray(resultado.transacciones) || resultado.transacciones.length > 600) {
+  if (!['tarjeta', 'banco'].includes(resultado?.tipo_documento) || !Array.isArray(resultado.transacciones) || resultado.transacciones.length > 600) {
     return res.status(400).json({ error: 'Lectura inválida' })
   }
   if (pdfBase64) {
