@@ -215,7 +215,7 @@ export async function analyzeStatementWithClaude(pdfText, cardName, userRules, t
 // Fallback: manda el PDF completo (base64) para que la IA lo lea como
 // documento. Cubre PDFs que pdf.js no puede abrir, escaneados, o cuya tabla
 // de movimientos no sale en la capa de texto.
-const leerComoBase64 = (file) => new Promise((resolve, reject) => {
+export const leerComoBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader()
   reader.onload = e => resolve(e.target.result.split(',')[1])
   reader.onerror = () => reject(new Error('No se pudo leer el archivo'))

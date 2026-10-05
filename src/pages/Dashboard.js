@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
-import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude, revisarLecturaConClaude } from '../lib/pdfReader'
+import { extractTextFromPDF, analyzeStatementWithClaude, analyzePdfDocumentWithClaude, revisarLecturaConClaude, leerComoBase64 } from '../lib/pdfReader'
 import { aplicarReglasReparto } from '../lib/repartoRules'
 import { aplicarReglasYAlias, buscarAliases, yaIdentificado } from '../lib/reglas'
 import { filtrarYaCargados, esElMismoPago, esElMismoGasto } from '../lib/duplicados'
@@ -1912,6 +1912,43 @@ export default function Dashboard() {
       validas.push({ ...t, fecha, monto, moneda: ['ARS', 'USD', 'EUR'].includes(t.moneda) ? t.moneda : 'ARS' })
     }
     return { validas, omitidas }
+  }
+
+  // "Algo no se leyó bien": le manda a quien administra la app el resumen que se
+  // está importando y lo que se leyó, para mejorar el lector. La persona no queda
+  // trabada: sigue en la vista previa y puede importar igual y corregir a mano.
+  const [reportandoLectura, setReportandoLectura] = useState(false)
+  const reportarLecturaMala = async () => {
+    if (!archivo || !statementData) return
+    const comentario = window.prompt('¿Qué se leyó mal? (opcional)\n\nJunto con esto le mandamos este resumen a quien administra la app, para que mejore el lector.')
+    if (comentario === null) return
+    setReportandoLectura(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const control = controlDeLectura(statementData)
+      const mensaje = [
+        'Lectura con problemas (botón "Algo no se leyó bien")',
+        `Archivo: ${archivo.name}`,
+        `Detectado: ${statementData.tarjeta_detectada || '—'} (${statementData.tipo_documento || '—'})`,
+        `Movimientos leídos: ${statementData.transacciones?.length ?? 0}`,
+        `Control: ${control.aplica ? (control.cuadra ? 'cierra' : lineasDelControl(control).join(' ')) : 'no aplica'}`,
+        `Revisión automática: ${statementData.revision?.estado || 'no hubo'}`,
+        '',
+        `Comentario: ${comentario.trim() || '—'}`,
+      ].join('\n')
+      // Hasta ~3 MB de archivo: más grande no entra en un pedido (ver api/reportBug.js).
+      const adjunto = archivo.size <= 3_000_000 ? { nombre: archivo.name, base64: await leerComoBase64(archivo) } : null
+      const response = await fetch('/api/reportBug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ mensaje: adjunto ? mensaje : `${mensaje}\n\n(El archivo pesa más de 3 MB y no se pudo adjuntar.)`, pagina: 'importar', adjunto }),
+      })
+      if (!response.ok) throw new Error(`respondió ${response.status}`)
+      showToast('Gracias, lo vamos a revisar. Podés importar igual y corregir a mano lo que haga falta.')
+    } catch (e) {
+      showToast('No se pudo mandar el aviso. Probá de nuevo en un rato.', 'error')
+    }
+    setReportandoLectura(false)
   }
 
   const logImportAttempt = async (datos) => {
@@ -5223,6 +5260,13 @@ export default function Dashboard() {
                     ❓ Hay {statementData.transacciones.filter((t, i) => pdfTxSelections.has(i) && t.categoria_sugerida === 'A Identificar' && t.tipo !== 'neutro').length} transacciones sin identificar entre las seleccionadas. Te vamos a pedir que las clasifiques antes de cerrar.
                   </div>
                 )}
+                <p style={{ margin: '0 0 10px', fontSize: '12px', color: txtTerciario, textAlign: 'center' }}>
+                  ¿Algo no se leyó bien?{' '}
+                  <button type="button" onClick={reportarLecturaMala} disabled={reportandoLectura}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '12px', fontFamily: 'inherit', color: darkMode ? 'var(--m-c8b4e8)' : 'var(--m-5c4f5c)', textDecoration: 'underline' }}>
+                    {reportandoLectura ? 'Mandando…' : 'Mandanos el resumen'}
+                  </button>
+                </p>
                 <div style={styles.modalButtons}>
                   <button style={styles.cancelBtn} onClick={() => setStep(statementData?.tipo_documento === 'banco' ? 'upload' : 'select_account')}>← Atrás</button>
                   <button style={styles.saveBtn} onClick={handleConfirmTransactions} disabled={loading || pdfTxSelections.size === 0}>

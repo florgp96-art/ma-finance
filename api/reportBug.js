@@ -17,13 +17,21 @@ export default async function handler(req, res) {
 
   if (!await checkRateLimit(`reportBug:${user.id}`, 10)) return res.status(429).json({ error: 'Too many requests' })
 
-  const { mensaje, pagina } = req.body
+  // adjunto: el resumen que se leyó mal, cuando el aviso sale del botón "Algo no se
+  // leyó bien" de la importación. Lo manda la persona a propósito, sabiendo que lo
+  // recibe quien administra la app (ver reportarLecturaMala en el Dashboard).
+  const { mensaje, pagina, adjunto } = req.body
   if (!mensaje || typeof mensaje !== 'string' || !mensaje.trim()) {
     return res.status(400).json({ error: 'Falta describir el error' })
   }
   if (mensaje.length > 4000) {
     return res.status(400).json({ error: 'El mensaje es demasiado largo' })
   }
+  // El cuerpo de una función de Vercel no puede pasar de 4,5 MB: un PDF más grande
+  // ni siquiera llega, y la app lo manda sin adjunto.
+  const adjuntoValido = adjunto && typeof adjunto.base64 === 'string' && adjunto.base64.length <= 4_200_000 &&
+    typeof adjunto.nombre === 'string' && adjunto.nombre.trim()
+  if (adjunto && !adjuntoValido) return res.status(400).json({ error: 'Adjunto inválido' })
 
   const notifyEmail = process.env.NOTIFY_EMAIL
   const resendKey = process.env.RESEND_API_KEY
@@ -46,8 +54,9 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           from: "Mom's Assist <onboarding@resend.dev>",
           to: notifyEmail,
-          subject: `🐞 Reporte de error — ${user.email}`,
+          subject: adjuntoValido ? `📄 Resumen que no se leyó bien — ${user.email}` : `🐞 Reporte de error — ${user.email}`,
           html,
+          ...(adjuntoValido ? { attachments: [{ filename: adjunto.nombre.trim().slice(0, 120), content: adjunto.base64 }] } : {}),
         })
       })
     } catch (e) {
