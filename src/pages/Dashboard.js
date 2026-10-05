@@ -89,6 +89,12 @@ const esResumenCerradoParaControl = (result) => {
   return !!parseFechaArgentina(result?.fecha_vencimiento) && (!cierre || cierre <= hoy)
 }
 
+// ¿Lo leído tiene que cerrar con el total del documento? Un resumen de tarjeta,
+// solo si ya cerró. Un extracto de banco, siempre que traiga los saldos inicial y
+// final (si no los trae, el control directamente no aplica).
+const debeCerrarConSuTotal = (result) =>
+  result?.tipo_documento === 'banco' || (result?.tipo_documento === 'tarjeta' && esResumenCerradoParaControl(result))
+
 const parseCuotaDesc = (texto) => {
   const t = texto || ''
   // Solo interpretamos un patrón "N/M" como cuota (compra financiada) si la
@@ -1978,13 +1984,20 @@ export default function Dashboard() {
           result = await analyzePdfDocumentWithClaude(archivo, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
         }
       }
+      // El "sentido" (columna de créditos o de débitos) solo se le pide a la IA en los
+      // extractos de banco. Si igual viene en un resumen de tarjeta, se descarta: ahí
+      // el control de lectura decide pago / consumo / devolución por el tipo, y un
+      // "SU PAGO" con sentido "entra" se contaría como devolución.
+      if (result?.tipo_documento !== 'banco' && Array.isArray(result?.transacciones)) {
+        result.transacciones = result.transacciones.map(({ sentido, ...t }) => t)
+      }
       // Un resumen cerrado que no cierra con su total se vuelve a leer solo, con la
       // diferencia concreta, antes de mostrar nada (ver lib/revisionLectura.js). Se
       // hace sobre lo que devolvió la IA, antes de reglas y alias, porque es eso lo
       // que se le muestra a la revisión. Si la revisión falla o no mejora nada, se
       // sigue con la primera lectura y el aviso de "no cuadra" de siempre.
-      if (!isImage && result?.tipo_documento === 'tarjeta' && Array.isArray(result.transacciones) &&
-          esResumenCerradoParaControl(result) && controlDeLectura(result).cuadra === false) {
+      if (!isImage && Array.isArray(result?.transacciones) && debeCerrarConSuTotal(result) &&
+          controlDeLectura(result).cuadra === false) {
         setRevisandoLectura(true)
         setTimer(180)
         try {
@@ -2006,8 +2019,13 @@ export default function Dashboard() {
       if (result?.transacciones) {
         // El sentido se anota ANTES de los alias: un alias "neutro" pisa el tipo, y
         // con él se perdía si la plata había entrado o salido (ver sentidoDelExtracto).
+        // En un extracto de banco manda la columna que leyó la IA (ver el prompt).
+        const esExtracto = result.tipo_documento === 'banco'
         result.transacciones = aplicarReglasYAlias(
-          result.transacciones.map(t => ({ ...t, sentido: sentidoDelExtracto(t) })), rules, userAliases)
+          result.transacciones.map(t => ({
+            ...t,
+            sentido: esExtracto && (t.sentido === 'entra' || t.sentido === 'sale') ? t.sentido : sentidoDelExtracto(t),
+          })), rules, userAliases)
         const { validas, omitidas } = sanitizarTxImport(result.transacciones)
         result.transacciones = validas
         if (omitidas > 0) showToast(`Se omitieron ${omitidas} movimiento(s) con fecha o monto ilegible.`, 'warning')
@@ -2026,7 +2044,7 @@ export default function Dashboard() {
       }
       // Un resumen cerrado que no cierra con su total: se avisa en el mail (además
       // de en la pantalla, antes de confirmar). Mismo criterio de "cerrado" que abajo.
-      const cerradoParaControl = esResumenCerradoParaControl(result)
+      const cerradoParaControl = debeCerrarConSuTotal(result)
       const control = controlDeLectura(result)
       logImportAttempt({
         tipo: isImage ? 'imagen' : 'pdf',
@@ -5102,16 +5120,19 @@ export default function Dashboard() {
                 })()}
                 {/* Control de lectura (ver lib/controlLectura.js): en un resumen cerrado,
                     lo leído tiene que cerrar con el total que informa el banco. */}
-                {statementData?.tipo_documento === 'tarjeta' && esResumenCerrado && (() => {
+                {((statementData?.tipo_documento === 'tarjeta' && esResumenCerrado) || statementData?.tipo_documento === 'banco') && (() => {
                   const control = controlDeLectura(statementData)
                   if (control.cuadra !== false) return null
+                  const esExtracto = control.tipo === 'banco'
                   return (
                     <div role="alert" style={{ background: sem.alerta + '1A', border: `1px solid ${sem.alerta}66`, borderRadius: '10px', padding: '10px 12px', margin: '0 0 12px', fontSize: '13px', color: txtSecundario }}>
-                      <p style={{ margin: '0 0 4px', fontWeight: 600, color: sem.alerta }}>⚠️ Revisá antes de confirmar: lo leído no cuadra con el total del resumen</p>
+                      <p style={{ margin: '0 0 4px', fontWeight: 600, color: sem.alerta }}>⚠️ Revisá antes de confirmar: lo leído no cuadra con {esExtracto ? 'el saldo final del extracto' : 'el total del resumen'}</p>
                       {lineasDelControl(control).map(l => <p key={l} style={{ margin: '2px 0' }}>{l}</p>)}
                       <p style={{ margin: '6px 0 0', fontSize: '12px' }}>
-                        Puede faltar algún movimiento o cargo (intereses, impuestos, percepciones). Si falta algo, cargalo a mano después de importar.
-                        {control.monedas.some(m => !m.cuadra && !m.conSaldoAnterior) ? ' También puede ser saldo del resumen anterior que quedó sin pagar.' : ''}
+                        {esExtracto
+                          ? 'Puede faltar algún movimiento, o haber uno contado del lado equivocado (como entrada en vez de salida). Si falta algo, cargalo a mano después de importar.'
+                          : 'Puede faltar algún movimiento o cargo (intereses, impuestos, percepciones). Si falta algo, cargalo a mano después de importar.'}
+                        {!esExtracto && control.monedas.some(m => !m.cuadra && !m.conSaldoAnterior) ? ' También puede ser saldo del resumen anterior que quedó sin pagar.' : ''}
                       </p>
                     </div>
                   )

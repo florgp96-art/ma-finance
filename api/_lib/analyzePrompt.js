@@ -187,6 +187,13 @@ CAMPO tipo_documento:
 - "banco" → si es extracto de cuenta bancaria o caja de ahorro (tiene transferencias, débitos, saldo)
 
 ═══════════════════════════════
+SOLO EN EXTRACTOS BANCARIOS (tipo_documento "banco"):
+═══════════════════════════════
+- saldo_inicial_pesos y saldo_final_pesos (o saldo_inicial_dolares y saldo_final_dolares si la cuenta es en dólares): el saldo con el que arranca y con el que termina el período del extracto, copiados tal cual figuran impresos ("SALDO ANTERIOR", "SALDO INICIAL", "SALDO AL...", "SALDO FINAL"). Si el extracto no los muestra, null: NUNCA los calcules. La app los usa para controlar que la lectura cierre: saldo inicial + lo que entró − lo que salió tiene que dar el saldo final.
+- sentido (en cada transacción): "entra" si el movimiento está en la columna de créditos (entra plata a la cuenta), "sale" si está en la de débitos. Va en TODAS las transacciones del extracto, también en las neutras (transferencias propias, inversiones, pagos de tarjeta, compra o venta de moneda): es lo único que dice de qué lado del extracto están.
+- En resúmenes de tarjeta no devuelvas sentido ni estos saldos.
+
+═══════════════════════════════
 CAMPO tipo POR TRANSACCIÓN:
 ═══════════════════════════════
 - "gasto" → dinero que sale como gasto real (compras, servicios, pagos a terceros por consumo)

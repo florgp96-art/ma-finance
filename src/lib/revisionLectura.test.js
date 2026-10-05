@@ -129,3 +129,35 @@ describe('limpiarNotaFormato — la nota compartida no lleva datos de nadie', ()
     expect(limpiarNotaFormato('Los cargos de cierre aparecen en una sección aparte. '.repeat(20)).length).toBeLessThanOrEqual(301)
   })
 })
+
+// Extractos de banco: la revisión trabaja con entradas y salidas y el saldo inicial.
+describe('revisión de un extracto de banco', () => {
+  const mov = (fecha, nombre, monto, sentido, extra = {}) =>
+    ({ fecha, nombre_original: nombre, nombre_limpio: nombre, monto, moneda: 'ARS', tipo: 'neutro', es_credito: false, cuotas_total: 1, cuota_numero: 1, sentido, ...extra })
+  const extracto = {
+    tipo_documento: 'banco', saldo_inicial_pesos: 100000, saldo_final_pesos: 148500,
+    transacciones: [mov('2026-09-01', 'TRANSF RECIBIDA', 50000, 'entra', { tipo: 'ingreso' })],
+  }
+
+  test('el pedido habla de entradas, salidas y saldo final', () => {
+    const bloque = bloqueRevision(extracto)
+    expect(bloque).toContain('saldo final = saldo inicial + lo que entró − lo que salió')
+    expect(bloque).toContain('#0 2026-09-01 | TRANSF RECIBIDA | 50000 ARS | entra')
+    expect(bloque).toContain('$ 1.500 más')
+  })
+  test('agrega la comisión que faltaba con su lado, y cierra', () => {
+    const r = aplicarRevision(extracto, { quitar: [], agregar: [mov('2026-09-30', 'COMISION', 1500, 'sale', { tipo: 'gasto' })], saldo_inicial_pesos: null })
+    expect(r.resultado.transacciones[1]).toMatchObject({ sentido: 'sale', revisado: true })
+    expect(controlDeLectura(r.resultado).cuadra).toBe(true)
+  })
+  test('corrige el saldo inicial, y no toca el saldo anterior de las tarjetas', () => {
+    const r = aplicarRevision(extracto, { quitar: [], agregar: [], saldo_inicial_pesos: 98500, saldo_anterior_pesos: 5 })
+    expect(r.resultado.saldo_inicial_pesos).toBe(98500)
+    expect(r.resultado.saldo_anterior_pesos).toBeUndefined()
+  })
+  test('en una tarjeta, el sentido de lo agregado se descarta', () => {
+    const r = aplicarRevision(leido, { quitar: [], agregar: [{ ...iva, sentido: 'entra' }] })
+    expect(r.resultado.transacciones[2].sentido).toBeUndefined()
+    expect(controlDeLectura(r.resultado).cuadra).toBe(true)
+  })
+})

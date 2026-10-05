@@ -1,4 +1,4 @@
-// Segunda lectura automática de un resumen de tarjeta que no cerró con su total.
+// Segunda lectura automática de un resumen de tarjeta o un extracto de banco que no cerró.
 //
 // Hasta ahora, cuando lo leído no cuadraba con el total del resumen (ver
 // controlLectura.js), la app solo avisaba. Con un banco que nunca se había
@@ -18,58 +18,82 @@
 // Este archivo lo usan la app (src/) y la función del servidor
 // (api/_lib/revisarLectura.js): por eso no importa nada del navegador ni de Supabase.
 
-import { controlDeLectura, lineasDelControl } from './controlLectura.js'
+import { controlDeLectura, lineasDelControl, ladoEnExtracto } from './controlLectura.js'
 
 const MAX_AGREGAR = 60
 const MAX_QUITAR = 15
 const MAX_NOTA = 300
 
 // Lista numerada de lo que devolvió la primera lectura, para que la revisión pueda
-// decir "sacá la #7" sin repetir todo el resumen.
-export const listaParaRevision = (transacciones) => (transacciones || [])
+// decir "sacá la #7" sin repetir todo el resumen. En un extracto de banco el lado
+// que importa es si la plata entró o salió; en una tarjeta, qué es cada movimiento.
+export const listaParaRevision = (transacciones, tipoDocumento = 'tarjeta') => (transacciones || [])
   .map((t, i) => {
-    const lado = t.tipo === 'neutro' ? 'pago' : (t.tipo === 'ingreso' || t.es_credito) ? 'devolución' : 'consumo'
+    const lado = tipoDocumento === 'banco'
+      ? ({ entra: 'entra', sale: 'sale' }[ladoEnExtracto(t)] || '¿lado?')
+      : t.tipo === 'neutro' ? 'pago' : (t.tipo === 'ingreso' || t.es_credito) ? 'devolución' : 'consumo'
     const cuota = (t.cuotas_total || 1) > 1 ? ` · cuota ${t.cuota_numero}/${t.cuotas_total}` : ''
     return `#${i} ${t.fecha || '¿fecha?'} | ${t.nombre_original || t.nombre_limpio || '¿?'} | ${Math.abs(Number(t.monto) || 0)} ${t.moneda || 'ARS'} | ${lado}${cuota}`
   })
   .join('\n')
 
+// Lo que cambia entre revisar un resumen de tarjeta y un extracto de banco.
+const POR_DOCUMENTO = {
+  tarjeta: {
+    documento: 'resumen',
+    cuenta: 'total a pagar = saldo anterior − pagos + consumos − devoluciones',
+    totales: ['total_pesos', 'total_dolares', 'saldo_anterior_pesos', 'saldo_anterior_dolares'],
+    causas: 'un cargo de cierre salteado (intereses, impuestos, sellos, IVA, percepciones, comisiones), consumos en dólares en una tabla aparte, una devolución tomada como consumo o al revés, un movimiento repetido, un monto mal leído, o el saldo anterior mal leído',
+    corregir: 'si es consumo o devolución',
+    saldos: '- saldo_anterior_pesos / saldo_anterior_dolares: devolvelos solo si la primera vez se leyeron mal o no se leyeron y SÍ figuran impresos. Si no, null. Dejá en null saldo_inicial_* (es de los extractos de banco).\n- En "agregar", sentido va siempre en null (es de los extractos de banco).',
+    producto: 'la tarjeta (ej. "Visa", "Mastercard", "American Express")',
+  },
+  banco: {
+    documento: 'extracto',
+    cuenta: 'saldo final = saldo inicial + lo que entró − lo que salió',
+    totales: ['saldo_inicial_pesos', 'saldo_final_pesos', 'saldo_inicial_dolares', 'saldo_final_dolares'],
+    causas: 'un movimiento salteado (sobre todo débitos chicos: comisiones, impuestos, percepciones, intereses), un movimiento contado del lado equivocado (una entrada tomada como salida o al revés), un movimiento repetido, un monto mal leído, o el saldo inicial mal leído',
+    corregir: 'si entró o salió',
+    saldos: '- saldo_inicial_pesos / saldo_inicial_dolares: devolvelos solo si la primera vez se leyeron mal o no se leyeron y SÍ figuran impresos. Si no, null. Dejá en null saldo_anterior_* (es de los resúmenes de tarjeta).\n- En "agregar", sentido es "entra" o "sale" según la columna del extracto en la que está el movimiento.',
+    producto: 'la cuenta (ej. "Caja de ahorro", "Cuenta corriente")',
+  },
+}
+const porDocumento = (resultado) => POR_DOCUMENTO[resultado?.tipo_documento === 'banco' ? 'banco' : 'tarjeta']
+
 // Instrucciones de la revisión. Van DESPUÉS del prompt de análisis de siempre
 // (que trae las categorías y el formato de cada movimiento), y cambian qué se
-// devuelve: en vez del resumen entero, solo la corrección.
+// devuelve: en vez del documento entero, solo la corrección.
 export const bloqueRevision = (resultado) => {
   const control = controlDeLectura(resultado)
-  const totales = [
-    ['total_pesos', resultado.total_pesos],
-    ['total_dolares', resultado.total_dolares],
-    ['saldo_anterior_pesos', resultado.saldo_anterior_pesos],
-    ['saldo_anterior_dolares', resultado.saldo_anterior_dolares],
-  ].map(([k, v]) => `${k}: ${v ?? 'null'}`).join(' · ')
+  const doc = porDocumento(resultado)
+  const totales = doc.totales.map(k => `${k}: ${resultado[k] ?? 'null'}`).join(' · ')
   return `
 ═══════════════════════════════
-ESTO ES UNA REVISIÓN: LA PRIMERA LECTURA NO CIERRA CON EL TOTAL
+ESTO ES UNA REVISIÓN: LA PRIMERA LECTURA NO CIERRA
 ═══════════════════════════════
-Este resumen ya se leyó una vez y lo leído no cierra con el total que informa el propio resumen. En cada moneda tiene que cumplirse:
-  total a pagar = saldo anterior − pagos + consumos − devoluciones
+Este ${doc.documento} ya se leyó una vez y lo leído no cierra con lo que informa el propio ${doc.documento}. En cada moneda tiene que cumplirse:
+  ${doc.cuenta}
 
 Diferencia encontrada:
 ${lineasDelControl(control).join('\n')}
 
 Lo que se leyó la primera vez (${totales}). Movimientos, numerados:
-${listaParaRevision(resultado.transacciones)}
+${listaParaRevision(resultado.transacciones, resultado.tipo_documento)}
 
-Volvé a leer TODO el documento, página por página, y encontrá de dónde sale la diferencia. Lo más común: un cargo de cierre salteado (intereses, impuestos, sellos, IVA, percepciones, comisiones), consumos en dólares en una tabla aparte, una devolución tomada como consumo o al revés, un movimiento repetido, un monto mal leído, o el saldo anterior mal leído.
+Volvé a leer TODO el documento, página por página, y encontrá de dónde sale la diferencia. Lo más común: ${doc.causas}.
 
 Reglas de la revisión:
 - Solo agregá movimientos que estén IMPRESOS en el documento, con su descripción tal cual figura. NUNCA inventes un movimiento ni un "ajuste" para que cierre: si no encontrás de dónde sale la diferencia, devolvé las listas vacías. Es preferible que no cierre a inventar plata.
-- Para corregir un movimiento mal leído (monto, moneda, si es consumo o devolución), poné su número en "quitar" y agregá la versión corregida en "agregar".
+- Para corregir un movimiento mal leído (monto, moneda, ${doc.corregir}), poné su número en "quitar" y agregá la versión corregida en "agregar".
 - Cada movimiento de "agregar" lleva los mismos campos que una transacción de la estructura de arriba.
-- saldo_anterior_pesos / saldo_anterior_dolares: devolvelos solo si la primera vez se leyeron mal o no se leyeron y SÍ figuran impresos. Si no, null.
-- formato.entidad: el banco o la emisora del resumen (ej. "Galicia", "Santander", "Mercado Pago"). formato.producto: la tarjeta (ej. "Visa", "Mastercard", "American Express"). Sin el nivel (Black, Platinum, Gold...) ni números.
-- nota_formato: si encontraste la diferencia, de 1 a 3 oraciones que expliquen qué tiene de particular el FORMATO de los resúmenes de esta entidad y producto que hizo que se pasara (en qué parte del documento está esa información, cómo se rotulan las columnas o las secciones), para que la próxima vez se lea bien de entrada otro resumen de la misma entidad. Esta nota la van a leer otras personas que no son el titular, así que está PROHIBIDO incluir cualquier dato de esta persona o de sus movimientos: nada de nombres, números (de tarjeta, de cuenta, montos, fechas, cuotas), comercios ni direcciones. Describí el formato en general. Si no encontraste la diferencia, null.
+${doc.saldos}
+- formato.entidad: el banco o la emisora (ej. "Galicia", "Santander", "Mercado Pago"). formato.producto: ${doc.producto}. Sin el nivel (Black, Platinum, Gold...) ni números.
+- nota_formato: si encontraste la diferencia, de 1 a 3 oraciones que expliquen qué tiene de particular el FORMATO de los documentos de esta entidad y producto que hizo que se pasara (en qué parte del documento está esa información, cómo se rotulan las columnas o las secciones), para que la próxima vez se lea bien de entrada otro documento de la misma entidad. Esta nota la van a leer otras personas que no son el titular, así que está PROHIBIDO incluir cualquier dato de esta persona o de sus movimientos: nada de nombres, números (de tarjeta, de cuenta, montos, fechas, cuotas), comercios ni direcciones. Describí el formato en general. Si no encontraste la diferencia, null.
 
 En esta revisión NO devuelvas la estructura completa de arriba: devolvé solo el objeto de la revisión.`
 }
+
+const nulable = (schema) => ({ anyOf: [schema, { type: 'null' }] })
 
 // Esquema de la respuesta de la revisión (salida estructurada de la API).
 const transaccionSchema = {
@@ -79,26 +103,28 @@ const transaccionSchema = {
     nombre_original: { type: 'string' },
     nombre_limpio: { type: 'string' },
     categoria_sugerida: { type: 'string' },
-    subcategoria_sugerida: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-    hijo: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    subcategoria_sugerida: nulable({ type: 'string' }),
+    hijo: nulable({ type: 'string' }),
     monto: { type: 'number' },
     moneda: { type: 'string', enum: ['ARS', 'USD', 'EUR'] },
     tipo: { type: 'string', enum: ['gasto', 'ingreso', 'neutro'] },
     es_credito: { type: 'boolean' },
     cuotas_total: { type: 'integer' },
     cuota_numero: { type: 'integer' },
-    titular: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    titular: nulable({ type: 'string' }),
+    sentido: nulable({ type: 'string', enum: ['entra', 'sale'] }),
   },
-  required: ['fecha', 'nombre_original', 'nombre_limpio', 'categoria_sugerida', 'subcategoria_sugerida', 'hijo', 'monto', 'moneda', 'tipo', 'es_credito', 'cuotas_total', 'cuota_numero', 'titular'],
+  required: ['fecha', 'nombre_original', 'nombre_limpio', 'categoria_sugerida', 'subcategoria_sugerida', 'hijo', 'monto', 'moneda', 'tipo', 'es_credito', 'cuotas_total', 'cuota_numero', 'titular', 'sentido'],
   additionalProperties: false,
 }
+
+const SALDOS_CORREGIBLES = ['saldo_anterior_pesos', 'saldo_anterior_dolares', 'saldo_inicial_pesos', 'saldo_inicial_dolares']
 
 export const ESQUEMA_REVISION = {
   type: 'object',
   properties: {
     quitar: { type: 'array', items: { type: 'integer' } },
-    saldo_anterior_pesos: { anyOf: [{ type: 'number' }, { type: 'null' }] },
-    saldo_anterior_dolares: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    ...Object.fromEntries(SALDOS_CORREGIBLES.map(k => [k, nulable({ type: 'number' })])),
     formato: {
       type: 'object',
       properties: {
@@ -108,10 +134,10 @@ export const ESQUEMA_REVISION = {
       required: ['entidad', 'producto'],
       additionalProperties: false,
     },
-    nota_formato: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    nota_formato: nulable({ type: 'string' }),
     agregar: { type: 'array', items: transaccionSchema },
   },
-  required: ['quitar', 'saldo_anterior_pesos', 'saldo_anterior_dolares', 'formato', 'nota_formato', 'agregar'],
+  required: ['quitar', ...SALDOS_CORREGIBLES, 'formato', 'nota_formato', 'agregar'],
   additionalProperties: false,
 }
 
@@ -123,22 +149,33 @@ const esFechaISO = (f) => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f)
 export const aplicarRevision = (resultado, revision) => {
   const previas = Array.isArray(resultado?.transacciones) ? resultado.transacciones : []
   if (!revision || typeof revision !== 'object') return null
+  const esExtracto = resultado?.tipo_documento === 'banco'
+  // Solo se corrige el saldo que corresponde a este tipo de documento.
+  const saldos = SALDOS_CORREGIBLES
+    .filter(k => k.startsWith(esExtracto ? 'saldo_inicial' : 'saldo_anterior'))
+    .filter(k => typeof revision[k] === 'number')
   const quitar = new Set((Array.isArray(revision.quitar) ? revision.quitar : [])
     .filter(i => Number.isInteger(i) && i >= 0 && i < previas.length))
   const agregar = (Array.isArray(revision.agregar) ? revision.agregar : [])
     .filter(t => t && esFechaISO(t.fecha) && Number(t.monto) && (t.nombre_original || t.nombre_limpio))
-  if (quitar.size === 0 && agregar.length === 0 && revision.saldo_anterior_pesos == null && revision.saldo_anterior_dolares == null) return null
+  if (quitar.size === 0 && agregar.length === 0 && saldos.length === 0) return null
   if (quitar.size > MAX_QUITAR || quitar.size > Math.max(2, previas.length * 0.3) || agregar.length > MAX_AGREGAR) return null
 
   const corregido = {
     ...resultado,
     transacciones: [
       ...previas.filter((_, i) => !quitar.has(i)),
-      ...agregar.map(t => ({ ...t, monto: Math.abs(Number(t.monto)), revisado: true })),
+      ...agregar.map(({ sentido, ...t }) => ({
+        ...t,
+        // En una tarjeta el sentido no se usa (ver el prompt), y uno mal puesto
+        // haría que el control de lectura cuente un pago como devolución.
+        ...(esExtracto && (sentido === 'entra' || sentido === 'sale') ? { sentido } : {}),
+        monto: Math.abs(Number(t.monto)),
+        revisado: true,
+      })),
     ],
   }
-  if (typeof revision.saldo_anterior_pesos === 'number') corregido.saldo_anterior_pesos = revision.saldo_anterior_pesos
-  if (typeof revision.saldo_anterior_dolares === 'number') corregido.saldo_anterior_dolares = revision.saldo_anterior_dolares
+  for (const k of saldos) corregido[k] = revision[k]
   return { resultado: corregido, agregados: agregar.length, quitados: quitar.size }
 }
 

@@ -8,11 +8,16 @@
 // Sin saldo anterior (el resumen no lo muestra o la IA no lo leyó) se asume que el
 // resumen anterior se pagó entero: el pago lo cancela y queda consumos − devoluciones.
 //
-// Los extractos de banco no se controlan: de un movimiento neutro (transferencia
-// propia, inversión) no se sabe si entró o salió, así que no hay cuenta que cerrar.
+// En un extracto de banco, por moneda:
+//   saldo final = saldo inicial + lo que entró − lo que salió
+// De qué lado está cada movimiento lo dice "sentido", que la IA lee de la columna
+// del extracto (créditos o débitos). Antes no se pedía, y de un movimiento neutro
+// (transferencia propia, inversión) no se sabía si había entrado o salido: por eso
+// los extractos no se controlaban. Si aun así queda un movimiento sin lado, esa
+// moneda no se controla.
 const MONEDAS = [
-  { moneda: 'ARS', total: 'total_pesos', saldoAnterior: 'saldo_anterior_pesos' },
-  { moneda: 'USD', total: 'total_dolares', saldoAnterior: 'saldo_anterior_dolares' },
+  { moneda: 'ARS', total: 'total_pesos', saldoAnterior: 'saldo_anterior_pesos', inicial: 'saldo_inicial_pesos', final: 'saldo_final_pesos' },
+  { moneda: 'USD', total: 'total_dolares', saldoAnterior: 'saldo_anterior_dolares', inicial: 'saldo_inicial_dolares', final: 'saldo_final_dolares' },
 ]
 
 const numero = (v) => {
@@ -35,7 +40,38 @@ const ladoDe = (t) => {
   return 'pago'
 }
 
+// Lado de un movimiento del extracto de banco: primero lo que leyó la IA de la
+// columna, después lo que ya dice el tipo. null si no se sabe.
+export const ladoEnExtracto = (t) => {
+  if (t.sentido === 'entra' || t.sentido === 'sale') return t.sentido
+  if (t.tipo === 'ingreso') return 'entra'
+  if (t.tipo === 'gasto') return 'sale'
+  return t.es_credito === true ? 'entra' : null
+}
+
+const controlDeExtracto = (resultado) => {
+  const transacciones = Array.isArray(resultado.transacciones) ? resultado.transacciones : []
+  const monedas = []
+  for (const campos of MONEDAS) {
+    const inicial = numero(resultado[campos.inicial])
+    const final = numero(resultado[campos.final])
+    if (inicial === null || final === null) continue
+    const deLaMoneda = transacciones.filter(t => (t.moneda || 'ARS') === campos.moneda)
+    if (deLaMoneda.some(t => ladoEnExtracto(t) === null)) continue
+    const suma = (lado) => deLaMoneda.filter(t => ladoEnExtracto(t) === lado).reduce((s, t) => s + Math.abs(Number(t.monto) || 0), 0)
+    const calculado = inicial + suma('entra') - suma('sale')
+    const diferencia = final - calculado
+    monedas.push({
+      moneda: campos.moneda, total: final, calculado, diferencia,
+      conSaldoAnterior: true,
+      cuadra: Math.abs(diferencia) <= toleranciaDe(campos.moneda, final),
+    })
+  }
+  return { tipo: 'banco', aplica: monedas.length > 0, cuadra: monedas.length ? monedas.every(m => m.cuadra) : null, monedas }
+}
+
 export const controlDeLectura = (resultado) => {
+  if (resultado?.tipo_documento === 'banco') return controlDeExtracto(resultado)
   if (resultado?.tipo_documento !== 'tarjeta') return { aplica: false, cuadra: null, monedas: [] }
   const transacciones = Array.isArray(resultado.transacciones) ? resultado.transacciones : []
   const monedas = []
@@ -53,7 +89,7 @@ export const controlDeLectura = (resultado) => {
       cuadra: Math.abs(diferencia) <= toleranciaDe(campos.moneda, total),
     })
   }
-  return { aplica: monedas.length > 0, cuadra: monedas.length ? monedas.every(m => m.cuadra) : null, monedas }
+  return { tipo: 'tarjeta', aplica: monedas.length > 0, cuadra: monedas.length ? monedas.every(m => m.cuadra) : null, monedas }
 }
 
 const SIMBOLO = { ARS: '$', USD: 'U$S' }
@@ -64,4 +100,11 @@ const formato = (n, moneda) => `${SIMBOLO[moneda] || moneda} ${new Intl.NumberFo
 // Una línea por moneda que no cuadra, para la pantalla y para el mail de aviso.
 export const lineasDelControl = (control) => (control?.monedas || [])
   .filter(m => !m.cuadra)
-  .map(m => `${m.moneda === 'ARS' ? 'Pesos' : 'Dólares'}: el resumen dice ${formato(m.total, m.moneda)} y lo leído da ${formato(m.calculado, m.moneda)} (${m.diferencia > 0 ? 'faltan' : 'sobran'} ${formato(Math.abs(m.diferencia), m.moneda)}).`)
+  .map(m => {
+    const moneda = m.moneda === 'ARS' ? 'Pesos' : 'Dólares'
+    const dif = formato(Math.abs(m.diferencia), m.moneda)
+    if (control.tipo === 'banco') {
+      return `${moneda}: el saldo final del extracto es ${formato(m.total, m.moneda)} y con lo leído da ${formato(m.calculado, m.moneda)} (${dif} ${m.diferencia > 0 ? 'menos' : 'más'}).`
+    }
+    return `${moneda}: el resumen dice ${formato(m.total, m.moneda)} y lo leído da ${formato(m.calculado, m.moneda)} (${m.diferencia > 0 ? 'faltan' : 'sobran'} ${dif}).`
+  })
