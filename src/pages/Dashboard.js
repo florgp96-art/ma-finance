@@ -13,6 +13,7 @@ import { controlDeLectura, lineasDelControl } from '../lib/controlLectura'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
+import PrimeraCarga from '../components/PrimeraCarga'
 import ConfigPanel from '../components/ConfigPanel'
 import CashView from '../components/CashView'
 import CambioMoneda from '../components/CambioMoneda'
@@ -441,6 +442,9 @@ export default function Dashboard() {
   const [cuotaAlimentariaActiva, setCuotaAlimentariaActiva] = useState(true)
   // Lo que contestó en el alta (ver lib/perfil.js). null = no contestó.
   const [tieneAuto, setTieneAuto] = useState(null)
+  // Lista de cuentas a las que les falta un resumen, después del alta (ver
+  // components/PrimeraCarga.js). Solo la deja prendida el alta nueva.
+  const [primeraCargaPendiente, setPrimeraCargaPendiente] = useState(false)
   // Mom's Assist o Dad's Assist (ver MODOS en theme.js).
   const [modo, setModo] = useState(leerModo)
   const [showPerfil, setShowPerfil] = useState(false)
@@ -785,6 +789,7 @@ export default function Dashboard() {
         }
         const cuotaAlimentariaDB = readPref('cuota_alimentaria_activa')
         if (cuotaAlimentariaDB === false) setCuotaAlimentariaActiva(false)
+        if (readPref('primera_carga_pendiente') === true) setPrimeraCargaPendiente(true)
         const tieneAutoDB = readPref('tiene_auto')
         if (typeof tieneAutoDB === 'boolean') setTieneAuto(tieneAutoDB)
         const modoDB = readPref('modo')
@@ -3006,6 +3011,12 @@ export default function Dashboard() {
 
   const tipoLabel = (tipo) => tipo === 'credito' ? 'Crédito' : tipo === 'debito' ? 'Débito' : tipo === 'ingreso' ? 'Ingreso' : 'Efectivo'
   const formatMonto = (monto) => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(monto)
+  const tarjetaPrimeraCarga = primeraCargaPendiente && (
+    <PrimeraCarga accounts={accounts} darkMode={darkMode} refreshKey={refreshKey}
+      onSubir={() => { resetUpload(); setShowUpload(true) }}
+      onTerminar={() => { setPrimeraCargaPendiente(false); persistPref('primera_carga_pendiente', false) }} />
+  )
+
   const currentMsg = revisandoLectura
     ? { icon: '🔁', title: 'Revisando la lectura...', desc: 'Lo leído no cerraba con el total del resumen: lo estamos revisando para encontrar lo que faltó' }
     : PROCESSING_MSGS[msgIndex]
@@ -4096,6 +4107,9 @@ export default function Dashboard() {
             </div>
 
         <div style={{ ...styles.layout, flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-start', padding: isMobile ? '0 12px 48px 12px' : isTablet ? '0 16px 48px 16px' : '0 32px 48px 32px', gap: isMobile ? '12px' : isTablet ? '14px' : '24px', maxWidth: isMobile ? undefined : '2200px', margin: isMobile ? undefined : '0 auto', width: isMobile ? undefined : '100%', boxSizing: 'border-box' }}>
+          {/* En el celular las columnas se apilan: la primera carga va arriba de todo,
+              no debajo de la lista de cuentas. */}
+          {isMobile && tarjetaPrimeraCarga}
 
           {/* Sidebar izquierdo + widget Ahorros (columna izquierda) */}
           {isMobile && (
@@ -4340,6 +4354,7 @@ export default function Dashboard() {
 
           {/* Contenido derecho */}
           <div style={styles.mainContent}>
+            {!isMobile && tarjetaPrimeraCarga}
             {typeof selectedAccount === 'string' && selectedAccount.startsWith('liquidacion:') ? (
               verLiquidaciones && (() => {
                 const liq = liquidaciones.find(l => `liquidacion:${l.id}` === selectedAccount)
