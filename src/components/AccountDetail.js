@@ -9,7 +9,8 @@ import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
 import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { subcategoriasParaElegir } from '../lib/perfil'
-import { repartoDelPeriodo, nombreDelMes } from '../lib/repartoSocios'
+import { repartoDelPeriodo, nombreDelMes, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
+import SelectorTrabajo, { porcentajesComoTexto, porcentajesDesdeTexto } from './SelectorTrabajo'
 import { puedeVerCobroFacturacion } from '../config/features'
 import { ESTADOS_FACTURACION, estadoFacturacion, hayColumnaFacturacion } from '../lib/facturacion'
 import ReporteContador from './ReporteContador'
@@ -840,7 +841,7 @@ export const getLast6Months = () => {
   return months
 }
 
-function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto }) {
+function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto, onCambiarRepartoSocios }) {
   const [transactions, setTransactions] = useState([])
   // Si se facturó cada ingreso (ver lib/facturacion.js): sin la columna en la
   // base, no se muestra nada de esto.
@@ -909,6 +910,10 @@ function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, 
     colVisible, { cuenta: 1.6, subcategoria: 1, nombre: 1.6 }
   )
   const [editNombre, setEditNombre] = useState('')
+  // De quién fue el laburo (cuentas con reparto entre socios): igual que en Cargar
+  // movimiento, para poder marcarlo o cambiarlo después de cargado.
+  const [editTrabajoDe, setEditTrabajoDe] = useState('')
+  const [editTrabajoPorcentajes, setEditTrabajoPorcentajes] = useState(null)
   const [editMonto, setEditMonto] = useState('')
   // La fecha no se podía editar desde la fila: si la IA la leía mal, o una cuota
   // quedaba en el mes equivocado, no había forma de corregirla sin borrar el
@@ -1341,6 +1346,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
 
   // Guardar clasificación manual y aprender la regla
   const handleSaveEdit = async (tx) => {
+    if (repartoSocios && editTrabajoDe && !porcentajesValidos(porcentajesDesdeTexto(editTrabajoPorcentajes), repartoSocios.socios)) {
+      window.alert('Los porcentajes del laburo tienen que sumar 100.')
+      return
+    }
     // Monto editable a mano (ej. corregir un reintegro mal leído del PDF, sin
     // tener que borrar el movimiento y cargar uno nuevo) — siempre positivo, el
     // tipo determina el signo en pantalla. Si el campo quedó vacío o inválido,
@@ -1415,6 +1424,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       if (montoCorregido !== undefined) upd.monto = montoCorregido
       const { error } = await supabase.from('transactions').update(upd).eq('id', tx.id)
       if (error) { window.alert('No se pudo guardar el cambio: ' + error.message + '\nProbá de nuevo.'); return }
+      guardarTrabajoEditado(tx)
       // Si el movimiento ya no pertenece a esta vista (ver saleDeLaVista), sacarlo
       // de la lista en vez de dejarlo actualizado-pero-visible hasta el próximo
       // refresh de página.
@@ -1447,6 +1457,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       ...(montoCorregido !== undefined ? { monto: montoCorregido } : {})
     }).eq('id', tx.id)
     if (errUpd) { window.alert('No se pudo guardar el cambio: ' + errUpd.message + '\nProbá de nuevo.'); return }
+    guardarTrabajoEditado(tx)
 
     // Guardar regla aprendida en user_rules si hay un detalle original
     const texto_original = (tx.detalle || '').trim()
@@ -1511,8 +1522,25 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     }
   }
 
+  // Lo elegido en "¿De quién es el laburo?" pasa a la configuración del reparto:
+  // marca, cambia o (con "De la agencia") desmarca el trabajo por fuera.
+  const guardarTrabajoEditado = (tx) => {
+    if (!repartoSocios || !onCambiarRepartoSocios) return
+    const antes = (repartoSocios.trabajos || []).some(t => t.movimientoId === tx.id)
+    if (!editTrabajoDe && !antes) return
+    onCambiarRepartoSocios(conTrabajo(repartoSocios, {
+      movimientoId: tx.id, concepto: editNombre || tx.nombre || tx.detalle,
+      socio: editTrabajoDe, porcentajes: porcentajesDesdeTexto(editTrabajoPorcentajes),
+    }))
+  }
+
   const startEdit = (tx) => {
     setEditingTx(tx.id)
+    const trabajo = (repartoSocios?.trabajos || []).find(t => t.movimientoId === tx.id)
+    setEditTrabajoDe(trabajo?.socio || '')
+    setEditTrabajoPorcentajes(trabajo
+      ? porcentajesComoTexto(Object.fromEntries((repartoSocios.socios || []).map(s => [s, Number(trabajo.porcentajes?.[s]) || 0])))
+      : null)
     setEditNombre(tx.nombre || tx.detalle)
     // normFecha para que un valor con hora ("2026-07-15T00:00:00") llegue como
     // "2026-07-15", que es lo único que acepta un <input type="date">.
@@ -2614,6 +2642,14 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               <option key={a.id} value={a.id}>💳 {a.nombre}</option>
             ))}
           </select>
+          {repartoSocios && onCambiarRepartoSocios && (
+            <div>
+              <span style={{ display: 'block', fontSize: '11px', margin: '2px 0 4px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', ...rotuloLabel }}>¿De quién es el laburo?</span>
+              <SelectorTrabajo socios={repartoSocios.socios} socio={editTrabajoDe} porcentajes={editTrabajoPorcentajes}
+                onCambiar={({ socio, porcentajes }) => { setEditTrabajoDe(socio); setEditTrabajoPorcentajes(porcentajes) }}
+                estiloInput={selStyle} colorSuave={darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'} colorError={semaforo(darkMode).negativo} />
+            </div>
+          )}
           {esIngresoTx ? (() => {
             const { allOpts, valueIsCustom } = getIngresoTagOpts()
             return (

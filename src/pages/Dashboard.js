@@ -22,7 +22,8 @@ import Liquidacion from '../components/Liquidacion'
 import { puedeVerLiquidacion } from '../config/features'
 import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } from '../lib/liquidacionDatos'
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
-import { normalizarConfigReparto, conTrabajo, porcentajesTrabajo, porcentajesValidos, sumaPorcentajes } from '../lib/repartoSocios'
+import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
+import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
 import { parseMonto } from '../lib/formato'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import * as XLSX from 'xlsx'
@@ -585,6 +586,10 @@ export default function Dashboard() {
     }, 800)
   }
 
+  // Cambios en la configuración del reparto entre socios hechos desde otras pantallas
+  // (ej. marcar de quién fue el laburo al editar un movimiento).
+  const cambiarRepartoSocios = (nueva) => { setRepartoSocios(nueva); persistPref('reparto_socios', nueva) }
+
   // Servicios y marcas de pagado viven en la DB (user_rules) para verse igual
   // en todos los dispositivos; localStorage queda solo como caché local.
   const persistServicios = async (userId, list) => {
@@ -981,9 +986,7 @@ export default function Dashboard() {
     // Laburo de un socio: los porcentajes se revisan antes de guardar el movimiento,
     // para no dejarlo cargado sin el reparto que se eligió.
     const marcaTrabajo = !!(repartoSocios && efectivo.trabajoDe && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto'))
-    const porcentajesDelTrabajo = efectivo.trabajoPorcentajes
-      ? Object.fromEntries(Object.entries(efectivo.trabajoPorcentajes).map(([k, v]) => [k, parseMonto(v)]))
-      : null
+    const porcentajesDelTrabajo = porcentajesDesdeTexto(efectivo.trabajoPorcentajes)
     if (marcaTrabajo && porcentajesDelTrabajo && !porcentajesValidos(porcentajesDelTrabajo, repartoSocios.socios)) {
       showToast('Los porcentajes del laburo tienen que sumar 100.', 'error')
       return
@@ -4428,7 +4431,7 @@ export default function Dashboard() {
                 </div>
 
                 {dashboardTab === 'resumen' && (
-                  <AccountDetail tieneAuto={tieneAuto} accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} userEmail={userEmail} />
+                  <AccountDetail onCambiarRepartoSocios={cambiarRepartoSocios} tieneAuto={tieneAuto} accounts={accounts} allAccounts refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onPeriodChange={setSharedPeriod} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} repartoSocios={repartoSocios} cotizacionesReparto={cotizacionesReparto} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'caja' && (
@@ -4436,7 +4439,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail tieneAuto={tieneAuto} accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                  <AccountDetail repartoSocios={repartoSocios} onCambiarRepartoSocios={cambiarRepartoSocios} tieneAuto={tieneAuto} accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
@@ -4577,7 +4580,7 @@ export default function Dashboard() {
                     📊 {selectedAccount.nombre}
                   </h2>
                 </div>
-                <AccountDetail tieneAuto={tieneAuto} account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                <AccountDetail repartoSocios={repartoSocios} onCambiarRepartoSocios={cambiarRepartoSocios} tieneAuto={tieneAuto} account={selectedAccount} accounts={accounts} refreshKey={refreshKey} searchQuery={searchQuery} onSearchChange={setSearchQuery} tipoCambio={tipoCambio} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} darkMode={darkMode} onAddIngreso={selectedAccount?.tipo === 'ingreso' ? handleAddIngreso : undefined} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
               </div>
             ) : (
               <div style={styles.emptyState}>
@@ -5842,38 +5845,9 @@ export default function Dashboard() {
               {repartoSocios && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto') && (
                 <div style={styles.field}>
                   <label style={styles.label}>¿De quién es el laburo?</label>
-                  <select style={styles.input} value={efectivo.trabajoDe || ''} aria-label="De quién es el laburo"
-                    onChange={e => {
-                      const socio = e.target.value
-                      // Arranca con el reparto de siempre para quien lo hizo; después se cambia a mano.
-                      const porcentajes = socio ? porcentajesTrabajo(socio, repartoSocios.socios) : null
-                      setEfectivo({ ...efectivo, trabajoDe: socio, trabajoPorcentajes: porcentajes && Object.fromEntries(Object.entries(porcentajes).map(([k, v]) => [k, String(v)])) })
-                    }}>
-                    <option value="">De la agencia (partes iguales)</option>
-                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s}</option>)}
-                  </select>
-                  {efectivo.trabajoDe && efectivo.trabajoPorcentajes && (() => {
-                    const elegidos = Object.fromEntries(Object.entries(efectivo.trabajoPorcentajes).map(([k, v]) => [k, parseMonto(v)]))
-                    const suma = sumaPorcentajes(elegidos, repartoSocios.socios)
-                    const ok = porcentajesValidos(elegidos, repartoSocios.socios)
-                    return (
-                      <>
-                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${repartoSocios.socios.length}, minmax(0, 1fr))`, gap: '8px', marginTop: '8px' }}>
-                          {repartoSocios.socios.map(s => (
-                            <label key={s} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
-                              {s} %
-                              <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1"
-                                aria-label={`Porcentaje para ${s}`} value={efectivo.trabajoPorcentajes[s] ?? ''}
-                                onChange={e => setEfectivo({ ...efectivo, trabajoPorcentajes: { ...efectivo.trabajoPorcentajes, [s]: e.target.value } })} />
-                            </label>
-                          ))}
-                        </div>
-                        <p style={{ fontSize: '11px', margin: '6px 0 0', color: ok ? (darkMode ? 'var(--m-9a8a9a)' : '#75757a') : sem.negativo }}>
-                          {ok ? 'Suman 100 % ✓' : `Suman ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(suma)} %: tienen que sumar 100.`}
-                        </p>
-                      </>
-                    )
-                  })()}
+                  <SelectorTrabajo socios={repartoSocios.socios} socio={efectivo.trabajoDe} porcentajes={efectivo.trabajoPorcentajes}
+                    onCambiar={({ socio, porcentajes }) => setEfectivo({ ...efectivo, trabajoDe: socio, trabajoPorcentajes: porcentajes })}
+                    estiloInput={styles.input} colorSuave={darkMode ? 'var(--m-9a8a9a)' : '#75757a'} colorError={sem.negativo} />
                 </div>
               )}
               <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
