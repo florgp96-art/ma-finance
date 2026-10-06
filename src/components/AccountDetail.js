@@ -841,6 +841,20 @@ export const getLast6Months = () => {
   return months
 }
 
+// Los gráficos de "últimos 6 meses" arrancan en el primer mes con movimientos: una
+// cuenta que se empezó a usar hace poco no muestra meses en $0 antes de empezar (y el
+// promedio no se achica por esos ceros). Sin movimientos, quedan los 6 meses.
+export const desdePrimerMovimiento = (meses, transactions) => {
+  let primero = null
+  for (const t of transactions || []) {
+    const mes = normFecha(t.fecha).slice(0, 7)
+    if (mes.length === 7 && (!primero || mes < primero)) primero = mes
+  }
+  if (!primero) return meses
+  const desde = meses.filter(m => m >= primero)
+  return desde.length > 0 ? desde : meses.slice(-1)
+}
+
 function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto, onCambiarRepartoSocios }) {
   const [transactions, setTransactions] = useState([])
   // Si se facturó cada ingreso (ver lib/facturacion.js): sin la columna en la

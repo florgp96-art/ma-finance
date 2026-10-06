@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto, desdePrimerMovimiento } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -383,5 +383,26 @@ describe('compararPorMonto — primero la moneda, después el monto', () => {
   test('sin moneda cargada cuenta como pesos', () => {
     const sinMoneda = { tipo: 'gasto', monto: 5 }
     expect(compararPorMonto(sinMoneda, { moneda: 'USD', tipo: 'gasto', monto: 5 })).toBeLessThan(0)
+  })
+})
+
+describe('desdePrimerMovimiento — los gráficos de 6 meses arrancan cuando hay datos', () => {
+  const meses = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']
+
+  test('una cuenta nueva no muestra los meses vacíos de antes', () => {
+    const txs = [{ fecha: '2026-10-06' }, { fecha: '2026-09-01' }, { fecha: '2026-09-30 ' }]
+    expect(desdePrimerMovimiento(meses, txs)).toEqual(['2026-09', '2026-10'])
+  })
+
+  test('con movimientos más viejos que los 6 meses, quedan los 6', () => {
+    expect(desdePrimerMovimiento(meses, [{ fecha: '2025-12-15' }])).toEqual(meses)
+  })
+
+  test('sin movimientos, quedan los 6 meses', () => {
+    expect(desdePrimerMovimiento(meses, [])).toEqual(meses)
+  })
+
+  test('si lo único cargado es a futuro, queda el mes actual', () => {
+    expect(desdePrimerMovimiento(meses, [{ fecha: '2026-11-01' }])).toEqual(['2026-10'])
   })
 })
