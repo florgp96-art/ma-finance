@@ -355,7 +355,7 @@ describe('totalConSigno — el total se escribe igual que cada fila', () => {
 })
 
 // Ordenar por monto mezclaba pesos, dólares y euros como si fueran comparables.
-describe('compararPorMonto — primero la moneda, después el monto', () => {
+describe('compararPorMonto — lo negativo junto y lo positivo junto, cada uno por moneda', () => {
   const movs = [
     { id: 'eur-gasto', moneda: 'EUR', tipo: 'gasto', monto: 50 },
     { id: 'ars-gasto-chico', moneda: 'ARS', tipo: 'gasto', monto: 40 },
@@ -366,18 +366,16 @@ describe('compararPorMonto — primero la moneda, después el monto', () => {
   ]
   const ordenar = (dir) => [...movs].sort((a, b) => compararPorMonto(a, b, dir)).map(t => t.id)
 
-  test('ascendente: pesos, dólares y euros, cada uno de menor a mayor', () => {
+  test('ascendente: primero los gastos (pesos, dólares, euros) y después los ingresos, de menor a mayor', () => {
     expect(ordenar('asc')).toEqual([
-      'ars-gasto-grande', 'ars-gasto-chico', 'ars-ingreso',
-      'usd-gasto', 'usd-ingreso',
-      'eur-gasto',
+      'ars-gasto-grande', 'ars-gasto-chico', 'usd-gasto', 'eur-gasto',
+      'ars-ingreso', 'usd-ingreso',
     ])
   })
-  test('descendente: las monedas siguen en el mismo orden, solo se da vuelta el monto', () => {
+  test('descendente: primero los ingresos y después los gastos; las monedas siguen en el mismo orden', () => {
     expect(ordenar('desc')).toEqual([
-      'ars-ingreso', 'ars-gasto-chico', 'ars-gasto-grande',
-      'usd-ingreso', 'usd-gasto',
-      'eur-gasto',
+      'ars-ingreso', 'usd-ingreso',
+      'ars-gasto-chico', 'ars-gasto-grande', 'usd-gasto', 'eur-gasto',
     ])
   })
   test('sin moneda cargada cuenta como pesos', () => {
