@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, desdePrimerMovimiento, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
 import { cuotasFuturasCargadas } from '../lib/cuotas'
 import { saldoTotal } from '../lib/saldos'
 import { semaforo } from '../theme'
@@ -255,7 +255,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       compras: futuras.length,
     }
 
-    const historial = getLast6Months().map(m => ({
+    const historial = desdePrimerMovimiento(getLast6Months(), transactions).map(m => ({
       mes: m,
       label: mesLabel(m).slice(0, 3),
       total: Math.round(desgloseDelMes(m).totalPagado),
@@ -515,7 +515,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       <div style={seccion}>
         <p style={{ ...label, display: 'flex', alignItems: 'center' }}>
           Total pagado por mes
-          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses" />
+          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses, desde el primero con movimientos" />
         </p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>

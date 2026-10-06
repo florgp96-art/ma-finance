@@ -11,7 +11,7 @@ import { hayColumnaSentido } from '../lib/columnaSentido'
 import { ESTADOS_FACTURACION, hayColumnaFacturacion } from '../lib/facturacion'
 import { controlDeLectura, lineasDelControl } from '../lib/controlLectura'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
-import AccountDetail, { getLast6Months, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
+import AccountDetail, { getLast6Months, desdePrimerMovimiento, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
 import PrimeraCarga from '../components/PrimeraCarga'
 import ConfigPanel from '../components/ConfigPanel'
@@ -3256,7 +3256,8 @@ export default function Dashboard() {
     // (cat:/sub:/hijo:) se calculan a partir de las porciones de
     // derivarPorcionesGasto — mismo criterio que el donut/barras — para que un
     // gasto dividido con un hijo aporte su parte al hijo y no a la categoría.
-    const evolData = getLast6Months().map(m => {
+    const mesesEvol = desdePrimerMovimiento(getLast6Months(), accountTransactions)
+    const evolData = mesesEvol.map(m => {
       const row = { mes: mesLabel(m) }
       const txsDelMes = accountTransactions.filter(t => t.fecha?.startsWith(m))
       sidebarCatEvol.forEach(key => {
@@ -3287,7 +3288,6 @@ export default function Dashboard() {
     // tenga nada cargado de lo seleccionado — a principio de mes, o cuando
     // falta cargar el resumen, un "$0" sería engañoso, así que cae al mes
     // anterior y lo aclara en pantalla.
-    const mesesEvol = getLast6Months()
     const totalDeFila = (fila) => sidebarCatEvol.reduce((s, k) => s + (fila?.[k] || 0), 0)
     const idxActual = evolData.length - 1
     const idxCalc = (totalDeFila(evolData[idxActual]) > 0 || evolData.length < 2) ? idxActual : idxActual - 1
