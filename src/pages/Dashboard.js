@@ -22,7 +22,7 @@ import Liquidacion from '../components/Liquidacion'
 import { puedeVerLiquidacion } from '../config/features'
 import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } from '../lib/liquidacionDatos'
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
-import { normalizarConfigReparto, conTrabajo } from '../lib/repartoSocios'
+import { normalizarConfigReparto, conTrabajo, porcentajesTrabajo, porcentajesValidos, sumaPorcentajes } from '../lib/repartoSocios'
 import { parseMonto } from '../lib/formato'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import * as XLSX from 'xlsx'
@@ -311,7 +311,7 @@ export default function Dashboard() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '', facturacion: '' })
+  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
   // ¿La base ya guarda si se facturó cada ingreso? (ver lib/facturacion.js)
   const [conFacturacion, setConFacturacion] = useState(false)
   useEffect(() => { hayColumnaFacturacion().then(setConFacturacion) }, [])
@@ -978,6 +978,16 @@ export default function Dashboard() {
       showToast('Poné un monto válido, por ejemplo 1500 o 1500,50.', 'error')
       return
     }
+    // Laburo de un socio: los porcentajes se revisan antes de guardar el movimiento,
+    // para no dejarlo cargado sin el reparto que se eligió.
+    const marcaTrabajo = !!(repartoSocios && efectivo.trabajoDe && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto'))
+    const porcentajesDelTrabajo = efectivo.trabajoPorcentajes
+      ? Object.fromEntries(Object.entries(efectivo.trabajoPorcentajes).map(([k, v]) => [k, parseMonto(v)]))
+      : null
+    if (marcaTrabajo && porcentajesDelTrabajo && !porcentajesValidos(porcentajesDelTrabajo, repartoSocios.socios)) {
+      showToast('Los porcentajes del laburo tienen que sumar 100.', 'error')
+      return
+    }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const catObj = categoriasDB.find(c => c.nombre === efectivo.categoria && (c.tipo || 'gasto') === tipoMovimiento)
@@ -1047,14 +1057,14 @@ export default function Dashboard() {
     }
 
     // Laburo de un socio en particular (cuentas con reparto): queda marcado como
-    // trabajo por fuera, 90 % para quien lo hizo y el resto parejo (5 % cada uno de los otros dos).
-    if (repartoSocios && efectivo.trabajoDe && (tipoMovimiento === 'ingreso' || tipoMovimiento === 'gasto')) {
-      const nueva = conTrabajo(repartoSocios, { movimientoId: movInsertado[0].id, concepto: efectivo.nombre, socio: efectivo.trabajoDe })
+    // trabajo por fuera con los porcentajes elegidos (90 / 5 / 5 si no se tocaron).
+    if (marcaTrabajo) {
+      const nueva = conTrabajo(repartoSocios, { movimientoId: movInsertado[0].id, concepto: efectivo.nombre, socio: efectivo.trabajoDe, porcentajes: porcentajesDelTrabajo })
       setRepartoSocios(nueva)
       persistPref('reparto_socios', nueva)
     }
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '', facturacion: '' })
+    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
     if (tipoMovimiento === 'ingreso') {
@@ -5833,10 +5843,37 @@ export default function Dashboard() {
                 <div style={styles.field}>
                   <label style={styles.label}>¿De quién es el laburo?</label>
                   <select style={styles.input} value={efectivo.trabajoDe || ''} aria-label="De quién es el laburo"
-                    onChange={e => setEfectivo({...efectivo, trabajoDe: e.target.value})}>
+                    onChange={e => {
+                      const socio = e.target.value
+                      // Arranca con el reparto de siempre para quien lo hizo; después se cambia a mano.
+                      const porcentajes = socio ? porcentajesTrabajo(socio, repartoSocios.socios) : null
+                      setEfectivo({ ...efectivo, trabajoDe: socio, trabajoPorcentajes: porcentajes && Object.fromEntries(Object.entries(porcentajes).map(([k, v]) => [k, String(v)])) })
+                    }}>
                     <option value="">De la agencia (partes iguales)</option>
-                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s} (90 % para {s}, 5 % para cada uno de los otros)</option>)}
+                    {repartoSocios.socios.map(s => <option key={s} value={s}>De {s}</option>)}
                   </select>
+                  {efectivo.trabajoDe && efectivo.trabajoPorcentajes && (() => {
+                    const elegidos = Object.fromEntries(Object.entries(efectivo.trabajoPorcentajes).map(([k, v]) => [k, parseMonto(v)]))
+                    const suma = sumaPorcentajes(elegidos, repartoSocios.socios)
+                    const ok = porcentajesValidos(elegidos, repartoSocios.socios)
+                    return (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${repartoSocios.socios.length}, minmax(0, 1fr))`, gap: '8px', marginTop: '8px' }}>
+                          {repartoSocios.socios.map(s => (
+                            <label key={s} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
+                              {s} %
+                              <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1"
+                                aria-label={`Porcentaje para ${s}`} value={efectivo.trabajoPorcentajes[s] ?? ''}
+                                onChange={e => setEfectivo({ ...efectivo, trabajoPorcentajes: { ...efectivo.trabajoPorcentajes, [s]: e.target.value } })} />
+                            </label>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: '11px', margin: '6px 0 0', color: ok ? (darkMode ? 'var(--m-9a8a9a)' : '#75757a') : sem.negativo }}>
+                          {ok ? 'Suman 100 % ✓' : `Suman ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(suma)} %: tienen que sumar 100.`}
+                        </p>
+                      </>
+                    )
+                  })()}
                 </div>
               )}
               <div style={{display:'grid', gridTemplateColumns: categoriasDelTipoMovimiento.length > 1 ? '1fr 1fr' : '1fr', gap:'12px'}}>
