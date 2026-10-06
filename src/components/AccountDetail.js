@@ -427,23 +427,26 @@ export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
-// Ordenar la tabla por Monto mezclaba las monedas: un gasto de € 50 quedaba entre
-// dos de $ 40 y $ 60 como si fueran comparables. Ahora primero va la moneda, siempre
-// en el mismo orden (pesos, dólares, euros, sin importar si el orden es ascendente
-// o descendente), y adentro de cada moneda el monto con su signo (ingreso positivo,
-// gasto negativo). Sin moneda cargada se asume pesos, igual que en el resto de la app.
+// Ordenar la tabla por Monto: primero todo lo negativo junto (los gastos) y después todo
+// lo positivo (los ingresos) — al revés en descendente. Adentro de cada bloque, separado
+// por moneda, siempre en el mismo orden (pesos, dólares, euros), para no mezclar un
+// € 50 entre dos de $ 40 y $ 60 como si fueran comparables; y adentro de cada moneda,
+// el monto con su signo. Sin moneda cargada se asume pesos, igual que en el resto de la app.
 const ORDEN_MONEDAS = ['ARS', 'USD', 'EUR']
 const posicionMoneda = (moneda) => {
   const i = ORDEN_MONEDAS.indexOf(moneda || 'ARS')
   return i === -1 ? ORDEN_MONEDAS.length : i
 }
 export const compararPorMonto = (a, b, dir = 'asc') => {
-  const porMoneda = posicionMoneda(a.moneda) - posicionMoneda(b.moneda)
-  if (porMoneda !== 0) return porMoneda
+  const sentido = dir === 'asc' ? 1 : -1
   const valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
   const valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
+  const porSigno = (valA < 0 ? 0 : 1) - (valB < 0 ? 0 : 1)
+  if (porSigno !== 0) return porSigno * sentido
+  const porMoneda = posicionMoneda(a.moneda) - posicionMoneda(b.moneda)
+  if (porMoneda !== 0) return porMoneda
   if (valA === valB) return 0
-  return (valA < valB ? -1 : 1) * (dir === 'asc' ? 1 : -1)
+  return (valA < valB ? -1 : 1) * sentido
 }
 
 const norm =(s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
