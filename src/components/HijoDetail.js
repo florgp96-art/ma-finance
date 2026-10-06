@@ -341,8 +341,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   // hex de modo claro escrito a mano: en oscuro, '#6e6e73' sobre el panel
   // #2A272A queda en 2,9:1 y el chip de categoría ('#5C4F5C' sobre #3A333A) en
   // 1,6:1 — o sea, ilegible.
-  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
-  const acento = darkMode ? '#D6C6D6' : '#5C4F5C'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
+  const acento = darkMode ? 'var(--m-d6c6d6)' : 'var(--m-5c4f5c)'
   const sem = semaforo(darkMode)
 
   if (loading) return (
@@ -369,9 +369,9 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             onClick={() => setMesDropdownOpen(o => !o)}
             style={{
               padding: '7px 14px', borderRadius: '20px', cursor: 'pointer', outline: 'none',
-              border: `1.5px solid ${selectedMeses.length > 0 ? '#5C4F5C' : (darkMode ? '#3A333A' : '#EDE8EC')}`,
-              backgroundColor: selectedMeses.length > 0 ? '#5C4F5C' : (darkMode ? '#2A272A' : 'white'),
-              color: selectedMeses.length > 0 ? 'white' : (darkMode ? '#C0B8C0' : '#3a3a3c'),
+              border: `1.5px solid ${selectedMeses.length > 0 ? 'var(--m-5c4f5c)' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)')}`,
+              backgroundColor: selectedMeses.length > 0 ? 'var(--m-5c4f5c)' : (darkMode ? '#2A272A' : 'white'),
+              color: selectedMeses.length > 0 ? 'white' : (darkMode ? 'var(--m-c0b8c0)' : '#3a3a3c'),
               fontSize: '13px', fontFamily: '"Montserrat", sans-serif', display: 'flex', alignItems: 'center', gap: '6px'
             }}
           >
@@ -386,12 +386,12 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
           {mesDropdownOpen && (
             <div
               className="hide-scroll"
-              style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: darkMode ? '#2A232A' : '#fff', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: '200px', maxHeight: '320px', overflowY: 'auto', padding: '6px 0' }}
+              style={{ position: 'absolute', top: '110%', left: 0, zIndex: 100, background: darkMode ? 'var(--m-2a232a)' : '#fff', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: '200px', maxHeight: '320px', overflowY: 'auto', padding: '6px 0' }}
               onMouseLeave={() => setMesDropdownOpen(false)}
             >
               <button
                 onClick={() => setSelectedMeses(selectedMeses.length === mesesDisponibles.length ? [] : [...mesesDisponibles])}
-                style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: darkMode ? '#8C7B8C' : '#5C4F5C', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontFamily: '"Montserrat", sans-serif' }}
+                style={{ width: '100%', textAlign: 'left', padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', color: darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)', borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontFamily: '"Montserrat", sans-serif' }}
               >
                 {selectedMeses.length === mesesDisponibles.length ? '✕ Deseleccionar todos' : '✓ Seleccionar todos'}
               </button>
@@ -399,9 +399,9 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                 <button
                   key={m}
                   onClick={() => toggleMes(m)}
-                  style={{ width: '100%', textAlign: 'left', padding: '7px 14px', background: selectedMeses.includes(m) ? (darkMode ? '#3A2F3A' : '#f3eef3') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#F0EDEC' : '#1d1d1f'), display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}
+                  style={{ width: '100%', textAlign: 'left', padding: '7px 14px', background: selectedMeses.includes(m) ? (darkMode ? 'var(--m-3a2f3a)' : 'var(--m-f3eef3)') : 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? '#F0EDEC' : '#1d1d1f'), display: 'flex', alignItems: 'center', gap: '8px', fontFamily: '"Montserrat", sans-serif' }}
                 >
-                  <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, background: selectedMeses.includes(m) ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
+                  <span style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, background: selectedMeses.includes(m) ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white', flexShrink: 0 }}>
                     {selectedMeses.includes(m) ? '✓' : ''}
                   </span>
                   {mesLabel(m)}
@@ -415,7 +415,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
       {/* Totales */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
         {sortedTx.length > 0 && (
-          <button onClick={handleExportCSV} style={{ padding: '9px 16px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#F0EDEC' : '#5C4F5C', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '500' }}>
+          <button onClick={handleExportCSV} style={{ padding: '9px 16px', borderRadius: '10px', border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'none', color: darkMode ? '#F0EDEC' : 'var(--m-5c4f5c)', fontSize: '13px', cursor: 'pointer', fontFamily: '"Montserrat", sans-serif', fontWeight: '500' }}>
             ⬇️ Exportar CSV
           </button>
         )}
@@ -459,11 +459,11 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             <InfoTooltip darkMode={darkMode} text={`${monedaLabel} · ${periodoLabel}`} />
           </h3>
           <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
+            <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', marginRight: '2px' }}>Vista:</span>
             {[{ type: 'donut', label: '◎ Donut' }, { type: 'bars', label: '▤ Barras' }].map(opt => (
               <button key={opt.type}
                 onClick={() => { setChartType(opt.type); localStorage.setItem('chart_type_ma', opt.type) }}
-                style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : (darkMode ? '#3A333A' : '#E2DDE0')}`, backgroundColor: chartType === opt.type ? (darkMode ? '#8C7B8C' : '#5C4F5C') : 'transparent', color: chartType === opt.type ? 'white' : (darkMode ? '#9A8A9A' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
+                style={{ padding: '4px 11px', borderRadius: '8px', border: `1px solid ${chartType === opt.type ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : (darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)')}`, backgroundColor: chartType === opt.type ? (darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)') : 'transparent', color: chartType === opt.type ? 'white' : (darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'), cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', transition: 'all 0.15s' }}>
                 {opt.label}
               </button>
             ))}
@@ -477,7 +477,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                       <Cell key={idx} fill={resolveCategoryColor(entry.name)} stroke="none" />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                  <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', paddingTop: isMobile ? '4px' : '20px', width: isMobile ? '100%' : 'auto', maxWidth: isMobile ? '100%' : '320px' }}>
@@ -502,9 +502,9 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             return (
               <ResponsiveContainer width="100%" height={chartH}>
                 <BarChart data={catData} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-                  <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
+                  <XAxis type="number" tickFormatter={v => `$${formatMonto(v)}`} tick={{ fontSize: 10, fill: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', fontFamily: '"Montserrat", sans-serif' }} />
                   <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12, fill: darkMode ? '#F0EDEC' : '#3a3a3c', fontFamily: '"Montserrat", sans-serif' }} />
-                  <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
+                  <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {catData.map((entry, idx) => (
                       <Cell key={idx} fill={resolveCategoryColor(entry.name)} />
@@ -554,10 +554,10 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
               <p style={{ ...s.statLabel, margin: '0 0 8px' }}>Últimos 6 meses</p>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={cuotaMonthlyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? '#9A8A9A' : '#888' }} />
+                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: darkMode ? 'var(--m-9a8a9a)' : '#888' }} />
                   <YAxis
                     tickFormatter={v => `$${formatMonto(v)}`}
-                    tick={{ fontSize: 10, fill: darkMode ? '#9A8A9A' : '#888' }}
+                    tick={{ fontSize: 10, fill: darkMode ? 'var(--m-9a8a9a)' : '#888' }}
                     width={72}
                   />
                   <Tooltip
@@ -611,7 +611,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                   ].map(({ h, key }, i) => (
                     <th key={h || `acciones-${i}`} onClick={key ? () => handleSort(key) : undefined} style={{
                       textAlign: key === 'monto' ? 'right' : 'left', padding: isMobile ? '8px 6px' : '8px 10px',
-                      borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`,
+                      borderBottom: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`,
                       // Un punto más chico en el celular: "DESCRIPCIÓN" a 11px
                       // no entra en la columna y se cortaba el propio título.
                       // Achicar el rótulo es preferible a robarle ancho al dato.
@@ -621,7 +621,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                       // Sin overflow oculto, un encabezado que no entra se
                       // monta encima de la columna de al lado en vez de cortarse.
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                    }}>{h}{key && <span style={{ fontSize: '10px', color: darkMode ? '#8A7A8A' : '#75757a' }}>{sortIcon(key)}</span>}</th>
+                    }}>{h}{key && <span style={{ fontSize: '10px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{sortIcon(key)}</span>}</th>
                   ))}
                 </tr>
               </thead>
@@ -632,20 +632,20 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                   const ellipsisTd = { padding: isMobile ? '9px 6px' : '9px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
                   if (isEditing) {
                     return (
-                      <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
-                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                      <tr key={t.id || i} style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : '#f0f2f8'}` }}>
+                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '360px' }}>
-                            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }} />
-                            <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
+                            <input value={editNombre} onChange={e => setEditNombre(e.target.value)} placeholder="Nombre" style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }} />
+                            <select value={editCategoria} onChange={e => { setEditCategoria(e.target.value); setEditSubcategoria('') }} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
                               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                             </select>
-                            <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
+                            <select value={editSubcategoria} onChange={e => setEditSubcategoria(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif', outline: 'none', boxSizing: 'border-box' }}>
                               <option value="">— Sin subcategoría</option>
                               {subcatsParaEditar.map(sc => <option key={sc.id} value={sc.nombre}>{sc.nombre}</option>)}
                             </select>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <button onClick={() => handleSaveEdit(t)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: '#5C4F5C', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif' }}>✓ Guardar</button>
-                              <button onClick={() => setEditingTx(null)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✕ Cancelar</button>
+                              <button onClick={() => handleSaveEdit(t)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--m-5c4f5c)', color: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif' }}>✓ Guardar</button>
+                              <button onClick={() => setEditingTx(null)} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'none', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>✕ Cancelar</button>
                             </div>
                           </div>
                         </td>
@@ -655,7 +655,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                   return (
                     <React.Fragment key={t.id || i}>
                     <tr
-                      style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}`, cursor: 'pointer' }}
+                      style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : '#f0f2f8'}`, cursor: 'pointer' }}
                       onClick={() => setFilaExpandida(prev => prev === t.id ? null : t.id)}
                     >
                       <td style={{ padding: isMobile ? '9px 6px' : '9px 10px', color: muted, whiteSpace: 'nowrap', fontSize: '12px' }}>{formatFechaCorta(t.fecha)}</td>
@@ -665,7 +665,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                       {colVisible.categoria && (
                         <td style={ellipsisTd}>
                           {t.categories?.nombre
-                            ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? '#3A333A' : '#EDE8EC', color: acento, padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
+                            ? <span title={t.categories.nombre} style={{ backgroundColor: darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)', color: acento, padding: '2px 8px', borderRadius: '10px', fontWeight: '500', fontSize: '12px' }}>{resolveCategoryIcon(t.categories.nombre, { customIcons })} {t.categories.nombre}</span>
                             : <span style={{ color: muted }}>—</span>
                           }
                         </td>
@@ -684,31 +684,31 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
                             ? <span style={{ color: sem.positivo }}>€ {formatMontoFull(t.monto)}</span>
                             : `$ ${formatMonto(t.monto)}`}
                       </td>
-                      <td style={{ padding: '9px 4px', textAlign: 'center', color: darkMode ? '#8A7A8A' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
+                      <td style={{ padding: '9px 4px', textAlign: 'center', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
                     </tr>
                     {expandido && (
-                      <tr style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#f0f2f8'}` }}>
-                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? '#242024' : '#F7F5F8' }}>
+                      <tr style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : '#f0f2f8'}` }}>
+                        <td colSpan={numColsTabla} style={{ padding: '10px', backgroundColor: darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)' }}>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 24px', marginBottom: '10px' }}>
                             <div style={{ flexBasis: '100%' }}>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Nombre</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel }}>Nombre</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.nombre || t.detalle || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Subcategoría</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel }}>Subcategoría</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.subcategories?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Forma de pago</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel }}>Forma de pago</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.accounts?.nombre || '—'}</p>
                             </div>
                             <div>
-                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a', ...rotuloLabel }}>Moneda</p>
+                              <p style={{ margin: '0 0 2px', fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel }}>Moneda</p>
                               <p style={{ margin: 0, fontSize: '13px', color: darkMode ? '#F0EDEC' : '#1d1d1f' }}>{t.moneda || 'ARS'}</p>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => startEdit(t)} style={{ flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: 'transparent', color: darkMode ? '#9A8A9A' : '#6e6e73', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' }}>✏️ Editar</button>
+                            <button onClick={() => startEdit(t)} style={{ flex: '1 1 100px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 10px', borderRadius: '8px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: 'transparent', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: '500', outline: 'none', boxSizing: 'border-box' }}>✏️ Editar</button>
                           </div>
                         </td>
                       </tr>
@@ -722,7 +722,7 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
             {hayMas && (
               <button
                 onClick={() => setVerTodos(v => !v)}
-                style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? '#C0B0C0' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif' }}
+                style={{ width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', border: `1.5px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c4f5c)', fontFamily: '"Montserrat", sans-serif' }}
               >
                 {verTodos ? '▴ Ver menos' : `▾ Ver ${sortedTx.length - MOVIMIENTOS_VISIBLES} más`}
               </button>
@@ -746,7 +746,7 @@ const getStyles = (dark, mobile) => ({
     // 24px de padding lateral en un teléfono de 360px son 48px que le faltan a
     // la tabla de movimientos, que es justo lo que se viene a leer acá.
     padding: mobile ? '16px 14px' : '20px 24px',
-    border: `1px solid ${dark ? '#3A333A' : '#EDE8EC'}`,
+    border: `1px solid ${dark ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`,
     marginBottom: '20px',
   },
   cardTitle: {
@@ -760,14 +760,14 @@ const getStyles = (dark, mobile) => ({
     padding: '14px 20px',
     borderRadius: '12px',
     backgroundColor: dark ? '#2A272A' : '#F0EDEC',
-    border: `1px solid ${dark ? '#3A333A' : '#E2DDE0'}`,
+    border: `1px solid ${dark ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
     flex: 1,
     minWidth: '140px',
   },
   statLabel: {
     margin: 0,
     fontSize: '11px',
-    color: dark ? '#9A8A9A' : '#6e6e73',
+    color: dark ? 'var(--m-9a8a9a)' : '#6e6e73',
     letterSpacing: '0.06em',
     ...rotuloLabel,
   },

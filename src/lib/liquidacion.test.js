@@ -1,6 +1,6 @@
 import {
   TARIFAS_POR_DEFECTO, claveValida, diasDelMes, numeroValido, subtotalDia, resumenMes, ordenarDias,
-  nuevoDia, tarifasHeredadas, mesParaAbrir, historialCerrados, totalDelMes, aCentavos,
+  nuevoDia, tarifasHeredadas, mesParaAbrir, historialCerrados, totalDelMes, aCentavos, nombreValido, TARIFAS_EN_CERO,
 } from './liquidacion'
 
 const tarifas = { ...TARIFAS_POR_DEFECTO }
@@ -44,6 +44,8 @@ describe('resumenMes', () => {
 
 test('numeroValido: acepta coma decimal y rechaza NaN, negativos y fuera de rango', () => {
   expect(numeroValido('2,5')).toBe(2.5)
+  expect(numeroValido('7.500')).toBe(7500)
+  expect(numeroValido('25.000,50')).toBe(25000.5)
   expect(numeroValido('7.5', { max: 24 })).toBe(7.5)
   expect(numeroValido('')).toBe(null)
   expect(numeroValido('abc')).toBe(null)
@@ -150,4 +152,18 @@ describe('totalDelMes', () => {
 test('aCentavos', () => {
   expect(aCentavos(1234.5678)).toBe(1234.57)
   expect(aCentavos(NaN)).toBe(0)
+})
+
+test('tarifasHeredadas: sin meses anteriores usa las que se le pasen (una liquidación nueva, en cero)', () => {
+  expect(tarifasHeredadas([], '2026-10', TARIFAS_EN_CERO)).toEqual({ valor_hora: 0, valor_viatico: 0, valor_jornada: 0 })
+  expect(tarifasHeredadas([{ clave: '2026-09', valor_hora: 9000, valor_viatico: 0, valor_jornada: 0 }], '2026-10', TARIFAS_EN_CERO))
+    .toEqual({ valor_hora: 9000, valor_viatico: 0, valor_jornada: 0 })
+})
+
+test('nombreValido: limpia espacios y rechaza vacío o demasiado largo', () => {
+  expect(nombreValido('  Sueldo   de Renata ')).toBe('Sueldo de Renata')
+  expect(nombreValido('   ')).toBeNull()
+  expect(nombreValido(null)).toBeNull()
+  expect(nombreValido('x'.repeat(60))).toHaveLength(60)
+  expect(nombreValido('x'.repeat(61))).toBeNull()
 })

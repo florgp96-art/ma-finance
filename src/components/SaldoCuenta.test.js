@@ -139,6 +139,24 @@ describe('la card se renderiza', () => {
     expect(await screen.findByText(/incluye \$ 500.000 de pagos de tarjeta/)).toBeInTheDocument()
   })
 
+  // La caja en dólares es la cuenta de pago en dólares de la tarjeta (cuenta_pago_id_usd):
+  // antes no se buscaban esas tarjetas y sus pagos no se restaban nunca.
+  test('el pago en dólares de la tarjeta se resta de la caja en dólares', async () => {
+    const cuentaUSD = { id: 'ca-usd', nombre: 'Caja de Ahorro USD Galicia', tipo: 'debito' }
+    const tarjeta = { id: 'visa', nombre: 'Visa Galicia', tipo: 'credito', cuenta_pago_id: CA, cuenta_pago_id_usd: 'ca-usd' }
+    respuestas.account_balances = {
+      data: [{ id: 'a1', account_id: 'ca-usd', moneda: 'USD', fecha: '2026-09-16', saldo: 303.49 }],
+      error: null,
+    }
+    respuestas.transactions = {
+      data: [{ id: 'p1', account_id: 'visa', tipo: 'neutro', fecha: '2026-09-21', monto: 54.41, moneda: 'USD', nombre: 'Pago Tarjeta Visa' }],
+      error: null,
+    }
+    render(<SaldoCuenta account={cuentaUSD} accounts={[cuentaUSD, tarjeta]} transactions={[]}
+      darkMode={false} styles={styles} />)
+    expect(await screen.findByText('U$S 249,08')).toBeInTheDocument()
+  })
+
   test('avisa cuando una tarjeta no tiene cuenta de pago configurada', async () => {
     const sinConfigurar = { id: 'visa', nombre: 'Visa Galicia', tipo: 'credito' }
     montar({ accounts: [cuentaCA, sinConfigurar] })

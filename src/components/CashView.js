@@ -267,10 +267,10 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
   // que se usa una versión más clara del mismo tono.
-  const chartLine = darkMode ? '#C4B4DC' : '#5C4F5C'
+  const chartLine = darkMode ? 'var(--m-c4b4dc)' : 'var(--m-5c4f5c)'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
-  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
-  const border = darkMode ? '#3A333A' : '#E2DDE0'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
+  const border = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const sem = semaforo(darkMode)
   const panel = darkMode ? '#2A272A' : '#F0EDEC'
   const cardBg = darkMode ? '#1C1A1C' : 'white'
@@ -327,7 +327,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
           <div className="hide-scroll" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '10px', padding: '6px', maxHeight: '260px', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', minWidth: '180px' }}>
             {mesesDisponibles.map(m => (
               <div key={m} onClick={() => { setSelectedMonth(m); setMesDropdownOpen(false) }}
-                style={{ padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: txt, backgroundColor: m === selectedMonth ? (darkMode ? '#3A333A' : '#EDE8EC') : 'transparent' }}>
+                style={{ padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: txt, backgroundColor: m === selectedMonth ? (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)') : 'transparent' }}>
                 {mesLabel(m)}
               </div>
             ))}
@@ -414,18 +414,25 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             las dos pantallas no pueden discrepar. */}
         {totalDisponible.porMoneda.length > 0 && (
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: txt, padding: '4px 0' }}>
+            {/* Una moneda por renglón y cada importe entero: todos en una línea con "·"
+                no entraban en el celular y se cortaban por la mitad ("$ 190.500 · U$S"
+                arriba y "30,08" abajo), así que los dólares parecían otro número. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', fontSize: '14px', color: txt, padding: '4px 0' }}>
               <span>Plata que tenés{esMesEnCurso ? ' hoy' : ' al cierre del mes'}</span>
-              <span style={{ fontWeight: '700' }}>
-                {totalDisponible.porMoneda.map(s => `${SIMBOLO_MONEDA[s.moneda] || '$'} ${s.moneda === 'ARS' ? formatMonto(s.saldo) : formatMontoFull(s.saldo)}`).join('  ·  ')}
+              <span style={{ fontWeight: '700', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                {totalDisponible.porMoneda.map(s => (
+                  <span key={s.moneda} style={{ whiteSpace: 'nowrap' }}>
+                    {SIMBOLO_MONEDA[s.moneda] || '$'} {s.moneda === 'ARS' ? formatMonto(s.saldo) : formatMontoFull(s.saldo)}
+                  </span>
+                ))}
               </span>
             </div>
             {totalDisponible.detalle.length > 1 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
                 {totalDisponible.detalle.map(d => (
-                  <div key={`${d.account_id}-${d.moneda}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: muted }}>
+                  <div key={`${d.account_id}-${d.moneda}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '12px', color: muted }}>
                     <span>{d.nombre}{d.moneda !== 'ARS' ? ` (${d.moneda})` : ''}</span>
-                    <span>{SIMBOLO_MONEDA[d.moneda] || '$'} {d.moneda === 'ARS' ? formatMonto(d.saldo) : formatMontoFull(d.saldo)}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}>{SIMBOLO_MONEDA[d.moneda] || '$'} {d.moneda === 'ARS' ? formatMonto(d.saldo) : formatMontoFull(d.saldo)}</span>
                   </div>
                 ))}
               </div>

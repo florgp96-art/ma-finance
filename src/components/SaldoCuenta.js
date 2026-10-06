@@ -1,21 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
-import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta } from '../lib/saldos'
-import { formatMonto, formatMontoFull, formatFecha } from '../lib/formato'
+import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
+import { formatMonto, formatMontoFull, formatFecha, parseMonto } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
 const SIMBOLO = { ARS: '$', USD: 'U$S', EUR: '€' }
 const hoyISO = () => new Date().toISOString().slice(0, 10)
 
-// El input es type="number", así que el valor ya llega canónico ("1234.56"): no hay
-// que interpretar separadores de miles. Un saldo puede ser negativo (una cuenta en
-// descubierto), así que no se acota el signo — solo se exige que sea un número.
-const parseSaldo = (valor) => {
-  if (valor === '' || valor === null || valor === undefined) return null
-  const n = parseFloat(valor)
-  return Number.isFinite(n) ? n : null
-}
+// El campo es de texto (el teclado del iPhone solo trae coma, ver parseMonto): se
+// aceptan "1234,56", "1.234,56" y "1234.56". Un saldo puede ser negativo (una
+// cuenta en descubierto), así que no se acota el signo — solo se exige que sea un
+// número.
+const parseSaldo = (valor) => parseMonto(valor)
 const fmt = (monto, moneda) => `${SIMBOLO[moneda] || '$'} ${moneda === 'ARS' ? formatMonto(monto) : formatMontoFull(monto)}`
 
 // Se re-exporta para no romper los imports que ya apuntaban acá.
@@ -26,7 +23,7 @@ export { tieneSaldo } from '../lib/saldos'
 // porqué del modelo de anclas.
 export default function SaldoCuenta({ account, accounts, transactions, darkMode, styles, onSaved }) {
   const sem = semaforo(darkMode)
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const [anclas, setAnclas] = useState([])
   const [pagosDeTarjeta, setPagosDeTarjeta] = useState([])
   // null = la columna/tabla todavía no existen (migración sin correr). Se avisa en
@@ -58,11 +55,12 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
     // Los pagos de tarjeta viven en la cuenta de CRÉDITO, no en esta: hay que ir a
     // buscarlos a las tarjetas que se pagan desde acá. Es la plata más grande que
     // sale de la cuenta en el mes, así que sin esto el saldo queda muy de más.
-    const tarjetasQuePago = (accountsRef.current || [])
-      .filter(a => a.tipo === 'credito' && a.cuenta_pago_id === account.id)
+    // En pesos o en dólares: una caja en dólares es la cuenta de pago en dólares
+    // (cuenta_pago_id_usd) y antes no se buscaba, así que esos pagos no se restaban.
+    const tarjetasQuePago = (accountsRef.current || []).filter(esTarjetaQueSePagaDesde(account.id))
     if (tarjetasQuePago.length === 0) { setPagosDeTarjeta([]); return }
     const { data: pagos } = await supabase.from('transactions')
-      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id')
+      .select('id, fecha, monto, moneda, tipo, nombre, detalle, account_id, created_at')
       .in('account_id', tarjetasQuePago.map(a => a.id)).eq('tipo', 'neutro')
     setPagosDeTarjeta(pagos || [])
   }, [account?.id])
@@ -133,7 +131,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   // El detalle sale de la card y entra acá: de qué saldo parte cada moneda, qué se
   // contó desde entonces y cuántos movimientos fueron.
   const textoDelTooltip = useMemo(() => {
-    const comoFunciona = 'Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número.'
+    const comoFunciona = 'Sale del saldo que cargaste más lo que pasó DESPUÉS: ingresos que entraron, gastos y pagos que salieron. Se mueve solo a medida que cargás movimientos nuevos. Lo que tiene fecha anterior al saldo que pusiste no lo cambia: esa plata ya entró o salió antes de que contaras, así que ya está adentro del número. Tampoco lo que ya tenías cargado con fecha de más adelante cuando lo pusiste: ya lo conocías.'
     if (saldos.length === 0) return comoFunciona
     const detalle = saldos.map(s => {
       const desde = `Desde ${fmt(s.ancla.saldo, s.moneda)} del ${formatFecha(s.ancla.fecha)}`
@@ -202,7 +200,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
         <button onClick={() => { setEditando(true); setFecha(hoyISO()); setMoneda(monedaDefault); setError(null) }}
           style={{
             marginTop: '10px', width: '100%', padding: '6px', borderRadius: '8px', cursor: 'pointer',
-            border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
+            border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'transparent',
             color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '12px', fontFamily: '"Montserrat", sans-serif',
           }}>
           {saldos.length === 0 ? 'Cargar saldo' : 'Actualizar saldo'}
@@ -215,7 +213,7 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
               <option value="USD">U$S</option>
               <option value="EUR">€</option>
             </select>
-            <input type="number" step="0.01" autoFocus value={valor} placeholder="saldo de hoy"
+            <input type="text" inputMode="decimal" autoComplete="off" autoFocus value={valor} placeholder="saldo de hoy"
               onChange={e => setValor(e.target.value)} style={inputStyle(darkMode)} />
           </div>
           <input type="date" value={fecha} max={hoyISO()} onChange={e => setFecha(e.target.value)} style={inputStyle(darkMode)} />
@@ -251,12 +249,12 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
 
 const inputStyle = (darkMode, width) => ({
   flex: width ? undefined : 1, width, padding: '5px 8px', borderRadius: '8px', fontSize: '12px',
-  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`,
+  border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`,
   backgroundColor: darkMode ? '#1C1A1C' : '#fff', color: darkMode ? '#F0EDEC' : '#1d1d1f',
 })
 
 const botonStyle = (darkMode) => ({
   flex: 1, padding: '5px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px',
-  border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, background: 'transparent',
+  border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, background: 'transparent',
   fontFamily: '"Montserrat", sans-serif',
 })

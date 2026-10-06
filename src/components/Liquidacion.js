@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { formatMonto, formatCantidad, diaDeLaSemana } from '../lib/formato'
 import { nombreDelMes, moverMes } from '../lib/repartoSocios'
 import {
-  CAMPOS_TARIFA, LIMITES, aCentavos, claveValida, diasDelMes, historialCerrados, mesParaAbrir,
-  nuevoDia, numeroValido, ordenarDias, resumenMes, subtotalDia, tarifasDe, tarifasHeredadas, totalDelMes,
+  CAMPOS_TARIFA, LARGO_MAXIMO_NOMBRE, LIMITES, TARIFAS_EN_CERO, aCentavos, claveValida, diasDelMes, historialCerrados,
+  mesParaAbrir, nombreValido, nuevoDia, numeroValido, ordenarDias, resumenMes, subtotalDia, tarifasDe, tarifasHeredadas,
+  totalDelMes,
 } from '../lib/liquidacion'
 import * as datos from '../lib/liquidacionDatos'
+import IngresosFuturos from './IngresosFuturos'
 import { conReintento } from '../lib/colaGuardado'
 import useGuardado from '../hooks/useGuardado'
 import { paleta, semaforo } from '../theme'
@@ -36,7 +38,7 @@ function CampoNumero({ valor, onValor, onSalir, min = 0, max, entero = false, al
 
   return (
     <input
-      type="number" inputMode={entero ? 'numeric' : 'decimal'} min={min} max={max}
+      type="text" inputMode={entero ? 'numeric' : 'decimal'} autoComplete="off"
       value={texto}
       aria-invalid={numeroValido(texto, limites) === null || undefined}
       onFocus={() => setEnfocado(true)}
@@ -108,13 +110,74 @@ function FilaDia({ fila, clave, tarifas, soloLectura, estilos, onCambiarDia, onC
   )
 }
 
-// Liquidación del sueldo mensual de la empleada (ver lib/liquidacion.js para las
-// cuentas). Todo se guarda en Supabase a medida que se toca (ver
-// lib/colaGuardado.js): lo estructural en el momento y lo que se tipea a los
-// 500 ms como mucho. La pantalla cambia antes de que vuelva la respuesta; si
-// Supabase falla dos veces, lo estructural se deshace y lo tipeado queda en
-// pantalla con un "Reintentar".
-function Liquidacion({ userId, darkMode, styles }) {
+const ETIQUETA_TIPO = { pago: 'La pagás vos', cobro: 'Te la pagan' }
+
+// Nombre y tipo de la liquidación, y borrarla. Se abre con el lápiz del título, y
+// solo al crear una nueva (que todavía se llama "Nueva liquidación").
+function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onBorrar, onCerrar }) {
+  const { c, input, botonChico, rotuloCampo, caja, sem } = estilos
+  const [nombre, setNombre] = useState(liquidacion.nombre)
+  const [tipo, setTipo] = useState(liquidacion.tipo)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState(null)
+
+  const guardar = async (e) => {
+    e.preventDefault()
+    const limpio = nombreValido(nombre)
+    if (!limpio) { setError(`Poné un nombre (hasta ${LARGO_MAXIMO_NOMBRE} letras).`); return }
+    setGuardando(true)
+    setError(null)
+    // Si sale bien el formulario se cierra: solo se toca el estado cuando falla.
+    const fallo = await onGuardar({ nombre: limpio, tipo })
+    if (fallo) { setGuardando(false); setError(fallo) }
+  }
+
+  const borrar = async () => {
+    const meses = cantidadMeses === 1 ? '1 mes' : `${cantidadMeses} meses`
+    const conMeses = cantidadMeses > 0 ? ` con sus ${meses}` : ''
+    if (!window.confirm(`¿Borrar "${liquidacion.nombre}"${conMeses}? No se puede deshacer.`)) return
+    const fallo = await onBorrar()
+    if (fallo) setError(fallo)
+  }
+
+  return (
+    <form onSubmit={guardar} style={{ ...caja, marginTop: '12px' }}>
+      <label style={rotuloCampo}>
+        Nombre
+        <input autoFocus value={nombre} maxLength={LARGO_MAXIMO_NOMBRE} onChange={e => setNombre(e.target.value)}
+          placeholder="Ej: Sueldo de Renata, Clases de inglés" style={{ ...input, padding: '8px' }} />
+      </label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
+        {Object.entries(ETIQUETA_TIPO).map(([valor, etiqueta]) => (
+          <button key={valor} type="button" aria-pressed={tipo === valor} onClick={() => setTipo(valor)}
+            style={{ ...botonChico, padding: '8px', ...(tipo === valor ? { background: c.primarySoft, borderColor: c.primary, fontWeight: 600 } : {}) }}>
+            {valor === 'pago' ? '🧾' : '💰'} {etiqueta}
+          </button>
+        ))}
+      </div>
+      {error && <p role="alert" style={{ fontSize: '12px', color: sem.negativo, margin: '8px 0 0' }}>{error}</p>}
+      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+        <button type="submit" disabled={guardando} style={{ ...botonChico, flex: 1, padding: '8px', color: c.primary, fontWeight: 600 }}>
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button type="button" onClick={onCerrar} style={{ ...botonChico, flex: 1, padding: '8px' }}>Cancelar</button>
+      </div>
+      <button type="button" onClick={borrar}
+        style={{ background: 'none', border: 'none', padding: '10px 0 0', cursor: 'pointer', color: c.textTertiary, fontSize: '12px', textDecoration: 'underline', fontFamily: 'inherit' }}>
+        Borrar esta liquidación
+      </button>
+    </form>
+  )
+}
+
+// Una liquidación mensual —el sueldo de la empleada, o lo que se cobra por un trabajo
+// propio— (ver lib/liquidacion.js para las cuentas). Todo se guarda en Supabase a
+// medida que se toca (ver lib/colaGuardado.js): lo estructural en el momento y lo que
+// se tipea a los 500 ms como mucho. La pantalla cambia antes de que vuelva la
+// respuesta; si Supabase falla dos veces, lo estructural se deshace y lo tipeado
+// queda en pantalla con un "Reintentar".
+function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, styles, onCambiada, onBorrada }) {
+  const liquidacionId = liquidacion?.id
   const { cola, estado } = useGuardado()
   const [meses, setMesesEstado] = useState([])
   const [dias, setDiasEstado] = useState([])
@@ -124,6 +187,7 @@ function Liquidacion({ userId, darkMode, styles }) {
   const [aviso, setAviso] = useState(null)
   const [tarifasAbiertas, setTarifasAbiertas] = useState(false)
   const [cerrando, setCerrando] = useState(false)
+  const [editando, setEditando] = useState(editarAlAbrir)
 
   // Espejos del estado: las escrituras y los deshacer leen el valor de ahora, no
   // el del render en que se armó el handler.
@@ -151,7 +215,7 @@ function Liquidacion({ userId, darkMode, styles }) {
   const soloLectura = cerrado || cargando || !mes
 
   const irAMes = useCallback(async (nueva) => {
-    if (!claveValida(nueva) || !userId) return
+    if (!claveValida(nueva) || !userId || !liquidacionId) return
     const pedido = ++pedidoRef.current
     destinoRef.current = nueva
     setCargando(true)
@@ -160,10 +224,13 @@ function Liquidacion({ userId, darkMode, styles }) {
     await cola.vaciar()
     let destino = mesesRef.current.find(m => m.clave === nueva)
     if (!destino) {
-      const fila = { id: datos.nuevoId(), user_id: userId, clave: nueva, ...tarifasHeredadas(mesesRef.current, nueva) }
+      const fila = {
+        id: datos.nuevoId(), user_id: userId, liquidacion_id: liquidacionId, clave: nueva,
+        ...tarifasHeredadas(mesesRef.current, nueva, TARIFAS_EN_CERO),
+      }
       let respuesta = await conReintento(() => datos.crearMes(fila))
       // Lo pudo haber creado otra pestaña o el celular: se usa ese.
-      if (respuesta.error?.code === '23505') respuesta = await conReintento(() => datos.leerMesPorClave(userId, nueva))
+      if (respuesta.error?.code === '23505') respuesta = await conReintento(() => datos.leerMesPorClave(liquidacionId, nueva))
       if (pedido !== pedidoRef.current) return
       if (respuesta.error || !respuesta.data) {
         setErrorCarga(`No se pudo abrir ${nombreDelMes(nueva)}.`)
@@ -183,14 +250,14 @@ function Liquidacion({ userId, darkMode, styles }) {
     setDias((filas || []).map(aDia))
     setClave(nueva)
     setCargando(false)
-  }, [cola, userId, setMeses, setDias])
+  }, [cola, userId, liquidacionId, setMeses, setDias])
 
   const cargarTodo = useCallback(async () => {
-    if (!userId) return
+    if (!userId || !liquidacionId) return
     const pedido = ++pedidoRef.current
     setCargando(true)
     setErrorCarga(null)
-    const { data, error } = await conReintento(() => datos.leerMeses(userId))
+    const { data, error } = await conReintento(() => datos.leerMeses(liquidacionId))
     if (pedido !== pedidoRef.current) return
     if (error) {
       setErrorCarga('No se pudo leer la liquidación.')
@@ -199,7 +266,7 @@ function Liquidacion({ userId, darkMode, styles }) {
     }
     setMeses((data || []).map(aMes))
     irAMes(mesParaAbrir(mesesRef.current))
-  }, [userId, irAMes, setMeses])
+  }, [userId, liquidacionId, irAMes, setMeses])
 
   useEffect(() => { cargarTodo() }, [cargarTodo])
 
@@ -301,6 +368,23 @@ function Liquidacion({ userId, darkMode, styles }) {
     if (ok) irAMes(mesParaAbrir(mesesRef.current))
   }
 
+  // Devuelven el error para mostrar, o null si salió bien.
+  const guardarLiquidacion = async (cambios) => {
+    const { error } = await conReintento(() => datos.actualizarLiquidacion(liquidacionId, cambios))
+    if (error) return 'No se pudo guardar. Probá de nuevo.'
+    setEditando(false)
+    onCambiada?.({ ...liquidacion, ...cambios })
+    return null
+  }
+
+  const borrarLiquidacion = async () => {
+    await cola.vaciar()
+    const { error } = await conReintento(() => datos.borrarLiquidacion(liquidacionId))
+    if (error) return 'No se pudo borrar. Probá de nuevo.'
+    onBorrada?.(liquidacionId)
+    return null
+  }
+
   const reabrirMes = async (item) => {
     setAviso(null)
     const ok = await cambiarEstadoDelMes(item.id, { cerrado: false }, `No se pudo volver a abrir ${nombreDelMes(item.clave)}.`)
@@ -323,6 +407,11 @@ function Liquidacion({ userId, darkMode, styles }) {
   const total = mes ? totalDelMes(mes, dias) : 0
   const historial = historialCerrados(meses)
   const tarifas = tarifasDe(mes)
+  // Sin ninguna tarifa (una liquidación nueva) el total no puede dar nada: se muestran
+  // abiertas para que se carguen primero.
+  const sinTarifas = !!mes && CAMPOS_TARIFA.every(campo => !tarifas[campo])
+  const verTarifas = tarifasAbiertas || sinTarifas
+  const cobro = liquidacion?.tipo === 'cobro'
 
   const textoEstado = estado.pendientes > 0 ? 'Guardando…'
     : (estado.fallidas > 0 || estado.error) ? 'No se pudo guardar'
@@ -332,7 +421,15 @@ function Liquidacion({ userId, darkMode, styles }) {
     <div style={{ color: c.text }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
         <div style={{ minWidth: 0 }}>
-          <p style={{ ...rotulo, margin: '0 0 2px' }}>Liquidación</p>
+          {/* Como el título de una cuenta: se toca para cambiarle el nombre o borrarla. */}
+          <button type="button" aria-label={`Editar ${liquidacion?.nombre || 'la liquidación'}`} title="Tocar para cambiar el nombre o borrarla"
+            onClick={() => setEditando(e => !e)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '100%', margin: '0 0 2px', padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+            <span style={{ ...rotulo, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {cobro ? '💰' : '🧾'} {liquidacion?.nombre || 'Liquidación'} · {cobro ? 'cobrás' : 'pagás'}
+            </span>
+            <span aria-hidden="true" style={{ fontSize: '11px' }}>✏️</span>
+          </button>
           <h2 style={{ fontSize: '18px', fontWeight: 500, margin: 0, color: c.text }}>{clave ? nombreDelMes(clave) : ' '}</h2>
         </div>
         <div aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: textoEstado === 'No se pudo guardar' ? sem.negativo : c.textTertiary, whiteSpace: 'nowrap' }}>
@@ -342,6 +439,12 @@ function Liquidacion({ userId, darkMode, styles }) {
           )}
         </div>
       </div>
+
+      {editando && liquidacion && (
+        <EditarLiquidacion liquidacion={liquidacion} cantidadMeses={meses.length}
+          estilos={{ c, input, botonChico, rotuloCampo, caja, sem }}
+          onGuardar={guardarLiquidacion} onBorrar={borrarLiquidacion} onCerrar={() => setEditando(false)} />
+      )}
 
       <p style={{ fontSize: '32px', fontWeight: 700, margin: '8px 0 2px', color: c.text, ...NUMEROS }}>{pesos(total)}</p>
       <p style={{ fontSize: '13px', color: c.textSecondary, margin: '0 0 14px', ...NUMEROS }}>
@@ -377,14 +480,17 @@ function Liquidacion({ userId, darkMode, styles }) {
           )}
 
           <div style={caja}>
-            <button type="button" aria-expanded={tarifasAbiertas} onClick={() => setTarifasAbiertas(a => !a)}
+            <button type="button" aria-expanded={verTarifas} onClick={() => setTarifasAbiertas(a => !a)}
               style={{ ...fila, width: '100%', margin: 0, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
               <span style={{ ...rotulo, margin: 0 }}>Tarifas del mes</span>
               <span style={{ fontSize: '12px', color: c.textSecondary, ...NUMEROS }}>
-                {tarifasAbiertas ? '▴' : `${pesos(tarifas.valor_hora)} la hora ▾`}
+                {verTarifas ? '▴' : `${pesos(tarifas.valor_hora)} la hora ▾`}
               </span>
             </button>
-            {tarifasAbiertas && (
+            {sinTarifas && !soloLectura && (
+              <p style={{ fontSize: '12px', color: c.textSecondary, margin: '8px 0 0' }}>Cargá cuánto vale la hora, el viaje o la jornada.</p>
+            )}
+            {verTarifas && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginTop: '10px' }}>
                 {CAMPOS_TARIFA.map(campo => (
                   <label key={campo} style={rotuloCampo}>
@@ -428,6 +534,12 @@ function Liquidacion({ userId, darkMode, styles }) {
         </>
       )}
 
+      {/* Solo en las que te pagan: en la de la empleada no hay nada que cobrar. */}
+      {cobro && liquidacionId && (
+        <IngresosFuturos userId={userId} liquidacionId={liquidacionId}
+          estilos={{ c, sem, input, caja, rotulo, botonChico }} />
+      )}
+
       {historial.meses.length > 0 && (
         <div style={caja}>
           <p style={rotulo}>Meses cerrados</p>
@@ -442,7 +554,7 @@ function Liquidacion({ userId, darkMode, styles }) {
             </div>
           ))}
           <div style={{ ...fila, borderTop: `1px solid ${c.border}`, paddingTop: '8px', marginTop: '8px', fontWeight: 700 }}>
-            <span>Acumulado</span>
+            <span>{cobro ? 'Acumulado cobrado' : 'Acumulado pagado'}</span>
             <span style={NUMEROS}>{pesos(historial.acumulado)}</span>
           </div>
         </div>

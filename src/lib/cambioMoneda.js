@@ -9,10 +9,16 @@
 // Las dos patas pueden ser la misma cuenta: una billetera como Mercado Pago tiene
 // saldo en pesos y en dólares, y el saldo se lleva por cuenta Y moneda.
 //
+// Con la misma moneda de los dos lados no es un cambio sino una TRANSFERENCIA entre
+// cuentas propias (del efectivo a la caja de ahorro, de la caja a Mercado Pago): los
+// mismos dos neutros, por el mismo monto, en dos cuentas distintas.
+//
 // Cada pata lleva su `sentido` (ver signoEnSaldo). Si la base todavía no tiene esa
 // columna, el texto hace de respaldo: la pata que entra dice "Acreditación", una de
 // las palabras con las que signoEnSaldo reconoce plata que vuelve, y la que sale no
 // dice ninguna.
+
+import { parseMonto } from './formato'
 
 export const MONEDAS_CAMBIO = ['ARS', 'USD', 'EUR']
 export const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
@@ -21,7 +27,7 @@ const MONTO_MAXIMO = 1e12
 const redondear = (n) => Math.round(n * 100) / 100
 
 const montoValido = (v) => {
-  const n = Number(v)
+  const n = parseMonto(v)
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? redondear(n) : null
 }
 
@@ -48,8 +54,10 @@ export const tipoDeCambioImplicito = ({ origen, destino }) => {
 
 // Los dos movimientos listos para insertar, o { error } con qué corregir.
 //
-// origen/destino: { accountId, moneda, monto }. conSentido: si la base ya tiene la
-// columna (ver hayColumnaSentido); sin ella el insert fallaría entero.
+// origen/destino: { accountId, moneda, monto, nombre }. El nombre de la cuenta solo
+// se usa para describir una transferencia ("Transferencia a Caja de Ahorro").
+// conSentido: si la base ya tiene la columna (ver hayColumnaSentido); sin ella el
+// insert fallaría entero.
 // tipoCambioUSD: el de referencia de la app, para la pata en dólares cuando la otra
 // no es en pesos (con pesos del otro lado se usa el del cambio, que es el real).
 export const armarCambioDeMoneda = ({ userId, fecha, origen, destino, conSentido = true, tipoCambioUSD = null }) => {
@@ -57,20 +65,23 @@ export const armarCambioDeMoneda = ({ userId, fecha, origen, destino, conSentido
   if (!fechaValida(fecha)) return { error: 'Elegí una fecha válida.' }
   if (!origen?.accountId || !destino?.accountId) return { error: 'Elegí de qué cuenta sale la plata y a cuál entra.' }
   if (!MONEDAS_CAMBIO.includes(origen.moneda) || !MONEDAS_CAMBIO.includes(destino.moneda)) return { error: 'Elegí la moneda de cada lado.' }
-  if (origen.moneda === destino.moneda) return { error: 'En un cambio las dos monedas tienen que ser distintas.' }
+  const esTransferencia = origen.moneda === destino.moneda
+  if (esTransferencia && origen.accountId === destino.accountId) return { error: 'Para pasar plata en la misma moneda elegí dos cuentas distintas.' }
   const montoOrigen = montoValido(origen.monto)
-  const montoDestino = montoValido(destino.monto)
+  // En la misma moneda lo que sale es lo que entra: un solo monto.
+  const montoDestino = esTransferencia ? montoOrigen : montoValido(destino.monto)
+  if (esTransferencia && !montoOrigen) return { error: 'Completá el monto con un número mayor a cero.' }
   if (!montoOrigen || !montoDestino) return { error: 'Completá los dos montos con un número mayor a cero.' }
 
   const tc = tipoDeCambioImplicito({ origen, destino })
   const tcReferencia = Number(tipoCambioUSD)
   const fxRate = (moneda) => {
     if (moneda !== 'USD') return null
-    if (tc.moneda === 'USD' && tc.en === 'ARS') return redondear(tc.valor)
+    if (tc && tc.moneda === 'USD' && tc.en === 'ARS') return redondear(tc.valor)
     return Number.isFinite(tcReferencia) && tcReferencia > 0 ? tcReferencia : null
   }
-  const nombre = `Cambio ${formatoCambio(montoOrigen, origen.moneda)} → ${formatoCambio(montoDestino, destino.moneda)}`
-  const pata = (lado, monto, sentido, detalle) => ({
+  const nombreCambio = `Cambio ${formatoCambio(montoOrigen, origen.moneda)} → ${formatoCambio(montoDestino, destino.moneda)}`
+  const pata = (lado, monto, sentido, detalle, nombre) => ({
     user_id: userId,
     account_id: lado.accountId,
     fecha,
@@ -90,10 +101,18 @@ export const armarCambioDeMoneda = ({ userId, fecha, origen, destino, conSentido
     fx_rate: fxRate(lado.moneda),
     ...(conSentido ? { sentido } : {}),
   })
+  if (esTransferencia) {
+    return {
+      movimientos: [
+        pata(origen, montoOrigen, 'sale', 'Débito por transferencia entre cuentas', `Transferencia a ${destino.nombre || 'otra cuenta'}`),
+        pata(destino, montoDestino, 'entra', 'Acreditación por transferencia entre cuentas', `Transferencia desde ${origen.nombre || 'otra cuenta'}`),
+      ],
+    }
+  }
   return {
     movimientos: [
-      pata(origen, montoOrigen, 'sale', 'Débito por cambio de moneda'),
-      pata(destino, montoDestino, 'entra', 'Acreditación por cambio de moneda'),
+      pata(origen, montoOrigen, 'sale', 'Débito por cambio de moneda', nombreCambio),
+      pata(destino, montoDestino, 'entra', 'Acreditación por cambio de moneda', nombreCambio),
     ],
   }
 }

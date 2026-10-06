@@ -123,16 +123,32 @@ export const ultimaAncla = (anclas, accountId, moneda = 'ARS', hasta = null) => 
 // el resumen de agosto, esa plata ya salió de la cuenta y ya está descontada en el
 // saldo que pusiste. Contarla de nuevo sería restarla dos veces.
 //
+// Lo mismo al revés con un movimiento que tiene fecha POSTERIOR al día en que se
+// cargó el saldo pero se cargó ANTES: ya lo conocías cuando tipeaste el número.
+// Caso real: el pago de la niñera fechado el lunes, hecho y cargado el sábado, y
+// enseguida "hoy tengo $34.072" — ya descontado. Se restaba igual y el saldo quedaba
+// en -$131.028. Lo que tiene fecha entre el ancla y el día en que se cargó sí cuenta:
+// con "el 10/09 tenía $X" puesto el 20/09, lo del 15/09 pasó después de ese número.
+//
 // `created_at` puede no existir (la columna se agrega aparte, y no todas las filas
 // viejas la tienen). Sin ese dato se cae al criterio de solo fecha, que es el que
 // había: un dato opcional que falta no puede cambiar un saldo.
+const diaLocal = (momento) => {
+  const d = new Date(momento)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const esPosteriorAlAncla = (t, ancla) => {
   const fechaAncla = norm(typeof ancla === 'string' ? ancla : ancla?.fecha)
   const fechaTx = norm(t.fecha)
-  if (fechaTx > fechaAncla) return true
-  if (fechaTx !== fechaAncla) return false
+  if (fechaTx < fechaAncla) return false
   const creadoAncla = typeof ancla === 'string' ? null : ancla?.created_at
-  return Boolean(t.created_at && creadoAncla && String(t.created_at) > String(creadoAncla))
+  if (!t.created_at || !creadoAncla) return fechaTx > fechaAncla
+  if (String(t.created_at) > String(creadoAncla)) return true
+  if (fechaTx === fechaAncla) return false
+  const diaDeCarga = diaLocal(creadoAncla)
+  return !diaDeCarga || fechaTx <= diaDeCarga
 }
 
 // Movimientos que el ancla no podía conocer (y hasta `hasta`, si se acota).
@@ -169,6 +185,11 @@ export const movimientosDesdeAncla = (transactions, accountId, moneda, ancla, ha
 // calcularEstadoStatement) y cuenta_pago_id_usd para dólares.
 const campoVinculoPago = (moneda) => moneda === 'USD' ? 'cuenta_pago_id_usd' : 'cuenta_pago_id'
 
+// ¿Esta cuenta es una tarjeta que se paga desde `accountId`, en alguna moneda? Para
+// saber a qué tarjetas ir a buscar los pagos antes de saber en qué moneda vienen.
+export const esTarjetaQueSePagaDesde = (accountId) => (a) =>
+  Boolean(accountId) && a?.tipo === 'credito' && (a.cuenta_pago_id === accountId || a.cuenta_pago_id_usd === accountId)
+
 const DIAS_TOLERANCIA = 3
 const PARECE_PAGO_TARJETA = /tarjeta|pago\s*tc\b|visa|master|amex|cabal/i
 
@@ -189,7 +210,8 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
   const tarjetas = (accounts || []).filter(a => a.tipo === 'credito' && a[campo] === accountId)
   if (tarjetas.length === 0) return []
   const idsTarjeta = new Set(tarjetas.map(a => a.id))
-  const enVentana = (t) => esPosteriorAlAncla(t, desde) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
+  // Sin `desde` no hay ventana: todos los pagos (es lo que lista pagosDeTarjetaDeLaCuenta).
+  const enVentana = (t) => (!desde || esPosteriorAlAncla(t, desde)) && (!norm(hasta) || norm(t.fecha) <= norm(hasta))
   const mismaMoneda = (t) => (t.moneda || 'ARS') === moneda
 
   const pagos = (transactions || []).filter(t =>
@@ -206,6 +228,16 @@ export const pagosDeTarjetaDesde = ({ transactions, accounts, accountId, moneda,
     disponibles.splice(i, 1)
     return false
   })
+}
+
+// Los pagos de tarjeta que salieron de esta cuenta, en todas las monedas y sin ventana:
+// lo que se lista en "Movimientos neutros" de una caja de ahorro. Viven en la cuenta de
+// la tarjeta, así que sin esto la caja de la que salió la plata no los mostraba nunca.
+// Los que el extracto ya trajo como su propia línea quedan afuera: esa línea ya está en
+// la lista, y verlos dos veces haría pensar que se pagó dos veces.
+export const pagosDeTarjetaDeLaCuenta = ({ transactions, accounts, accountId }) => {
+  const monedas = [...new Set((transactions || []).map(t => t.moneda || 'ARS'))].sort()
+  return monedas.flatMap(moneda => pagosDeTarjetaDesde({ transactions, accounts, accountId, moneda, desde: null }))
 }
 
 // Saldo estimado de una cuenta en una moneda. null si no hay ancla: sin un punto

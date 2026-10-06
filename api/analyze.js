@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { buildAnalysisPrompt, salvageClaudeJson, leerRespuestaAnalisis, describirRespuesta } from './_lib/analyzePrompt.js'
 import { checkRateLimit } from './_lib/rateLimit.js'
 import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage } from './_lib/plan.js'
+import { leerNotasFormato } from './_lib/formatosLectura.js'
+import { revisarLectura } from './_lib/revisarLectura.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -12,6 +14,10 @@ export const maxDuration = 300
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
+
+  // La segunda lectura de un resumen que no cerró con su total entra por acá (ver
+  // api/_lib/revisarLectura.js): tiene sus propios controles de usuario y de plan.
+  if (req.query?.revision === '1') return revisarLectura(req, res)
 
   const authHeader = req.headers['authorization']
   if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
@@ -55,7 +61,10 @@ export default async function handler(req, res) {
     }
   }
 
-  const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, fechaHoy: new Date().toISOString().slice(0, 10) })
+  // Lo aprendido de los formatos de cada entidad en revisiones anteriores (ver
+  // api/_lib/revisarLectura.js). Si no se puede leer, se sigue sin notas.
+  const notasFormato = await leerNotasFormato(supabaseAdmin)
+  const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, notasFormato, fechaHoy: new Date().toISOString().slice(0, 10) })
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

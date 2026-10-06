@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { paleta, leerDarkMode, FONT, RADIUS } from '../theme'
-
-const logo = process.env.PUBLIC_URL + '/logo.png'
+import { paleta, leerDarkMode, FONT, RADIUS, logoDelModo } from '../theme'
 
 // Pantalla que se muestra en vez del Dashboard cuando la sesión viene del link
 // de "olvidé mi contraseña" (evento PASSWORD_RECOVERY, ver useAuth.js) — antes
@@ -34,7 +32,7 @@ export default function ResetPassword({ onDone }) {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoWrap}>
-          <img src={logo} alt="MAF" style={styles.logo} />
+          <img src={logoDelModo()} alt="MAF" style={styles.logo} />
         </div>
 
         <p style={styles.subtitle}>Elegí tu nueva contraseña</p>

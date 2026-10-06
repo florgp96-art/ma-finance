@@ -9,9 +9,11 @@ const hoyLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// "Cambio" del modal Cargar movimiento: la plata que sale de una cuenta y la que
-// entra en otra, en un solo paso (ver armarCambioDeMoneda). Solo se ofrecen cuentas
-// con saldo: una tarjeta no tiene plata que cambiar, y "Ingresos" es una vista.
+// "Transferir" del modal Cargar movimiento: la plata que sale de una cuenta y la que
+// entra en otra, en un solo paso (ver armarCambioDeMoneda). Con la misma moneda de
+// los dos lados es una transferencia entre cuentas propias; con monedas distintas, un
+// cambio. Solo se ofrecen cuentas con saldo: una tarjeta no tiene plata que pasar, y
+// "Ingresos" es una vista.
 function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar, onGuardado }) {
   const cuentas = useMemo(() => (accounts || []).filter(tieneSaldo), [accounts])
   // Sin movimientos a mano, la moneda de la cuenta sale del nombre ("Caja USD").
@@ -31,7 +33,10 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
   const [error, setError] = useState(null)
 
   const tc = tipoDeCambioImplicito({ origen, destino })
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  // Misma moneda: transferencia, y lo que sale es lo que entra (un solo monto).
+  const esTransferencia = origen.moneda === destino.moneda
+  const nombreDe = (id) => cuentas.find(c => c.id === id)?.nombre || ''
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const obligatorio = <span style={{ color: sem.negativo }}>*</span>
 
   const guardar = async (e) => {
@@ -42,17 +47,19 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
     try {
       const [{ data: { user } }, conSentido] = await Promise.all([supabase.auth.getUser(), hayColumnaSentido()])
       const armado = armarCambioDeMoneda({
-        userId: user?.id, fecha, origen, destino, conSentido,
+        userId: user?.id, fecha, conSentido,
+        origen: { ...origen, nombre: nombreDe(origen.accountId) },
+        destino: { ...destino, nombre: nombreDe(destino.accountId) },
         tipoCambioUSD: parseFloat(tipoCambio) || null,
       })
       if (armado.error) { setError(armado.error); return }
       // Las dos patas en un solo insert: o quedan las dos o ninguna. Una sola dejaría
       // la plata saliendo de una cuenta sin entrar en ninguna.
       const { error: errIns } = await supabase.from('transactions').insert(armado.movimientos)
-      if (errIns) { setError(`No se pudo guardar el cambio: ${errIns.message}`); return }
-      onGuardado?.()
+      if (errIns) { setError(`No se pudo guardar: ${errIns.message}`); return }
+      onGuardado?.({ esTransferencia })
     } catch (err) {
-      setError(`No se pudo guardar el cambio: ${err?.message || 'error desconocido'}`)
+      setError(`No se pudo guardar: ${err?.message || 'error desconocido'}`)
     } finally {
       setGuardando(false)
     }
@@ -62,7 +69,7 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
     return (
       <div>
         <p style={{ fontSize: '13px', color: muted, margin: '0 0 16px 0' }}>
-          Para registrar un cambio hace falta al menos una cuenta que no sea tarjeta (caja de ahorro, efectivo, billetera).
+          Para pasar plata hace falta al menos una cuenta que no sea tarjeta (caja de ahorro, efectivo, billetera).
         </p>
         <div style={styles.modalButtons}>
           <button type="button" style={styles.cancelBtn} onClick={onCancelar}>Cerrar</button>
@@ -71,9 +78,10 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
     )
   }
 
-  // Un lado del cambio: cuenta, moneda y monto. Elegir la cuenta propone su moneda,
-  // que se puede corregir (una billetera tiene saldo en más de una).
-  const lado = (titulo, ayuda, valor, setValor) => (
+  // Un lado: cuenta, moneda y monto. Elegir la cuenta propone su moneda, que se puede
+  // corregir (una billetera tiene saldo en más de una). En una transferencia el lado
+  // que entra no lleva monto: es el mismo que sale.
+  const lado = (titulo, ayuda, valor, setValor, conMonto = true) => (
     <div style={styles.field}>
       <label style={styles.label}>
         {titulo} {obligatorio}
@@ -89,24 +97,26 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
           {MONEDAS_CAMBIO.map(m => <option key={m} value={m}>{SIMBOLO_MONEDA[m]} {m}</option>)}
         </select>
       </div>
-      <input style={styles.input} type="number" inputMode="decimal" step="0.01" min="0.01" required
-        value={valor.monto} placeholder="0.00"
-        onChange={e => setValor(v => ({ ...v, monto: e.target.value }))} />
+      {conMonto && (
+        <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" required
+          value={valor.monto} placeholder="0.00"
+          onChange={e => setValor(v => ({ ...v, monto: e.target.value }))} />
+      )}
     </div>
   )
 
   return (
     <form onSubmit={guardar}>
       <p style={{ fontSize: '12px', color: muted, margin: '0 0 16px 0' }}>
-        La plata que sale de una cuenta y la que entra en otra. No cuenta como gasto ni como ingreso: es la misma plata en otra moneda.
+        Pasá plata de una cuenta a otra, en la misma moneda o cambiándola (por ejemplo, dólares a pesos). No cuenta como gasto ni como ingreso: es tu misma plata en otro lado.
       </p>
       <div style={styles.field}>
         <label style={styles.label}>Fecha {obligatorio}</label>
         <input style={{ ...styles.input, WebkitAppearance: 'none', appearance: 'none' }} type="date" value={fecha} required
           onChange={e => setFecha(e.target.value)} />
       </div>
-      {lado('Sale de', 'lo que entregaste', origen, setOrigen)}
-      {lado('Entra a', 'lo que recibiste', destino, setDestino)}
+      {lado('Sale de', esTransferencia ? 'cuánto pasás' : 'lo que entregaste', origen, setOrigen)}
+      {lado('Entra a', esTransferencia ? 'el mismo monto' : 'lo que recibiste', destino, setDestino, !esTransferencia)}
       {tc && (
         <p style={{ fontSize: '13px', color: muted, margin: '-4px 0 8px 0' }}>
           Tipo de cambio: {SIMBOLO_MONEDA[tc.moneda]} 1 = <strong>{formatoCambio(tc.valor, tc.en)}</strong>
@@ -116,7 +126,7 @@ function CambioMoneda({ accounts, styles, darkMode, sem, tipoCambio, onCancelar,
       <div style={styles.modalButtons}>
         <button type="button" style={styles.cancelBtn} onClick={onCancelar}>Cancelar</button>
         <button type="submit" style={styles.saveBtn} disabled={guardando}>
-          {guardando ? 'Guardando...' : 'Guardar cambio'}
+          {guardando ? 'Guardando...' : esTransferencia ? 'Guardar transferencia' : 'Guardar cambio'}
         </button>
       </div>
     </form>

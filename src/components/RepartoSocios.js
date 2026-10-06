@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatMonto, formatFecha } from '../lib/formato'
-import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo, conTrabajo } from '../lib/repartoSocios'
+import { repartoDelMes, cuotasDelMes, rangoDelMes, montoValido, moverMes, nombreDelMes, socioDeLaCuenta, porcentajesTrabajo, conTrabajo, PROPIO_POR_DEFECTO } from '../lib/repartoSocios'
 
 const hoyLocal = () => {
   const d = new Date()
@@ -42,6 +42,25 @@ function Desglose({ titulo, signo, total, items, abierto, onAlternar, estilos })
   )
 }
 
+const porcentajeTexto = (p) => `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(p)} %`
+
+// Un movimiento con porcentaje y la parte de esa persona: "Nasello · 47,5 % de $ 600.000   + $ 285.000".
+function LineasDeLaburo({ lineas, estilos }) {
+  const { fila, muted } = estilos
+  return lineas.map((m, i) => (
+    <div key={`${m.id ?? i}-${i}`} style={{ ...fila, fontSize: '12px', margin: '3px 0 3px 10px', alignItems: 'flex-start' }}>
+      <span>
+        {m.nombre}
+        <br /><span style={{ color: muted, fontSize: '11px' }}>
+          {porcentajeTexto(m.porcentaje)} de {m.moneda && m.moneda !== 'ARS' ? enMoneda(m.monto, m.moneda) : pesos(m.pesos)}
+          {m.cambiado && ` (cambiados a ${pesos(m.pesos)})`}
+        </span>
+      </span>
+      <span style={{ whiteSpace: 'nowrap' }}>{conSigno(m.parte < 0 ? '−' : '+', m.parte)}</span>
+    </div>
+  ))
+}
+
 const listaDeNombres = (nombres) => nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}` : nombres.join('')
 
 // Calculadora del reparto entre socios (ver src/lib/repartoSocios.js). Lee los
@@ -64,9 +83,11 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const [error, setError] = useState(null)
   const [nueva, setNueva] = useState({ de: config.socios[0], a: config.socios[1], monto: '' })
   const [nuevaCuota, setNuevaCuota] = useState({ movimientoId: '', porMes: '' })
-  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: '60' })
+  const [nuevoTrabajo, setNuevoTrabajo] = useState({ movimientoId: '', socio: '', propio: String(PROPIO_POR_DEFECTO) })
+  const [nuevoCambio, setNuevoCambio] = useState({ movimientoId: '', pesos: '' })
   const [abiertos, setAbiertos] = useState({ ingresos: true, gastos: true })
-  const alternar = (clave) => setAbiertos(a => ({ ...a, [clave]: !a[clave] }))
+  const estaAbierto = (clave, porDefecto = false) => (clave in abiertos ? abiertos[clave] : porDefecto)
+  const alternar = (clave, porDefecto = false) => setAbiertos(a => ({ ...a, [clave]: !(clave in a ? a[clave] : porDefecto) }))
 
   const delMes = config.meses?.[mes] || {}
 
@@ -141,11 +162,37 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   const trabajosDelMes = trabajos
     .map((t, i) => ({ ...t, indice: i, movimiento: movimientoPorId.get(t.movimientoId) }))
     .filter(t => t.movimiento)
+  // Los porcentajes que pone la oficina de GPK se cambian allá (los vuelve a poner cada hora).
+  const trabajosDeLaOficina = trabajosDelMes.filter(t => t.origen === 'oficina')
+  const trabajosAMano = trabajosDelMes.filter(t => t.origen !== 'oficina')
   const textoPorcentajes = (porcentajes) => config.socios
     .filter(s => Number(porcentajes?.[s]) > 0)
     .map(s => `${s} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(Number(porcentajes[s]))} %`)
     .join(' · ')
   const hayTrabajos = Math.abs(r.netoTrabajos) >= 1
+
+  // Cobros o pagos en otra moneda que ya se cambiaron a pesos: el reparto usa lo que
+  // realmente dieron, no la cotización del mes.
+  const enPesosGuardados = config.enPesos && typeof config.enPesos === 'object' ? config.enPesos : {}
+  const enOtraMoneda = movimientos
+    .filter(t => (t.tipo === 'gasto' || t.tipo === 'ingreso') && (t.moneda || 'ARS') !== 'ARS' && t.id)
+    .map(t => ({ ...t, socio: socioDeLaCuenta(cuentaPorId.get(t.account_id), config.socios) }))
+    .filter(t => t.socio)
+  const cambiadosDelMes = enOtraMoneda.filter(t => montoValido(enPesosGuardados[t.id]))
+  const paraCambiar = enOtraMoneda.filter(t => !montoValido(enPesosGuardados[t.id]))
+  const cambioElegido = paraCambiar.find(t => t.id === nuevoCambio.movimientoId)
+  const guardarEnPesos = (mapa) => onCambiarConfig({ ...config, enPesos: mapa })
+  const agregarCambio = (e) => {
+    e.preventDefault()
+    const monto = montoValido(nuevoCambio.pesos)
+    if (!cambioElegido || !monto) return
+    guardarEnPesos({ ...enPesosGuardados, [cambioElegido.id]: Math.round(monto * 100) / 100 })
+    setNuevoCambio({ movimientoId: '', pesos: '' })
+  }
+  const quitarCambio = (id) => {
+    const { [id]: _quitado, ...resto } = enPesosGuardados
+    guardarEnPesos(resto)
+  }
 
   const estadoDeCuota = (c) => {
     const delMes = cuotasDelMes({ cuotas: [c], socios: config.socios, mes })
@@ -177,9 +224,9 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
     setNueva(n => ({ ...n, monto: '' }))
   }
 
-  const muted = darkMode ? '#9A8A9A' : '#75757a'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
-  const borde = darkMode ? '#3A333A' : '#E2DDE0'
+  const borde = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   const caja = { border: `1px solid ${borde}`, borderRadius: '10px', padding: '12px', marginBottom: '14px' }
   const rotulo = { fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 8px' }
   const fila = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', color: txt, margin: '3px 0' }
@@ -189,7 +236,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
   return (
     <div>
       <p style={{ fontSize: '12px', color: muted, margin: '0 0 14px 0' }}>
-        Todo lo que entró en el mes menos lo que se gastó, en partes iguales. Cada cuenta es del socio con el que empieza su nombre.
+        Lo común se divide en partes iguales; lo que tiene su porcentaje va en el laburo de cada uno. Cada cuenta es del socio con el que empieza su nombre.
       </p>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
@@ -231,70 +278,136 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
       ) : (
         <>
           <div style={caja}>
-            <p style={rotulo}>La agencia este mes</p>
+            <p style={rotulo}>En partes iguales</p>
             <Desglose titulo="Ingresos" total={r.ingresosComunes} items={r.detalle.ingresos}
               abierto={abiertos.ingresos} onAlternar={() => alternar('ingresos')} estilos={{ fila, muted }} />
             <Desglose titulo="Gastos" signo="−" total={r.gastosComunes} items={r.detalle.gastos}
               abierto={abiertos.gastos} onAlternar={() => alternar('gastos')} estilos={{ fila, muted }} />
             <div style={{ ...fila, borderTop: `1px solid ${borde}`, paddingTop: '8px', marginTop: '8px' }}>
-              <span>Ganancia de la agencia</span><span>{conSignoSiNegativo(r.ingresosComunes - r.gastosComunes)}</span>
+              <span>Total en partes iguales</span><span>{conSignoSiNegativo(r.ingresosComunes - r.gastosComunes)}</span>
             </div>
             <div style={{ ...fila, fontSize: '15px', fontWeight: 700 }}>
               <span>A cada uno (÷ {config.socios.length})</span><span>{conSignoSiNegativo(r.parte)}</span>
             </div>
             {hayTrabajos && (
-              <p style={{ fontSize: '11px', color: muted, margin: '4px 0 0' }}>Sin los trabajos por fuera, que se reparten aparte.</p>
+              <p style={{ fontSize: '11px', color: muted, margin: '4px 0 0' }}>Lo que tiene su porcentaje va abajo, en el laburo de cada uno.</p>
             )}
           </div>
 
-          {r.detalle.trabajos.length > 0 && (
+          {hayTrabajos && (
             <div style={caja}>
-              <p style={rotulo}>Trabajos por fuera</p>
-              {r.detalle.trabajos.map((g, i) => (
-                <div key={g.socio} style={{ padding: '6px 0', borderBottom: i < r.detalle.trabajos.length - 1 ? `1px solid ${borde}` : 'none' }}>
-                  <div style={{ ...fila, fontWeight: 600 }}>
-                    <span>Laburo de {g.socio}</span><span>{conSignoSiNegativo(g.neto)}</span>
+              <p style={rotulo}>Laburo de cada uno</p>
+              {r.detalle.laburo.filter(l => l.propios.length || l.deLosDemas.length).map((l, i, todos) => (
+                <div key={l.socio} style={{ padding: '6px 0', borderBottom: i < todos.length - 1 ? `1px solid ${borde}` : 'none' }}>
+                  <div style={{ ...fila, fontWeight: 700 }}>
+                    <span>Laburo de {l.socio}</span><span>{conSignoSiNegativo(l.totalPropios)}</span>
                   </div>
-                  {g.movimientos.map((m, k) => (
-                    <div key={m.id ?? k} style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
-                      <span>{m.nombre}</span>
-                      <span style={{ whiteSpace: 'nowrap' }}>{m.tipo === 'gasto' ? '−' : '+'}{NBSP}{enPesos(m)}</span>
-                    </div>
-                  ))}
-                  <div style={{ fontSize: '12px', color: txt, margin: '4px 0 0' }}>
-                    {config.socios.map(s => `${s} ${conSignoSiNegativo(g.reparto[s] || 0)}`).join(' · ')}
-                  </div>
+                  {l.propios.length === 0
+                    ? <p style={{ fontSize: '12px', color: muted, margin: '2px 0 4px 10px' }}>Nada propio este mes.</p>
+                    : <LineasDeLaburo lineas={l.propios} estilos={{ fila, muted }} />}
+                  {l.deLosDemas.length > 0 && (
+                    <>
+                      <button type="button" onClick={() => alternar(`demas-${l.socio}`)} aria-expanded={estaAbierto(`demas-${l.socio}`)}
+                        style={{ ...fila, width: '100%', margin: '4px 0 0', padding: '2px 0', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', fontSize: '12px', color: muted }}>
+                        <span>Su parte de lo que laburaron los demás ({l.deLosDemas.length}) {estaAbierto(`demas-${l.socio}`) ? '▾' : '▸'}</span>
+                        <span>{conSigno(l.totalDeLosDemas < 0 ? '−' : '+', l.totalDeLosDemas)}</span>
+                      </button>
+                      {estaAbierto(`demas-${l.socio}`) && <LineasDeLaburo lineas={l.deLosDemas} estilos={{ fila, muted }} />}
+                    </>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
           <div style={caja}>
-            <p style={rotulo}>Cada socio</p>
-            {r.porSocio.map((s, i) => (
-              <div key={s.socio} style={{ padding: '8px 0', borderBottom: i < r.porSocio.length - 1 ? `1px solid ${borde}` : 'none' }}>
-                <div style={{ ...fila, fontSize: '15px', fontWeight: 700 }}>
-                  <span>{s.socio}</span><span>se queda con {conSignoSiNegativo(s.leToca)}</span>
-                </div>
-                <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Parte común</span><span>{conSignoSiNegativo(r.parte)}</span></div>
-                {Math.abs(s.trabajos) >= 1 && (
-                  <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Trabajos por fuera</span><span>{conSigno(s.trabajos > 0 ? '+' : '−', s.trabajos)}</span></div>
-                )}
-                {Math.abs(s.cuotas) >= 1 && (
-                  <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
-                    <span>Cuota {[...new Set(r.cuotas.map(c => c.concepto))].join(', ')}</span><span>{conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}</span>
+            <p style={rotulo}>Lo que entró y salió de cada cuenta</p>
+            {r.detalle.cuentas.map((c, i) => {
+              const s = r.porSocio.find(x => x.socio === c.socio)
+              return (
+                <div key={c.socio} style={{ padding: '6px 0', borderBottom: i < r.detalle.cuentas.length - 1 ? `1px solid ${borde}` : 'none' }}>
+                  <div style={{ ...fila, fontWeight: 700 }}>
+                    <span>Cuentas de {c.socio}</span><span>tiene {conSignoSiNegativo(s?.tiene || 0)}</span>
                   </div>
-                )}
-                <div style={{ ...fila, fontSize: '12px', color: muted, margin: '6px 0 2px', alignItems: 'flex-start' }}>
-                  <span>Ya tiene: cobró {pesos(s.cobro)} − pagó {pesos(s.pago)}{s.transferencias ? ` ${s.transferencias > 0 ? '+' : '−'} entre ustedes ${pesos(s.transferencias)}` : ''}</span>
-                  <span style={{ whiteSpace: 'nowrap' }}>{conSignoSiNegativo(s.tiene)}</span>
+                  {[['entro', 'Entró', c.entradas, c.totalEntradas, '+'], ['salio', 'Salió', c.salidas, c.totalSalidas, '−']].map(([clave, titulo, items, total, signo]) => items.length > 0 && (
+                    <div key={clave}>
+                      <button type="button" onClick={() => alternar(`${clave}-${c.socio}`)} aria-expanded={estaAbierto(`${clave}-${c.socio}`)}
+                        style={{ ...fila, width: '100%', margin: '2px 0', padding: '2px 0', background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', fontSize: '12px' }}>
+                        <span>{titulo} ({items.length}) {estaAbierto(`${clave}-${c.socio}`) ? '▾' : '▸'}</span>
+                        <span>{conSigno(signo, total)}</span>
+                      </button>
+                      {estaAbierto(`${clave}-${c.socio}`) && items.map((m, k) => (
+                        <div key={m.id ?? k} style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0 2px 10px', alignItems: 'flex-start' }}>
+                          <span>{m.nombre}</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{enPesos(m)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  {Math.abs(s?.transferencias || 0) >= 1 && (
+                    <div style={{ ...fila, fontSize: '12px' }}>
+                      <span>Pases entre ustedes</span><span>{conSigno(s.transferencias > 0 ? '+' : '−', s.transferencias)}</span>
+                    </div>
+                  )}
+                  {c.entradas.length === 0 && c.salidas.length === 0 && Math.abs(s?.transferencias || 0) < 1 && (
+                    <p style={{ fontSize: '12px', color: muted, margin: '2px 0' }}>Sin movimientos este mes.</p>
+                  )}
                 </div>
-                <div style={{ ...fila, fontWeight: 600, color: s.diferencia >= 1 ? sem.negativo : s.diferencia <= -1 ? sem.positivo : muted }}>
-                  <span>Para llegar</span>
-                  <span>{s.diferencia >= 1 ? `da ${pesos(s.diferencia)}` : s.diferencia <= -1 ? `recibe ${pesos(s.diferencia)}` : 'a mano'}</span>
+              )
+            })}
+          </div>
+
+          <div style={caja}>
+            <p style={rotulo}>Lo que ganó cada uno en {nombreDelMes(mes).split(' ')[0].toLowerCase()}</p>
+            {r.porSocio.map((s, i) => {
+              const l = r.detalle.laburo.find(x => x.socio === s.socio)
+              return (
+                <div key={s.socio} style={{ padding: '8px 0', borderBottom: i < r.porSocio.length - 1 ? `1px solid ${borde}` : 'none' }}>
+                  <div style={{ ...fila, fontSize: '15px', fontWeight: 700 }}>
+                    <span>{s.socio} ganó</span><span style={{ color: s.ganancia < 0 ? sem.negativo : txt }}>{conSignoSiNegativo(s.ganancia)}</span>
+                  </div>
+                  <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>En partes iguales</span><span>{conSignoSiNegativo(r.parte)}</span></div>
+                  {Math.abs(l?.totalPropios || 0) >= 1 && (
+                    <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}><span>Su laburo</span><span>{conSigno(l.totalPropios > 0 ? '+' : '−', l.totalPropios)}</span></div>
+                  )}
+                  {Math.abs(l?.totalDeLosDemas || 0) >= 1 && (
+                    <>
+                      <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
+                        <span>Su parte del laburo de los demás</span><span>{conSigno(l.totalDeLosDemas > 0 ? '+' : '−', l.totalDeLosDemas)}</span>
+                      </div>
+                      {l.totalDeLosDemas < 0 && (
+                        <p style={{ fontSize: '11px', color: muted, margin: '0 0 2px 10px' }}>
+                          Da negativo porque en el laburo de los demás hubo más gastos que cobros, y le toca su parte de los gastos.
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  <div style={{ borderTop: `1px dashed ${borde}`, marginTop: '8px', paddingTop: '6px' }}>
+                    <p style={{ fontSize: '11px', fontWeight: 600, color: muted, textTransform: 'uppercase', letterSpacing: '0.04em', margin: '0 0 2px' }}>Para quedar a mano</p>
+                    <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0', alignItems: 'flex-start' }}>
+                      <span>Tiene en la mano: cobró {pesos(s.cobro)} − pagó {pesos(s.pago)}{s.transferencias ? ` ${s.transferencias > 0 ? '+' : '−'} adelantos ${pesos(s.transferencias)}` : ''}</span>
+                      <span style={{ whiteSpace: 'nowrap' }}>{conSignoSiNegativo(s.tiene)}</span>
+                    </div>
+                    {Math.abs(s.cuotas) >= 1 && (
+                      <div style={{ ...fila, fontSize: '12px', color: muted, margin: '2px 0' }}>
+                        <span>Cuota {[...new Set(r.cuotas.map(c => c.concepto))].join(', ')}</span><span>{conSigno(s.cuotas > 0 ? '+' : '−', s.cuotas)}</span>
+                      </div>
+                    )}
+                    <div style={{ ...fila, fontWeight: 600, color: s.diferencia >= 1 ? sem.negativo : s.diferencia <= -1 ? sem.positivo : muted }}>
+                      <span>{s.diferencia >= 1 ? 'Le pasa a los demás' : s.diferencia <= -1 ? 'Le tienen que pasar' : 'Está a mano'}</span>
+                      <span>{Math.abs(s.diferencia) >= 1 ? pesos(s.diferencia) : '✓'}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
+            <div style={{ ...fila, borderTop: `1px solid ${borde}`, paddingTop: '8px', marginTop: '4px', fontWeight: 600 }}>
+              <span>Entre todos ganaron</span><span>{conSignoSiNegativo(r.neto)}</span>
+            </div>
+            <p style={{ fontSize: '11px', color: muted, margin: '4px 0 0' }}>
+              Lo que ganó cada uno es lo suyo del mes. Los adelantos no lo cambian: ya son plata de su parte, solo cambian cuánto falta pasarse para quedar a mano.
+            </p>
           </div>
 
           <div style={caja}>
@@ -325,12 +438,48 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
               <select style={styles.input} value={nueva.a} onChange={e => setNueva(n => ({ ...n, a: e.target.value }))} aria-label="A quién">
                 {config.socios.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="$"
+              <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" placeholder="$"
                 value={nueva.monto} onChange={e => setNueva(n => ({ ...n, monto: e.target.value }))} aria-label="Monto en pesos" />
               <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }} disabled={!!errorNueva || !montoValido(nueva.monto)}>Agregar</button>
             </form>
             {errorNueva && <p style={{ fontSize: '12px', color: sem.negativo, margin: '6px 0 0' }}>{errorNueva}</p>}
           </div>
+
+          {enOtraMoneda.length > 0 && (
+            <div style={caja}>
+              <p style={rotulo}>Euros o dólares que ya cambiaste a pesos</p>
+              <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
+                Poné cuántos pesos te dieron: los porcentajes salen de esa plata y no de la cotización del mes.
+              </p>
+              {cambiadosDelMes.map(t => (
+                <div key={t.id} style={{ ...fila, alignItems: 'flex-start' }}>
+                  <span>
+                    <strong>{t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto')}</strong> · {t.socio}
+                    <br /><span style={{ fontSize: '12px', color: muted }}>{enMoneda(Math.abs(Number(t.monto) || 0), t.moneda)} → {pesos(enPesosGuardados[t.id])}</span>
+                  </span>
+                  <button type="button" style={{ ...botonChico, border: 'none', color: muted }} aria-label={`Quitar el cambio de ${t.nombre || 'este movimiento'}`}
+                    onClick={() => quitarCambio(t.id)}>×</button>
+                </div>
+              ))}
+              {paraCambiar.length > 0 && (
+                <form onSubmit={agregarCambio} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px', marginTop: '10px' }}>
+                  <select style={{ ...styles.input, gridColumn: '1 / -1' }} value={nuevoCambio.movimientoId} aria-label="Movimiento en otra moneda"
+                    onChange={e => setNuevoCambio(n => ({ ...n, movimientoId: e.target.value }))}>
+                    <option value="">— Elegí el cobro o pago —</option>
+                    {paraCambiar.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.tipo === 'ingreso' ? '＋' : '−'} {t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto')} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda)}
+                      </option>
+                    ))}
+                  </select>
+                  <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" placeholder="Pesos que te dieron"
+                    value={nuevoCambio.pesos} onChange={e => setNuevoCambio(n => ({ ...n, pesos: e.target.value }))} aria-label="Pesos que te dieron" />
+                  <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px' }}
+                    disabled={!cambioElegido || !montoValido(nuevoCambio.pesos)}>Guardar</button>
+                </form>
+              )}
+            </div>
+          )}
 
           <div style={caja}>
             <p style={rotulo}>Gastos que se devuelven en cuotas</p>
@@ -356,7 +505,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                     <option key={t.id ?? i} value={t.id ?? ''} disabled={!t.id}>{t.nombre || 'Gasto'} · {t.socio} · {enMoneda(Math.abs(Number(t.monto) || 0), t.moneda || 'ARS')}</option>
                   ))}
                 </select>
-                <input style={styles.input} type="number" inputMode="decimal" min="0.01" step="0.01" value={nuevaCuota.porMes}
+                <input style={styles.input} type="text" inputMode="decimal" autoComplete="off" value={nuevaCuota.porMes}
                   placeholder={`Por mes${gastoElegido ? ` (${SIMBOLO[gastoElegido.moneda || 'ARS'] || ''})` : ''}`}
                   aria-label="Cuánto se devuelve por mes, entre todos"
                   onChange={e => setNuevaCuota(n => ({ ...n, porMes: e.target.value }))} />
@@ -371,7 +520,12 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
             <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
               Un trabajo que hizo uno solo: se queda con una parte y el resto va parejo a los demás. Se marca el ingreso y también sus gastos.
             </p>
-            {trabajosDelMes.map(t => (
+            {trabajosDeLaOficina.length > 0 && (
+              <p style={{ fontSize: '12px', color: muted, margin: '0 0 8px' }}>
+                {trabajosDeLaOficina.length} {trabajosDeLaOficina.length === 1 ? 'movimiento tiene' : 'movimientos tienen'} el porcentaje que pone la oficina de GPK: se cambian allá.
+              </p>
+            )}
+            {trabajosAMano.map(t => (
               <div key={t.movimientoId} style={{ ...fila, alignItems: 'flex-start' }}>
                 <span>
                   <strong>{t.concepto}</strong> · {t.movimiento.tipo === 'ingreso' ? '+' : '−'}{enMoneda(Math.abs(Number(t.movimiento.monto) || 0), t.movimiento.moneda || 'ARS')}
@@ -397,7 +551,7 @@ function RepartoSocios({ config, onCambiarConfig, accounts, userId, cotizaciones
                   {!trabajoElegido && <option value="">Laburo de…</option>}
                   {config.socios.map(s => <option key={s} value={s}>Laburo de {s}</option>)}
                 </select>
-                <input style={styles.input} type="number" inputMode="decimal" min="0" max="100" step="1" value={nuevoTrabajo.propio}
+                <input style={styles.input} type="number" inputMode="numeric" min="0" max="100" step="1" value={nuevoTrabajo.propio}
                   aria-label="Porcentaje para quien hizo el trabajo" placeholder="% propio"
                   onChange={e => setNuevoTrabajo(n => ({ ...n, propio: e.target.value }))} />
                 <button type="submit" style={{ ...botonChico, fontSize: '14px', padding: '11px', gridColumn: '1 / -1' }}

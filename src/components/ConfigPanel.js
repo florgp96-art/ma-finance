@@ -3,6 +3,7 @@ import { matchRepartoRule, aplicarReglaReparto } from '../lib/repartoRules'
 import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountDetail'
 import { semaforo } from '../theme'
+import { parseMonto, montoParaEditar } from '../lib/formato'
 
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
@@ -238,7 +239,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     openAliases: () => { fetchUserAliases(); fetchRepartoRules(); setShowAliases(true) },
     openCambiarClave: () => { setNuevaClave(''); setConfirmarClave(''); setClaveMsg(null); setShowCambiarClave(true) },
     openIconos: () => { setCatTab('iconos'); setShowCategorias(true) },
-    openTipoCambio: () => { setTcInput(tcManual?.valor != null ? String(tcManual.valor) : ''); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
+    openTipoCambio: () => { setTcInput(montoParaEditar(tcManual?.valor)); setTcEnabledInput(!!tcManual?.enabled); setShowTipoCambio(true) },
   }))
 
   // ── Handlers ─────────────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   const handleSaveTC = (e) => {
     e.preventDefault()
-    const valor = parseFloat(tcInput)
+    const valor = parseMonto(tcInput)
     if (!valor || valor <= 0) { showToast?.('Ingresá un tipo de cambio válido.', 'error'); return }
     onSaveTC?.({ valor, enabled: tcEnabledInput })
     setShowTipoCambio(false)
@@ -569,13 +570,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
 
   // ── Styles ────────────────────────────────────────────────────────────────
 
-  const p = darkMode ? '#8C7B8C' : '#5C4F5C'
+  const p = darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)'
   const panel = darkMode ? '#2A272A' : 'white'
   const txt = darkMode ? '#F0EDEC' : '#1d1d1f'
-  const border = darkMode ? '#3A333A' : '#E2DDE0'
+  const border = darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'
   // Estos textos secundarios venían con '#aaa'/'#999'/'#6e6e73' fijos: '#aaa'
   // sobre blanco da 2,3:1 y '#6e6e73' sobre el panel oscuro 2,9:1.
-  const muted = darkMode ? '#9A8A9A' : '#6e6e73'
+  const muted = darkMode ? 'var(--m-9a8a9a)' : '#6e6e73'
   const sem = semaforo(darkMode)
 
   const s = {
@@ -590,7 +591,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     saveBtn: { flex: 1, padding: '12px', backgroundColor: p, color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     cancelBtn: { flex: 1, padding: '12px', backgroundColor: 'transparent', color: p, border: `2px solid ${p}`, borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', outline: 'none', fontFamily: '"Montserrat", sans-serif' },
     actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: '2px', opacity: 0.7, outline: 'none' },
-    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? '#9A8A9A' : '#6e6e73', marginBottom: '4px', ...rotuloLabel, fontFamily: '"Montserrat", sans-serif' },
+    label: { display: 'block', fontSize: '11px', fontWeight: '600', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', marginBottom: '4px', ...rotuloLabel, fontFamily: '"Montserrat", sans-serif' },
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -604,7 +605,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             <h3 style={s.modalTitle}>👧 Mis hijos</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
               {(childrenDB || []).map(h => (
-                <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
+                <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: darkMode ? '#1C1A1C' : 'var(--m-f7f5f8)', borderRadius: '10px' }}>
                   <span style={{ fontSize: '14px', color: txt }}>{h.icono || '👧'} {h.nombre}</span>
                   <button style={s.actionBtn} onClick={() => handleDeleteHijo(h.id, h.nombre)}>🗑️</button>
                 </div>
@@ -617,7 +618,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               <input type="checkbox" checked={cuotaAlimentariaActiva} onChange={e => onSaveCuotaAlimentaria?.(e.target.checked)} />
               Usar función de Cuota Alimentaria
             </label>
-            <p style={{ margin: '-10px 0 16px', fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+            <p style={{ margin: '-10px 0 16px', fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
               Activá esto si a algún hijo/a le cobrás o pagás una cuota alimentaria periódica. Si tus hijos/as ya son mayores o no aplica, dejalo desactivado para no ver esa opción al cargar ingresos.
             </p>
             <form onSubmit={handleAddHijo} style={{ display: 'flex', gap: '8px' }}>
@@ -644,13 +645,13 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             <div style={{ display: 'flex', gap: '8px', margin: '-4px 0 16px 0' }}>
               {[{ k: 'categorias', label: '📂 Categorías' }, { k: 'iconos', label: '🎨 Íconos' }].map(t => (
                 <button key={t.k} type="button" onClick={() => { setCatTab(t.k); setIconEditingCat(null); setIconInput('') }}
-                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: catTab === t.k ? '600' : '400', border: catTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: catTab === t.k ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: txt }}>
+                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: catTab === t.k ? '600' : '400', border: catTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: catTab === t.k ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent', color: txt }}>
                   {t.label}
                 </button>
               ))}
             </div>
             {catTab === 'iconos' && (<>
-            <p style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a', margin: '0 0 8px 0' }}>Tocá una fila para cambiar su ícono</p>
+            <p style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', margin: '0 0 8px 0' }}>Tocá una fila para cambiar su ícono</p>
             <div className="hide-scroll" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '8px' }}>
             {[
               ...(categoriasDB || []).map(c => ({ nombre: c.nombre, tipo: 'cat' })),
@@ -669,8 +670,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   >
                     <span style={{ fontSize: '22px', width: '28px', textAlign: 'center' }}>{currentIcon}</span>
                     <span style={{ flex: 1, fontSize: '14px', color: txt, fontFamily: '"Montserrat", sans-serif' }}>{nombre}</span>
-                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: darkMode ? '#9A8A9A' : '#75757a' }}>custom</span>}
-                    {!isEditing && <span style={{ fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>✏️</span>}
+                    {customIcons[nombre] && <span style={{ fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>custom</span>}
+                    {!isEditing && <span style={{ fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>✏️</span>}
                   </div>
                   {isEditing && (
                     <div style={{ paddingLeft: '38px' }}>
@@ -697,7 +698,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                             Reset
                           </button>
                         )}
-                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, color: darkMode ? '#9A8A9A' : '#75757a', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
+                        <button onClick={() => { setIconEditingCat(null); setIconInput('') }} style={{ padding: '7px 10px', borderRadius: '8px', border: `1px solid ${border}`, color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', background: 'none', cursor: 'pointer', fontSize: '12px', fontFamily: '"Montserrat", sans-serif' }}>
                           ✕
                         </button>
                       </div>
@@ -711,7 +712,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             {catTab === 'categorias' && (<>
             <div className="hide-scroll" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '20px' }}>
               {(categoriasDB || []).map(cat => (
-                <div key={cat.id} style={{ marginBottom: '16px', borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, paddingBottom: '12px' }}>
+                <div key={cat.id} style={{ marginBottom: '16px', borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`, paddingBottom: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                     {editingCat === cat.id ? (
                       <>
@@ -734,8 +735,8 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                           style={{
                             fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.03em',
                             padding: '2px 6px', borderRadius: '8px', border: 'none', cursor: 'pointer', outline: 'none',
-                            backgroundColor: (cat.tipo || 'gasto') === 'ingreso' ? '#e8f5e9' : (cat.tipo || 'gasto') === 'neutro' ? '#f0f0f0' : (darkMode ? '#3A333A' : '#EDE8EC'),
-                            color: (cat.tipo || 'gasto') === 'ingreso' ? '#2e7d32' : (cat.tipo || 'gasto') === 'neutro' ? '#75757a' : '#5C4F5C',
+                            backgroundColor: (cat.tipo || 'gasto') === 'ingreso' ? '#e8f5e9' : (cat.tipo || 'gasto') === 'neutro' ? '#f0f0f0' : (darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'),
+                            color: (cat.tipo || 'gasto') === 'ingreso' ? '#2e7d32' : (cat.tipo || 'gasto') === 'neutro' ? '#75757a' : 'var(--m-5c4f5c)',
                           }}>
                           <option value="gasto">Gasto</option>
                           <option value="ingreso">Ingreso</option>
@@ -748,7 +749,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginLeft: '4px' }}>
                     {(subcategoriasDB || []).filter(s2 => s2.category_id === cat.id).map(sub => (
-                      <span key={sub.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? '#3A303A' : '#EDE8EC', borderRadius: '6px', padding: '2px 8px', color: darkMode ? '#C0B0C0' : '#5C4F5C' }}>
+                      <span key={sub.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', backgroundColor: darkMode ? 'var(--m-3a303a)' : 'var(--m-ede8ec)', borderRadius: '6px', padding: '2px 8px', color: darkMode ? 'var(--m-c0b0c0)' : 'var(--m-5c4f5c)' }}>
                         {sub.nombre}
                         <button onClick={() => handleDeleteSubcat(sub)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: muted, padding: '0 0 0 2px', lineHeight: 1 }}>×</button>
                       </span>
@@ -809,7 +810,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
             <div style={{ display: 'flex', gap: '8px', margin: '-8px 0 16px 0' }}>
               {[{ k: 'clasificacion', label: '🏷️ Clasificación' }, { k: 'reparto', label: '🧮 Reparto' }].map(t => (
                 <button key={t.k} type="button" onClick={() => setReglasTab(t.k)}
-                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: reglasTab === t.k ? '600' : '400', border: reglasTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: reglasTab === t.k ? (darkMode ? '#3A2F4A' : '#EDE8F4') : 'transparent', color: txt }}>
+                  style={{ flex: 1, padding: '8px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontFamily: '"Montserrat", sans-serif', fontWeight: reglasTab === t.k ? '600' : '400', border: reglasTab === t.k ? `2px solid ${p}` : `1px solid ${border}`, background: reglasTab === t.k ? (darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)') : 'transparent', color: txt }}>
                   {t.label}
                 </button>
               ))}
@@ -834,16 +835,16 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   <thead>
                     <tr>
                       {['Palabra clave', 'Tipo', 'Valor', ''].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? '#3A333A' : '#EDE8EC'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: `2px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}`, color: '#6e6e73', fontWeight: '400', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {(userAliases || []).map(a => (
-                      <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? '#3A333A' : '#EDE8EC'}` }}>
+                      <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}` }}>
                         <td style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
                         <td style={{ padding: '8px' }}>
-                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'split' ? (darkMode ? '#1B3A2E' : '#E0F2EA') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? '#2D1F2D' : '#F3E5F5'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo === 'split' ? 'dividir' : a.tipo}</span>
+                          <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'split' ? (darkMode ? '#1B3A2E' : '#E0F2EA') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? 'var(--m-2d1f2d)' : 'var(--m-f3e5f5)'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo === 'split' ? 'dividir' : a.tipo}</span>
                         </td>
                         <td style={{ padding: '8px', color: muted, fontSize: '13px' }}>
                           {a.tipo === 'split'
@@ -941,7 +942,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {repartoRules.map(r => (
-                    <div key={r.id} style={{ padding: '10px 12px', backgroundColor: darkMode ? '#1C1A1C' : '#F7F5F8', borderRadius: '10px' }}>
+                    <div key={r.id} style={{ padding: '10px 12px', backgroundColor: darkMode ? '#1C1A1C' : 'var(--m-f7f5f8)', borderRadius: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '13px', color: txt }}>{describirReparto(r)}</span>
                         <button style={s.actionBtn} onClick={() => handleDeleteReparto(r.id)}>🗑️</button>
@@ -949,17 +950,17 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                       {/* Una regla recién creada no toca nada de lo ya cargado: sin esto
                           había que rehacer el reparto a mano fila por fila. */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '11px', color: darkMode ? '#9A8A9A' : '#6e6e73' }}>Aplicarla a lo ya cargado desde</span>
+                        <span style={{ fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>Aplicarla a lo ya cargado desde</span>
                         <input
                           type="date"
                           value={repartoDesde}
                           onChange={e => setRepartoDesde(e.target.value)}
-                          style={{ fontSize: '12px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? '#3A333A' : '#E2DDE0'}`, backgroundColor: darkMode ? '#241F24' : 'white', color: txt, colorScheme: darkMode ? 'dark' : 'light' }}
+                          style={{ fontSize: '12px', padding: '3px 6px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, backgroundColor: darkMode ? 'var(--m-241f24)' : 'white', color: txt, colorScheme: darkMode ? 'dark' : 'light' }}
                         />
                         <button
                           onClick={() => handleAplicarRepartoExistentes(r)}
                           disabled={aplicandoReparto === r.id}
-                          style={{ padding: '4px 10px', borderRadius: '6px', border: `1px solid ${darkMode ? '#8C7B8C' : '#5C4F5C'}`, background: 'none', cursor: aplicandoReparto === r.id ? 'default' : 'pointer', fontSize: '11px', color: darkMode ? '#E8D8E8' : '#5C4F5C', fontFamily: '"Montserrat", sans-serif', opacity: aplicandoReparto === r.id ? 0.6 : 1 }}
+                          style={{ padding: '4px 10px', borderRadius: '6px', border: `1px solid ${darkMode ? 'var(--m-8c7b8c)' : 'var(--m-5c4f5c)'}`, background: 'none', cursor: aplicandoReparto === r.id ? 'default' : 'pointer', fontSize: '11px', color: darkMode ? 'var(--m-e8d8e8)' : 'var(--m-5c4f5c)', fontFamily: '"Montserrat", sans-serif', opacity: aplicandoReparto === r.id ? 0.6 : 1 }}
                         >
                           {aplicandoReparto === r.id ? 'Aplicando…' : 'Aplicar'}
                         </button>
@@ -1026,7 +1027,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 )}
               </div>
               {repartoSeleccion.length > 0 && sumaRepartoValida && (
-                <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
                   Vista previa para un gasto de $10.000: {repartoSeleccion.map(sel => `${sel.tipo === 'yo' ? 'vos' : sel.nombre} $${Math.round(10000 * (parseFloat(sel.porcentaje) || 0) / 100).toLocaleString('es-AR')}`).join(', ')}
                 </p>
               )}
@@ -1092,8 +1093,9 @@ const ConfigPanel = forwardRef(function ConfigPanel({
               <div>
                 <label style={s.label}>Dólar manual (ARS por USD)</label>
                 <input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   style={s.input}
                   placeholder="Ej: 1250"
                   value={tcInput}
@@ -1105,7 +1107,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 <input type="checkbox" checked={tcEnabledInput} onChange={e => setTcEnabledInput(e.target.checked)} />
                 Usar este valor en vez de la cotización automática
               </label>
-              <p style={{ margin: 0, fontSize: '12px', color: darkMode ? '#9A8A9A' : '#75757a' }}>
+              <p style={{ margin: 0, fontSize: '12px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>
                 Se usa para convertir montos en USD a ARS en los totales combinados (ej. Resumen mensual, A pagar). Si lo dejás desactivado, se sigue usando la cotización automática de siempre.
               </p>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>

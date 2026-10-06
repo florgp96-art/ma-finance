@@ -1,4 +1,4 @@
-const { filtrarYaCargados } = require('./duplicados')
+const { filtrarYaCargados, esElMismoPago, esElMismoGasto } = require('./duplicados')
 
 const CARD = 'mastercard'
 const pago = (fecha, monto, detalle, extra = {}) =>
@@ -135,5 +135,61 @@ describe('bordes', () => {
 
   test('sin candidatos no se rompe', () => {
     expect(filtrarYaCargados(null, null)).toEqual({ nuevos: [], omitidos: 0 })
+  })
+})
+
+// La vista previa de la importación (las filas tachadas "ya cargada") usa esta
+// misma regla. Antes tenía la suya, que exigía que el nombre se pareciera: los
+// pagos de octubre de la Mastercard aparecían como nuevos aunque ya estaban.
+describe('esElMismoPago — lo que la vista previa tacha como ya cargado', () => {
+  test('"Su Pago" del PDF reconoce el "Pago Tarjeta Mastercard" cargado a mano', () => {
+    expect(esElMismoPago(pago('2026-08-31', 360000, 'Su Pago'), pago('2026-08-31', 360000, 'Pago Tarjeta Mastercard'))).toBe(true)
+  })
+  test('el pago en dólares se reconoce contra el cargado en dólares', () => {
+    expect(esElMismoPago(
+      pago('2026-09-01', 103.65, 'Su Pago USD', { moneda: 'USD' }),
+      pago('2026-09-01', 103.65, 'Pago Tarjeta', { moneda: 'USD' }),
+    )).toBe(true)
+  })
+  test('pero no contra el mismo número en pesos', () => {
+    expect(esElMismoPago(pago('2026-09-01', 103.65, 'Su Pago USD', { moneda: 'USD' }), pago('2026-09-01', 103.65, 'Pago Tarjeta'))).toBe(false)
+  })
+  test('la fecha tiene la misma tolerancia que al guardar', () => {
+    expect(esElMismoPago(pago('2026-08-02', 500000, 'SU PAGO'), pago('2026-08-03', 500000, 'Pago tarjeta'))).toBe(true)
+    expect(esElMismoPago(pago('2026-08-02', 500000, 'SU PAGO'), pago('2026-08-10', 500000, 'Pago tarjeta'))).toBe(false)
+  })
+  test('un pago de otra tarjeta no cuenta', () => {
+    expect(esElMismoPago(pago('2026-09-25', 500000, 'Su Pago'), pago('2026-09-25', 500000, 'Pago Tarjeta Visa', { account_id: 'visa' }))).toBe(false)
+  })
+  test('un gasto del mismo monto no es un pago', () => {
+    expect(esElMismoPago(pago('2026-09-01', 500000, 'Su Pago'), gasto('2026-09-01', 500000, 'Su Pago'))).toBe(false)
+  })
+  test('solo aplica a pagos: un gasto del PDF sigue el chequeo general', () => {
+    expect(esElMismoPago(gasto('2026-09-01', 5000, 'CAFE'), gasto('2026-09-01', 5000, 'CAFE'))).toBe(false)
+  })
+})
+
+// La nafta cargada a mano entraba otra vez con el nombre del banco: mismo día,
+// mismo monto, nombre distinto. La vista previa ahora la tacha.
+describe('esElMismoGasto — mismo día y monto, aunque se llame distinto', () => {
+  test('la nafta cargada a mano reconoce la línea del resumen', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF 4566 FULL'), gasto('2026-09-12', 45230.5, 'Nafta'))).toBe(true)
+  })
+  test('"MERPAGO*PERAZOLI" reconoce "Perazoli Destapa Cañeria"', () => {
+    expect(esElMismoGasto(gasto('2026-09-05', 23958.1, 'MERPAGO*PERAZOLI'), gasto('2026-09-05', 23958.1, 'Perazoli Destapa Cañeria'))).toBe(true)
+  })
+  test('otro día no: sin el nombre, la fecha tiene que ser la misma', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF'), gasto('2026-09-13', 45230.5, 'Nafta'))).toBe(false)
+  })
+  test('un centavo de diferencia ya es otro gasto', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 45230.5, 'YPF'), gasto('2026-09-12', 45230.49, 'Nafta'))).toBe(false)
+  })
+  test('otra moneda u otra cuenta no', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 20, 'APPLE', { moneda: 'USD' }), gasto('2026-09-12', 20, 'Apple'))).toBe(false)
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), gasto('2026-09-12', 5000, 'Nafta', { account_id: 'visa' }))).toBe(false)
+  })
+  test('un pago o un ingreso del mismo monto no es el mismo gasto', () => {
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), pago('2026-09-12', 5000, 'Pago'))).toBe(false)
+    expect(esElMismoGasto(gasto('2026-09-12', 5000, 'YPF'), gasto('2026-09-12', 5000, 'Reintegro', { tipo: 'ingreso' }))).toBe(false)
   })
 })

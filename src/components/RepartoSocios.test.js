@@ -90,7 +90,7 @@ test('un gasto de este mes se pasa a cuotas y queda guardado con quién lo pagó
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [] })
   const selectGasto = await screen.findByRole('combobox', { name: 'Gasto' })
   fireEvent.change(selectGasto, { target: { value: 'cc' } })
-  fireEvent.change(screen.getByRole('spinbutton', { name: /por mes/ }), { target: { value: '25' } })
+  fireEvent.change(screen.getByRole('textbox', { name: /por mes/ }), { target: { value: '25' } })
   fireEvent.click(within(selectGasto.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].cuotas).toEqual([{
     movimientoId: 'cc', concepto: 'CapCut (anual)', pagoDe: 'Valen', monto: 300, moneda: 'EUR', desde: mes, porMes: 25,
@@ -106,7 +106,8 @@ test('la cotización no se edita: es la del día (promedio compra/venta) y las c
   expect(screen.getByText('Euro').nextSibling).toHaveTextContent('$ 1.700')
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
   // Los únicos campos numéricos son los de montos (transferencias), no cotizaciones.
-  expect(screen.getAllByRole('spinbutton').map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
+  const campos = [...screen.queryAllByRole('textbox'), ...screen.queryAllByRole('spinbutton')]
+  expect(campos.map(el => el.getAttribute('aria-label'))).not.toContain('Dólar blue')
   // Neto con el dólar a 1.500: 900.000 − 150.000 − 30.000 = 720.000 → 240.000 cada uno.
   expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 240.000')
 })
@@ -142,7 +143,7 @@ test('borrar el pago que fijó la cotización (un "Hecho" sin querer) la devuelv
   expect(screen.getByText(/Promedio entre compra y venta de hoy/)).toBeInTheDocument()
 })
 
-test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', async () => {
+test('un trabajo por fuera: quien lo hizo 90 % y los otros dos 5 % cada uno', async () => {
   mockBase.movimientos = [
     { id: 'ing', account_id: 'efe', tipo: 'ingreso', moneda: 'ARS', monto: 900000, nombre: 'Cliente' },
     { id: 'br', account_id: 'rev', tipo: 'ingreso', moneda: 'EUR', monto: 150, nombre: 'Classic Brunch Party' },
@@ -150,11 +151,11 @@ test('un trabajo por fuera: quien lo hizo 60 % y los otros dos 20 % cada uno', a
   const { onCambiarConfig } = montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [] })
   const select = await screen.findByRole('combobox', { name: 'Movimiento del trabajo' })
   fireEvent.change(select, { target: { value: 'br' } })
-  expect(screen.getByText('Flor 20 % · Valen 60 % · Dol 20 %')).toBeInTheDocument()
+  expect(screen.getByText('Flor 5 % · Valen 90 % · Dol 5 %')).toBeInTheDocument()
   fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
     movimientoId: 'br', concepto: 'Classic Brunch Party', socio: 'Valen',
-    porcentajes: { Flor: 20, Valen: 60, Dol: 20 },
+    porcentajes: { Flor: 5, Valen: 90, Dol: 5 },
   }])
 })
 
@@ -169,11 +170,11 @@ test('se puede elegir de quién fue el laburo aunque la plata haya entrado en la
   const quien = screen.getByRole('combobox', { name: 'De quién fue el laburo' })
   expect(quien).toHaveValue('Dol') // por defecto, el dueño de la cuenta
   fireEvent.change(quien, { target: { value: 'Flor' } })
-  expect(screen.getByText('Flor 60 % · Valen 20 % · Dol 20 %')).toBeInTheDocument()
+  expect(screen.getByText('Flor 90 % · Valen 5 % · Dol 5 %')).toBeInTheDocument()
   fireEvent.click(within(select.closest('form')).getByRole('button', { name: 'Agregar' }))
   expect(onCambiarConfig.mock.calls[0][0].trabajos).toEqual([{
     movimientoId: 'pag', concepto: 'Página web', socio: 'Flor',
-    porcentajes: { Flor: 60, Valen: 20, Dol: 20 },
+    porcentajes: { Flor: 90, Valen: 5, Dol: 5 },
   }])
 })
 
@@ -186,14 +187,31 @@ test('muestra de dónde sale cada número y con cuánto se queda cada uno', asyn
   montar({ socios: ['Flor', 'Valen', 'Dol'], meses: {}, cuotas: [], trabajos: [
     { movimientoId: 'pag', concepto: 'Página web (Flor)', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
   ] })
-  // La agencia: 900.000 − (100 × 1.500) = 750.000 → 250.000 cada uno. La página va aparte.
+  // En partes iguales: 900.000 − (100 × 1.500) = 750.000 → 250.000 cada uno. La página va aparte:
+  // es laburo de Flor (60 % de 150.000 = 90.000) y los otros dos se llevan 20 % cada uno (30.000).
   expect(await screen.findByText('Nasello Cables · Dol')).toBeInTheDocument()
   expect(texto(screen.getByText('Higgsfield · Valen').nextSibling)).toBe('U$S 100 → $ 150.000')
-  expect(texto(screen.getByText('Ganancia de la agencia').nextSibling)).toBe('$ 750.000')
+  expect(texto(screen.getByText('Total en partes iguales').nextSibling)).toBe('$ 750.000')
   expect(texto(screen.getByText('A cada uno (÷ 3)').nextSibling)).toBe('$ 250.000')
-  expect(texto(screen.getByText('Flor $ 90.000 · Valen $ 30.000 · Dol $ 30.000'))).toBeTruthy()
-  const quedan = screen.getAllByText(/^se queda con/).map(texto)
-  expect(quedan).toEqual(['se queda con $ 340.000', 'se queda con $ 280.000', 'se queda con $ 280.000'])
+  const laburo = within(screen.getByText('Laburo de cada uno').parentElement)
+  expect(texto(laburo.getByText('Laburo de Flor').nextSibling)).toBe('$ 90.000')
+  expect(laburo.getByText('Laburo de Valen')).toBeInTheDocument()
+  expect(laburo.getByText('60 % de $ 150.000')).toBeInTheDocument()
+  const deLosDemas = laburo.getAllByRole('button', { name: /Su parte de lo que laburaron los demás \(1\)/ })
+  expect(deLosDemas.map(b => texto(b.lastChild))).toEqual(['+ $ 30.000', '+ $ 30.000'])
+  fireEvent.click(deLosDemas[0])
+  expect(screen.getAllByText('20 % de $ 150.000')).toHaveLength(1)
+  // Lo que entró y salió de las cuentas de cada uno.
+  expect(texto(screen.getByText('Cuentas de Flor').nextSibling)).toBe('tiene $ 150.000')
+  expect(texto(screen.getByText('Cuentas de Valen').nextSibling)).toBe('tiene − $ 150.000')
+  // Lo que ganó cada uno, aparte de lo que falta pasarse para quedar a mano.
+  const ganaron = within(screen.getByText(/^Lo que ganó cada uno en [a-z]+$/).parentElement)
+  expect(['Flor', 'Valen', 'Dol'].map(s => texto(ganaron.getByText(`${s} ganó`).nextSibling)))
+    .toEqual(['$ 340.000', '$ 280.000', '$ 280.000'])
+  expect(texto(ganaron.getByText('Entre todos ganaron').nextSibling)).toBe('$ 900.000')
+  expect(ganaron.getAllByText('Para quedar a mano')).toHaveLength(3)
+  expect(ganaron.getAllByText(/^Le tienen que pasar$|^Le pasa a los demás$/).map(e => `${texto(e)} ${texto(e.nextSibling)}`))
+    .toEqual(['Le tienen que pasar $ 190.000', 'Le tienen que pasar $ 430.000', 'Le pasa a los demás $ 620.000'])
   fireEvent.click(screen.getByRole('button', { name: /Ingresos \(1\)/ }))
   expect(screen.queryByText('Nasello Cables · Dol')).not.toBeInTheDocument()
 })

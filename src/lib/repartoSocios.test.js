@@ -78,6 +78,34 @@ describe('calcularReparto', () => {
   })
 })
 
+describe('euros o dólares ya cambiados a pesos', () => {
+  const cuentasDani = [...cuentas, { id: 'eur', nombre: 'Flor ARQ EUR' }]
+  const dani = { ...mov('eur', 'ingreso', 497, 'EUR'), id: 'dani' }
+  const trabajos = [{ movimientoId: 'dani', socio: 'Flor', porcentajes: { Flor: 90, Valen: 5, Dol: 5 } }]
+
+  test('los porcentajes salen de los pesos que dieron, no de la cotización del mes', () => {
+    const r = calcularReparto({
+      socios, cuentas: cuentasDani, movimientos: [dani], cotizaciones: { EUR: 1706 }, trabajos, enPesos: { dani: 898212 },
+    })
+    const flor = r.detalle.laburo.find(l => l.socio === 'Flor').propios[0]
+    expect(flor.pesos).toBe(898212)
+    expect(flor.parte).toBeCloseTo(808390.8, 1)
+    expect(flor.cambiado).toBe(true)
+    expect(r.porSocio.find(s => s.socio === 'Flor').tiene).toBeCloseTo(898212, 2)
+  })
+
+  test('sin el cambio cargado, sigue con la cotización del mes', () => {
+    const r = calcularReparto({ socios, cuentas: cuentasDani, movimientos: [dani], cotizaciones: { EUR: 1706 }, trabajos })
+    expect(r.detalle.laburo.find(l => l.socio === 'Flor').propios[0].pesos).toBeCloseTo(847882, 2)
+  })
+
+  test('repartoDelMes lo toma de la configuración', () => {
+    const config = { socios, meses: {}, trabajos, enPesos: { dani: 898212 } }
+    const r = repartoDelMes({ config, mes: '2026-10', movimientos: [dani], cuentas: cuentasDani, cotizacionesVivas: { EUR: 1706 } })
+    expect(r.detalle.laburo.find(l => l.socio === 'Flor').propios[0].pesos).toBe(898212)
+  })
+})
+
 describe('socioDeLaCuenta', () => {
   test('el nombre de la cuenta empieza con el del socio', () => {
     expect(socioDeLaCuenta({ nombre: 'Dol Mercado Pago' }, socios)).toBe('Dol')
@@ -93,7 +121,13 @@ describe('normalizarConfigReparto', () => {
     expect(normalizarConfigReparto(null)).toBe(null)
     expect(normalizarConfigReparto('texto')).toBe(null)
     expect(normalizarConfigReparto({ socios: [' Flor ', 'Valen', 'Valen', ''] }))
-      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [], trabajos: [] })
+      .toEqual({ socios: ['Flor', 'Valen'], meses: {}, cuotas: [], trabajos: [], enPesos: {} })
+  })
+
+  test('conserva lo que dieron al cambiar a pesos (si no, se pierde al guardar otra cosa)', () => {
+    const config = normalizarConfigReparto({ socios, enPesos: { dani: 898212, roto: 'abc', cero: 0 } })
+    expect(config.enPesos).toEqual({ dani: 898212 })
+    expect(normalizarConfigReparto({ socios, enPesos: [1, 2] }).enPesos).toEqual({})
   })
 })
 
@@ -236,8 +270,8 @@ describe('trabajos por fuera', () => {
 
   test('el que lo hizo se queda con el 50 % y el resto va parejo', () => {
     expect(deFlor).toEqual({ Flor: 50, Valen: 25, Dol: 25 })
-    // Sin porcentaje, el que lo hizo se queda con el 60 %.
-    expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 60, Valen: 20, Dol: 20 })
+    // Sin porcentaje, el que lo hizo se queda con el 90 % y los otros con el 5 % cada uno.
+    expect(porcentajesTrabajo('Flor', socios)).toEqual({ Flor: 90, Valen: 5, Dol: 5 })
   })
 
   test('conTrabajo: marca, re-marca y desmarca un movimiento', () => {
@@ -245,12 +279,12 @@ describe('trabajos por fuera', () => {
     const marcado = conTrabajo(base, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol' })
     expect(marcado.trabajos).toEqual([
       base.trabajos[0],
-      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol', porcentajes: { Flor: 20, Valen: 20, Dol: 60 } },
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Dol', porcentajes: { Flor: 5, Valen: 5, Dol: 90 } },
     ])
     expect(base.trabajos).toHaveLength(1) // no toca la configuración que recibe
     const otraVez = conTrabajo(marcado, { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor' })
     expect(otraVez.trabajos.filter(t => t.movimientoId === 'maxi')).toEqual([
-      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor', porcentajes: { Flor: 60, Valen: 20, Dol: 20 } },
+      { movimientoId: 'maxi', concepto: 'Maxi Estray', socio: 'Flor', porcentajes: { Flor: 90, Valen: 5, Dol: 5 } },
     ])
     expect(conTrabajo(otraVez, { movimientoId: 'maxi', socio: '' }).trabajos).toEqual([base.trabajos[0]])
     expect(conTrabajo(base, { movimientoId: 'y', socio: 'Nadie' }).trabajos).toEqual(base.trabajos)
@@ -283,5 +317,43 @@ describe('trabajos por fuera', () => {
       cuotas: [capcut], mes: '2026-09', trabajos: [{ movimientoId: 'capcut', porcentajes: deValen }],
     })
     expect(r.netoTrabajos).toBeCloseTo(0, 6)
+  })
+})
+
+describe('lo de cada socio: su laburo, su parte del de los demás y sus cuentas', () => {
+  test('el laburo es de quien se lleva más (los dos si empatan); el resto es su parte del de los demás', () => {
+    const r = calcularReparto({
+      socios, cuentas, cotizaciones: { USD: 1000 }, mes: '2026-09',
+      movimientos: [
+        { id: 'nas', account_id: 'mc', tipo: 'ingreso', monto: 600000, moneda: 'ARS', nombre: 'Nasello' },
+        { id: 'gab', account_id: 'rev', tipo: 'ingreso', monto: 100, moneda: 'USD', nombre: 'Gabri' },
+        { id: 'hig', account_id: 'rev', tipo: 'gasto', monto: 100, moneda: 'USD', nombre: 'Higgsfield' },
+        { id: 'icl', account_id: 'mc', tipo: 'gasto', monto: 9000, moneda: 'ARS', nombre: 'iCloud' },
+      ],
+      trabajos: [
+        { movimientoId: 'nas', socio: 'Flor', porcentajes: { Flor: 47.5, Dol: 47.5, Valen: 5 } },
+        { movimientoId: 'gab', socio: 'Valen', porcentajes: { Flor: 47.5, Valen: 47.5, Dol: 5 } },
+        { movimientoId: 'hig', socio: 'Valen', porcentajes: { Valen: 90, Flor: 5, Dol: 5 } },
+      ],
+    })
+    const de = (s) => r.detalle.laburo.find(l => l.socio === s)
+    expect(de('Flor').propios.map(l => [l.nombre, l.porcentaje, Math.round(l.parte)])).toEqual([
+      ['Nasello', 47.5, 285000], ['Gabri', 47.5, 47500],
+    ])
+    expect(de('Flor').deLosDemas.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Higgsfield', -5000]])
+    expect(de('Valen').propios.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Gabri', 47500], ['Higgsfield', -90000]])
+    expect(de('Valen').deLosDemas.map(l => [l.nombre, Math.round(l.parte)])).toEqual([['Nasello', 30000]])
+    expect(de('Dol').propios.map(l => l.nombre)).toEqual(['Nasello'])
+    // Lo de cada uno suma lo mismo que su parte de los trabajos.
+    for (const s of r.porSocio) {
+      expect(Math.round(de(s.socio).totalPropios + de(s.socio).totalDeLosDemas)).toBe(Math.round(s.trabajos))
+    }
+    // Cuentas: lo que entró y salió de las de cada uno (con lo común también).
+    const cuentasDe = (s) => r.detalle.cuentas.find(c => c.socio === s)
+    expect(cuentasDe('Flor').entradas.map(m => m.nombre)).toEqual(['Nasello'])
+    expect(cuentasDe('Flor').salidas.map(m => m.nombre)).toEqual(['iCloud'])
+    expect(cuentasDe('Valen').totalEntradas).toBe(100000)
+    expect(cuentasDe('Valen').totalSalidas).toBe(100000)
+    expect(cuentasDe('Dol').entradas).toEqual([])
   })
 })

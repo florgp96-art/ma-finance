@@ -13,6 +13,8 @@
 // persistPref en Dashboard). Que exista es lo que hace aparecer la calculadora:
 // solo la ven las cuentas que la tienen.
 
+import { parseMonto } from './formato'
+
 const normalizar = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 const MONTO_MAXIMO = 1e12
 
@@ -26,7 +28,11 @@ export const normalizarConfigReparto = (raw) => {
   const meses = raw.meses && typeof raw.meses === 'object' && !Array.isArray(raw.meses) ? raw.meses : {}
   const cuotas = Array.isArray(raw.cuotas) ? raw.cuotas.filter(c => c && typeof c === 'object') : []
   const trabajos = Array.isArray(raw.trabajos) ? raw.trabajos.filter(t => t && typeof t === 'object') : []
-  return { socios, meses, cuotas, trabajos }
+  // Lo que dieron al cambiar a pesos un cobro o un pago en otra moneda (ver calcularReparto).
+  const enPesos = raw.enPesos && typeof raw.enPesos === 'object' && !Array.isArray(raw.enPesos)
+    ? Object.fromEntries(Object.entries(raw.enPesos).filter(([id, pesos]) => id && montoValido(pesos)))
+    : {}
+  return { socios, meses, cuotas, trabajos, enPesos }
 }
 
 export const socioDeLaCuenta = (cuenta, socios) => {
@@ -68,7 +74,7 @@ export const nombreDelMes = (mes) => {
 }
 
 export const montoValido = (v) => {
-  const n = Number(v)
+  const n = parseMonto(v)
   return Number.isFinite(n) && n > 0 && n < MONTO_MAXIMO ? n : null
 }
 
@@ -114,7 +120,7 @@ export const cuotasDelMes = ({ cuotas, socios, mes }) => {
 }
 
 // TRABAJOS POR FUERA: un movimiento que no se reparte en partes iguales. El que
-// hizo el trabajo se queda con más (60 % por defecto) y el resto se divide entre los
+// hizo el trabajo se queda con más (90 % por defecto) y el resto se divide entre los
 // demás; vale para el ingreso y para los gastos de ese trabajo. La plata la
 // sigue teniendo quien la cobró o la pagó: lo que cambia es a quién le toca.
 //
@@ -129,7 +135,10 @@ export const fraccionesDeReparto = (porcentajes, socios) => {
 }
 
 // El que hizo el trabajo se queda con `propio` % y el resto va parejo a los demás.
-export const porcentajesTrabajo = (socio, socios, propio = 60) => {
+// Lo acordado en GPK: 90 % para quien lo hizo y 5 % para cada uno de los otros dos.
+export const PROPIO_POR_DEFECTO = 90
+
+export const porcentajesTrabajo = (socio, socios, propio = PROPIO_POR_DEFECTO) => {
   const otros = (socios || []).filter(s => s !== socio)
   const p = Math.min(100, Math.max(0, Number(propio) || 0))
   return Object.fromEntries((socios || []).map(s => [s, s === socio ? p : (otros.length ? (100 - p) / otros.length : 0)]))
@@ -138,7 +147,7 @@ export const porcentajesTrabajo = (socio, socios, propio = 60) => {
 // La configuración con `movimientoId` marcado como trabajo de `socio` (el que hizo
 // el laburo, que no tiene por qué ser el dueño de la cuenta donde entró la plata).
 // Reemplaza la marca anterior de ese movimiento; sin socio válido, lo desmarca.
-export const conTrabajo = (config, { movimientoId, concepto, socio, propio = 60 }) => {
+export const conTrabajo = (config, { movimientoId, concepto, socio, propio = PROPIO_POR_DEFECTO }) => {
   const trabajos = (Array.isArray(config?.trabajos) ? config.trabajos : []).filter(t => t.movimientoId !== movimientoId)
   if (!movimientoId || !(config?.socios || []).includes(socio)) return { ...config, trabajos }
   return {
@@ -176,7 +185,10 @@ const saldarDiferencias = (porSocio) => {
 // movimiento original no entra en su mes; entra la cuota que toca en `mes`.
 // trabajos: los movimientos que se reparten con sus propios porcentajes (ver
 // fraccionesDeReparto); no entran en la parte común.
-export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos }) => {
+// enPesos: { [movimientoId]: pesos } — lo que realmente dieron al cambiar a pesos un
+// cobro o un pago en otra moneda. Si está, ese movimiento vale eso (no la cotización
+// del mes): los porcentajes salen de la plata que de verdad entró.
+export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos, enPesos }) => {
   const lista = [...new Set((socios || []).map(s => String(s || '').trim()).filter(Boolean))]
   const cuentaPorId = new Map((cuentas || []).map(c => [c.id, c]))
   const base = Object.fromEntries(lista.map(s => [s, { socio: s, cobro: 0, pago: 0, transferencias: 0, cuotas: 0, trabajos: 0 }]))
@@ -190,6 +202,11 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   const detalleIngresos = []
   const detalleGastos = []
   const gruposTrabajo = new Map() // quién hizo el laburo → { neto, reparto por socio, movimientos }
+  // Lo de cada socio, para mostrarlo por persona:
+  // laburo: los movimientos con porcentaje propio y la parte que le toca (lo que laburó él, y su
+  // parte de lo que laburaron los demás); cuentas: lo que entró y salió de sus cuentas.
+  const laburo = Object.fromEntries(lista.map(s => [s, { propios: [], deLosDemas: [] }]))
+  const cuentasDe = Object.fromEntries(lista.map(s => [s, { entradas: [], salidas: [] }]))
   const sinSocio = new Set()
   const sinCotizacion = new Set()
   const enCuotas = new Set((cuotas || []).map(c => c?.movimientoId).filter(Boolean))
@@ -202,7 +219,8 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
   for (const t of movimientos || []) {
     if (t.tipo !== 'ingreso' && t.tipo !== 'gasto') continue
     if (enCuotas.has(t.id)) continue
-    const pesos = aPesos(t.monto, t.moneda || 'ARS')
+    const cambiado = (t.moneda || 'ARS') !== 'ARS' ? montoValido(enPesos?.[t.id]) : null
+    const pesos = cambiado || aPesos(t.monto, t.moneda || 'ARS')
     if (pesos === null) continue
     const cuenta = cuentaPorId.get(t.account_id)
     const socio = socioDeLaCuenta(cuenta, lista)
@@ -212,7 +230,9 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     const item = {
       id: t.id, tipo: t.tipo, nombre: t.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'),
       socio, moneda: t.moneda || 'ARS', monto: Math.abs(Number(t.monto) || 0), pesos,
+      ...(cambiado ? { cambiado: true } : {}),
     }
+    cuentasDe[socio][t.tipo === 'ingreso' ? 'entradas' : 'salidas'].push(item)
     const fracciones = fraccionesPorId.get(t.id)
     if (fracciones) {
       const signo = t.tipo === 'ingreso' ? 1 : -1
@@ -220,9 +240,12 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
       const grupo = gruposTrabajo.get(quien) || { socio: quien, neto: 0, reparto: Object.fromEntries(lista.map(s => [s, 0])), movimientos: [] }
       grupo.neto += signo * pesos
       grupo.movimientos.push(item)
+      // Lo laburó quien se lleva la parte más grande (los dos, si empatan: 47,5 % y 47,5 %).
+      const mayor = Math.max(...Object.values(fracciones))
       for (const [s, f] of Object.entries(fracciones)) {
         base[s].trabajos += signo * pesos * f
         grupo.reparto[s] += signo * pesos * f
+        laburo[s][f >= mayor - 1e-9 ? 'propios' : 'deLosDemas'].push({ ...item, porcentaje: f * 100, parte: signo * pesos * f })
       }
       gruposTrabajo.set(quien, grupo)
     } else if (t.tipo === 'ingreso') {
@@ -268,6 +291,10 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
     return { ...f, tiene, ganancia, leToca, diferencia: tiene - leToca }
   })
   const porPesos = (a, b) => b.pesos - a.pesos
+  // Primero lo que entró, de mayor a menor; después los gastos.
+  const porParte = (a, b) => ((a.parte > 0) === (b.parte > 0) ? Math.abs(b.parte) - Math.abs(a.parte) : b.parte - a.parte)
+  const sumaPartes = (lineas) => lineas.reduce((suma, l) => suma + l.parte, 0)
+  const sumaPesos = (lineas) => lineas.reduce((suma, l) => suma + l.pesos, 0)
 
   return {
     ingresos,
@@ -281,6 +308,20 @@ export const calcularReparto = ({ socios, cuentas, movimientos, cotizaciones, tr
       ingresos: detalleIngresos.sort(porPesos),
       gastos: detalleGastos.sort(porPesos),
       trabajos: [...gruposTrabajo.values()],
+      laburo: lista.map(s => ({
+        socio: s,
+        propios: laburo[s].propios.sort(porParte),
+        deLosDemas: laburo[s].deLosDemas.sort(porParte),
+        totalPropios: sumaPartes(laburo[s].propios),
+        totalDeLosDemas: sumaPartes(laburo[s].deLosDemas),
+      })),
+      cuentas: lista.map(s => ({
+        socio: s,
+        entradas: cuentasDe[s].entradas.sort(porPesos),
+        salidas: cuentasDe[s].salidas.sort(porPesos),
+        totalEntradas: sumaPesos(cuentasDe[s].entradas),
+        totalSalidas: sumaPesos(cuentasDe[s].salidas),
+      })),
     },
     porSocio,
     pagos: saldarDiferencias(porSocio),
@@ -311,8 +352,9 @@ export const repartoDelMes = ({ config, mes, movimientos, cuentas, cotizacionesV
   }
   const cuotas = Array.isArray(config?.cuotas) ? config.cuotas : []
   const trabajos = Array.isArray(config?.trabajos) ? config.trabajos : []
+  const enPesos = config?.enPesos && typeof config.enPesos === 'object' ? config.enPesos : {}
   return {
-    ...calcularReparto({ socios: config?.socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos }),
+    ...calcularReparto({ socios: config?.socios, cuentas, movimientos, cotizaciones, transferencias, cuotas, mes, trabajos, enPesos }),
     fija,
     cotizaciones,
     transferencias,
