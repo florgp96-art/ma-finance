@@ -147,12 +147,29 @@ export const porcentajesTrabajo = (socio, socios, propio = PROPIO_POR_DEFECTO) =
 // La configuración con `movimientoId` marcado como trabajo de `socio` (el que hizo
 // el laburo, que no tiene por qué ser el dueño de la cuenta donde entró la plata).
 // Reemplaza la marca anterior de ese movimiento; sin socio válido, lo desmarca.
-export const conTrabajo = (config, { movimientoId, concepto, socio, propio = PROPIO_POR_DEFECTO }) => {
+// Porcentajes elegidos a mano: uno por socio, ninguno negativo, y entre todos 100.
+export const sumaPorcentajes = (porcentajes, socios) =>
+  (socios || []).reduce((suma, s) => suma + (Number(porcentajes?.[s]) || 0), 0)
+
+export const porcentajesValidos = (porcentajes, socios) => {
+  if (!porcentajes || typeof porcentajes !== 'object' || !(socios || []).length) return false
+  const valores = socios.map(s => Number(porcentajes[s]))
+  return valores.every(v => Number.isFinite(v) && v >= 0 && v <= 100) &&
+    Math.abs(sumaPorcentajes(porcentajes, socios) - 100) < 0.01
+}
+
+// Con `porcentajes` (elegidos a mano, ver porcentajesValidos) se usan esos; si no,
+// `propio` para quien lo hizo y el resto parejo.
+export const conTrabajo = (config, { movimientoId, concepto, socio, propio = PROPIO_POR_DEFECTO, porcentajes }) => {
   const trabajos = (Array.isArray(config?.trabajos) ? config.trabajos : []).filter(t => t.movimientoId !== movimientoId)
-  if (!movimientoId || !(config?.socios || []).includes(socio)) return { ...config, trabajos }
+  const socios = config?.socios || []
+  if (!movimientoId || !socios.includes(socio)) return { ...config, trabajos }
+  const elegidos = porcentajesValidos(porcentajes, socios)
+    ? Object.fromEntries(socios.map(s => [s, Number(porcentajes[s])]))
+    : porcentajesTrabajo(socio, socios, propio)
   return {
     ...config,
-    trabajos: [...trabajos, { movimientoId, concepto: concepto || 'Movimiento', socio, porcentajes: porcentajesTrabajo(socio, config.socios, propio) }],
+    trabajos: [...trabajos, { movimientoId, concepto: concepto || 'Movimiento', socio, porcentajes: elegidos }],
   }
 }
 

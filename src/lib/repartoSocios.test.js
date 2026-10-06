@@ -1,6 +1,6 @@
 const {
   calcularReparto, socioDeLaCuenta, normalizarConfigReparto, rangoDelMes, moverMes, nombreDelMes, cuotasDelMes,
-  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo, fraccionesDeReparto, porcentajesTrabajo, conTrabajo,
+  cotizacionFijaDelMes, repartoDelMes, repartoDelPeriodo, fraccionesDeReparto, porcentajesTrabajo, conTrabajo, porcentajesValidos, sumaPorcentajes,
 } = require('./repartoSocios')
 
 const socios = ['Flor', 'Valen', 'Dol']
@@ -355,5 +355,26 @@ describe('lo de cada socio: su laburo, su parte del de los demás y sus cuentas'
     expect(cuentasDe('Valen').totalEntradas).toBe(100000)
     expect(cuentasDe('Valen').totalSalidas).toBe(100000)
     expect(cuentasDe('Dol').entradas).toEqual([])
+  })
+})
+
+describe('porcentajes elegidos a mano para un trabajo', () => {
+  test('tienen que sumar 100, sin negativos', () => {
+    expect(porcentajesValidos({ Flor: 70, Valen: 20, Dol: 10 }, socios)).toBe(true)
+    expect(porcentajesValidos({ Flor: 50, Valen: 50, Dol: 0 }, socios)).toBe(true)
+    expect(porcentajesValidos({ Flor: 70, Valen: 20, Dol: 5 }, socios)).toBe(false)
+    expect(porcentajesValidos({ Flor: 110, Valen: -10, Dol: 0 }, socios)).toBe(false)
+    expect(porcentajesValidos({ Flor: 100 }, socios)).toBe(false) // tiene que estar cada socio
+    expect(porcentajesValidos({ Flor: 100, Valen: null, Dol: 0 }, socios)).toBe(true) // un campo vacío es 0
+    expect(porcentajesValidos(null, socios)).toBe(false)
+    expect(sumaPorcentajes({ Flor: 70, Valen: 20, Dol: 5 }, socios)).toBe(95)
+  })
+
+  test('conTrabajo usa los elegidos; si no suman 100, el reparto de siempre', () => {
+    const base = { socios, meses: {}, cuotas: [], trabajos: [] }
+    const elegido = conTrabajo(base, { movimientoId: 'x', concepto: 'Web', socio: 'Flor', porcentajes: { Flor: 70, Valen: 20, Dol: 10 } })
+    expect(elegido.trabajos[0]).toEqual({ movimientoId: 'x', concepto: 'Web', socio: 'Flor', porcentajes: { Flor: 70, Valen: 20, Dol: 10 } })
+    const mal = conTrabajo(base, { movimientoId: 'x', concepto: 'Web', socio: 'Flor', porcentajes: { Flor: 70, Valen: 20, Dol: 5 } })
+    expect(mal.trabajos[0].porcentajes).toEqual(porcentajesTrabajo('Flor', socios))
   })
 })
