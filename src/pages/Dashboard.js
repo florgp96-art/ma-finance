@@ -4620,6 +4620,9 @@ export default function Dashboard() {
                 <select style={styles.input} value={newAccount.tipo} onChange={(e) => setNewAccount({...newAccount, tipo: e.target.value})}>
                   <option value="credito">💳 Tarjeta de crédito</option>
                   <option value="debito">🏦 Débito / Cuenta bancaria</option>
+                  {/* Más de una de efectivo (ej. la de cada socio): el efectivo no cuenta
+                      para el límite del plan gratis, así que crear otras es de Premium. */}
+                  {isPremium && <option value="efectivo">💵 Efectivo</option>}
                 </select>
               </div>
               <div style={styles.modalButtons}>
@@ -4853,6 +4856,7 @@ export default function Dashboard() {
                 <select style={styles.input} value={editAccount.tipo} onChange={(e) => setEditAccount({...editAccount, tipo: e.target.value})}>
                   <option value="credito">💳 Tarjeta de crédito</option>
                   <option value="debito">🏦 Débito / Cuenta bancaria</option>
+                  {(isPremium || editAccount.tipo === 'efectivo') && <option value="efectivo">💵 Efectivo</option>}
                 </select>
               </div>
               {/* Pagar la tarjeta saca plata de una cuenta real, pero el pago se
