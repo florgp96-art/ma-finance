@@ -1976,7 +1976,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   const totalIngresosEUR = mesTxs.filter(t => t.moneda === 'EUR' && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.monto), 0)
   const hayIngresos = allAccounts && (totalIngresosARS > 0 || totalIngresosUSD > 0 || totalIngresosEUR > 0)
 
-  const ingresoBubbleData = esVistaIngresos
+  // En las cuentas con reparto entre socios (la de la agencia) los ingresos se ven
+  // al lado de los gastos, en su propio gráfico: ahí importa tanto lo que entra
+  // como lo que sale.
+  const ingresosJuntoAGastos = !!repartoSocios && !esVistaIngresos
+  const ingresoBubbleData = (esVistaIngresos || ingresosJuntoAGastos)
     ? Object.values(
         mesTxs.filter(t => t.tipo === 'ingreso').reduce((acc, t) => {
           const cat = t.tag || t.nombre || 'Sin categoría'
@@ -2017,8 +2021,6 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // cada entrada es siempre el mismo sin importar en cuál de los gráficos aparezca.
   // "Personal" (el bucket de "vos" en el gráfico por persona) ya resuelve bien acá:
   // resolveIcon mira customIcons primero y cae a CATEGORY_CONFIG['Personal'] = 👤.
-  const getChartIcon = (name) => esVistaIngresos ? resolveIconIngreso(name) : resolveIcon(name)
-  const getChartColor = (name) => esVistaIngresos ? resolveColorIngreso(name) : resolveColor(name)
   const effectiveChartType = chartType
 
   // "Categorías Top": mismas porciones que el donut/barras (categoriaBubbleData),
@@ -2090,16 +2092,18 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
 
     return {
       ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
-      resolveIcon, resolveColor, getChartIcon, getChartColor,
+      ingresoBubbleData, ingresosJuntoAGastos, resolveIconIngreso, resolveColorIngreso,
+      resolveIcon, resolveColor,
       catTopList, pagosTarjetasGeneral,
       totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
       mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
     }
-  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, accounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR])
+  }, [transactions, mesTxs, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, esVistaIngresos, allAccounts, accounts, children, customIcons, selectedMeses, mesesDisponibles, chartType, getTCEUR, repartoSocios])
 
   const {
     ingresosBarData, displayChartData, categoriaBubbleData, personaBubbleData, childNames,
-    resolveIcon, resolveColor, getChartIcon, getChartColor,
+    ingresoBubbleData, ingresosJuntoAGastos, resolveIconIngreso, resolveColorIngreso,
+    resolveIcon, resolveColor,
     catTopList, pagosTarjetasGeneral,
     totalARS, totalUSD, totalEUR, totalIngresosARS, totalIngresosUSD, totalIngresosEUR, hayIngresos,
     mesAnterior, diffPct, diffMonto, diffIngPct, diffIngMonto, effectiveChartType,
@@ -4414,15 +4418,23 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             // los dos juntos, sin obligar a elegir.
             const dosGraficos = !esVistaIngresos && childNames.length > 0
             const graficoCategoria = esVistaIngresos ? displayChartData : categoriaBubbleData
-            const hayAlgunGrafico = dosGraficos ? (categoriaBubbleData.length > 0 || personaBubbleData.length > 0) : graficoCategoria.length > 0
+            const tarjetas = esVistaIngresos
+              ? [{ data: graficoCategoria, titulo: 'Ingresos por categoría', esIngreso: true }]
+              : [
+                  { data: categoriaBubbleData, titulo: 'Gastos por categoría', esIngreso: false },
+                  ...(dosGraficos ? [{ data: personaBubbleData, titulo: 'Gastos por persona', esIngreso: false }] : []),
+                  ...(ingresosJuntoAGastos ? [{ data: ingresoBubbleData, titulo: 'Ingresos por categoría', esIngreso: true }] : []),
+                ].filter(t => t.data.length > 0)
+            const hayAlgunGrafico = tarjetas.some(t => t.data.length > 0)
             if (!hayAlgunGrafico) return null
+            const variosGraficos = tarjetas.length > 1
             const periodoLabelChart = selectedMeses.length === 1 ? mesLabel(selectedMeses[0])
               : selectedMeses.length === mesesDisponibles.length ? 'todos los meses'
               : (selectedMeses.length === 0 ? 'ningún mes' : `${selectedMeses.length} meses`)
             const monedaLabelChart = esVistaIngresos && (totalIngresosUSD > 0 || totalIngresosEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : !esVistaIngresos && (totalUSD > 0 || totalEUR > 0) ? 'ARS (monedas extranjeras convertidas)'
               : 'ARS'
-            const renderBubbleCard = (data, titulo, extraStyle) => data.length === 0 ? null : (
+            const renderBubbleCard = (data, titulo, extraStyle, esIngreso = esVistaIngresos) => data.length === 0 ? null : (
               <div key={titulo} style={{ ...styles.bubbleSection, minWidth: 0, ...extraStyle }}>
                 <h3 style={{ ...styles.chartTitle, fontSize: '14px', margin: '0 0 10px', display: 'flex', alignItems: 'center' }}>
                   {titulo}
@@ -4446,7 +4458,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       <PieChart>
                         <Pie data={data} cx="50%" cy="50%" innerRadius={isMobile ? 58 : 68} outerRadius={isMobile ? 90 : 108} dataKey="value" paddingAngle={2}>
                           {data.map((entry, idx) => (
-                            <Cell key={idx} fill={getChartColor(entry.name)} stroke="none" />
+                            <Cell key={idx} fill={(esIngreso ? resolveColorIngreso : resolveColor)(entry.name)} stroke="none" />
                           ))}
                         </Pie>
                         <Tooltip formatter={(v, name) => [`$ ${formatMonto(v)}`, name]} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
@@ -4476,8 +4488,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                           la columna quedaba despareja. */}
                       {data.map((entry, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-                          <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: getChartColor(entry.name), flexShrink: 0 }} />
-                          <span style={{ width: 20, flexShrink: 0, textAlign: 'center', lineHeight: 1 }}>{getChartIcon(entry.name)}</span>
+                          <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: (esIngreso ? resolveColorIngreso : resolveColor)(entry.name), flexShrink: 0 }} />
+                          <span style={{ width: 20, flexShrink: 0, textAlign: 'center', lineHeight: 1 }}>{(esIngreso ? resolveIconIngreso : resolveIcon)(entry.name)}</span>
                           <span style={{ color: darkMode ? '#e0e0e0' : '#3a3a3c', flex: '1 1 auto', minWidth: 0, wordBreak: 'break-word' }}>{entry.name}</span>
                           <span style={{ fontWeight: '600', color: darkMode ? '#F0EDEC' : '#1d1d1f', whiteSpace: 'nowrap', flexShrink: 0 }}>$ {formatMonto(entry.value)}</span>
                         </div>
@@ -4501,7 +4513,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                         <Tooltip formatter={(v) => [`$ ${formatMonto(v)}`, 'Total']} contentStyle={{ fontFamily: '"Montserrat", sans-serif', borderRadius: '8px', backgroundColor: darkMode ? '#1C1A1C' : '#F0EDEC', border: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, fontSize: '12px' }} labelStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} itemStyle={{ color: darkMode ? '#F0EDEC' : '#1d1d1f' }} />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                           {data.map((entry, idx) => (
-                            <Cell key={idx} fill={getChartColor(entry.name)} />
+                            <Cell key={idx} fill={(esIngreso ? resolveColorIngreso : resolveColor)(entry.name)} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -4529,17 +4541,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                     los apilaba igual) — así "Gastos por categoría" y "Gastos por
                     persona" quedan siempre lado a lado en pantallas de compu,
                     y la página no queda tan larga para llegar a los movimientos. */}
-                <div style={{ display: dosGraficos && !isMobile ? 'grid' : 'flex', gridTemplateColumns: dosGraficos && !isMobile ? 'repeat(2, 1fr)' : undefined, gap: '20px', flexWrap: 'wrap' }}>
-                  {dosGraficos
-                    ? [
-                        renderBubbleCard(categoriaBubbleData, 'Gastos por categoría'),
-                        // Línea sutil entre los dos donuts para que no se lean como un
-                        // solo bloque — mismo color de borde que el resto de la app.
-                        renderBubbleCard(personaBubbleData, 'Gastos por persona', !isMobile ? {
-                          borderLeft: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, paddingLeft: '20px'
-                        } : undefined),
-                      ]
-                    : renderBubbleCard(graficoCategoria, esVistaIngresos ? 'Ingresos por categoría' : 'Gastos por categoría')}
+                <div style={{ display: variosGraficos && !isMobile ? 'grid' : 'flex', gridTemplateColumns: variosGraficos && !isMobile ? 'repeat(2, 1fr)' : undefined, gap: '20px', flexWrap: 'wrap' }}>
+                  {tarjetas.map((t, i) => renderBubbleCard(t.data, t.titulo,
+                    // Línea sutil entre dos donuts lado a lado para que no se lean como un
+                    // solo bloque — mismo color de borde que el resto de la app.
+                    i % 2 === 1 && !isMobile ? { borderLeft: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-e2dde0)'}`, paddingLeft: '20px' } : undefined,
+                    t.esIngreso))}
                 </div>
               </>
             )
