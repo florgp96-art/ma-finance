@@ -11,7 +11,7 @@ import { hayColumnaSentido } from '../lib/columnaSentido'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import { repartoDelPeriodo, nombreDelMes, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
 import SelectorTrabajo, { porcentajesComoTexto, porcentajesDesdeTexto } from './SelectorTrabajo'
-import { puedeVerCobroFacturacion } from '../config/features'
+import { puedeVerCobroFacturacion, descuentaPercepcionesEnDolares } from '../config/features'
 import { ESTADOS_FACTURACION, estadoFacturacion, hayColumnaFacturacion } from '../lib/facturacion'
 import ReporteContador from './ReporteContador'
 
@@ -587,7 +587,14 @@ export const compararStatements = (s1, s2) =>
 // abajo). Única fuente de "cuánto debo y cuándo vence" para tarjetas: la
 // consumen tanto la pestaña "A pagar" como el widget de Vencimientos, así
 // nunca pueden desalinearse entre sí.
-export const calcularStatementsPendientes = ({ accounts, statements, transactions, tcMap, tipoCambio }) => {
+// ¿Es una percepción de los consumos en dólares (RG 5617, antes RG 4815)? Por la
+// subcategoría que le puso el lector o por el texto del banco, que es lo que no cambia
+// aunque la clasificación salga distinta.
+const esPercepcionEnDolares = (t) =>
+  t.subcategories?.nombre === 'Percepciones' ||
+  /percep|\bperc\b|5617|4815/i.test(`${t.detalle || ''} ${t.nombre || ''}`)
+
+export const calcularStatementsPendientes = ({ accounts, statements, transactions, tcMap, tipoCambio, descontarPercepciones = false }) => {
   const cuentasCreditoAPagar = (accounts || []).filter(a => a.tipo === 'credito')
   const cuentaCreditoIds = new Set(cuentasCreditoAPagar.map(a => a.id))
   const statementsPorCuenta = new Map()
@@ -706,8 +713,25 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
     const pesosUsadosEnLosDolares = dolaresPagadosEnPesos
       ? Math.min(sobranteEnPesos, valorEnPesosDeLosDolares)
       : 0
+    // PERCEPCIONES QUE EL BANCO NO COBRA (solo cuentas con descontarPercepciones).
+    //
+    // Si los dólares del resumen se pagaron con dólares, el banco no cobra las
+    // percepciones de esos consumos: el débito sale por el total menos las
+    // percepciones. Pero el resumen las sigue listando y las suma al total, así que
+    // quedaban como saldo pendiente que no se debe — caso real: Visa, U$S 54,41 pagados
+    // en dólares y $ 24.705 "pendientes", justo el 30 % de percepción de esos dólares.
+    // Se descuentan solo del pendiente: los movimientos no se tocan, y si el banco las
+    // devuelve en el resumen siguiente, ese resumen ya trae su propio total.
+    const percepciones = descontarPercepciones && totalUsd > 0 && totalPagosUsd > 0 &&
+      Math.round(pendienteUsdBruto * 100) === 0
+      ? (transactions || [])
+          .filter(t => t.statement_id === s.id && t.tipo === 'gasto' && t.moneda !== 'USD' && esPercepcionEnDolares(t))
+          .reduce((sum, t) => sum + Number(t.monto), 0)
+      : 0
+    const percepcionesNoCobradas = Math.min(Math.max(0, pendienteArsSinClamp), percepciones)
     return {
-      pendienteArs: Math.max(0, pendienteArsSinClamp),
+      pendienteArs: Math.max(0, pendienteArsSinClamp) - percepcionesNoCobradas,
+      percepcionesNoCobradas,
       excedenteArs: sobranteEnPesos - pesosUsadosEnLosDolares,
       pendienteUsd: dolaresPagadosEnPesos ? 0 : pendienteUsdBruto,
       excedenteUsd: totalUsd > 0 ? Math.max(0, -pendienteUsdSinClamp) : 0,
@@ -747,6 +771,7 @@ export const calcularStatementsPendientes = ({ accounts, statements, transaction
         _pagosPosterioresUsd: st.totalPagosUsd,
         _excedenteArs: st.excedenteArs,
         _excedenteUsd: st.excedenteUsd,
+        _percepcionesNoCobradas: st.percepcionesNoCobradas,
       }
     })
   return { cuentasCreditoAPagar, cuentaCreditoIds, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido }
@@ -2928,7 +2953,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // MISMA función que usa el widget de Vencimientos en Dashboard.js, así nunca pueden
   // desalinearse entre sí.
   const { cuentasCreditoAPagar, statementsPorCuenta, estadosStatement, statementsRealesConUsd, cuentasConResumenRepetido } = mostrarTabAPagar
-    ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions, tcMap, tipoCambio })
+    ? calcularStatementsPendientes({ accounts: allAccounts ? accounts : (account?.tipo === 'credito' ? [account] : []), statements, transactions, tcMap, tipoCambio, descontarPercepciones: descuentaPercepcionesEnDolares(userEmail) })
     : { cuentasCreditoAPagar: [], statementsPorCuenta: new Map(), estadosStatement: new Map(), statementsRealesConUsd: [], cuentasConResumenRepetido: [] }
   // Resúmenes reales que van a tener su propia tarjeta (ver statementsRealesConUsd
   // más abajo). Si un movimiento importado por PDF quedó con statement_id pero ese
@@ -3381,7 +3406,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       itemsPorStatement, categoriasResumen,
       cuentasConResumenRepetido,
     }
-  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, cierreManualOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName])
+  }, [transactions, statements, accounts, allAccounts, account, soloAPagar, mostrarTabAPagar, cicloDesdeOverride, cierreManualOverride, hoyISO, mesActual, tcMap, tipoCambio, tcEfectivo, tcMapEUR, tipoCambioEUR, apagarSortKey, apagarSortDir, catGeneralSeleccionada, hijoGeneralSeleccionado, getChildName, userEmail])
 
   const {
     totalAPagarGeneral, totalAPagarGeneralUsd, totalBrutoBarra, montoPagadoBarra, pctPagadoBarra,
@@ -3553,6 +3578,9 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             )}
             {s._pagosPosterioresUsd > 0 && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>Pagado U$S {formatMontoFull(s._pagosPosterioresUsd)}</p>
+            )}
+            {s._percepcionesNoCobradas > 0 && (
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73' }}>Sin $ {formatMonto(s._percepcionesNoCobradas)} de percepciones (pagaste los dólares con dólares)</p>
             )}
             {/* Excedente informativo en esa moneda: puede ser saldo a favor que ya
                 informa el propio resumen del banco, o un pago que superó lo debido en
