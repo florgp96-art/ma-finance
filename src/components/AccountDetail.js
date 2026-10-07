@@ -427,23 +427,26 @@ export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
 
-// Ordenar la tabla por Monto mezclaba las monedas: un gasto de € 50 quedaba entre
-// dos de $ 40 y $ 60 como si fueran comparables. Ahora primero va la moneda, siempre
-// en el mismo orden (pesos, dólares, euros, sin importar si el orden es ascendente
-// o descendente), y adentro de cada moneda el monto con su signo (ingreso positivo,
-// gasto negativo). Sin moneda cargada se asume pesos, igual que en el resto de la app.
+// Ordenar la tabla por Monto: primero todo lo negativo junto (los gastos) y después todo
+// lo positivo (los ingresos) — al revés en descendente. Adentro de cada bloque, separado
+// por moneda, siempre en el mismo orden (pesos, dólares, euros), para no mezclar un
+// € 50 entre dos de $ 40 y $ 60 como si fueran comparables; y adentro de cada moneda,
+// el monto con su signo. Sin moneda cargada se asume pesos, igual que en el resto de la app.
 const ORDEN_MONEDAS = ['ARS', 'USD', 'EUR']
 const posicionMoneda = (moneda) => {
   const i = ORDEN_MONEDAS.indexOf(moneda || 'ARS')
   return i === -1 ? ORDEN_MONEDAS.length : i
 }
 export const compararPorMonto = (a, b, dir = 'asc') => {
-  const porMoneda = posicionMoneda(a.moneda) - posicionMoneda(b.moneda)
-  if (porMoneda !== 0) return porMoneda
+  const sentido = dir === 'asc' ? 1 : -1
   const valA = a.tipo === 'ingreso' ? Number(a.monto) : -Number(a.monto)
   const valB = b.tipo === 'ingreso' ? Number(b.monto) : -Number(b.monto)
+  const porSigno = (valA < 0 ? 0 : 1) - (valB < 0 ? 0 : 1)
+  if (porSigno !== 0) return porSigno * sentido
+  const porMoneda = posicionMoneda(a.moneda) - posicionMoneda(b.moneda)
+  if (porMoneda !== 0) return porMoneda
   if (valA === valB) return 0
-  return (valA < valB ? -1 : 1) * (dir === 'asc' ? 1 : -1)
+  return (valA < valB ? -1 : 1) * sentido
 }
 
 const norm =(s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -839,6 +842,20 @@ export const getLast6Months = () => {
     months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
   return months
+}
+
+// Los gráficos de "últimos 6 meses" arrancan en el primer mes con movimientos: una
+// cuenta que se empezó a usar hace poco no muestra meses en $0 antes de empezar (y el
+// promedio no se achica por esos ceros). Sin movimientos, quedan los 6 meses.
+export const desdePrimerMovimiento = (meses, transactions) => {
+  let primero = null
+  for (const t of transactions || []) {
+    const mes = normFecha(t.fecha).slice(0, 7)
+    if (mes.length === 7 && (!primero || mes < primero)) primero = mes
+  }
+  if (!primero) return meses
+  const desde = meses.filter(m => m >= primero)
+  return desde.length > 0 ? desde : meses.slice(-1)
 }
 
 function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, searchQuery, onSearchChange, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, darkMode, onPeriodChange, onTransactionsLoaded, onStatementsLoaded, onAddIngreso, customIcons, onAccountsChanged, soloAPagar, userEmail, repartoSocios, cotizacionesReparto, onCambiarRepartoSocios }) {

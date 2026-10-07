@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto, desdePrimerMovimiento } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -355,7 +355,7 @@ describe('totalConSigno — el total se escribe igual que cada fila', () => {
 })
 
 // Ordenar por monto mezclaba pesos, dólares y euros como si fueran comparables.
-describe('compararPorMonto — primero la moneda, después el monto', () => {
+describe('compararPorMonto — lo negativo junto y lo positivo junto, cada uno por moneda', () => {
   const movs = [
     { id: 'eur-gasto', moneda: 'EUR', tipo: 'gasto', monto: 50 },
     { id: 'ars-gasto-chico', moneda: 'ARS', tipo: 'gasto', monto: 40 },
@@ -366,22 +366,41 @@ describe('compararPorMonto — primero la moneda, después el monto', () => {
   ]
   const ordenar = (dir) => [...movs].sort((a, b) => compararPorMonto(a, b, dir)).map(t => t.id)
 
-  test('ascendente: pesos, dólares y euros, cada uno de menor a mayor', () => {
+  test('ascendente: primero los gastos (pesos, dólares, euros) y después los ingresos, de menor a mayor', () => {
     expect(ordenar('asc')).toEqual([
-      'ars-gasto-grande', 'ars-gasto-chico', 'ars-ingreso',
-      'usd-gasto', 'usd-ingreso',
-      'eur-gasto',
+      'ars-gasto-grande', 'ars-gasto-chico', 'usd-gasto', 'eur-gasto',
+      'ars-ingreso', 'usd-ingreso',
     ])
   })
-  test('descendente: las monedas siguen en el mismo orden, solo se da vuelta el monto', () => {
+  test('descendente: primero los ingresos y después los gastos; las monedas siguen en el mismo orden', () => {
     expect(ordenar('desc')).toEqual([
-      'ars-ingreso', 'ars-gasto-chico', 'ars-gasto-grande',
-      'usd-ingreso', 'usd-gasto',
-      'eur-gasto',
+      'ars-ingreso', 'usd-ingreso',
+      'ars-gasto-chico', 'ars-gasto-grande', 'usd-gasto', 'eur-gasto',
     ])
   })
   test('sin moneda cargada cuenta como pesos', () => {
     const sinMoneda = { tipo: 'gasto', monto: 5 }
     expect(compararPorMonto(sinMoneda, { moneda: 'USD', tipo: 'gasto', monto: 5 })).toBeLessThan(0)
+  })
+})
+
+describe('desdePrimerMovimiento — los gráficos de 6 meses arrancan cuando hay datos', () => {
+  const meses = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']
+
+  test('una cuenta nueva no muestra los meses vacíos de antes', () => {
+    const txs = [{ fecha: '2026-10-06' }, { fecha: '2026-09-01' }, { fecha: '2026-09-30 ' }]
+    expect(desdePrimerMovimiento(meses, txs)).toEqual(['2026-09', '2026-10'])
+  })
+
+  test('con movimientos más viejos que los 6 meses, quedan los 6', () => {
+    expect(desdePrimerMovimiento(meses, [{ fecha: '2025-12-15' }])).toEqual(meses)
+  })
+
+  test('sin movimientos, quedan los 6 meses', () => {
+    expect(desdePrimerMovimiento(meses, [])).toEqual(meses)
+  })
+
+  test('si lo único cargado es a futuro, queda el mes actual', () => {
+    expect(desdePrimerMovimiento(meses, [{ fecha: '2026-11-01' }])).toEqual(['2026-10'])
   })
 })
