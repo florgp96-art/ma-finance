@@ -19,7 +19,7 @@ import CashView from '../components/CashView'
 import CambioMoneda from '../components/CambioMoneda'
 import RepartoSocios from '../components/RepartoSocios'
 import Liquidacion from '../components/Liquidacion'
-import { puedeVerLiquidacion } from '../config/features'
+import { puedeVerLiquidacion, descuentaPercepcionesEnDolares } from '../config/features'
 import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } from '../lib/liquidacionDatos'
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
@@ -3096,8 +3096,9 @@ export default function Dashboard() {
   const saldoPorResumen = useMemo(() => new Map(
     calcularStatementsPendientes({
       accounts, statements: dashboardStatements, transactions: accountTransactions, tcMap, tipoCambio,
+      descontarPercepciones: descuentaPercepcionesEnDolares(userEmail),
     }).statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
-  ), [accounts, dashboardStatements, accountTransactions, tcMap, tipoCambio])
+  ), [accounts, dashboardStatements, accountTransactions, tcMap, tipoCambio, userEmail])
 
   const cuotasPendientesMemo = useMemo(() => {
     // Se leen los MOVIMIENTOS ya cargados, no una proyección calculada al vuelo.
@@ -3870,7 +3871,7 @@ export default function Dashboard() {
             pagado: vencPagados.has(s.id),
             diasRestantes: typeof s.dia === 'number' ? s.dia - hoyDia : null,
           }))
-          const tarjetasVenc = calcularStatementsPendientes({ accounts, statements: dashboardStatements, transactions: accountTransactions, tcMap, tipoCambio })
+          const tarjetasVenc = calcularStatementsPendientes({ accounts, statements: dashboardStatements, transactions: accountTransactions, tcMap, tipoCambio, descontarPercepciones: descuentaPercepcionesEnDolares(userEmail) })
             .statementsRealesConUsd.map(s => ({
               id: `tarjeta-${s.id}`, tipo: 'tarjeta',
               nombre: (accounts || []).find(a => a.id === s.account_id)?.nombre || 'Tarjeta',
@@ -4435,7 +4436,7 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'caja' && (
-                  <CashView accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} cuentasAhorro={cuentasAhorro} />
+                  <CashView userEmail={userEmail} accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} cuentasAhorro={cuentasAhorro} />
                 )}
 
                 {dashboardTab === 'apagar' && (

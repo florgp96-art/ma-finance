@@ -341,6 +341,54 @@ describe('calcularStatementsPendientes — la deuda en dólares también se paga
   })
 })
 
+describe('calcularStatementsPendientes — percepciones que no se cobran al pagar los dólares con dólares', () => {
+  // El caso real: Visa Galicia, septiembre. U$S 54,41 pagados en dólares y el débito en
+  // pesos sin los $ 24.705 de percepción, que el resumen igual suma al total.
+  const cuenta = { id: 'visa', nombre: 'Visa Galicia', tipo: 'credito' }
+  const resumen = {
+    id: 'visa-sep', account_id: 'visa', periodo: 'Septiembre 2026',
+    fecha_hasta: '2026-09-18', fecha_vencimiento: '2026-09-26',
+    total_resumen: 1044825 + 24705, total_dolares: 54.41,
+  }
+  const percepcion = {
+    id: 'perc', account_id: 'visa', statement_id: 'visa-sep', fecha: '2026-09-18', tipo: 'gasto', moneda: 'ARS',
+    monto: 24705, detalle: 'PERCEPCION RG 5617 30%', subcategories: { nombre: 'Percepciones' },
+  }
+  const pagoArs = { id: 'pago-ars', account_id: 'visa', fecha: '2026-09-25', tipo: 'neutro', moneda: 'ARS', monto: 1044825 }
+  const pagoUsd = { id: 'pago-usd', account_id: 'visa', fecha: '2026-09-25', tipo: 'neutro', moneda: 'USD', monto: 54.41 }
+  const correr = (transactions, descontarPercepciones = true) =>
+    calcularStatementsPendientes({ accounts: [cuenta], statements: [resumen], transactions, tipoCambio: 1500, descontarPercepciones })
+
+  test('dólares pagados con dólares: las percepciones no quedan pendientes', () => {
+    const { statementsRealesConUsd, estadosStatement } = correr([percepcion, pagoArs, pagoUsd])
+    expect(statementsRealesConUsd).toEqual([])
+    expect(estadosStatement.get('visa-sep')).toMatchObject({ pendienteArs: 0, percepcionesNoCobradas: 24705 })
+  })
+
+  test('la reconoce por el texto del banco aunque esté clasificada en otra subcategoría', () => {
+    const comoImpuesto = { ...percepcion, detalle: 'DB.RG 5617 30%', subcategories: { nombre: 'Impuestos' } }
+    expect(correr([comoImpuesto, pagoArs, pagoUsd]).estadosStatement.get('visa-sep').pendienteArs).toBe(0)
+  })
+
+  test('lo que falta además de las percepciones se sigue debiendo', () => {
+    const { statementsRealesConUsd } = correr([percepcion, { ...pagoArs, monto: 1000000 }, pagoUsd])
+    expect(statementsRealesConUsd[0]).toMatchObject({ total_resumen: 44825, _percepcionesNoCobradas: 24705 })
+  })
+
+  test('con los dólares sin pagar en dólares, las percepciones se deben', () => {
+    expect(correr([percepcion, pagoArs]).estadosStatement.get('visa-sep').pendienteArs).toBe(24705)
+  })
+
+  test('otros impuestos (sellos) no se descuentan', () => {
+    const sellos = { ...percepcion, id: 'sellos', detalle: 'IMPUESTO DE SELLOS', subcategories: { nombre: 'Impuestos' } }
+    expect(correr([sellos, pagoArs, pagoUsd]).estadosStatement.get('visa-sep').pendienteArs).toBe(24705)
+  })
+
+  test('sin la opción activada (las demás cuentas), todo sigue igual', () => {
+    expect(correr([percepcion, pagoArs, pagoUsd], false).estadosStatement.get('visa-sep').pendienteArs).toBe(24705)
+  })
+})
+
 // Antes el pie de la tabla decía "$ -681.901" debajo de filas como "-$ 32.505,89".
 describe('totalConSigno — el total se escribe igual que cada fila', () => {
   test('gastos: el signo va antes del símbolo, con centavos', () => {

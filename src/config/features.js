@@ -13,3 +13,11 @@ export const GPK_USER_EMAIL = 'video33lut@gmail.com'
 
 export const puedeVerCobroFacturacion = (email) =>
   typeof email === 'string' && email.trim().toLowerCase() === GPK_USER_EMAIL
+
+// Percepciones de los consumos en dólares que el banco no cobra cuando los dólares se
+// pagan con dólares: el resumen las trae igual, y sin esto quedaban como saldo
+// pendiente (ver calcularStatementsPendientes, descontarPercepciones).
+export const PERCEPCIONES_USER_EMAIL = 'florgp96@gmail.com'
+
+export const descuentaPercepcionesEnDolares = (email) =>
+  typeof email === 'string' && email.trim().toLowerCase() === PERCEPCIONES_USER_EMAIL

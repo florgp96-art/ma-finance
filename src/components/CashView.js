@@ -5,6 +5,7 @@ import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreD
 import { cuotasFuturasCargadas } from '../lib/cuotas'
 import { saldoTotal } from '../lib/saldos'
 import { semaforo } from '../theme'
+import { descuentaPercepcionesEnDolares } from '../config/features'
 
 const monedaSymbol = (m) => m === 'USD' ? 'U$S' : m === 'EUR' ? '€' : '$'
 
@@ -64,7 +65,7 @@ const statementDelPago = (pago, statements) => {
 
 const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
 
-function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual, cuentasAhorro }) {
+function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual, cuentasAhorro, userEmail }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [anclas, setAnclas] = useState([])
@@ -246,7 +247,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     // facturó ninguno, decide el mes. El saldo por resumen sale de
     // calcularStatementsPendientes, la misma función que usa "A pagar".
     const saldoPorResumen = new Map(
-      calcularStatementsPendientes({ accounts, statements, transactions, tipoCambio })
+      calcularStatementsPendientes({ accounts, statements, transactions, tipoCambio, descontarPercepciones: descuentaPercepcionesEnDolares(userEmail) })
         .statementsRealesConUsd.map(s => [s.id, { ars: s.total_resumen, usd: s.total_usd }])
     )
     const futuras = cuotasFuturasCargadas(transactions, new Date(), saldoPorResumen)
@@ -262,7 +263,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     }))
 
     return { actual, pagosPorCuenta, cuotas, historial, totalDisponible, ahorrosPorMoneda, ahorrosDuplicados }
-  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro, tipoCambio])
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro, tipoCambio, userEmail])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
