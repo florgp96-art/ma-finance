@@ -1,9 +1,13 @@
-// Liquidación de un sueldo mensual que se cobra por hora más viáticos por viaje: el
-// de la empleada (plata que se paga) o el de un trabajo propio (plata que se cobra).
-// Solo cálculo, sin Supabase ni React (ver liquidacionDatos.js y
-// components/Liquidacion.js).
+// Liquidación de un sueldo o un trabajo: el de la empleada (plata que se paga) o el de
+// un trabajo propio (plata que se cobra). Solo cálculo, sin Supabase ni React (ver
+// liquidacionDatos.js y components/Liquidacion.js).
 //
-// Cada día es de uno de dos tipos:
+// Se liquida de una de tres maneras (modalidad):
+// - horas:   por día trabajado, con las tarifas del mes (lo de abajo).
+// - mensual: un monto fijo por mes, que cada mes nuevo hereda del anterior.
+// - unico:   un trabajo de una sola vez, con su monto y el mes en que se hizo.
+//
+// En "horas", cada día es de uno de dos tipos:
 // - horas:   horas × valor_hora + viajes × valor_viatico
 // - jornada: valor_jornada + horas × valor_hora + viajes × valor_viatico; acá
 //            horas y viajes son los extras por encima de la jornada.
@@ -25,11 +29,17 @@ export const nombreValido = (nombre) => {
   const limpio = String(nombre ?? '').replace(/\s+/g, ' ').trim()
   return limpio.length >= 1 && limpio.length <= LARGO_MAXIMO_NOMBRE ? limpio : null
 }
+export const MODALIDADES = ['horas', 'mensual', 'unico']
+
+// La de una liquidación; las de antes de poder elegir (o sin la columna) son por hora.
+export const modalidadDe = (liquidacion) =>
+  MODALIDADES.includes(liquidacion?.modalidad) ? liquidacion.modalidad : 'horas'
+
 export const CAMPOS_TARIFA = Object.keys(TARIFAS_POR_DEFECTO)
 export const TIPOS_DE_DIA = ['horas', 'jornada']
 
 // Topes de validación. Las columnas aguantan más; esto frena un dedo de más.
-export const LIMITES = Object.freeze({ horas: 24, viajes: 99, tarifa: 100000000 })
+export const LIMITES = Object.freeze({ horas: 24, viajes: 99, tarifa: 100000000, monto: 1000000000 })
 
 export const claveValida = (clave) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(clave || ''))
 
@@ -114,11 +124,26 @@ export const mesParaAbrir = (meses, hoy = mesDeHoy()) => {
   return ultimoCerrado ? moverMes(ultimoCerrado, 1) : hoy
 }
 
-// Cerrado: el total guardado. Abierto: la suma de los días. Un mes sin días que ya
-// tenía total (los cargados solo con el total, de antes de esta pantalla) lo
-// conserva, así reabrirlo y volver a cerrarlo no lo deja en cero.
-export const totalDelMes = (mes, dias) => {
+// Un mes nuevo de una liquidación mensual arranca con el monto del último mes
+// anterior; uno por hora o un trabajo único, en cero.
+export const montoHeredado = (meses, clave, modalidad) => {
+  if (modalidad !== 'mensual') return 0
+  const anterior = (meses || []).filter(m => m.clave < clave).sort((a, b) => b.clave.localeCompare(a.clave))[0]
+  return anterior ? cantidad(anterior.monto) : 0
+}
+
+// El trabajo único vive en un solo mes: el último que tenga (si se pasó de otra
+// modalidad puede tener varios), o el de hoy si todavía no tiene ninguno.
+export const mesDelTrabajo = (meses, hoy = mesDeHoy()) =>
+  [...(meses || [])].map(m => m.clave).sort().at(-1) || hoy
+
+// Cerrado: el total guardado. Abierto: el monto (mensual o trabajo único) o la suma
+// de los días (por hora). Un mes por hora sin días que ya tenía total (los cargados
+// solo con el total, de antes de esta pantalla) lo conserva, así reabrirlo y volver
+// a cerrarlo no lo deja en cero.
+export const totalDelMes = (mes, dias, modalidad = 'horas') => {
   if (mes?.cerrado) return cantidad(mes.total_cerrado)
+  if (modalidad !== 'horas') return cantidad(mes?.monto)
   const lista = Array.isArray(dias) ? dias : []
   if (lista.length === 0 && cantidad(mes?.total_cerrado) > 0) return cantidad(mes.total_cerrado)
   return resumenMes(lista, mes).total

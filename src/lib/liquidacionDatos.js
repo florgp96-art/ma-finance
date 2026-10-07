@@ -3,8 +3,12 @@
 // la promesa de Supabase, { data, error }: quien llama decide qué hacer con el error.
 import { supabase } from './supabase'
 
-const COLUMNAS_LIQUIDACION = 'id, nombre, tipo, created_at'
-const COLUMNAS_MES = 'id, liquidacion_id, clave, valor_hora, valor_viatico, valor_jornada, cerrado, total_cerrado'
+// Con * y no con la lista de columnas: modalidad (liquidaciones) y monto
+// (liquidacion_meses) llegan con la migración 20261007000000_liquidacion_modalidad.sql,
+// y pidiéndolas por nombre la lectura fallaba entera mientras no se corriera. Que la
+// columna venga o no es lo que dice si se puede elegir la modalidad.
+const COLUMNAS_LIQUIDACION = '*'
+const COLUMNAS_MES = '*'
 const COLUMNAS_DIA = 'id, mes_id, dia, tipo, horas, viajes, created_at'
 
 // El id de las filas nuevas se arma acá para poder mostrarlas (y editarlas) antes

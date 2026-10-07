@@ -357,6 +357,34 @@ lo que se espera cobrar dentro de una liquidación de las que "te pagan". No son
 movimientos ni tocan saldos; se tachan solos cuando el ingreso aparece en una cuenta
 (ver `src/lib/ingresosFuturos.js`) o a mano (`cobrado_a_mano`).
 
+**5. Modalidad: por hora, monto mensual o trabajo único** (**sin correr**;
+`supabase/migrations/20261007000000_liquidacion_modalidad.sql`, se puede correr más de una
+vez). Agrega `liquidaciones.modalidad` y `liquidacion_meses.monto`. Mientras no se corra,
+todas las liquidaciones siguen siendo por hora y el lápiz no ofrece elegir la modalidad
+(la app se da cuenta porque la columna no viene en la lectura).
+
+```sql
+-- Cómo se liquida cada liquidación (src/components/Liquidacion.js): por hora (días con
+-- horas y viajes, como hasta ahora), con un monto fijo por mes, o un trabajo único.
+-- Las que ya existen quedan "por hora". Se puede correr más de una vez.
+
+alter table public.liquidaciones
+  add column if not exists modalidad text not null default 'horas';
+
+alter table public.liquidaciones drop constraint if exists liquidaciones_modalidad_check;
+alter table public.liquidaciones
+  add constraint liquidaciones_modalidad_check check (modalidad in ('horas', 'mensual', 'unico'));
+
+-- El monto del mes (mensual) o del trabajo (único). En las por hora no se usa: el
+-- total sale de los días.
+alter table public.liquidacion_meses
+  add column if not exists monto numeric(14,2) not null default 0;
+
+alter table public.liquidacion_meses drop constraint if exists liquidacion_meses_monto_check;
+alter table public.liquidacion_meses
+  add constraint liquidacion_meses_monto_check check (monto >= 0);
+```
+
 ### g) Facturación de los ingresos (para el reporte al contador/a)
 
 ```sql

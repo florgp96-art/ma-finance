@@ -1,6 +1,7 @@
 import {
   TARIFAS_POR_DEFECTO, claveValida, diasDelMes, numeroValido, subtotalDia, resumenMes, ordenarDias,
   nuevoDia, tarifasHeredadas, mesParaAbrir, historialCerrados, totalDelMes, aCentavos, nombreValido, TARIFAS_EN_CERO,
+  modalidadDe, montoHeredado, mesDelTrabajo,
 } from './liquidacion'
 
 const tarifas = { ...TARIFAS_POR_DEFECTO }
@@ -166,4 +167,34 @@ test('nombreValido: limpia espacios y rechaza vacío o demasiado largo', () => {
   expect(nombreValido(null)).toBeNull()
   expect(nombreValido('x'.repeat(60))).toHaveLength(60)
   expect(nombreValido('x'.repeat(61))).toBeNull()
+})
+
+describe('modalidad', () => {
+  test('modalidadDe: sin columna o con un valor raro, por hora', () => {
+    expect(modalidadDe({ modalidad: 'mensual' })).toBe('mensual')
+    expect(modalidadDe({ modalidad: 'unico' })).toBe('unico')
+    expect(modalidadDe({})).toBe('horas')
+    expect(modalidadDe({ modalidad: 'otra' })).toBe('horas')
+    expect(modalidadDe(null)).toBe('horas')
+  })
+
+  test('montoHeredado: solo el mensual hereda, del último mes anterior', () => {
+    const meses = [{ clave: '2026-07', monto: 200000 }, { clave: '2026-08', monto: 300000 }, { clave: '2026-10', monto: 1 }]
+    expect(montoHeredado(meses, '2026-09', 'mensual')).toBe(300000)
+    expect(montoHeredado(meses, '2026-06', 'mensual')).toBe(0)
+    expect(montoHeredado(meses, '2026-09', 'unico')).toBe(0)
+    expect(montoHeredado(meses, '2026-09', 'horas')).toBe(0)
+  })
+
+  test('mesDelTrabajo: el último mes que tenga, o el de hoy', () => {
+    expect(mesDelTrabajo([{ clave: '2026-03' }, { clave: '2026-09' }], '2026-10')).toBe('2026-09')
+    expect(mesDelTrabajo([], '2026-10')).toBe('2026-10')
+  })
+
+  test('totalDelMes: fuera de "por hora" el total es el monto, y cerrado el guardado', () => {
+    expect(totalDelMes({ cerrado: false, monto: 350000, ...tarifas }, AGOSTO, 'mensual')).toBe(350000)
+    expect(totalDelMes({ cerrado: false, ...tarifas }, [], 'unico')).toBe(0)
+    expect(totalDelMes({ cerrado: true, total_cerrado: 100000, monto: 5 }, [], 'unico')).toBe(100000)
+    expect(totalDelMes({ cerrado: false, monto: 350000, ...tarifas }, AGOSTO)).toBe(482400)
+  })
 })

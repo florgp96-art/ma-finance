@@ -295,3 +295,84 @@ test('los ingresos a futuro aparecen solo en las liquidaciones que te pagan', as
   await screen.findByRole('heading', { name: 'Septiembre 2026' })
   expect(screen.queryByText('Ingresos a futuro')).not.toBeInTheDocument()
 })
+
+describe('modalidad: por hora, monto mensual o trabajo único', () => {
+  const mesCerrado = (clave, monto) => ({
+    id: `m${clave.slice(5)}`, clave, valor_hora: 0, valor_viatico: 0, valor_jornada: 0, monto, cerrado: true, total_cerrado: monto,
+  })
+
+  test('sin la columna (migración sin correr) no se ofrece elegir', async () => {
+    montar()
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+    expect(screen.queryByRole('group', { name: 'Cómo se liquida' })).not.toBeInTheDocument()
+  })
+
+  test('se elige al editar y se guarda con el nombre y el tipo', async () => {
+    const onCambiada = jest.fn()
+    montar({ liquidacion: { ...EMPLEADA, modalidad: 'horas' }, onCambiada })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Cómo se liquida' })).getByRole('button', { name: 'Monto mensual' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(datos.actualizarLiquidacion).toHaveBeenCalledWith('liq-1', { nombre: 'Sueldo de la empleada', tipo: 'pago', modalidad: 'mensual' }))
+    expect(onCambiada).toHaveBeenCalledWith(expect.objectContaining({ modalidad: 'mensual' }))
+  })
+
+  test('monto mensual: el mes nuevo hereda el monto, sin días ni tarifas, y se cierra con ese total', async () => {
+    mockDb.meses = [mesCerrado('2026-08', 300000)]
+    mockDb.dias = []
+    montar({ liquidacion: { id: 'liq-3', nombre: 'Redes', tipo: 'cobro', modalidad: 'mensual' } })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    expect(datos.crearMes).toHaveBeenCalledWith(expect.objectContaining({ clave: '2026-09', monto: 300000 }))
+    await waitFor(() => expect(screen.getByLabelText('Monto del mes')).toBeEnabled())
+    expect(screen.getByText('Monto fijo por mes')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Sumar un día' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Tarifas del mes')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Monto del mes'), { target: { value: '350.000' } })
+    expect(screen.getByText('$ 350.000')).toBeInTheDocument()
+    await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('id-1', { monto: 350000 }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar el mes' }))
+    await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('id-1', { cerrado: true, total_cerrado: 350000 }))
+    expect(await screen.findByRole('heading', { name: 'Octubre 2026' })).toBeInTheDocument()
+    expect(datos.crearMes).toHaveBeenLastCalledWith(expect.objectContaining({ clave: '2026-10', monto: 350000 }))
+  })
+
+  test('trabajo único: un monto y el mes en que se hizo, y "Ya lo cobré" no pasa a otro mes', async () => {
+    mockDb.meses = [{ id: 'm09', clave: '2026-09', valor_hora: 0, valor_viatico: 0, valor_jornada: 0, monto: 0, cerrado: false, total_cerrado: null }]
+    mockDb.dias = []
+    montar({ liquidacion: { id: 'liq-4', nombre: 'Video dron', tipo: 'cobro', modalidad: 'unico' } })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    await waitFor(() => expect(screen.getByLabelText('Monto del trabajo')).toBeEnabled())
+    expect(screen.getByText('Trabajo único')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mes anterior' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Monto del trabajo'), { target: { value: '100000' } })
+    await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('m09', { monto: 100000 }))
+
+    fireEvent.change(screen.getByLabelText('Mes del trabajo'), { target: { value: '2026-08' } })
+    await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('m09', { clave: '2026-08' }))
+    expect(screen.getByRole('heading', { name: 'Agosto 2026' })).toBeInTheDocument()
+    expect(datos.crearMes).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ya lo cobré' }))
+    await waitFor(() => expect(datos.actualizarMes).toHaveBeenCalledWith('m09', { cerrado: true, total_cerrado: 100000 }))
+    expect(texto(await screen.findByText(/Cobrado:/))).toBe('Cobrado: $ 100.000.')
+    expect(screen.getByRole('heading', { name: 'Agosto 2026' })).toBeInTheDocument()
+    expect(screen.queryByText('Meses cerrados')).not.toBeInTheDocument()
+  })
+
+  test('trabajo único: si no se puede cambiar el mes, vuelve al que tenía', async () => {
+    mockDb.meses = [{ id: 'm09', clave: '2026-09', valor_hora: 0, valor_viatico: 0, valor_jornada: 0, monto: 0, cerrado: false, total_cerrado: null }]
+    mockDb.dias = []
+    mockDb.fallar.add('actualizarMes')
+    montar({ liquidacion: { id: 'liq-4', nombre: 'Video dron', tipo: 'cobro', modalidad: 'unico' } })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    await waitFor(() => expect(screen.getByLabelText('Mes del trabajo')).toBeEnabled())
+    fireEvent.change(screen.getByLabelText('Mes del trabajo'), { target: { value: '2026-08' } })
+    expect(await screen.findByText('No se pudo cambiar el mes del trabajo. Quedó como estaba.', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Septiembre 2026' })).toBeInTheDocument()
+  })
+})
