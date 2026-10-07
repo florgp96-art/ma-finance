@@ -357,7 +357,7 @@ lo que se espera cobrar dentro de una liquidación de las que "te pagan". No son
 movimientos ni tocan saldos; se tachan solos cuando el ingreso aparece en una cuenta
 (ver `src/lib/ingresosFuturos.js`) o a mano (`cobrado_a_mano`).
 
-**5. Modalidad: por hora, monto mensual o trabajo único** (**sin correr**;
+**5. Modalidad: por hora, monto mensual o trabajo único** (ya corrida el 7 de octubre de 2026;
 `supabase/migrations/20261007000000_liquidacion_modalidad.sql`, se puede correr más de una
 vez). Agrega `liquidaciones.modalidad` y `liquidacion_meses.monto`. Mientras no se corra,
 todas las liquidaciones siguen siendo por hora y el lápiz no ofrece elegir la modalidad
