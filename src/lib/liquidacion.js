@@ -30,6 +30,12 @@ export const nombreValido = (nombre) => {
   return limpio.length >= 1 && limpio.length <= LARGO_MAXIMO_NOMBRE ? limpio : null
 }
 export const MODALIDADES = ['horas', 'mensual', 'unico']
+export const MONEDAS_LIQUIDACION = ['ARS', 'USD', 'EUR']
+
+// En qué moneda se liquida (toda la liquidación, así el acumulado no mezcla monedas);
+// sin la columna, en pesos.
+export const monedaDe = (liquidacion) =>
+  MONEDAS_LIQUIDACION.includes(liquidacion?.moneda) ? liquidacion.moneda : 'ARS'
 
 // La de una liquidación; las de antes de poder elegir (o sin la columna) son por hora.
 export const modalidadDe = (liquidacion) =>

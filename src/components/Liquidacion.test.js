@@ -376,3 +376,51 @@ describe('modalidad: por hora, monto mensual o trabajo único', () => {
     expect(screen.getByRole('heading', { name: 'Septiembre 2026' })).toBeInTheDocument()
   })
 })
+
+describe('moneda de la liquidación', () => {
+  const unicoEn = (moneda) => ({ id: 'liq-4', nombre: 'Video dron', tipo: 'cobro', modalidad: 'unico', moneda })
+  beforeEach(() => {
+    mockDb.meses = [{ id: 'm09', clave: '2026-09', valor_hora: 0, valor_viatico: 0, valor_jornada: 0, monto: 614, cerrado: false, total_cerrado: null }]
+    mockDb.dias = []
+  })
+
+  test('sin la columna (migración sin correr) no se ofrece y todo va en pesos', async () => {
+    montar({ liquidacion: { id: 'liq-4', nombre: 'Video dron', tipo: 'cobro', modalidad: 'unico' } })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    expect(screen.queryByLabelText('Moneda de la liquidación')).not.toBeInTheDocument()
+    expect(screen.getByText('$ 614')).toBeInTheDocument()
+  })
+
+  test('al lado del monto: se cambia al toque, se guarda y el total sale en esa moneda', async () => {
+    const onCambiada = jest.fn()
+    const { rerender } = montar({ liquidacion: unicoEn('ARS'), onCambiada })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    await waitFor(() => expect(screen.getByLabelText('Moneda de la liquidación')).toBeEnabled())
+    fireEvent.change(screen.getByLabelText('Moneda de la liquidación'), { target: { value: 'USD' } })
+    expect(onCambiada).toHaveBeenCalledWith(unicoEn('USD'))
+    await waitFor(() => expect(datos.actualizarLiquidacion).toHaveBeenCalledWith('liq-4', { moneda: 'USD' }))
+
+    rerender(<Liquidacion userId="u1" liquidacion={unicoEn('USD')} darkMode={false} styles={{ input: {} }} onCambiada={onCambiada} />)
+    expect(texto(screen.getByText(/^U\$S 614$/))).toBe('U$S 614')
+  })
+
+  test('si no se guarda, vuelve a la que tenía y avisa', async () => {
+    const onCambiada = jest.fn()
+    mockDb.fallar.add('actualizarLiquidacion')
+    montar({ liquidacion: unicoEn('ARS'), onCambiada })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    await waitFor(() => expect(screen.getByLabelText('Moneda de la liquidación')).toBeEnabled())
+    fireEvent.change(screen.getByLabelText('Moneda de la liquidación'), { target: { value: 'EUR' } })
+    expect(await screen.findByText('No se pudo cambiar la moneda. Quedó como estaba.', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(onCambiada).toHaveBeenLastCalledWith(unicoEn('ARS'))
+  })
+
+  test('también se elige en el lápiz, con el resto de los datos', async () => {
+    montar({ liquidacion: { ...EMPLEADA, modalidad: 'horas', moneda: 'ARS' } })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo de la empleada' }))
+    fireEvent.change(screen.getByLabelText('Moneda de la liquidación'), { target: { value: 'EUR' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(datos.actualizarLiquidacion).toHaveBeenCalledWith('liq-1', { nombre: 'Sueldo de la empleada', tipo: 'pago', modalidad: 'horas', moneda: 'EUR' }))
+  })
+})

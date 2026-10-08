@@ -1,7 +1,7 @@
 import {
   TARIFAS_POR_DEFECTO, claveValida, diasDelMes, numeroValido, subtotalDia, resumenMes, ordenarDias,
   nuevoDia, tarifasHeredadas, mesParaAbrir, historialCerrados, totalDelMes, aCentavos, nombreValido, TARIFAS_EN_CERO,
-  modalidadDe, montoHeredado, mesDelTrabajo,
+  modalidadDe, montoHeredado, mesDelTrabajo, monedaDe,
 } from './liquidacion'
 
 const tarifas = { ...TARIFAS_POR_DEFECTO }
@@ -197,4 +197,11 @@ describe('modalidad', () => {
     expect(totalDelMes({ cerrado: true, total_cerrado: 100000, monto: 5 }, [], 'unico')).toBe(100000)
     expect(totalDelMes({ cerrado: false, monto: 350000, ...tarifas }, AGOSTO)).toBe(482400)
   })
+})
+
+test('monedaDe: sin columna o con un valor raro, pesos', () => {
+  expect(monedaDe({ moneda: 'USD' })).toBe('USD')
+  expect(monedaDe({ moneda: 'EUR' })).toBe('EUR')
+  expect(monedaDe({})).toBe('ARS')
+  expect(monedaDe({ moneda: 'BRL' })).toBe('ARS')
 })
