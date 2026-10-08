@@ -3,16 +3,20 @@ import { formatMonto, formatCantidad, diaDeLaSemana } from '../lib/formato'
 import { nombreDelMes, moverMes } from '../lib/repartoSocios'
 import {
   CAMPOS_TARIFA, LARGO_MAXIMO_NOMBRE, LIMITES, TARIFAS_EN_CERO, aCentavos, claveValida, diasDelMes, historialCerrados,
-  mesDelTrabajo, mesParaAbrir, modalidadDe, montoHeredado, nombreValido, nuevoDia, numeroValido, ordenarDias, resumenMes,
-  subtotalDia, tarifasDe, tarifasHeredadas, totalDelMes,
+  MONEDAS_LIQUIDACION, mesDelTrabajo, mesParaAbrir, modalidadDe, monedaDe, montoHeredado, nombreValido, nuevoDia,
+  numeroValido, ordenarDias, resumenMes, subtotalDia, tarifasDe, tarifasHeredadas, totalDelMes,
 } from '../lib/liquidacion'
+import { SIMBOLO_MONEDA } from '../lib/cambioMoneda'
 import * as datos from '../lib/liquidacionDatos'
 import IngresosFuturos from './IngresosFuturos'
 import { conReintento } from '../lib/colaGuardado'
 import useGuardado from '../hooks/useGuardado'
 import { paleta, semaforo } from '../theme'
 
-const pesos = (n) => `$ ${formatMonto(Math.round(Number(n) || 0))}`
+// En pesos sin centavos, como el resto de la app; en dólares o euros, con hasta dos.
+const dinero = (n, moneda = 'ARS') => (moneda === 'ARS'
+  ? `$ ${formatMonto(Math.round(Number(n) || 0))}`
+  : `${SIMBOLO_MONEDA[moneda]} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(Number(n) || 0)}`)
 const cuantos = (n, singular, plural) => `${formatCantidad(n)} ${n === 1 ? singular : plural}`
 const NUMEROS = { fontVariantNumeric: 'tabular-nums' }
 const ROTULO_TARIFA = { valor_hora: 'Hora', valor_viatico: 'Viático (por viaje)', valor_jornada: 'Jornada' }
@@ -61,7 +65,7 @@ function CampoNumero({ valor, onValor, onSalir, min = 0, max, entero = false, al
   )
 }
 
-function FilaDia({ fila, clave, tarifas, soloLectura, estilos, onCambiarDia, onCambiarTipo, onCambiarCantidad, onBorrar, onSalir }) {
+function FilaDia({ fila, clave, tarifas, moneda, soloLectura, estilos, onCambiarDia, onCambiarTipo, onCambiarCantidad, onBorrar, onSalir }) {
   const { c, input, botonChico, rotuloCampo } = estilos
   const jornada = fila.tipo === 'jornada'
   const rotuloHoras = jornada ? 'Hs extra' : 'Horas'
@@ -83,7 +87,7 @@ function FilaDia({ fila, clave, tarifas, soloLectura, estilos, onCambiarDia, onC
         >
           {jornada ? 'Jornada' : 'Por hora'}
         </button>
-        <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600, color: c.text, ...NUMEROS }}>{pesos(subtotalDia(fila, tarifas))}</span>
+        <span style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600, color: c.text, ...NUMEROS }}>{dinero(subtotalDia(fila, tarifas), moneda)}</span>
         {!soloLectura && (
           <button type="button" style={{ ...botonChico, flexShrink: 0, border: 'none', color: c.textTertiary, fontSize: '18px', padding: '2px 4px' }}
             aria-label={`Borrar el día ${fila.dia}`} onClick={() => onBorrar(fila)}>×</button>
@@ -112,6 +116,14 @@ function FilaDia({ fila, clave, tarifas, soloLectura, estilos, onCambiarDia, onC
 }
 
 const ETIQUETA_TIPO = { pago: 'La pagás vos', cobro: 'Te la pagan' }
+
+function SelectorMoneda({ valor, onCambiar, ...resto }) {
+  return (
+    <select aria-label="Moneda de la liquidación" value={valor} onChange={e => onCambiar(e.target.value)} {...resto}>
+      {MONEDAS_LIQUIDACION.map(m => <option key={m} value={m}>{SIMBOLO_MONEDA[m]} {m}</option>)}
+    </select>
+  )
+}
 const ETIQUETA_MODALIDAD = { horas: 'Por hora', mensual: 'Monto mensual', unico: 'Trabajo único' }
 
 // Nombre, tipo y modalidad de la liquidación, y borrarla. Se abre con el lápiz del
@@ -121,9 +133,11 @@ function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onB
   const [nombre, setNombre] = useState(liquidacion.nombre)
   const [tipo, setTipo] = useState(liquidacion.tipo)
   const [modalidad, setModalidad] = useState(modalidadDe(liquidacion))
+  const [moneda, setMoneda] = useState(monedaDe(liquidacion))
   // Sin la columna (la migración de la modalidad todavía no se corrió) no se ofrece:
   // no habría dónde guardarla.
   const conModalidad = 'modalidad' in liquidacion
+  const conMoneda = 'moneda' in liquidacion
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
@@ -134,7 +148,7 @@ function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onB
     setGuardando(true)
     setError(null)
     // Si sale bien el formulario se cierra: solo se toca el estado cuando falla.
-    const fallo = await onGuardar({ nombre: limpio, tipo, ...(conModalidad ? { modalidad } : {}) })
+    const fallo = await onGuardar({ nombre: limpio, tipo, ...(conModalidad ? { modalidad } : {}), ...(conMoneda ? { moneda } : {}) })
     if (fallo) { setGuardando(false); setError(fallo) }
   }
 
@@ -171,6 +185,12 @@ function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onB
           ))}
         </div>
       )}
+      {conMoneda && (
+        <label style={{ ...rotuloCampo, marginTop: '8px' }}>
+          Moneda
+          <SelectorMoneda valor={moneda} onCambiar={setMoneda} style={{ ...input, padding: '8px' }} />
+        </label>
+      )}
       {error && <p role="alert" style={{ fontSize: '12px', color: sem.negativo, margin: '8px 0 0' }}>{error}</p>}
       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
         <button type="submit" disabled={guardando} style={{ ...botonChico, flex: 1, padding: '8px', color: c.primary, fontWeight: 600 }}>
@@ -195,6 +215,7 @@ function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onB
 function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, styles, onCambiada, onBorrada }) {
   const liquidacionId = liquidacion?.id
   const modalidad = modalidadDe(liquidacion)
+  const moneda = monedaDe(liquidacion)
   const porHora = modalidad === 'horas'
   const unico = modalidad === 'unico'
   const { cola, estado } = useGuardado()
@@ -433,6 +454,17 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
     return null
   }
 
+  // La moneda es de toda la liquidación: se cambia al toque, y si no se guarda, vuelve.
+  const cambiarMoneda = async (nueva) => {
+    if (nueva === moneda) return
+    setAviso(null)
+    onCambiada?.({ ...liquidacion, moneda: nueva })
+    const { error } = await conReintento(() => datos.actualizarLiquidacion(liquidacionId, { moneda: nueva }))
+    if (!error) return
+    onCambiada?.(liquidacion)
+    setAviso('No se pudo cambiar la moneda. Quedó como estaba.')
+  }
+
   const reabrirMes = async (item) => {
     setAviso(null)
     const ok = await cambiarEstadoDelMes(item.id, { cerrado: false }, `No se pudo volver a abrir ${nombreDelMes(item.clave)}.`)
@@ -494,7 +526,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
           onGuardar={guardarLiquidacion} onBorrar={borrarLiquidacion} onCerrar={() => setEditando(false)} />
       )}
 
-      <p style={{ fontSize: '32px', fontWeight: 700, margin: '8px 0 2px', color: c.text, ...NUMEROS }}>{pesos(total)}</p>
+      <p style={{ fontSize: '32px', fontWeight: 700, margin: '8px 0 2px', color: c.text, ...NUMEROS }}>{dinero(total, moneda)}</p>
       <p style={{ fontSize: '13px', color: c.textSecondary, margin: '0 0 14px', ...NUMEROS }}>
         {modalidad === 'mensual' ? 'Monto fijo por mes'
           : unico ? 'Trabajo único'
@@ -533,7 +565,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
         <>
           {cerrado && (
             <div style={{ ...caja, ...fila, background: c.surfaceAlt }}>
-              <span>{unico ? `${cobro ? 'Cobrado' : 'Pagado'}: ${pesos(mes.total_cerrado)}.` : `Mes cerrado en ${pesos(mes.total_cerrado)}.`}</span>
+              <span>{unico ? `${cobro ? 'Cobrado' : 'Pagado'}: ${dinero(mes.total_cerrado, moneda)}.` : `Mes cerrado en ${dinero(mes.total_cerrado, moneda)}.`}</span>
               <button type="button" style={botonChico} onClick={() => reabrirMes(mes)}>Volver a abrir</button>
             </div>
           )}
@@ -543,9 +575,15 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
             <div style={caja}>
               <label style={rotuloCampo}>
                 {unico ? 'Monto del trabajo' : 'Monto del mes'}
-                <CampoNumero aria-label={unico ? 'Monto del trabajo' : 'Monto del mes'} valor={mes.monto || 0} max={LIMITES.monto} step="1000"
-                  disabled={soloLectura} onValor={cambiarMonto} onSalir={() => cola.vaciar()}
-                  style={{ ...input, padding: '8px' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '8px' }}>
+                  <CampoNumero aria-label={unico ? 'Monto del trabajo' : 'Monto del mes'} valor={mes.monto || 0} max={LIMITES.monto} step="1000"
+                    disabled={soloLectura} onValor={cambiarMonto} onSalir={() => cola.vaciar()}
+                    style={{ ...input, minWidth: 0, padding: '8px' }} />
+                  {/* Sin la columna (migración sin correr) no hay dónde guardarla. */}
+                  {'moneda' in (liquidacion || {}) && (
+                    <SelectorMoneda valor={moneda} onCambiar={cambiarMoneda} disabled={soloLectura} style={{ ...input, padding: '8px', paddingRight: '32px' }} />
+                  )}
+                </div>
               </label>
               {modalidad === 'mensual' && !soloLectura && (
                 <p style={{ fontSize: '12px', color: c.textSecondary, margin: '8px 0 0' }}>Cada mes nuevo arranca con este monto.</p>
@@ -560,7 +598,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
                   style={{ ...fila, width: '100%', margin: 0, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
                   <span style={{ ...rotulo, margin: 0 }}>Tarifas del mes</span>
                   <span style={{ fontSize: '12px', color: c.textSecondary, ...NUMEROS }}>
-                    {verTarifas ? '▴' : `${pesos(tarifas.valor_hora)} la hora ▾`}
+                    {verTarifas ? '▴' : `${dinero(tarifas.valor_hora, moneda)} la hora ▾`}
                   </span>
                 </button>
                 {sinTarifas && !soloLectura && (
@@ -590,7 +628,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
                   </p>
                 )}
                 {ordenados.map(d => (
-                  <FilaDia key={d.id} fila={d} clave={clave} tarifas={tarifas} soloLectura={soloLectura}
+                  <FilaDia key={d.id} fila={d} clave={clave} tarifas={tarifas} moneda={moneda} soloLectura={soloLectura}
                     estilos={{ c, input, botonChico, rotuloCampo }}
                     onCambiarDia={cambiarNumeroDia} onCambiarTipo={cambiarTipo} onCambiarCantidad={cambiarCantidad}
                     onBorrar={borrarDia} onSalir={() => cola.vaciar()} />
@@ -627,13 +665,13 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
                 style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', color: c.text, fontSize: '13px', fontFamily: 'inherit', fontWeight: m.clave === clave ? 600 : 400 }}>
                 {nombreDelMes(m.clave)}
               </button>
-              <span style={NUMEROS}>{pesos(m.total)}</span>
+              <span style={NUMEROS}>{dinero(m.total, moneda)}</span>
               <button type="button" style={botonChico} onClick={() => reabrirMes(m)}>Volver a abrir</button>
             </div>
           ))}
           <div style={{ ...fila, borderTop: `1px solid ${c.border}`, paddingTop: '8px', marginTop: '8px', fontWeight: 700 }}>
             <span>{cobro ? 'Acumulado cobrado' : 'Acumulado pagado'}</span>
-            <span style={NUMEROS}>{pesos(historial.acumulado)}</span>
+            <span style={NUMEROS}>{dinero(historial.acumulado, moneda)}</span>
           </div>
         </div>
       )}
