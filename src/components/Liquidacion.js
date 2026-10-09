@@ -3,8 +3,9 @@ import { formatMonto, formatCantidad, diaDeLaSemana } from '../lib/formato'
 import { nombreDelMes, moverMes } from '../lib/repartoSocios'
 import {
   CAMPOS_TARIFA, LARGO_MAXIMO_NOMBRE, LIMITES, TARIFAS_EN_CERO, aCentavos, claveValida, diasDelMes, historialCerrados,
-  MONEDAS_LIQUIDACION, mesDelTrabajo, mesParaAbrir, modalidadDe, monedaDe, montoHeredado, nombreValido, nuevoDia,
-  numeroValido, ordenarDias, resumenMes, subtotalDia, tarifasDe, tarifasHeredadas, totalDelMes,
+  MONEDAS_LIQUIDACION, ingresosDelMes, mesDelTrabajo, mesParaAbrir, modalidadDe, monedaDe, montoHeredado, nombreValido,
+  nuevoDia, numeroValido, ordenarDias, resumenMes, subtotalDia, sumarPorMoneda, tarifasDe, tarifasHeredadas, totalDelMes,
+  totalesDelMes,
 } from '../lib/liquidacion'
 import { SIMBOLO_MONEDA } from '../lib/cambioMoneda'
 import * as datos from '../lib/liquidacionDatos'
@@ -17,8 +18,14 @@ import { paleta, semaforo } from '../theme'
 const dinero = (n, moneda = 'ARS') => (moneda === 'ARS'
   ? `$ ${formatMonto(Math.round(Number(n) || 0))}`
   : `${SIMBOLO_MONEDA[moneda]} ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(Number(n) || 0)}`)
+// { ARS: 176000, USD: 614 } → "$ 176.000 + U$S 614"; sin nada, cero en `moneda`.
+const dineroPorMoneda = (porMoneda, moneda) =>
+  MONEDAS_LIQUIDACION.filter(m => porMoneda[m] > 0).map(m => dinero(porMoneda[m], m)).join(' + ') || dinero(0, moneda)
 const cuantos = (n, singular, plural) => `${formatCantidad(n)} ${n === 1 ? singular : plural}`
 const NUMEROS = { fontVariantNumeric: 'tabular-nums' }
+// En el iPhone un input de fecha o de mes con la apariencia nativa no se achica: se
+// salía del recuadro y se montaba sobre el botón de al lado.
+const SIN_APARIENCIA_NATIVA = { WebkitAppearance: 'none', appearance: 'none', minWidth: 0, width: '100%', boxSizing: 'border-box' }
 const ROTULO_TARIFA = { valor_hora: 'Hora', valor_viatico: 'Viático (por viaje)', valor_jornada: 'Jornada' }
 const redondear = (n) => Math.round(n * 100) / 100
 
@@ -228,6 +235,8 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
   const [tarifasAbiertas, setTarifasAbiertas] = useState(false)
   const [cerrando, setCerrando] = useState(false)
   const [editando, setEditando] = useState(editarAlAbrir)
+  // Los ingresos a futuro de esta liquidación, tal como los tiene IngresosFuturos.
+  const [futuros, setFuturos] = useState([])
 
   // Espejos del estado: las escrituras y los deshacer leen el valor de ahora, no
   // el del render en que se armó el handler.
@@ -492,6 +501,13 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
   const sinTarifas = !!mes && CAMPOS_TARIFA.every(campo => !tarifas[campo])
   const verTarifas = tarifasAbiertas || sinTarifas
   const cobro = liquidacion?.tipo === 'cobro'
+  const futurosDe = (claveMes) => (cobro ? ingresosDelMes(futuros, claveMes) : [])
+  const totalesDe = (totalPropio, claveMes) => totalesDelMes(totalPropio, moneda, futurosDe(claveMes))
+  const totalesMes = totalesDe(total, clave)
+  const conIngresos = !(total > 0) && futurosDe(clave).length > 0
+  const textoTotal = dineroPorMoneda(totalesMes, moneda)
+  const mesesHistorial = historial.meses.map(m => ({ ...m, porMoneda: totalesDe(m.total, m.clave) }))
+  const acumulado = sumarPorMoneda(mesesHistorial.map(m => m.porMoneda))
 
   const textoEstado = estado.pendientes > 0 ? 'Guardando…'
     : (estado.fallidas > 0 || estado.error) ? 'No se pudo guardar'
@@ -526,9 +542,10 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
           onGuardar={guardarLiquidacion} onBorrar={borrarLiquidacion} onCerrar={() => setEditando(false)} />
       )}
 
-      <p style={{ fontSize: '32px', fontWeight: 700, margin: '8px 0 2px', color: c.text, ...NUMEROS }}>{dinero(total, moneda)}</p>
+      <p style={{ fontSize: Object.keys(totalesMes).length > 1 ? '26px' : '32px', fontWeight: 700, margin: '8px 0 2px', color: c.text, ...NUMEROS }}>{textoTotal}</p>
       <p style={{ fontSize: '13px', color: c.textSecondary, margin: '0 0 14px', ...NUMEROS }}>
-        {modalidad === 'mensual' ? 'Monto fijo por mes'
+        {conIngresos ? `${unico ? 'Trabajo único' : 'Este mes'} · la suma de tus ingresos a futuro`
+          : modalidad === 'mensual' ? 'Monto fijo por mes'
           : unico ? 'Trabajo único'
             : dias.length === 0 && mes?.total_cerrado > 0
               ? 'Sin detalle de días'
@@ -539,13 +556,13 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
         <label style={{ ...rotuloCampo, marginBottom: '14px' }}>
           Mes del trabajo
           <input type="month" aria-label="Mes del trabajo" value={clave || ''} disabled={soloLectura}
-            style={{ ...input, minWidth: 0, padding: '8px' }}
+            style={{ ...input, ...SIN_APARIENCIA_NATIVA, padding: '8px' }}
             onChange={e => cambiarMesDelTrabajo(e.target.value)} />
         </label>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
           <button type="button" style={flecha} aria-label="Mes anterior" disabled={!clave} onClick={() => irAMes(moverMes(clave, -1))}>‹</button>
-          <input type="month" aria-label="Mes" value={clave || ''} style={{ ...input, flex: 1, minWidth: 0, padding: '8px' }}
+          <input type="month" aria-label="Mes" value={clave || ''} style={{ ...input, ...SIN_APARIENCIA_NATIVA, flex: 1, padding: '8px' }}
             onChange={e => { if (claveValida(e.target.value)) irAMes(e.target.value) }} />
           <button type="button" style={flecha} aria-label="Mes siguiente" disabled={!clave} onClick={() => irAMes(moverMes(clave, 1))}>›</button>
         </div>
@@ -565,7 +582,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
         <>
           {cerrado && (
             <div style={{ ...caja, ...fila, background: c.surfaceAlt }}>
-              <span>{unico ? `${cobro ? 'Cobrado' : 'Pagado'}: ${dinero(mes.total_cerrado, moneda)}.` : `Mes cerrado en ${dinero(mes.total_cerrado, moneda)}.`}</span>
+              <span>{unico ? `${cobro ? 'Cobrado' : 'Pagado'}: ${textoTotal}.` : `Mes cerrado en ${textoTotal}.`}</span>
               <button type="button" style={botonChico} onClick={() => reabrirMes(mes)}>Volver a abrir</button>
             </div>
           )}
@@ -652,26 +669,26 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
 
       {/* Solo en las que te pagan: en la de la empleada no hay nada que cobrar. */}
       {cobro && liquidacionId && (
-        <IngresosFuturos userId={userId} liquidacionId={liquidacionId}
+        <IngresosFuturos userId={userId} liquidacionId={liquidacionId} onCambio={setFuturos}
           estilos={{ c, sem, input, caja, rotulo, botonChico }} />
       )}
 
-      {!unico && historial.meses.length > 0 && (
+      {!unico && mesesHistorial.length > 0 && (
         <div style={caja}>
           <p style={rotulo}>Meses cerrados</p>
-          {historial.meses.map(m => (
+          {mesesHistorial.map(m => (
             <div key={m.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', alignItems: 'center', gap: '8px', fontSize: '13px', margin: '4px 0' }}>
               <button type="button" onClick={() => irAMes(m.clave)}
                 style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', color: c.text, fontSize: '13px', fontFamily: 'inherit', fontWeight: m.clave === clave ? 600 : 400 }}>
                 {nombreDelMes(m.clave)}
               </button>
-              <span style={NUMEROS}>{dinero(m.total, moneda)}</span>
+              <span style={{ ...NUMEROS, textAlign: 'right' }}>{dineroPorMoneda(m.porMoneda, moneda)}</span>
               <button type="button" style={botonChico} onClick={() => reabrirMes(m)}>Volver a abrir</button>
             </div>
           ))}
           <div style={{ ...fila, borderTop: `1px solid ${c.border}`, paddingTop: '8px', marginTop: '8px', fontWeight: 700 }}>
             <span>{cobro ? 'Acumulado cobrado' : 'Acumulado pagado'}</span>
-            <span style={NUMEROS}>{dinero(historial.acumulado, moneda)}</span>
+            <span style={{ ...NUMEROS, textAlign: 'right' }}>{dineroPorMoneda(acumulado, moneda)}</span>
           </div>
         </div>
       )}
