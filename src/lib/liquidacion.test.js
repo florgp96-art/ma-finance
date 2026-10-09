@@ -1,7 +1,7 @@
 import {
   TARIFAS_POR_DEFECTO, claveValida, diasDelMes, numeroValido, subtotalDia, resumenMes, ordenarDias,
   nuevoDia, tarifasHeredadas, mesParaAbrir, historialCerrados, totalDelMes, aCentavos, nombreValido, TARIFAS_EN_CERO,
-  modalidadDe, montoHeredado, mesDelTrabajo, monedaDe,
+  modalidadDe, montoHeredado, mesDelTrabajo, monedaDe, totalesDelMes, ingresosDelMes,
 } from './liquidacion'
 
 const tarifas = { ...TARIFAS_POR_DEFECTO }
@@ -204,4 +204,21 @@ test('monedaDe: sin columna o con un valor raro, pesos', () => {
   expect(monedaDe({ moneda: 'EUR' })).toBe('EUR')
   expect(monedaDe({})).toBe('ARS')
   expect(monedaDe({ moneda: 'BRL' })).toBe('ARS')
+})
+
+describe('totalesDelMes', () => {
+  const ingresos = [{ monto: 176000, moneda: 'ARS' }, { monto: 614, moneda: 'USD' }, { monto: '100', moneda: 'USD' }]
+  test('sin monto propio, los ingresos del mes por moneda', () => {
+    expect(totalesDelMes(0, 'USD', ingresos)).toEqual({ ARS: 176000, USD: 714 })
+  })
+  test('con monto propio, solo el propio', () => {
+    expect(totalesDelMes(614, 'USD', ingresos)).toEqual({ USD: 614 })
+  })
+  test('sin nada, cero en la moneda de la liquidación', () => {
+    expect(totalesDelMes(0, 'EUR', [])).toEqual({ EUR: 0 })
+  })
+  test('ingresosDelMes filtra por la fecha esperada', () => {
+    const lista = [{ fecha: '2026-10-06' }, { fecha: '2026-09-30' }, { fecha: null }]
+    expect(ingresosDelMes(lista, '2026-10')).toEqual([{ fecha: '2026-10-06' }])
+  })
 })

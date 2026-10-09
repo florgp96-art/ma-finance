@@ -19,7 +19,7 @@ const formularioVacio = () => ({ concepto: '', monto: '', moneda: 'ARS', fecha: 
 // Ingresos a futuro de una liquidación de las que "te pagan" (ver lib/ingresosFuturos.js):
 // se anotan acá, no tocan las cuentas, y se tachan solos cuando el ingreso aparece en
 // alguna cuenta. Si no lo reconoce, se tachan a mano.
-function IngresosFuturos({ userId, liquidacionId, estilos }) {
+function IngresosFuturos({ userId, liquidacionId, estilos, onCambio }) {
   const { c, sem, input, caja, rotulo, botonChico } = estilos
   const [todos, setTodos] = useState([])
   const [ingresos, setIngresos] = useState([])
@@ -52,6 +52,8 @@ function IngresosFuturos({ userId, liquidacionId, estilos }) {
 
   const cruce = useMemo(() => cruzarConIngresos(todos, ingresos), [todos, ingresos])
   const propios = useMemo(() => todos.filter(e => e.liquidacion_id === liquidacionId), [todos, liquidacionId])
+  // La liquidación los usa para su total (ver totalesDelMes en lib/liquidacion.js).
+  useEffect(() => { onCambio?.(propios) }, [propios, onCambio])
   const entro = (e) => e.cobrado_a_mano || cruce.has(e.id)
   const pendientes = propios.filter(e => !entro(e)).sort((a, b) => a.fecha.localeCompare(b.fecha))
   const entrados = propios.filter(entro).sort((a, b) => b.fecha.localeCompare(a.fecha))
@@ -170,8 +172,10 @@ function IngresosFuturos({ userId, liquidacionId, estilos }) {
         <select aria-label="Moneda" value={form.moneda} onChange={e => setForm(f => ({ ...f, moneda: e.target.value }))} style={{ ...input, padding: '8px' }}>
           {MONEDAS.map(m => <option key={m} value={m}>{SIMBOLO[m]} {m}</option>)}
         </select>
+        {/* Sin la apariencia nativa: en el iPhone no se achicaba y se montaba sobre "+ Anotar". */}
         <input aria-label="Fecha esperada" type="date" value={form.fecha}
-          onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} style={{ ...input, padding: '8px' }} />
+          onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+          style={{ ...input, padding: '8px', WebkitAppearance: 'none', appearance: 'none', minWidth: 0, width: '100%', boxSizing: 'border-box' }} />
         <button type="submit" disabled={guardando} style={{ ...botonChico, padding: '8px', color: c.primary, fontWeight: 600 }}>
           {guardando ? 'Guardando…' : '+ Anotar'}
         </button>

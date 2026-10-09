@@ -155,6 +155,24 @@ export const totalDelMes = (mes, dias, modalidad = 'horas') => {
   return resumenMes(lista, mes).total
 }
 
+// Los ingresos a futuro (lib/ingresosFuturos.js) que se esperan en el mes `clave`.
+export const ingresosDelMes = (ingresos, clave) =>
+  (ingresos || []).filter(e => String(e.fecha || '').slice(0, 7) === clave)
+
+// El total de un mes, por moneda. Es el de la liquidación (monto o días); si no tiene,
+// la suma de sus ingresos a futuro del mes, que es como se cargan varios trabajos en
+// monedas distintas. Nunca los dos juntos: anotar el cobro de lo que ya dice la
+// liquidación lo contaría dos veces.
+export const totalesDelMes = (totalPropio, moneda, ingresos) => {
+  if (cantidad(totalPropio) > 0 || !(ingresos || []).length) return { [moneda]: cantidad(totalPropio) }
+  return sumarPorMoneda(ingresos.map(e => ({ [MONEDAS_LIQUIDACION.includes(e.moneda) ? e.moneda : 'ARS']: cantidad(e.monto) })))
+}
+
+export const sumarPorMoneda = (lista) => (lista || []).reduce((suma, porMoneda) => {
+  Object.entries(porMoneda || {}).forEach(([m, n]) => { suma[m] = (suma[m] || 0) + cantidad(n) })
+  return suma
+}, {})
+
 export const historialCerrados = (meses) => {
   const cerrados = (meses || []).filter(m => m.cerrado)
     .sort((a, b) => b.clave.localeCompare(a.clave))

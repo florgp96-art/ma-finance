@@ -424,3 +424,46 @@ describe('moneda de la liquidación', () => {
     await waitFor(() => expect(datos.actualizarLiquidacion).toHaveBeenCalledWith('liq-1', { nombre: 'Sueldo de la empleada', tipo: 'pago', modalidad: 'horas', moneda: 'EUR' }))
   })
 })
+
+// Varios trabajos en monedas distintas se cargan como ingresos a futuro: sin monto
+// propio, el total es la suma de los del mes.
+describe('total con ingresos a futuro', () => {
+  const FLOR = { id: 'liq-4', nombre: 'Flor', tipo: 'cobro', modalidad: 'unico', moneda: 'USD' }
+  const futuro = (id, monto, moneda, fecha) => ({ id, liquidacion_id: 'liq-4', concepto: id, monto, moneda, fecha, cobrado_a_mano: true })
+  const conMonto = (monto, extra = {}) => {
+    mockDb.meses = [{ id: 'm09', clave: '2026-09', valor_hora: 0, valor_viatico: 0, valor_jornada: 0, monto, cerrado: false, total_cerrado: null, ...extra }]
+    mockDb.dias = []
+  }
+  beforeEach(() => {
+    datos.leerIngresosFuturos.mockImplementation(() => resultado('leerIngresosFuturos', [
+      futuro('Moms Food', 176000, 'ARS', '2026-09-06'),
+      futuro('Ovo Market', 614, 'USD', '2026-09-06'),
+      futuro('Otro mes', 999, 'EUR', '2026-10-01'),
+      { ...futuro('De otra liquidación', 5, 'ARS', '2026-09-06'), liquidacion_id: 'liq-9' },
+    ]))
+  })
+
+  test('sin monto propio, suma los del mes en cada moneda', async () => {
+    conMonto(0)
+    montar({ liquidacion: FLOR })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    expect(await screen.findByText('$ 176.000 + U$S 614')).toBeInTheDocument()
+    expect(screen.getByText('Trabajo único · la suma de tus ingresos a futuro')).toBeInTheDocument()
+  })
+
+  test('cerrado, el aviso dice lo cobrado en cada moneda', async () => {
+    conMonto(0, { cerrado: true, total_cerrado: 0 })
+    montar({ liquidacion: FLOR })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    expect(texto(await screen.findByText(/^Cobrado:/))).toBe('Cobrado: $ 176.000 + U$S 614.')
+  })
+
+  test('con monto propio no se suman: serían lo mismo contado dos veces', async () => {
+    conMonto(614)
+    montar({ liquidacion: FLOR })
+    await screen.findByRole('heading', { name: 'Septiembre 2026' })
+    await waitFor(() => expect(screen.getByLabelText('Monto del trabajo')).toBeEnabled())
+    expect(screen.getByText('U$S 614')).toBeInTheDocument()
+    expect(screen.queryByText('$ 176.000 + U$S 614')).not.toBeInTheDocument()
+  })
+})
