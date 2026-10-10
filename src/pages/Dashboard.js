@@ -24,7 +24,7 @@ import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } fr
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
 import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
-import { parseMonto } from '../lib/formato'
+import { parseMonto, hoyLocal, mesLocal, normalizarMoneda } from '../lib/formato'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
@@ -131,6 +131,14 @@ const addMonths = (fechaISO, n) => {
   // Se arma el string a mano en vez de con toISOString(), que pasa por UTC: en
   // una zona horaria positiva convertía la medianoche local al día anterior.
   return `${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, '0')}-${String(destino.getDate()).padStart(2, '0')}`
+}
+
+// Manda ya la escritura pendiente de una preferencia (ver persistPref en el Dashboard).
+const escribirPendiente = async (pendientes, timers, key) => {
+  const escribir = pendientes.current[key]
+  delete pendientes.current[key]
+  clearTimeout(timers.current[key])
+  if (escribir) await escribir()
 }
 
 // Supabase/PostgREST limita a 1000 filas por consulta si no se pagina. Las cuentas con
@@ -312,7 +320,7 @@ export default function Dashboard() {
   const [showMovimiento, setShowMovimiento] = useState(false)
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto')
   const [cuentaEfectivoId, setCuentaEfectivoId] = useState(null)
-  const [efectivo, setEfectivo] = useState({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
+  const [efectivo, setEfectivo] = useState({ fecha: hoyLocal(), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
   // ¿La base ya guarda si se facturó cada ingreso? (ver lib/facturacion.js)
   const [conFacturacion, setConFacturacion] = useState(false)
   useEffect(() => { hayColumnaFacturacion().then(setConFacturacion) }, [])
@@ -574,17 +582,43 @@ export default function Dashboard() {
   // la DB con el valor local de este navegador antes de haberla leído.
   const prefsLoaded = useRef(false)
   const prefTimers = useRef({})
+  // Lo que todavía no salió, por clave: si se cierra la app dentro del debounce se
+  // manda igual (ver el efecto de pagehide abajo). Antes se perdía sin aviso, y acá
+  // viven datos que importan, como de quién es cada laburo en el reparto entre socios.
+  const prefPendientes = useRef({})
+  // Por ref y no directo: así persistPref no depende de nada del render y los
+  // efectos que la usan no se vuelven a disparar.
+  const showToastRef = useRef(null)
+  showToastRef.current = showToast
   const persistPref = (key, value) => {
     clearTimeout(prefTimers.current[key])
-    prefTimers.current[key] = setTimeout(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      await supabase.from('user_rules').upsert({
-        user_id: user.id, texto_original: `__pref__${key}`,
+    prefPendientes.current[key] = async () => {
+      // getSession lee la sesión guardada, sin ir a la red: tiene que alcanzar a salir en pagehide.
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+      if (!userId) return
+      const { error } = await supabase.from('user_rules').upsert({
+        user_id: userId, texto_original: `__pref__${key}`,
         nombre_asignado: JSON.stringify(value), category_id: null, subcategory_id: null
       }, { onConflict: 'user_id,texto_original' })
-    }, 800)
+      if (error) {
+        console.error(`No se pudo guardar la preferencia ${key}:`, error.message)
+        showToastRef.current?.('No se pudo guardar un cambio. Revisá la conexión y volvé a intentarlo.', 'error')
+      }
+    }
+    prefTimers.current[key] = setTimeout(() => escribirPendiente(prefPendientes, prefTimers, key), 800)
   }
+  useEffect(() => {
+    const vaciar = () => Object.keys(prefPendientes.current).forEach(key => escribirPendiente(prefPendientes, prefTimers, key))
+    const alOcultar = () => { if (document.visibilityState === 'hidden') vaciar() }
+    document.addEventListener('visibilitychange', alOcultar)
+    window.addEventListener('pagehide', vaciar)
+    return () => {
+      document.removeEventListener('visibilitychange', alOcultar)
+      window.removeEventListener('pagehide', vaciar)
+      vaciar()
+    }
+  }, [])
 
   // Cambios en la configuración del reparto entre socios hechos desde otras pantallas
   // (ej. marcar de quién fue el laburo al editar un movimiento).
@@ -605,7 +639,7 @@ export default function Dashboard() {
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setVencPagados(next)
-    const mes = new Date().toISOString().slice(0, 7)
+    const mes = mesLocal()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     try { localStorage.setItem(`venc_pagados_${user.id}_${mes}`, JSON.stringify([...next])) } catch {}
@@ -624,7 +658,7 @@ export default function Dashboard() {
     // al abrir la app.
     if (!currentUserId) return
     setVencPagados(new Set())
-    const mes = new Date().toISOString().slice(0, 7)
+    const mes = mesLocal()
     ;(async () => {
       const { data: row } = await supabase.from('user_rules').select('nombre_asignado')
         .eq('user_id', currentUserId).eq('texto_original', '__venc_pagados__').maybeSingle()
@@ -675,7 +709,7 @@ export default function Dashboard() {
   useEffect(() => {
     const rateVivo = dolarRates[tcTipo]
     if (rateVivo) { setTipoCambio(String(rateVivo)); localStorage.setItem('tc_ma', String(rateVivo)); return }
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesLocal()
     const rate = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
     if (rate) { setTipoCambio(String(rate.valor)); localStorage.setItem('tc_ma', String(rate.valor)) }
   }, [exchangeRates, dolarRates, tcTipo])
@@ -1067,7 +1101,7 @@ export default function Dashboard() {
       persistPref('reparto_socios', nueva)
     }
 
-    setEfectivo({ fecha: new Date().toISOString().slice(0,10), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
+    setEfectivo({ fecha: hoyLocal(), nombre: '', monto: '', moneda: 'ARS', categoria: '', subcategoria: '', nota: '', hijo: '', cuotaNum: '1', cuotasTotal: '1', cuenta: cuentaEfectivoId, trabajoDe: '', trabajoPorcentajes: null, facturacion: '' })
     setShowMovimiento(false)
     setRefreshKey(k => k + 1)
     if (tipoMovimiento === 'ingreso') {
@@ -1135,7 +1169,7 @@ export default function Dashboard() {
           const avg = (eur.compra != null && eur.venta != null) ? Math.round((eur.compra + eur.venta) / 2) : (eur.venta || eur.compra || 0)
           if (avg > 0) {
             map.eur = avg
-            const mesActual = new Date().toISOString().slice(0, 7)
+            const mesActual = mesLocal()
             supabase.from('exchange_rates').upsert({ periodo: mesActual, tipo: 'euro', valor: avg }, { onConflict: 'periodo,tipo' }).then(({ error }) => { if (!error) fetchExchangeRates() })
           }
         }
@@ -2038,6 +2072,11 @@ export default function Dashboard() {
           // de movimientos no está en la capa de texto): la IA lo lee entero.
           result = await analyzePdfDocumentWithClaude(archivo, 'auto', rules || [], token, incomeExamples, categoriasDB, subcategoriasDB, childrenDB, userAliases)
         }
+      }
+      // La moneda, a una de las que entiende la app (ver normalizarMoneda): una
+      // desconocida se sumaba como si fueran pesos.
+      if (Array.isArray(result?.transacciones)) {
+        result.transacciones = result.transacciones.map(t => ({ ...t, moneda: normalizarMoneda(t.moneda) }))
       }
       // El "sentido" (columna de créditos o de débitos) solo se le pide a la IA en los
       // extractos de banco. Si igual viene en un resumen de tarjeta, se descarta: ahí
@@ -3054,7 +3093,7 @@ export default function Dashboard() {
   // resumen): siempre blue y euro, promedio entre compra y venta (así los guarda
   // fetchDolarRates). Si la consulta en vivo falló, el del mes en la base; nunca
   // el tipo de dólar elegido en "Monedas", que puede ser otro.
-  const mesCotizacion = new Date().toISOString().slice(0, 7)
+  const mesCotizacion = mesLocal()
   const cotizacionesReparto = {
     USD: dolarRates.blue || exchangeRates.find(x => x.tipo === 'blue' && x.periodo === mesCotizacion)?.valor || null,
     EUR: dolarRates.eur || exchangeRates.find(x => x.tipo === 'euro' && x.periodo === mesCotizacion)?.valor || null,
@@ -3707,7 +3746,7 @@ export default function Dashboard() {
                 además duplicada aparte para mobile/individual), ahora un
                 solo bloque coherente. */}
             {(() => {
-              const mesActual = new Date().toISOString().slice(0, 7)
+              const mesActual = mesLocal()
               const tc = parseFloat(tipoCambio) || 0
               const tcELive = parseFloat(tipoCambioEUR) || 0
               const tcEDB = Number(exchangeRates.find(r => r.tipo === 'euro' && r.periodo === mesActual)?.valor || 0)
@@ -3856,7 +3895,7 @@ export default function Dashboard() {
   // COMO en el sidebar mobile (ver más abajo) sin duplicar la lógica — antes
   // vivían adentro de un IIFE propio del header y el sidebar no podía tocarlos.
   const rateVivo = dolarRates[tcTipo]
-          const mesActual = new Date().toISOString().slice(0, 7)
+          const mesActual = mesLocal()
           const rateDB = exchangeRates.find(r => r.periodo === mesActual && r.tipo === tcTipo)
           const rateActivo = rateVivo || (rateDB ? rateDB.valor : null)
           const tiposLabel = { blue: 'Blue', mep: 'MEP', oficial: 'Oficial', tarjeta: 'Tarjeta' }

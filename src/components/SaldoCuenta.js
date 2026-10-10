@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
 import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
-import { formatMonto, formatMontoFull, formatFecha, parseMonto } from '../lib/formato'
+import { formatMonto, formatMontoFull, formatFecha, parseMonto, hoyLocal } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
 const SIMBOLO = { ARS: '$', USD: 'U$S', EUR: '€' }
-const hoyISO = () => new Date().toISOString().slice(0, 10)
+const hoyISO = () => hoyLocal()
 
 // El campo es de texto (el teclado del iPhone solo trae coma, ver parseMonto): se
 // aceptan "1234,56", "1.234,56" y "1234.56". Un saldo puede ser negativo (una

@@ -35,11 +35,26 @@ export default async function handler(req, res) {
   // cobrando todos los meses sin que la app pueda verla ni cancelarla.
   const { data: existente } = await supabaseAdmin
     .from('user_profiles')
-    .select('mp_status')
+    .select('mp_status, mp_preapproval_id')
     .eq('id', user.id)
     .maybeSingle()
-  if (existente?.mp_status === 'authorized' || existente?.mp_status === 'pending') {
-    return res.status(409).json({ error: 'Ya tenés una suscripción activa o pendiente de confirmación' })
+  if (existente?.mp_status === 'authorized') {
+    return res.status(409).json({ error: 'Ya tenés una suscripción activa' })
+  }
+  // Un checkout que se abandonó queda "pending" en Mercado Pago. Antes eso devolvía
+  // 409 para siempre y la persona ya no podía suscribirse: ahora se la manda de
+  // vuelta al mismo checkout, que es la misma preapproval (no se crea una segunda).
+  if (existente?.mp_status === 'pending' && existente.mp_preapproval_id) {
+    const previa = await fetch(`https://api.mercadopago.com/preapproval/${encodeURIComponent(existente.mp_preapproval_id)}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    })
+    const datosPrevia = previa.ok ? await previa.json() : null
+    if (datosPrevia?.status === 'authorized') {
+      return res.status(409).json({ error: 'Ya tenés una suscripción activa' })
+    }
+    const urlPrevia = datosPrevia?.status === 'pending' && (datosPrevia.init_point || datosPrevia.sandbox_init_point)
+    if (urlPrevia) return res.status(200).json({ checkoutUrl: urlPrevia })
+    // Si Mercado Pago ya no la tiene pendiente (vencida, cancelada), se crea una nueva.
   }
 
   const precioArs = Number(process.env.MERCADOPAGO_PRICE_ARS || 3999)
