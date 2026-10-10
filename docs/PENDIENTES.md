@@ -420,6 +420,20 @@ Sin la columna no se muestra nada de esto y el resto de la app sigue igual (ver
 
 ---
 
+### h) Arreglos de seguridad de la auditoría de octubre de 2026 — **sin correr**
+
+`supabase/migrations/20261010000000_auditoria_seguridad.sql` (se puede correr más de una
+vez, entero). El detalle de cada punto está en `docs/AUDITORIA-2026-10.md`:
+
+- `user_profiles` deja de ser editable por el usuario (hoy cualquiera puede hacerse Premium).
+- Políticas para crear, editar y borrar categorías propias (hoy falla).
+- Las cotizaciones compartidas solo admiten el euro del mes en curso.
+- Las funciones `SECURITY DEFINER` dejan de poder llamarse sin login.
+- El aviso de registro manda solo mail, nombre y fecha, con el secreto en el Vault.
+- Cinco índices.
+
+Se probó entera en la base real dentro de una transacción que se deshizo.
+
 ### b) Rate limit compartido — **esta es la que más conviene**
 
 ```sql

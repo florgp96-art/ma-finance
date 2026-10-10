@@ -1,4 +1,4 @@
-import { diaDeLaSemana, formatCantidad, formatMonto, parseMonto, montoParaEditar } from './formato'
+import { diaDeLaSemana, formatCantidad, formatMonto, parseMonto, montoParaEditar, hoyLocal, mesLocal, normalizarMoneda } from './formato'
 
 test('diaDeLaSemana', () => {
   expect(diaDeLaSemana('2026-09', 1)).toBe('martes')
@@ -63,4 +63,25 @@ test('montoParaEditar: con coma, para que parseMonto lo vuelva a leer igual', ()
   expect(montoParaEditar(1500)).toBe('1500')
   expect(montoParaEditar(null)).toBe('')
   expect(montoParaEditar('')).toBe('')
+})
+
+// A las 22 del 31 en Argentina ya es el 1° en UTC: la fecha tiene que ser la del celular.
+test('hoyLocal y mesLocal: la fecha de la hora local, no la de UTC', () => {
+  const tarde = new Date(2026, 9, 31, 22, 30)
+  expect(hoyLocal(tarde)).toBe('2026-10-31')
+  expect(mesLocal(tarde)).toBe('2026-10')
+  expect(hoyLocal(new Date(2026, 0, 5))).toBe('2026-01-05')
+})
+
+test('normalizarMoneda: solo ARS, USD o EUR', () => {
+  expect(normalizarMoneda('EURc')).toBe('EUR')
+  expect(normalizarMoneda('eur')).toBe('EUR')
+  expect(normalizarMoneda('€')).toBe('EUR')
+  expect(normalizarMoneda('USD')).toBe('USD')
+  expect(normalizarMoneda('u$s')).toBe('USD')
+  expect(normalizarMoneda('USDT')).toBe('USD')
+  expect(normalizarMoneda('ARS')).toBe('ARS')
+  expect(normalizarMoneda('$')).toBe('ARS')
+  expect(normalizarMoneda(null)).toBe('ARS')
+  expect(normalizarMoneda('')).toBe('ARS')
 })

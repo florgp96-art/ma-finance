@@ -11,6 +11,25 @@ export const formatMontoFull = (monto) =>
 
 export const formatFecha = (f) => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''
 
+// Hoy y el mes en curso en la hora del celular, como "2026-10-31" / "2026-10".
+// toISOString() da la fecha en UTC: en Argentina, de 21 a 24 h ya es el día
+// siguiente, y un gasto cargado a las 22 del 31 quedaba fechado el 1° del mes que viene.
+export const hoyLocal = (ahora = new Date()) =>
+  `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
+
+export const mesLocal = (ahora = new Date()) => hoyLocal(ahora).slice(0, 7)
+
+// Las monedas que entiende la app. Lo que lee la IA de un resumen puede venir con
+// otra escritura ("EURc" en Revolut, "u$s", "$"): sin normalizar, cualquier moneda
+// desconocida se sumaba como si fueran pesos. Las stablecoins van a su moneda.
+export const normalizarMoneda = (moneda) => {
+  const m = String(moneda ?? '').trim().toUpperCase().replace(/\s+/g, '')
+  if (!m || m === '$' || m === 'ARS' || m === 'AR$' || m === 'PESOS') return 'ARS'
+  if (m.startsWith('EUR') || m === '€') return 'EUR'
+  if (m.startsWith('USD') || m === 'U$S' || m === 'US$' || m === 'U$D' || m === 'DOLARES') return 'USD'
+  return 'ARS'
+}
+
 // Fecha corta para las tablas de movimientos. Se omite el año SOLO si es del año
 // en curso: mezclado con movimientos viejos, "28/06" no dice de qué año es (y en
 // una lista con cosas de 2023 y de hoy eso es directamente confuso). En ese caso

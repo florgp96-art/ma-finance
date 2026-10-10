@@ -138,6 +138,7 @@ CATEGORÍAS DISPONIBLES:
 
   const data = await response.json()
 
+  let leida = false
   try {
     const textBlock = data?.content?.find(b => b.type === 'text')
     if (textBlock?.text) {
@@ -146,12 +147,14 @@ CATEGORÍAS DISPONIBLES:
         .replace(/\s*```\s*$/i, '')
         .trim()
       const parsed = JSON.parse(clean)
-      data.content[0].text = JSON.stringify(parsed)
+      textBlock.text = JSON.stringify(parsed)
+      leida = true
     }
   } catch (e) {
     console.error('Error procesando imagen:', e.message)
   }
 
-  if (!esPremium) await recordAiUsage(supabaseAdmin, user.id)
+  // Como en analyze.js: una lectura que no sirvió no consume el cupo del plan gratis.
+  if (!esPremium && leida) await recordAiUsage(supabaseAdmin, user.id)
   res.status(200).json(data)
 }

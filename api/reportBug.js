@@ -6,6 +6,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Todo lo que manda el cliente se escapa antes de ir al HTML del mail.
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
@@ -37,11 +40,11 @@ export default async function handler(req, res) {
   const resendKey = process.env.RESEND_API_KEY
   if (notifyEmail && resendKey) {
     const html = `<div style="font-family: sans-serif; font-size: 14px;">
-      <p style="margin:4px 0"><strong>Usuario:</strong> ${user.email}</p>
-      <p style="margin:4px 0"><strong>Página:</strong> ${pagina || '—'}</p>
+      <p style="margin:4px 0"><strong>Usuario:</strong> ${esc(user.email)}</p>
+      <p style="margin:4px 0"><strong>Página:</strong> ${esc(typeof pagina === 'string' ? pagina.slice(0, 200) : '—')}</p>
       <p style="margin:4px 0"><strong>Fecha:</strong> ${new Date().toISOString()}</p>
       <p style="margin:12px 0 4px 0"><strong>Descripción:</strong></p>
-      <p style="margin:4px 0; white-space: pre-wrap;">${mensaje.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+      <p style="margin:4px 0; white-space: pre-wrap;">${esc(mensaje)}</p>
     </div>`
 
     try {
