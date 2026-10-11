@@ -1,0 +1,28 @@
+# Corre los tests y el build en cada PR y en cada push a master: Vercel despliega
+# master sin correr los tests, así que esto es lo que avisa si un cambio rompe algo.
+name: Tests y build
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Tests
+        run: npx react-scripts test --watchAll=false
+        env:
+          CI: true
+      - name: Build
+        run: npm run build
+        env:
+          CI: true
