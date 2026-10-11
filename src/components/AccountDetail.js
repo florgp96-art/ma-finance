@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
@@ -13,7 +13,10 @@ import { repartoDelPeriodo, nombreDelMes, conTrabajo, porcentajesValidos } from 
 import SelectorTrabajo, { porcentajesComoTexto, porcentajesDesdeTexto } from './SelectorTrabajo'
 import { puedeVerCobroFacturacion, descuentaPercepcionesEnDolares } from '../config/features'
 import { ESTADOS_FACTURACION, estadoFacturacion, hayColumnaFacturacion } from '../lib/facturacion'
-import ReporteContador from './ReporteContador'
+import { lazyConRecarga } from '../lib/cargaDiferida'
+
+// El reporte arma un Excel (xlsx): se descarga recién cuando se abre.
+const ReporteContador = lazyConRecarga(() => import('./ReporteContador'))
 
 // "Hoy"/"mes actual" en hora LOCAL, no UTC — con Argentina en UTC-3,
 // toISOString() adelanta el día/mes ~3hs antes de tiempo entre las 21:00 y
@@ -5019,7 +5022,11 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           const tc = moneda === 'USD' ? tcDeMovimiento(t, tcMap, tipoCambio) : moneda === 'EUR' ? tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR) : 0
           return tc > 0 ? monto * tc : null
         }
-        return <ReporteContador ingresos={ingresosDelPeriodo} aPesos={aPesos} periodo={periodo} darkMode={darkMode} onCerrar={() => setShowReporte(false)} />
+        return (
+          <Suspense fallback={null}>
+            <ReporteContador ingresos={ingresosDelPeriodo} aPesos={aPesos} periodo={periodo} darkMode={darkMode} onCerrar={() => setShowReporte(false)} />
+          </Suspense>
+        )
       })()}
       {deleteConfirmTx && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>

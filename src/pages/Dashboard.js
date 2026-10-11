@@ -25,8 +25,8 @@ import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
 import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
 import { parseMonto, hoyLocal, mesLocal, normalizarMoneda } from '../lib/formato'
+import { importarModulo } from '../lib/cargaDiferida'
 import { subcategoriasParaElegir } from '../lib/perfil'
-import * as XLSX from 'xlsx'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento, aplicarModoAlDocumento, leerModo, logoDelModo, MODOS } from '../theme'
 
@@ -132,6 +132,10 @@ const addMonths = (fechaISO, n) => {
   // una zona horaria positiva convertía la medianoche local al día anterior.
   return `${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, '0')}-${String(destino.getDate()).padStart(2, '0')}`
 }
+
+// xlsx pesa ~140 kB comprimido y solo hace falta para importar un Excel o bajar la
+// plantilla: se descarga recién ahí, no al abrir la app.
+const cargarXLSX = () => importarModulo(() => import('xlsx'))
 
 // Manda ya la escritura pendiente de una preferencia (ver persistPref en el Dashboard).
 const escribirPendiente = async (pendientes, timers, key) => {
@@ -1206,7 +1210,8 @@ export default function Dashboard() {
     return null
   }
 
-  const downloadExcelTemplate = () => {
+  const downloadExcelTemplate = async () => {
+    const XLSX = await cargarXLSX()
     const wb = XLSX.utils.book_new()
     const headers = [['FECHA', 'DESCRIPCION', 'TIPO', 'MONTO_ARS', 'MONTO_USD', 'CATEGORIA', 'SUBCATEGORIA', 'HIJO', 'MODO_PAGO']]
     const examples = [
@@ -1222,8 +1227,9 @@ export default function Dashboard() {
 
   const parsearExcel = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await cargarXLSX()
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true, raw: false })
         const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'gastos') || wb.SheetNames[0]
         const ws = sheetName ? wb.Sheets[sheetName] : null
