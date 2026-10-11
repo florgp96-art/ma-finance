@@ -18,7 +18,7 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 4 | Un pago abandonado en Mercado Pago impide volver a suscribirse | 🟠 | ✅ |
 | 5 | Después de las 21 h la app toma la fecha de mañana | 🟠 | ✅ |
 | 6 | Cambios de preferencias (incluido el reparto entre socios) que se perdían | 🟠 | ✅ |
-| 7 | Fotos y PDF de más de ~3 MB fallan con "Load failed" | 🟠 | ⏳ |
+| 7 | Fotos y PDF de más de ~3 MB fallan con "Load failed" | 🟠 | ✅ |
 | 8 | Funciones de la base ejecutables sin iniciar sesión | 🟡 | 🗄️ |
 | 9 | El aviso de registro mandaba el hash de la contraseña | 🟡 | 🗄️ |
 | 10 | Monedas desconocidas ("EURc") sumadas como pesos | 🟡 | ✅ (y los 10 viejos pasados a EUR) |
@@ -104,7 +104,7 @@ Probado: el euro del mes se guarda, y el resto queda bloqueado.
 - Si falla, aparece un aviso.
 - Usa la sesión guardada en vez de ir a la red, para que alcance a salir.
 
-## 🟠 7. Fotos y PDF grandes fallan con "Load failed" (⏳)
+## 🟠 7. Fotos y PDF grandes fallan con "Load failed" (✅)
 
 **Qué pasa.**
 - Vercel corta cualquier pedido de más de **4,5 MB**, y la app manda el archivo en base64 (+33 %). Una foto o un PDF de más de ~3,3 MB nunca llega.
@@ -112,10 +112,10 @@ Probado: el euro del mes se guarda, y el resto queda bloqueado.
 - Las fotos del celular no se achican antes de mandarse.
 - En la base hay **6 importaciones fallidas con "Load failed"**.
 
-**Propuesta.**
-1. Achicar las fotos en el celular antes de mandarlas: canvas, lado mayor de 2000 px, JPEG al 85 %. Una foto de 4 MB queda en ~400 kB.
-2. Si un PDF pasa los 3 MB y no se puede leer como texto, avisar con un mensaje claro en vez de "Load failed".
-3. Corregir el "Máx. 10MB".
+**Hecho.**
+- Las fotos se achican en el celular antes de mandarse (`src/lib/imagen.js`) al tamaño con el que la IA las lee de todos modos: 1568 px de lado y ~1,15 megapíxeles. No se pierde calidad de lectura. En la prueba, una foto de 10,8 MB se mandó en 0,47 MB.
+- Un PDF que no se lee como texto y pesa más de 3 MB muestra un aviso que explica qué pasa y qué hacer, y no se intenta mandar.
+- La pantalla dice "PDF, PNG o JPG", sin el "Máx. 10MB" que no era cierto.
 
 ## 🟡 8. Funciones de la base ejecutables sin iniciar sesión
 

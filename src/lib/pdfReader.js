@@ -237,7 +237,18 @@ export const leerComoBase64 = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file)
 })
 
+// Un PDF que se manda entero viaja en base64 (+33 %) y Vercel corta los pedidos de más
+// de 4,5 MB: más grande que esto no llega, y antes fallaba con un "Load failed" que no
+// decía nada. Los que se leen como texto no tienen este límite.
+export const MAXIMO_PDF_ENTERO = 3_200_000
+
+export const pdfDemasiadoGrande = (file) => (file?.size || 0) > MAXIMO_PDF_ENTERO
+
 export async function analyzePdfDocumentWithClaude(file, cardName, userRules, token, incomeExamples, categories, subcategories, children, aliases) {
+  if (pdfDemasiadoGrande(file)) {
+    const mb = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(file.size / 1_000_000)
+    throw new Error(`Este PDF no se puede leer como texto (suele pasar con los escaneados) y pesa ${mb} MB: para mandarlo a leer entero tiene que pesar hasta 3 MB. Probá bajarlo de nuevo desde el home banking, o subí capturas de pantalla de los movimientos.`)
+  }
   const base64 = await leerComoBase64(file)
 
   const headers = { 'Content-Type': 'application/json' }
@@ -258,6 +269,8 @@ export async function analyzePdfDocumentWithClaude(file, cardName, userRules, to
 // Devuelve { resultado, revision }; si algo falla tira error, y quien llama sigue
 // con la primera lectura.
 export async function revisarLecturaConClaude({ resultado, pdfText, file, token, cardName, userRules, incomeExamples, categories, subcategories, children, aliases }) {
+  // Mismo límite que arriba: sin texto y con un PDF grande, la revisión no llegaría.
+  if (!pdfText && pdfDemasiadoGrande(file)) throw new Error('PDF demasiado grande para revisarlo entero')
   const fuente = pdfText ? { pdfText } : { pdfBase64: await leerComoBase64(file) }
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
