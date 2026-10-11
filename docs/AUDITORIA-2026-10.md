@@ -228,7 +228,7 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 ## 🔵 18. Detalles menores
 
 - ✅ `api/reportBug.js`: el campo "página" iba sin escapar al HTML del mail.
-- ⏳ Tabla `transactions_backup_division3` (1.460 filas): es un backup viejo sin uso. Pero **548 de esas filas son movimientos que ya no existen** en `transactions`, así que borrarla es irreversible. Queda hasta que lo confirmes.
+- ✅ Tabla `transactions_backup_division3` (1.460 filas, un backup viejo sin uso): borrada el 11/10, con tu confirmación.
 - Una categoría "Devoluciones" sin dueño (`user_id` vacío, no es del sistema). **No se borró:** la usan 9 movimientos, 6 subcategorías y 3 reglas. Funciona como categoría compartida. Lo prolijo sería marcarla como del sistema.
 - ⏳ Datos para revisar con la herramienta de repetidos:
   - **8 resúmenes repetidos** (mismo cierre en la misma tarjeta): florgp96 4, bettyswarovski 3, valengp03 1;
