@@ -685,12 +685,14 @@ where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
   );
 ```
 
-`ai_usage`, `import_logs` y `transactions_backup_division3` aparecen ahí y **está bien
-así**: las escribe el servidor con la clave de servicio, que saltea RLS. Si el cliente
+`ai_usage`, `import_logs`, `rate_limits`, `formatos_lectura` y `auditoria_hallazgos`
+aparecen ahí y **está bien así**: las escribe el servidor con la clave de servicio, que
+saltea RLS. Si el cliente
 pudiera tocar `ai_usage`, borraría su contador y tendría IA gratis infinita.
 
-**La auditoría semanal** (`api/cron-auditoria.js`) manda un mail los lunes con datos
-imposibles: duplicados, cuotas que suben sin justificación, "cuota 5 de 3", USD/EUR sin
+**La auditoría semanal** (`api/cron-auditoria.js`, viernes a las 22 h de Argentina) manda
+un mail solo cuando aparece algo nuevo (lo ya avisado queda en `auditoria_hallazgos`) con
+datos imposibles: duplicados, cuotas que suben sin justificación, "cuota 5 de 3", USD/EUR sin
 tipo de cambio, repartos que suman más que el gasto, gastos sueltos con fecha futura y la
 misma cuota cargada dos veces. **No detecta bugs de código, solo síntomas en los datos.**
 
