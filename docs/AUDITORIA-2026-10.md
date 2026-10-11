@@ -22,12 +22,12 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 8 | Funciones de la base ejecutables sin iniciar sesión | 🟡 | 🗄️ |
 | 9 | El aviso de registro mandaba el hash de la contraseña | 🟡 | 🗄️ |
 | 10 | Monedas desconocidas ("EURc") sumadas como pesos | 🟡 | ✅ (y los 10 viejos pasados a EUR) |
-| 11 | El plan gratis puede usar la IA sin límite por Excel, y 10 lecturas a la vez | 🟡 | ⏳ decisión |
+| 11 | El plan gratis puede usar la IA sin límite por Excel, y 10 lecturas a la vez | 🟡 | ✅ |
 | 12 | Las notas de formato que aprende el lector se comparten sin revisión | 🟡 | ⏳ |
 | 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ✅ |
 | 14 | `xlsx` 0.18.5 tiene fallas conocidas al abrir Excel ajenos | 🟡 | ⏳ |
 | 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ⏳ |
-| 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ⏳ (panel) |
+| 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ✅ mínimo 8 · ⏳ filtradas (panel) |
 | 17 | El mail de auditoría de los viernes repetía todo y revisaba solo 1.000 movimientos | 🟡 | ✅ |
 | 18 | Detalles menores (lista abajo) | 🔵 | varios |
 
@@ -146,11 +146,14 @@ Probado: el euro del mes se guarda, y el resto queda bloqueado.
 
 **Hecho.** Los 10 movimientos que ya estaban se pasaron a EUR el 11/10. Queda pendiente agregar una restricción en la base para que no vuelva a entrar una moneda rara.
 
-## 🟡 11. Costos de IA en el plan gratis (⏳ decisión)
+## 🟡 11. Costos de IA en el plan gratis (✅)
 
 - `api/classifyRows.js`, la clasificación con IA al importar Excel, **no mira el plan**. Una cuenta gratis puede clasificar 500 filas por pedido, 20 pedidos por minuto, sin límite mensual.
-  - Si "Excel sin límite" incluye la IA, es una decisión de negocio. Si no, conviene limitarlo o clasificar solo con las reglas.
-- El cupo gratis ("1 resumen con IA por mes") se anota **al terminar** la lectura. Diez lecturas lanzadas a la vez pasan las diez. Se arregla reservando el cupo antes de llamar a la IA.
+  - ✅ Ahora el plan gratis tiene un tope de 15 clasificaciones con IA por día. Pasado el tope, el Excel se importa igual y las filas sin regla quedan para identificar, con un aviso que lo explica. Premium no cambia.
+- ✅ El cupo gratis ("1 resumen con IA por mes") se anotaba **al terminar** la lectura, y diez lecturas lanzadas a la vez pasaban las diez.
+  - Ahora una lectura gratis reserva su lugar antes de llamar a la IA (`reservarLecturaGratis`, atómico), y una segunda en paralelo recibe "Ya hay una lectura en curso".
+  - Si la lectura falla, la reserva se suelta *antes* de responder, para que el reintento automático de la app no choque con ella.
+  - Tiene tests (`lecturaGratisApi.test.js`).
 - ✅ `analyzeImage` descontaba el cupo aunque no hubiera podido leer la imagen. Ahora no, igual que los otros dos endpoints.
 
 ## 🟡 12. Notas de formato compartidas sin revisión (⏳)
@@ -193,8 +196,8 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 
 ## 🟡 16. Contraseñas (⏳, se cambia en el panel)
 
-- La protección contra contraseñas filtradas (HaveIBeenPwned) está desactivada: Supabase → Authentication → Policies/Passwords.
-- El registro acepta contraseñas de 6 caracteres; lo recomendado es 8.
+- ⏳ La protección contra contraseñas filtradas (HaveIBeenPwned) está desactivada. Se activa en el panel: Supabase → Authentication → Policies/Passwords.
+- ✅ Las contraseñas nuevas piden 8 caracteres (registro, olvidé mi contraseña y cambio de contraseña). Las que ya existen siguen andando.
 
 ---
 
@@ -224,12 +227,16 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 - ⏳ Sin restricciones en `transactions.moneda`, `tipo` y `monto > 0`. Agregarlas después de limpiar lo de arriba.
 - ⏳ Políticas duplicadas: `users_own_*` y "usuarios ven sus datos" hacen lo mismo. Además, `auth.uid()` se evalúa por fila. No afecta hoy (7.500 movimientos), pero sí a escala (advisor de performance). La migración suma 5 índices para las consultas de siempre.
 - ⏳ **No hay forma de borrar una cuenta.** Las referencias a `auth.users` no borran en cascada, y no existe "Eliminar mi cuenta". Para la Ley 25.326 conviene tenerlo.
-- ⏳ `vercel.json`: falta una Content-Security-Policy, y `X-XSS-Protection` ya no hace nada en los navegadores actuales.
+- ✅ `vercel.json`: `X-XSS-Protection: 0` (el valor recomendado hoy) y `Permissions-Policy` para micrófono, ubicación, pagos y USB.
+- ⏳ Falta una Content-Security-Policy. Conviene hacerla con cuidado, en modo "solo reportar" primero, porque una mal armada deja la app en blanco.
 - ⏳ `react-router-dom` 7.17 tiene un aviso de *open redirect*. Acá no se puede aprovechar, porque no se navega a direcciones que escriba el usuario, pero actualizar a 7.18 no cuesta nada.
 - ✅ Una dirección inexistente (`/cualquier-cosa`) mostraba la pantalla en blanco: ahora lleva al inicio.
-- ⏳ `ConfigPanel`: la palabra clave de una regla va sin escapar dentro de un filtro `.or()`. Una coma en la palabra rompe el conteo de pendientes.
-- ⏳ `cron-reclasificar` no pagina: cada noche revisa como máximo 1.000 movimientos sin identificar. Además, una regla muy corta (ej. "MP") puede clasificar de más.
-- ⏳ Accesibilidad: 46 campos con `outline: none` y ningún estilo de foco. Con teclado no se ve dónde estás.
+- ✅ `ConfigPanel`: la palabra clave de una regla con coma o paréntesis rompía el filtro `.or()`. Ahora va entre comillas, solo en ese caso.
+- ✅ `cron-reclasificar`:
+  - pagina (revisaba como máximo 1.000 movimientos sin identificar por noche);
+  - ignora reglas de menos de 3 letras, que clasificaban de más;
+  - ignora las preferencias guardadas en `user_rules`.
+- ✅ Accesibilidad: con teclado no se veía dónde estaba el foco. Ahora botones, links, selects y casillas muestran un contorno al navegar con Tab (`:focus-visible`, no aparece al tocar).
 - ⏳ Mantenimiento: `Dashboard.js` tiene 6.100 líneas y 115 `useState`, y `AccountDetail.js` 5.100. Hay ayudantes repetidos: `hoyLocal` en 5 archivos, `fetchAllPages` en 3.
 - Un usuario de los 12 no tiene perfil. No traba nada: se lo toma como plan gratis.
 

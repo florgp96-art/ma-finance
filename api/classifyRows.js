@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit } from './_lib/rateLimit.js'
+import { getUserPlan } from './_lib/plan.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -10,6 +11,12 @@ export const maxDuration = 60
 
 const BATCH_SIZE = 30
 const MAX_ROWS = 500
+// El plan gratis importa Excel sin límite, pero la clasificación con IA de las filas
+// sin regla tiene un tope diario: cada pedido son hasta 500 filas mandadas a Claude, y
+// sin tope una cuenta gratis podía generar costo sin fin. Pasado el tope, la app sigue
+// importando y deja esas filas para identificar a mano.
+const PEDIDOS_GRATIS_POR_DIA = 15
+const UN_DIA_MS = 24 * 60 * 60 * 1000
 
 async function classifyBatch(batch, categories, subcategories, children, aliases) {
   const categoriesText = (categories || []).map(c => {
@@ -105,8 +112,21 @@ export default async function handler(req, res) {
   if (!await checkRateLimit(`classifyRows:${user.id}`, 20)) return res.status(429).json({ error: 'Too many requests' })
 
   const { rows, categories, subcategories, children, aliases } = req.body
-  if (!rows || rows.length === 0) return res.status(400).json({ error: 'No rows provided' })
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'No rows provided' })
   if (rows.length > MAX_ROWS) return res.status(400).json({ error: `Too many rows (max ${MAX_ROWS})` })
+
+  let esPremium = true
+  try {
+    esPremium = (await getUserPlan(supabaseAdmin, user.id)).isPremium
+  } catch (e) {
+    console.error('Error leyendo plan del usuario:', e.message)
+  }
+  if (!esPremium && !await checkRateLimit(`classifyRows-gratis-dia:${user.id}`, PEDIDOS_GRATIS_POR_DIA, UN_DIA_MS)) {
+    return res.status(429).json({
+      error: 'Por hoy ya se usó la clasificación automática del plan gratis. El Excel se importa igual y las filas sin regla quedan para identificar; mañana vuelve a andar.',
+      code: 'CLASIFICACION_GRATIS_AGOTADA',
+    })
+  }
 
   try {
     const allClassifications = []

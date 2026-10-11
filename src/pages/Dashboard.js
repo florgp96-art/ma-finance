@@ -1444,8 +1444,17 @@ export default function Dashboard() {
             aliases: userAliases
           })
         })
-        if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
-        const { classifications } = await response.json()
+        let classifications
+        const cuerpoClasificacion = await response.json().catch(() => ({}))
+        if (response.status === 429 && cuerpoClasificacion.code === 'CLASIFICACION_GRATIS_AGOTADA') {
+          // Tope diario del plan gratis: el Excel se importa igual y lo que no tenía
+          // regla queda para identificar a mano.
+          showToast(cuerpoClasificacion.error, 'error')
+          classifications = rowsNeedingClassification.map(r => ({ categoria: 'A Identificar', subcategoria: null, hijo: null, nombre: r.notas || r.descripcion || '' }))
+        } else {
+          if (!response.ok) throw new Error(`Error clasificando filas (${response.status})`)
+          classifications = cuerpoClasificacion.classifications
+        }
 
         const applyAliases = (cat, subcat, descripcion) => {
           const desc = (descripcion || '').toUpperCase()
@@ -1869,6 +1878,10 @@ export default function Dashboard() {
         const errPlan = new Error(body.error || 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite.')
         errPlan.esLimitePlan = true
         throw errPlan
+      }
+      if (response.status === 429) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.code === 'LECTURA_EN_CURSO' ? body.error : 'Hay demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.')
       }
       if ([502, 503, 504, 524].includes(response.status)) {
         throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')

@@ -33,7 +33,9 @@ export default function Register() {
     e.preventDefault()
     setError('')
     if (!nombreCompleto.trim()) { setError('El nombre completo es obligatorio'); return }
-    if (password.length < 6) { setError('La contraseña tiene que tener al menos 6 caracteres.'); return }
+    // 8 y no 6: con 6 caracteres una contraseña se adivina en minutos. Las que ya
+    // existen siguen andando: esto solo se pide al elegir una nueva.
+    if (password.length < 8) { setError('La contraseña tiene que tener al menos 8 caracteres.'); return }
     if (password !== confirm) { setError('Las contraseñas no coinciden'); return }
     setLoading(true)
     const { error } = await supabase.auth.signUp({
@@ -101,7 +103,7 @@ export default function Register() {
           </div>
           <div style={styles.field}>
             <label style={styles.label}>Contraseña</label>
-            <input style={styles.input} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" required />
+            <input style={styles.input} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" required />
           </div>
           <div style={styles.field}>
             <label style={styles.label}>Confirmar contraseña</label>
