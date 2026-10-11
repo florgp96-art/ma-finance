@@ -14,7 +14,7 @@ export default function ResetPassword({ onDone }) {
 
   const handleSubmit = async () => {
     setError('')
-    if (password.length < 6) { setError('La contraseña tiene que tener al menos 6 caracteres.'); return }
+    if (password.length < 8) { setError('La contraseña tiene que tener al menos 8 caracteres.'); return }
     if (password !== confirm) { setError('Las contraseñas no coinciden.'); return }
     setLoading(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
@@ -46,7 +46,7 @@ export default function ResetPassword({ onDone }) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Mínimo 8 caracteres"
             autoComplete="new-password"
           />
         </div>

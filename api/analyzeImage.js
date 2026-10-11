@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit } from './_lib/rateLimit.js'
-import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage } from './_lib/plan.js'
+import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage, reservarLecturaGratis, RESPUESTA_LECTURA_EN_CURSO } from './_lib/plan.js'
 
 const supabaseAdmin = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -55,106 +55,126 @@ export default async function handler(req, res) {
     }
   }
 
-  let userRulesBlock = ''
-  if (userRules && userRules.length > 0) {
-    const rulesText = userRules
-      .map(r => {
-        // El nombre aprendido viaja con la regla: es lo que hace que un comercio con
-        // sigla ilegible ("STB KM 43") vuelva a salir con su nombre real ("Starbucks")
-        // en vez de quedar como no identificado en cada carga.
-        const nombreAprendido = r.nombre_asignado && r.nombre_asignado !== r.texto_original
-          ? `, nombre_limpio: "${r.nombre_asignado}"`
-          : ''
-        return `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"${nombreAprendido}`
-      })
-      .join('\n')
-    userRulesBlock = `
-═══════════════════════════════
-REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
-═══════════════════════════════
-Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada.
-Cuando la regla trae un nombre_limpio, devolvé EXACTAMENTE ese nombre en el campo nombre_limpio de esa transacción: es el nombre con el que el usuario reconoce a ese comercio (ej. "STB KM 43" es su Starbucks). Si lo ignorás y dejás la sigla del banco, la app da el movimiento por no identificado y le vuelve a preguntar algo que ya contestó.
-${rulesText}
-`
+  // Una lectura gratis a la vez (ver reservarLecturaGratis en _lib/plan.js). Si no sale
+  // bien, la reserva se suelta en el finally para poder reintentar enseguida.
+  let reserva = null
+  if (!esPremium) {
+    reserva = await reservarLecturaGratis(supabaseAdmin, user.id)
+    if (!reserva.ok) return res.status(429).json(RESPUESTA_LECTURA_EN_CURSO)
   }
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.CLAUDE_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mediaType || 'image/jpeg',
-              data: imageBase64,
-            }
-          },
-          {
-            type: 'text',
-            text: `Analizá esta imagen que puede ser una lista de gastos manual, screenshot de resumen bancario, foto de ticket, o similar${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Extraé todas las transacciones que veas. Devolvé SOLO JSON válido con esta estructura exacta:
-
-{"tipo_documento":"tarjeta","tarjeta_detectada":"Detectado de la imagen","periodo":"Mayo 2026","fecha_facturacion":null,"fecha_vencimiento":null,"proximo_cierre":null,"proximo_vencimiento":null,"total_pesos":null,"total_dolares":null,"adicionales":[],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"Descripción original","nombre_limpio":"Nombre legible","categoria_sugerida":"Comida","subcategoria_sugerida":null,"monto":5000,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":null}]}
-
-Si no podés leer claramente algún campo, usá null. Si la imagen no tiene transacciones reconocibles, devolvé transacciones vacío [].
-
-HOY es ${new Date().toISOString().slice(0, 10)}. Usalo para completar el AÑO de cualquier fecha que se vea sin año (común en Mercado Pago y en screenshots de apps de banco, que muestran solo día y mes) — elegí el año que hace que esa fecha caiga cerca de HOY. Nunca uses un año "por defecto" ni el de tu propio conocimiento: errarlo deja la transacción fechada años en el pasado, y aunque se guarda igual, desaparece de cualquier vista del período real.
-
-${userRulesBlock}
-
-CATEGORÍAS DISPONIBLES:
-- Comida → Supermercado, Delivery
-- Transporte → Nafta, Uber/Cabify, Estacionamiento
-- Salud → Farmacia, Médicos, Obra social
-- Educación → Colegio, Cursos
-- Ropa → sin subcategoría
-- Entretenimiento → Salidas
-- Personal → Regalos, Peluquería, Varios
-- Suscripciones → sin subcategoría
-- Casa → Alquiler, Expensas, Luz, Gas, Internet
-- Trabajo → Freelance, Monotributo
-- Ingresos → Sueldo, Freelance, Otros
-- Débitos → Impuestos, Intereses
-- A Identificar → sin subcategoría`
-          }
-        ]
-      }]
-    })
-  })
-
-  if (!response.ok) {
-    const err = await response.text()
-    return res.status(502).json({ error: `Claude API error ${response.status}: ${err.slice(0, 200)}` })
+  let exito = false
+  let soltada = false
+  // Los errores sueltan la reserva ANTES de responder: la app reintenta sola un 422,
+  // y si la reserva se soltaba después, el reintento chocaba con ella.
+  const fallar = async (status, cuerpo) => {
+    if (reserva && !soltada) { soltada = true; await reserva.soltar() }
+    return res.status(status).json(cuerpo)
   }
-
-  const data = await response.json()
-
-  let leida = false
   try {
-    const textBlock = data?.content?.find(b => b.type === 'text')
-    if (textBlock?.text) {
-      const clean = textBlock.text
-        .replace(/^```json\s*/i, '')
-        .replace(/\s*```\s*$/i, '')
-        .trim()
-      const parsed = JSON.parse(clean)
-      textBlock.text = JSON.stringify(parsed)
-      leida = true
+    let userRulesBlock = ''
+    if (userRules && userRules.length > 0) {
+      const rulesText = userRules
+        .map(r => {
+          // El nombre aprendido viaja con la regla: es lo que hace que un comercio con
+          // sigla ilegible ("STB KM 43") vuelva a salir con su nombre real ("Starbucks")
+          // en vez de quedar como no identificado en cada carga.
+          const nombreAprendido = r.nombre_asignado && r.nombre_asignado !== r.texto_original
+            ? `, nombre_limpio: "${r.nombre_asignado}"`
+            : ''
+          return `- "${r.texto_original}" → categoría: "${r.categoria}", subcategoría: "${r.subcategoria || ''}"${nombreAprendido}`
+        })
+        .join('\n')
+      userRulesBlock = `
+  ═══════════════════════════════
+  REGLAS APRENDIDAS DEL USUARIO (PRIORIDAD MÁXIMA):
+  ═══════════════════════════════
+  Aplicá estas reglas ANTES que cualquier otra. Si el nombre de una transacción coincide (parcial o exactamente), usá la categoría indicada.
+  Cuando la regla trae un nombre_limpio, devolvé EXACTAMENTE ese nombre en el campo nombre_limpio de esa transacción: es el nombre con el que el usuario reconoce a ese comercio (ej. "STB KM 43" es su Starbucks). Si lo ignorás y dejás la sigla del banco, la app da el movimiento por no identificado y le vuelve a preguntar algo que ya contestó.
+  ${rulesText}
+  `
     }
-  } catch (e) {
-    console.error('Error procesando imagen:', e.message)
-  }
 
-  // Como en analyze.js: una lectura que no sirvió no consume el cupo del plan gratis.
-  if (!esPremium && leida) await recordAiUsage(supabaseAdmin, user.id)
-  res.status(200).json(data)
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType || 'image/jpeg',
+                data: imageBase64,
+              }
+            },
+            {
+              type: 'text',
+              text: `Analizá esta imagen que puede ser una lista de gastos manual, screenshot de resumen bancario, foto de ticket, o similar${cardName && cardName !== 'auto' ? ` de "${cardName}"` : ''}. Extraé todas las transacciones que veas. Devolvé SOLO JSON válido con esta estructura exacta:
+
+  {"tipo_documento":"tarjeta","tarjeta_detectada":"Detectado de la imagen","periodo":"Mayo 2026","fecha_facturacion":null,"fecha_vencimiento":null,"proximo_cierre":null,"proximo_vencimiento":null,"total_pesos":null,"total_dolares":null,"adicionales":[],"contexto_detectado":[],"transacciones":[{"fecha":"2026-05-21","nombre_original":"Descripción original","nombre_limpio":"Nombre legible","categoria_sugerida":"Comida","subcategoria_sugerida":null,"monto":5000,"moneda":"ARS","tipo":"gasto","es_credito":false,"cuotas_total":1,"cuota_numero":1,"monto_total_cuotas":null,"es_impuesto":false,"titular":null}]}
+
+  Si no podés leer claramente algún campo, usá null. Si la imagen no tiene transacciones reconocibles, devolvé transacciones vacío [].
+
+  HOY es ${new Date().toISOString().slice(0, 10)}. Usalo para completar el AÑO de cualquier fecha que se vea sin año (común en Mercado Pago y en screenshots de apps de banco, que muestran solo día y mes) — elegí el año que hace que esa fecha caiga cerca de HOY. Nunca uses un año "por defecto" ni el de tu propio conocimiento: errarlo deja la transacción fechada años en el pasado, y aunque se guarda igual, desaparece de cualquier vista del período real.
+
+  ${userRulesBlock}
+
+  CATEGORÍAS DISPONIBLES:
+  - Comida → Supermercado, Delivery
+  - Transporte → Nafta, Uber/Cabify, Estacionamiento
+  - Salud → Farmacia, Médicos, Obra social
+  - Educación → Colegio, Cursos
+  - Ropa → sin subcategoría
+  - Entretenimiento → Salidas
+  - Personal → Regalos, Peluquería, Varios
+  - Suscripciones → sin subcategoría
+  - Casa → Alquiler, Expensas, Luz, Gas, Internet
+  - Trabajo → Freelance, Monotributo
+  - Ingresos → Sueldo, Freelance, Otros
+  - Débitos → Impuestos, Intereses
+  - A Identificar → sin subcategoría`
+            }
+          ]
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const err = await response.text()
+      return fallar(502, { error: `Claude API error ${response.status}: ${err.slice(0, 200)}` })
+    }
+
+    const data = await response.json()
+
+    let leida = false
+    try {
+      const textBlock = data?.content?.find(b => b.type === 'text')
+      if (textBlock?.text) {
+        const clean = textBlock.text
+          .replace(/^```json\s*/i, '')
+          .replace(/\s*```\s*$/i, '')
+          .trim()
+        const parsed = JSON.parse(clean)
+        textBlock.text = JSON.stringify(parsed)
+        leida = true
+      }
+    } catch (e) {
+      console.error('Error procesando imagen:', e.message)
+    }
+
+    // Como en analyze.js: una lectura que no sirvió no consume el cupo del plan gratis.
+    exito = leida
+    if (!esPremium && leida) await recordAiUsage(supabaseAdmin, user.id)
+    res.status(200).json(data)
+  } finally {
+    if (reserva && !exito && !soltada) await reserva.soltar()
+  }
 }

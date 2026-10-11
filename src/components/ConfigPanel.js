@@ -5,6 +5,16 @@ import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountD
 import { semaforo } from '../theme'
 import { parseMonto, montoParaEditar } from '../lib/formato'
 
+// La palabra clave de una regla va adentro de un filtro .or() de PostgREST, que separa
+// las condiciones con comas y las agrupa con paréntesis: una palabra con coma o
+// paréntesis rompía el filtro. Solo en ese caso va entre comillas (como pide
+// PostgREST); el resto queda igual que siempre.
+const filtroContiene = (texto) => {
+  const t = String(texto ?? '')
+  const valor = /[,()"\\]/.test(t) ? `"%${t.replace(/["\\]/g, '\\$&')}%"` : `%${t}%`
+  return `detalle.ilike.${valor},nombre.ilike.${valor}`
+}
+
 const ConfigPanel = forwardRef(function ConfigPanel({
   darkMode,
   isMobile,
@@ -383,7 +393,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
   const handleCambiarClave = async (e) => {
     e.preventDefault()
     setClaveMsg(null)
-    if (nuevaClave.length < 6) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 6 caracteres.' }); return }
+    if (nuevaClave.length < 8) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 8 caracteres.' }); return }
     if (nuevaClave !== confirmarClave) { setClaveMsg({ tipo: 'error', texto: 'Las contraseñas no coinciden.' }); return }
     const { error } = await supabase.auth.updateUser({ password: nuevaClave })
     if (error) { setClaveMsg({ tipo: 'error', texto: error.message }); return }
@@ -413,7 +423,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const { data: matches } = await supabase.from('transactions')
         .select('id, category_id, subcategory_id')
         .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        .or(filtroContiene(aliasKeyword))
       if (!matches) return 0
       return matches.filter(m => m.category_id !== catObj.id || (subcatObj ? m.subcategory_id !== subcatObj.id : false)).length
     }
@@ -427,10 +437,10 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const [{ data: matchesGasto }, { data: matchesIngreso }] = await Promise.all([
         supabase.from('transactions').select('id, tag')
           .eq('user_id', user.id).eq('tipo', 'gasto')
-          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+          .or(filtroContiene(aliasKeyword)),
         supabase.from('transactions').select('id, child_id')
           .eq('user_id', user.id).eq('tipo', 'ingreso')
-          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`),
+          .or(filtroContiene(aliasKeyword)),
       ])
       const pendGasto = (matchesGasto || []).filter(m => m.tag !== alias.valor).length
       const pendIngreso = childObj ? (matchesIngreso || []).filter(m => m.child_id !== childObj.id).length : 0
@@ -446,7 +456,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const { data: matches } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).neq('tipo', 'neutro')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        .or(filtroContiene(aliasKeyword))
       return matches?.length || 0
     }
     return 0
@@ -464,7 +474,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const { data: matches } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        .or(filtroContiene(aliasKeyword))
       if (!matches || matches.length === 0) return 0
       await supabase.from('transactions').update({
         category_id: catObj.id,
@@ -480,7 +490,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const { data: matchesGasto } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).eq('tipo', 'gasto')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        .or(filtroContiene(aliasKeyword))
       if (matchesGasto && matchesGasto.length > 0) {
         await supabase.from('transactions').update({ tag: alias.valor }).in('id', matchesGasto.map(m => m.id))
       }
@@ -489,7 +499,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
         const { data: matchesIngreso } = await supabase.from('transactions')
           .select('id')
           .eq('user_id', user.id).eq('tipo', 'ingreso')
-          .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+          .or(filtroContiene(aliasKeyword))
         if (matchesIngreso && matchesIngreso.length > 0) {
           await supabase.from('transactions').update({ child_id: childObj.id, estado: 'identificado' }).in('id', matchesIngreso.map(m => m.id))
           totalIngreso = matchesIngreso.length
@@ -503,7 +513,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
       const { data: matches } = await supabase.from('transactions')
         .select('id')
         .eq('user_id', user.id).neq('tipo', 'neutro')
-        .or(`detalle.ilike.%${aliasKeyword}%,nombre.ilike.%${aliasKeyword}%`)
+        .or(filtroContiene(aliasKeyword))
       if (!matches || matches.length === 0) return 0
       await supabase.from('transactions').update({ tipo: 'neutro', estado: 'identificado' }).in('id', matches.map(m => m.id))
       return matches.length
@@ -1053,7 +1063,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                 <input
                   type="password"
                   style={s.input}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   value={nuevaClave}
                   onChange={e => setNuevaClave(e.target.value)}
                   required

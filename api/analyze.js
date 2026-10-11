@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { buildAnalysisPrompt, salvageClaudeJson, leerRespuestaAnalisis, describirRespuesta } from './_lib/analyzePrompt.js'
 import { checkRateLimit } from './_lib/rateLimit.js'
-import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage } from './_lib/plan.js'
+import { getUserPlan, hasUsedMonthlyAiQuota, recordAiUsage, reservarLecturaGratis, RESPUESTA_LECTURA_EN_CURSO } from './_lib/plan.js'
 import { leerNotasFormato } from './_lib/formatosLectura.js'
 import { revisarLectura } from './_lib/revisarLectura.js'
 
@@ -61,52 +61,72 @@ export default async function handler(req, res) {
     }
   }
 
-  // Lo aprendido de los formatos de cada entidad en revisiones anteriores (ver
-  // api/_lib/revisarLectura.js). Si no se puede leer, se sigue sin notas.
-  const notasFormato = await leerNotasFormato(supabaseAdmin)
-  const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, notasFormato, fechaHoy: new Date().toISOString().slice(0, 10) })
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.CLAUDE_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 32000,
-      messages: [{
-        role: 'user',
-        content: `${prompt}
-
-EXTRACTO:
-${pdfText}`
-      }]
-    })
-  })
-
-  if (!response.ok) {
-    const err = await response.text()
-    return res.status(502).json({ error: `Claude API error ${response.status}: ${err.slice(0, 200)}` })
+  // Una lectura gratis a la vez (ver reservarLecturaGratis en _lib/plan.js). Si no sale
+  // bien, la reserva se suelta en el finally para poder reintentar enseguida.
+  let reserva = null
+  if (!esPremium) {
+    reserva = await reservarLecturaGratis(supabaseAdmin, user.id)
+    if (!reserva.ok) return res.status(429).json(RESPUESTA_LECTURA_EN_CURSO)
   }
-
-  const data = salvageClaudeJson(await response.json())
-
-  // Si la IA no devolvió un JSON con movimientos no hay nada que importar: se
-  // corta acá con un 422 y el motivo, en vez de mandarle al cliente algo que
-  // no puede parsear. Y no se consume el cupo del plan gratis: el intento no
-  // sirvió, así que no se cobra.
-  if (!leerRespuestaAnalisis(data)) {
-    const detalle = describirRespuesta(data)
-    console.error('Respuesta inservible de Claude:', JSON.stringify(detalle))
-    return res.status(422).json({
-      error: 'La IA no devolvió el resumen en el formato esperado',
-      code: 'RESPUESTA_NO_UTIL',
-      ...detalle,
-    })
+  let exito = false
+  let soltada = false
+  // Los errores sueltan la reserva ANTES de responder: la app reintenta sola un 422,
+  // y si la reserva se soltaba después, el reintento chocaba con ella.
+  const fallar = async (status, cuerpo) => {
+    if (reserva && !soltada) { soltada = true; await reserva.soltar() }
+    return res.status(status).json(cuerpo)
   }
+  try {
+    // Lo aprendido de los formatos de cada entidad en revisiones anteriores (ver
+    // api/_lib/revisarLectura.js). Si no se puede leer, se sigue sin notas.
+    const notasFormato = await leerNotasFormato(supabaseAdmin)
+    const prompt = buildAnalysisPrompt({ cardName, userRules, incomeExamples, categories, subcategories, children, aliases, notasFormato, fechaHoy: new Date().toISOString().slice(0, 10) })
 
-  if (!esPremium) await recordAiUsage(supabaseAdmin, user.id)
-  res.status(200).json(data)
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 32000,
+        messages: [{
+          role: 'user',
+          content: `${prompt}
+
+  EXTRACTO:
+  ${pdfText}`
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const err = await response.text()
+      return fallar(502, { error: `Claude API error ${response.status}: ${err.slice(0, 200)}` })
+    }
+
+    const data = salvageClaudeJson(await response.json())
+
+    // Si la IA no devolvió un JSON con movimientos no hay nada que importar: se
+    // corta acá con un 422 y el motivo, en vez de mandarle al cliente algo que
+    // no puede parsear. Y no se consume el cupo del plan gratis: el intento no
+    // sirvió, así que no se cobra.
+    if (!leerRespuestaAnalisis(data)) {
+      const detalle = describirRespuesta(data)
+      console.error('Respuesta inservible de Claude:', JSON.stringify(detalle))
+      return fallar(422, {
+        error: 'La IA no devolvió el resumen en el formato esperado',
+        code: 'RESPUESTA_NO_UTIL',
+        ...detalle,
+      })
+    }
+
+    exito = true
+    if (!esPremium) await recordAiUsage(supabaseAdmin, user.id)
+    res.status(200).json(data)
+  } finally {
+    if (reserva && !exito && !soltada) await reserva.soltar()
+  }
 }

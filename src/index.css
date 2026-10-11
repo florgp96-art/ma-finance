@@ -272,3 +272,16 @@ input:-webkit-autofill:focus {
   background-color: #241F24;
   color: #F0EDEC;
 }
+
+/* Foco visible al navegar con teclado. Los estilos de la app sacan el contorno
+   nativo (outline: none) en casi todos los controles, y con Tab no se veía dónde
+   estaba parado uno. :focus-visible no aparece al tocar con el dedo o el mouse. */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--m-7c5cbf) !important;
+  outline-offset: 2px;
+}

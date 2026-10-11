@@ -147,6 +147,13 @@ const parseAnalyzeResponse = async (response) => {
     if ([502, 503, 504, 524].includes(response.status)) {
       throw new Error('El extracto tardó demasiado en procesarse (puede ser muy largo o el servidor está ocupado). Probá de nuevo, o si el PDF es muy largo intentá dividirlo en partes más chicas.')
     }
+    // Una lectura gratis a la vez (ver reservarLecturaGratis en api/_lib/plan.js), o
+    // demasiados pedidos seguidos: el servidor dice qué pasa.
+    if (response.status === 429) {
+      throw new Error(body.error === 'Too many requests'
+        ? 'Hay demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.'
+        : (body.error || 'Hay demasiados pedidos seguidos. Esperá un minuto y volvé a intentar.'))
+    }
     if (response.status === 413) {
       throw new Error('El PDF es demasiado pesado. Probá descargar el resumen original desde el home banking (suele pesar menos que una versión escaneada).')
     }

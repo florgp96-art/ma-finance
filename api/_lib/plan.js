@@ -49,3 +49,35 @@ export async function recordAiUsage(supabaseAdmin, userId) {
   const { error } = await supabaseAdmin.from('ai_usage').insert({ user_id: userId })
   if (error) console.error('Error registrando uso de IA:', error.message)
 }
+
+// Una lectura con IA del plan gratis a la vez. El cupo (1 por mes) se anota recién
+// cuando la lectura sale bien, así que diez pedidos lanzados juntos pasaban los diez
+// el chequeo de hasUsedMonthlyAiQuota antes de que se anotara el primero. La reserva
+// es atómica (consume_rate_limit) y se suelta si la lectura falla, para poder
+// reintentar enseguida. Si la base no responde, se deja pasar: el mismo criterio que
+// el resto de los límites (ver rateLimit.js).
+const RESERVA_MS = 10 * 60 * 1000
+
+export async function reservarLecturaGratis(supabaseAdmin, userId) {
+  const clave = `ia-gratis-en-curso:${userId}`
+  const soltar = async () => {
+    const { error } = await supabaseAdmin.from('rate_limits').delete().eq('key', clave)
+    if (error) console.error('No se pudo soltar la reserva de lectura gratis:', error.message)
+  }
+  try {
+    const { data, error } = await supabaseAdmin.rpc('consume_rate_limit', { p_key: clave, p_limit: 1, p_window_ms: RESERVA_MS })
+    if (error) {
+      console.error('No se pudo reservar la lectura gratis:', error.message)
+      return { ok: true, soltar: async () => {} }
+    }
+    return data === false ? { ok: false, soltar: async () => {} } : { ok: true, soltar }
+  } catch (e) {
+    console.error('No se pudo reservar la lectura gratis:', e.message)
+    return { ok: true, soltar: async () => {} }
+  }
+}
+
+export const RESPUESTA_LECTURA_EN_CURSO = {
+  error: 'Ya hay una lectura en curso. Esperá a que termine y volvé a intentar.',
+  code: 'LECTURA_EN_CURSO',
+}
