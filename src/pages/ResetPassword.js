@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { paleta, leerDarkMode, FONT, RADIUS, logoDelModo } from '../theme'
+import { traducirErrorAuth } from '../lib/erroresAuth'
 
 // Pantalla que se muestra en vez del Dashboard cuando la sesión viene del link
 // de "olvidé mi contraseña" (evento PASSWORD_RECOVERY, ver useAuth.js) — antes
@@ -19,7 +20,7 @@ export default function ResetPassword({ onDone }) {
     setLoading(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
     setLoading(false)
-    if (updateError) { setError('No se pudo cambiar la contraseña: ' + updateError.message); return }
+    if (updateError) { setError('No se pudo cambiar la contraseña: ' + traducirErrorAuth(updateError)); return }
     onDone()
   }
 

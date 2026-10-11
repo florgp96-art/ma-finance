@@ -2,18 +2,7 @@ import React, { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 import { APP_NAME, paleta, leerDarkMode, FONT, RADIUS } from '../theme'
-
-// Traducción de los mensajes de error más comunes que devuelve Supabase (en
-// inglés) — sin esto, un error de signup se mostraba en inglés en medio de
-// una UI en español. Si no matchea ninguno, se muestra el mensaje original.
-const traducirError = (msg) => {
-  const m = (msg || '').toLowerCase()
-  if (m.includes('already registered') || m.includes('already exists')) return 'Ese email ya está registrado. Iniciá sesión en vez de crear una cuenta nueva.'
-  if (m.includes('password') && m.includes('6 characters')) return 'La contraseña tiene que tener al menos 6 caracteres.'
-  if (m.includes('invalid') && m.includes('email')) return 'El email no es válido.'
-  if (m.includes('rate limit')) return 'Demasiados intentos. Esperá un momento y probá de nuevo.'
-  return msg
-}
+import { traducirErrorAuth } from '../lib/erroresAuth'
 
 export default function Register() {
   const [email, setEmail] = useState('')
@@ -46,7 +35,7 @@ export default function Register() {
         data: { full_name: nombreCompleto.trim() }
       }
     })
-    if (error) { setError(traducirError(error.message)) } else { setSent(true) }
+    if (error) { setError(traducirErrorAuth(error)) } else { setSent(true) }
     setLoading(false)
   }
 
