@@ -4,7 +4,7 @@ Fecha: 10 de octubre de 2026. Alcance: base de datos de Supabase (Mom's Assist F
 
 Cómo se verificó: las fallas de permisos se probaron en la base real **dentro de una transacción que se deshizo al final** (no quedó nada cambiado), con la sesión de un usuario logueado. El resto, leyendo el código, corriendo los tests y el build, y con capturas de la app.
 
-Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en este PR · 🗄️ arreglado en la migración `supabase/migrations/20261010000000_auditoria_seguridad.sql` · ⏳ pendiente.
+Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en código · 🗄️ arreglado en la base con la migración `supabase/migrations/20261010000000_auditoria_seguridad.sql`, **ya aplicada el 11/10** · ⏳ pendiente.
 
 ---
 
@@ -21,14 +21,15 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 7 | Fotos y PDF de más de ~3 MB fallan con "Load failed" | 🟠 | ⏳ |
 | 8 | Funciones de la base ejecutables sin iniciar sesión | 🟡 | 🗄️ |
 | 9 | El aviso de registro mandaba el hash de la contraseña | 🟡 | 🗄️ |
-| 10 | Monedas desconocidas ("EURc") sumadas como pesos | 🟡 | ✅ lo nuevo · ⏳ 10 movimientos viejos |
+| 10 | Monedas desconocidas ("EURc") sumadas como pesos | 🟡 | ✅ (y los 10 viejos pasados a EUR) |
 | 11 | El plan gratis puede usar la IA sin límite por Excel, y 10 lecturas a la vez | 🟡 | ⏳ decisión |
 | 12 | Las notas de formato que aprende el lector se comparten sin revisión | 🟡 | ⏳ |
 | 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ⏳ |
 | 14 | `xlsx` 0.18.5 tiene fallas conocidas al abrir Excel ajenos | 🟡 | ⏳ |
 | 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ⏳ |
 | 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ⏳ (panel) |
-| 17 | Detalles menores (lista abajo) | 🔵 | varios |
+| 17 | El mail de auditoría de los viernes repetía todo y revisaba solo 1.000 movimientos | 🟡 | ✅ |
+| 18 | Detalles menores (lista abajo) | 🔵 | varios |
 
 ---
 
@@ -143,7 +144,7 @@ Probado: el euro del mes se guarda, y el resto queda bloqueado.
 
 **Arreglo (✅).** `normalizarMoneda()` lleva lo que lee la IA a ARS, USD o EUR. Por ejemplo, EURc → EUR y USDT → USD.
 
-**Pendiente (⏳).** Corregir los 10 movimientos que ya están (`update transactions set moneda = 'EUR' where moneda = 'EURc'`). Después, agregar una restricción en la base para que no vuelva a entrar una moneda rara.
+**Hecho.** Los 10 movimientos que ya estaban se pasaron a EUR el 11/10. Queda pendiente agregar una restricción en la base para que no vuelva a entrar una moneda rara.
 
 ## 🟡 11. Costos de IA en el plan gratis (⏳ decisión)
 
@@ -190,11 +191,25 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 
 ---
 
-## 🔵 17. Detalles menores
+## 🟡 17. El mail de auditoría de los viernes (✅)
+
+**Qué pasaba.**
+- `api/cron-auditoria.js` mandaba todos los viernes la lista entera de hallazgos, aunque fueran los mismos de la semana anterior.
+- Además leía los movimientos sin paginar: revisaba solo los primeros 1.000 de los ~7.500.
+
+**Arreglo.**
+- Lee todos los movimientos.
+- Anota lo que ya avisó en `auditoria_hallazgos` (migración `20261011000000_auditoria_hallazgos.sql`, ya aplicada).
+- El mail lleva solo los hallazgos nuevos, más cuántos siguen abiertos y cuántos se resolvieron. Si no hay nada nuevo, no llega mail.
+- Lo que se resuelve sale de la memoria: si vuelve a pasar, se avisa de nuevo.
+- La primera corrida manda un único aviso corto ("desde ahora, solo lo nuevo").
+- Los textos del mail se escapan.
+
+## 🔵 18. Detalles menores
 
 - ✅ `api/reportBug.js`: el campo "página" iba sin escapar al HTML del mail.
-- ⏳ Tabla `transactions_backup_division3` (1.460 filas): es un backup viejo sin uso. Se puede borrar.
-- ⏳ Una categoría "Devoluciones" sin dueño (`user_id` vacío, no es del sistema). La política la deja ver a todos, aunque la app no la muestra.
+- ⏳ Tabla `transactions_backup_division3` (1.460 filas): es un backup viejo sin uso. Pero **548 de esas filas son movimientos que ya no existen** en `transactions`, así que borrarla es irreversible. Queda hasta que lo confirmes.
+- Una categoría "Devoluciones" sin dueño (`user_id` vacío, no es del sistema). **No se borró:** la usan 9 movimientos, 6 subcategorías y 3 reglas. Funciona como categoría compartida. Lo prolijo sería marcarla como del sistema.
 - ⏳ Datos para revisar con la herramienta de repetidos:
   - **8 resúmenes repetidos** (mismo cierre en la misma tarjeta): florgp96 4, bettyswarovski 3, valengp03 1;
   - **41 grupos de movimientos idénticos**: misma cuenta, fecha, monto y detalle;
