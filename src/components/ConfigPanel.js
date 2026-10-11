@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { CATEGORY_CONFIG, subcategoriasDeIngreso, rotuloLabel } from './AccountDetail'
 import { semaforo } from '../theme'
 import { parseMonto, montoParaEditar } from '../lib/formato'
+import { traducirErrorAuth } from '../lib/erroresAuth'
 
 // La palabra clave de una regla va adentro de un filtro .or() de PostgREST, que separa
 // las condiciones con comas y las agrupa con paréntesis: una palabra con coma o
@@ -396,7 +397,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
     if (nuevaClave.length < 8) { setClaveMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 8 caracteres.' }); return }
     if (nuevaClave !== confirmarClave) { setClaveMsg({ tipo: 'error', texto: 'Las contraseñas no coinciden.' }); return }
     const { error } = await supabase.auth.updateUser({ password: nuevaClave })
-    if (error) { setClaveMsg({ tipo: 'error', texto: error.message }); return }
+    if (error) { setClaveMsg({ tipo: 'error', texto: traducirErrorAuth(error) }); return }
     setClaveMsg({ tipo: 'ok', texto: '¡Contraseña actualizada correctamente!' })
     setNuevaClave('')
     setConfirmarClave('')
