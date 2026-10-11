@@ -26,6 +26,7 @@ import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/
 import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
 import { parseMonto, hoyLocal, mesLocal, normalizarMoneda } from '../lib/formato'
 import { importarModulo } from '../lib/cargaDiferida'
+import { prepararImagen } from '../lib/imagen'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { semaforo, aplicarTemaAlDocumento, aplicarModoAlDocumento, leerModo, logoDelModo, MODOS } from '../theme'
@@ -1851,42 +1852,34 @@ export default function Dashboard() {
   }
 
   const analyzeImageWithClaude = async (file, userRules, token) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        try {
-          const base64 = e.target.result.split(',')[1]
-          const mediaType = file.type || 'image/jpeg'
-          const headers = { 'Content-Type': 'application/json' }
-          if (token) headers['Authorization'] = `Bearer ${token}`
-          const response = await fetch('/api/analyzeImage', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
-          })
-          if (!response.ok) {
-            if (response.status === 402) {
-              const body = await response.json().catch(() => ({}))
-              // Igual que en pdfReader.js: es un límite del plan, no una falla.
-              const errPlan = new Error(body.error || 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite.')
-              errPlan.esLimitePlan = true
-              throw errPlan
-            }
-            if ([502, 503, 504, 524].includes(response.status)) {
-              throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')
-            }
-            throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
-          }
-          const data = await response.json()
-          const textBlock = data?.content?.find(b => b.type === 'text')
-          if (!textBlock?.text) throw new Error('Sin respuesta de Claude')
-          const clean = textBlock.text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-          resolve(JSON.parse(clean))
-        } catch (err) { reject(err) }
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(file)
+    // Achicada al tamaño que usa la IA (ver lib/imagen.js): una foto del celular tal
+    // cual pasaba el límite de 4,5 MB de Vercel y no llegaba nunca.
+    const { base64, mediaType } = await prepararImagen(file)
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const response = await fetch('/api/analyzeImage', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ imageBase64: base64, mediaType, cardName: 'auto', userRules: userRules || [] })
     })
+    if (!response.ok) {
+      if (response.status === 402) {
+        const body = await response.json().catch(() => ({}))
+        // Igual que en pdfReader.js: es un límite del plan, no una falla.
+        const errPlan = new Error(body.error || 'Este mes ya usaste tu resumen gratis. Podés seguir cargando a mano o por Excel sin límite.')
+        errPlan.esLimitePlan = true
+        throw errPlan
+      }
+      if ([502, 503, 504, 524].includes(response.status)) {
+        throw new Error('La imagen tardó demasiado en procesarse (el servidor está ocupado). Probá de nuevo en unos minutos.')
+      }
+      throw new Error(`Error del servidor (${response.status}). Probá de nuevo en unos minutos.`)
+    }
+    const data = await response.json()
+    const textBlock = data?.content?.find(b => b.type === 'text')
+    if (!textBlock?.text) throw new Error('Sin respuesta de Claude')
+    const clean = textBlock.text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    return JSON.parse(clean)
   }
 
   const tryDirectParsePDF = (text) => {
@@ -4994,7 +4987,7 @@ export default function Dashboard() {
                   {archivo ? (
                     <><p style={styles.dropzoneIcon}>✅</p><p style={styles.dropzoneText} title={archivo.name}>{acortarNombreArchivo(archivo.name)}</p><p style={styles.dropzoneHint}>Clickeá para cambiar</p></>
                   ) : (
-                    <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG, JPG · Máx. 10MB</p></>
+                    <><p style={styles.dropzoneIcon}>📄</p><p style={styles.dropzoneText}>Arrastrá el PDF o imagen acá, o clickeá para seleccionar</p><p style={styles.dropzoneHint}>PDF, PNG o JPG</p></>
                   )}
                 </div>
                 <label htmlFor="uploadInput" title={archivo ? archivo.name : undefined} style={{ display: 'block', marginTop: '10px', padding: '12px', backgroundColor: archivo ? 'transparent' : 'var(--m-5c4f5c)', color: archivo ? 'var(--m-5c4f5c)' : 'white', border: `2px solid var(--m-5c4f5c)`, borderRadius: '12px', textAlign: 'center', cursor: 'pointer', fontSize: '14px', fontWeight: '600', fontFamily: '"Montserrat", sans-serif', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
