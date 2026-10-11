@@ -24,7 +24,7 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 10 | Monedas desconocidas ("EURc") sumadas como pesos | 🟡 | ✅ (y los 10 viejos pasados a EUR) |
 | 11 | El plan gratis puede usar la IA sin límite por Excel, y 10 lecturas a la vez | 🟡 | ⏳ decisión |
 | 12 | Las notas de formato que aprende el lector se comparten sin revisión | 🟡 | ⏳ |
-| 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ⏳ |
+| 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ✅ |
 | 14 | `xlsx` 0.18.5 tiene fallas conocidas al abrir Excel ajenos | 🟡 | ⏳ |
 | 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ⏳ |
 | 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ⏳ (panel) |
@@ -164,11 +164,18 @@ Cuando una segunda lectura cierra con el total, el lector guarda una "nota de fo
 
 **Recomendado:** que una nota nueva quede "pendiente" hasta que la apruebes desde ese mail.
 
-## 🟡 13. La app pesa 623 kB comprimida (⏳)
+## 🟡 13. La app pesa 623 kB comprimida (✅)
 
 Todo va en un solo archivo de 2,2 MB (623 kB con gzip): pdf.js, xlsx y recharts se descargan aunque solo se entre a ver el resumen, y también en la pantalla de login. En el celular con datos se nota.
 
-**Propuesta:** cargar pdf.js y xlsx recién cuando se importa o se exporta (`import()` dinámico), y separar Login/Registro del Dashboard. Se estima que la carga inicial baja ~40 %.
+**Hecho.**
+- Cada pantalla, pdf.js, xlsx y el reporte para la contadora se descargan cuando hacen falta. La carga inicial bajó de **623 kB a 134 kB**. En el login se baja eso más 3 kB.
+- El worker de pdf.js sale de la propia app y no de cdnjs. Antes, si el CDN no respondía, el PDF se mandaba entero a la IA.
+- Si alguien tenía la app abierta durante un despliegue y pide un archivo que ya no existe (`src/lib/cargaDiferida.js`):
+  - se reintenta una vez;
+  - si se estaba abriendo una pantalla, la app se recarga sola (una vez);
+  - si estaba importando, aparece "La app se actualizó. Recargá la página".
+- Probado en el navegador: PDF, Excel, reporte, login y registro.
 
 ## 🟡 14. `xlsx` 0.18.5 (⏳)
 
@@ -219,7 +226,7 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 - ⏳ **No hay forma de borrar una cuenta.** Las referencias a `auth.users` no borran en cascada, y no existe "Eliminar mi cuenta". Para la Ley 25.326 conviene tenerlo.
 - ⏳ `vercel.json`: falta una Content-Security-Policy, y `X-XSS-Protection` ya no hace nada en los navegadores actuales.
 - ⏳ `react-router-dom` 7.17 tiene un aviso de *open redirect*. Acá no se puede aprovechar, porque no se navega a direcciones que escriba el usuario, pero actualizar a 7.18 no cuesta nada.
-- ⏳ Una dirección inexistente (`/cualquier-cosa`) muestra la pantalla en blanco: falta una ruta comodín.
+- ✅ Una dirección inexistente (`/cualquier-cosa`) mostraba la pantalla en blanco: ahora lleva al inicio.
 - ⏳ `ConfigPanel`: la palabra clave de una regla va sin escapar dentro de un filtro `.or()`. Una coma en la palabra rompe el conteo de pendientes.
 - ⏳ `cron-reclasificar` no pagina: cada noche revisa como máximo 1.000 movimientos sin identificar. Además, una regla muy corta (ej. "MP") puede clasificar de más.
 - ⏳ Accesibilidad: 46 campos con `outline: none` y ningún estilo de foco. Con teclado no se ve dónde estás.

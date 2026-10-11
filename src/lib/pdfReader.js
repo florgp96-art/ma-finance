@@ -1,6 +1,18 @@
-import * as pdfjsLib from 'pdfjs-dist'
+import { importarModulo } from './cargaDiferida'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+// pdf.js es lo más pesado de la app y solo hace falta al importar un resumen: se
+// descarga recién la primera vez que se lee un PDF, no al abrir la app.
+let pdfjs = null
+const cargarPdfjs = async () => {
+  if (!pdfjs) {
+    pdfjs = await importarModulo(() => import('pdfjs-dist'))
+    // El worker sale de la propia app (webpack lo publica como archivo aparte), no de
+    // un CDN: si el CDN no respondía, pdf.js no podía leer nada y el PDF se mandaba
+    // entero a la IA, que es más caro y tiene límite de tamaño.
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString()
+  }
+  return pdfjs
+}
 
 // ¿Esta línea parece un movimiento? Fecha + importe. Los formatos de fecha
 // cubren lo que usan los bancos de acá: 12/07/26, 2026-07-12 y 12-Jul-26 (el
@@ -18,6 +30,9 @@ const esLineaDeMovimiento = (linea) => RE_FECHA_MOV.test(linea) && RE_IMPORTE_MO
 // (PDF dañado/no estándar, escaneado, o sin la tabla de movimientos). En ese
 // caso el caller debe usar analyzePdfDocumentWithClaude como fallback.
 export async function extractTextFromPDF(file) {
+  // Fuera del try: si pdf.js no se pudo bajar (versión nueva de la app), no es que el
+  // PDF no se pueda leer como texto — mandarlo entero a la IA sería gastar de más.
+  const pdfjsLib = await cargarPdfjs()
   let pdf
   try {
     const arrayBuffer = await file.arrayBuffer()
