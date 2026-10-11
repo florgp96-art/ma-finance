@@ -26,7 +26,7 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 12 | Las notas de formato que aprende el lector se comparten sin revisión | 🟡 | ⏳ |
 | 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ✅ |
 | 14 | `xlsx` 0.18.5 tiene fallas conocidas al abrir Excel ajenos | 🟡 | ⏳ |
-| 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ⏳ |
+| 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ✅ |
 | 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ✅ mínimo 8 · ⏳ filtradas (panel) |
 | 17 | El mail de auditoría de los viernes repetía todo y revisaba solo 1.000 movimientos | 🟡 | ✅ |
 | 18 | Detalles menores (lista abajo) | 🔵 | varios |
@@ -182,17 +182,27 @@ Todo va en un solo archivo de 2,2 MB (623 kB con gzip): pdf.js, xlsx y recharts 
 
 ## 🟡 14. `xlsx` 0.18.5 (⏳)
 
-Es la última versión de SheetJS en npm, que ya no se mantiene. Tiene *prototype pollution* y ReDoS al abrir un Excel armado a propósito. Ahora que la idea es que clientes de una contadora suban sus archivos, conviene pasar a 0.20.3 desde el CDN oficial de SheetJS.
+Es la última versión de SheetJS en npm, que ya no se mantiene. Tiene *prototype pollution* y ReDoS al abrir un Excel armado a propósito.
+
+**Sigue pendiente.** La versión corregida (0.20.3) solo se publica en el CDN de SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`), y desde donde se hizo la auditoría no se pudo descargar para probar el build. Se hace con:
+
+```
+npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+```
+
+Después hay que correr los tests. Mientras tanto el riesgo es bajo: cada usuario abre solo sus propios Excel, y desde esta auditoría xlsx se carga recién al importar o exportar.
+
+✅ `react-router-dom` pasó a 7.18.4, que corrige su aviso de *open redirect*.
 
 pdf.js 3.11 tiene una falla conocida (CVE-2024-4367) que **está mitigada**: se abre con `isEvalSupported: false`.
 
 El resto del `npm audit` (117 avisos) es de las herramientas de build de Create React App y no llega al navegador del usuario. Create React App está abandonado: a mediano plazo conviene migrar a Vite.
 
-## 🟡 15. No hay CI (⏳)
+## 🟡 15. No hay CI (✅)
 
 No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y como los PR se mergean al toque, nada frena un cambio que rompa algo.
 
-**Propuesta:** un GitHub Action que corra `npm test` y el build en cada PR. Corre gratis.
+**Hecho:** `.github/workflows/ci.yml` ("Tests y build") corre los tests y el build en cada PR y en cada push a `master`. En GitHub, cada PR muestra si pasó.
 
 ## 🟡 16. Contraseñas (⏳, se cambia en el panel)
 
