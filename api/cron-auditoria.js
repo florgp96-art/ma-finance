@@ -1,11 +1,37 @@
 import { createClient } from '@supabase/supabase-js'
 import { secretsMatch } from './_lib/secretsMatch.js'
+import { CLAVE_INICIO, compararConAvisados, agruparPorUsuario } from './_lib/hallazgosAuditoria.js'
 
-// Auditoría interna, invisible para los usuarios: no escribe nada, solo lee
-// transacciones de TODAS las cuentas y le manda a NOTIFY_EMAIL un resumen de
-// cosas que "no pueden ser" — para detectar bugs de importación/clasificación
-// antes de que el cliente los note. Corre por Vercel Cron (ver vercel.json),
-// protegido con el mismo CRON_SECRET que cron-reclasificar.
+// Lee todos los movimientos de a 1000: con margen para que no la corte el límite de tiempo.
+export const maxDuration = 60
+
+const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// PostgREST devuelve como máximo 1000 filas por consulta: sin paginar, la auditoría
+// revisaba solo los primeros 1000 movimientos de todos los que hay.
+async function leerTodo(armarConsulta) {
+  const PAGINA = 1000
+  const todo = []
+  for (let desde = 0; ; desde += PAGINA) {
+    const { data, error } = await armarConsulta().range(desde, desde + PAGINA - 1)
+    if (error) return { data: null, error }
+    todo.push(...(data || []))
+    if (!data || data.length < PAGINA) return { data: todo, error: null }
+  }
+}
+
+const enTandas = (lista, tamaño = 500) => {
+  const tandas = []
+  for (let i = 0; i < lista.length; i += tamaño) tandas.push(lista.slice(i, i + tamaño))
+  return tandas
+}
+
+// Auditoría interna, invisible para los usuarios: lee transacciones de TODAS las
+// cuentas y le manda a NOTIFY_EMAIL las cosas que "no pueden ser" — para detectar
+// bugs de importación/clasificación antes de que el cliente los note. Lo único que
+// escribe es su propia memoria (auditoria_hallazgos), para mandar solo lo nuevo.
+// Corre por Vercel Cron (ver vercel.json), protegido con el mismo CRON_SECRET que
+// cron-reclasificar.
 
 function mesDe(fecha) {
   return (fecha || '').slice(0, 7) // "YYYY-MM"
@@ -185,9 +211,10 @@ export default async function handler(req, res) {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
 
-  const { data: txs, error } = await supabaseAdmin
+  const { data: txs, error } = await leerTodo(() => supabaseAdmin
     .from('transactions')
     .select('id, user_id, account_id, fecha, nombre, monto, moneda, tipo, detalle, cuotas_total, cuota_numero, es_manual, fx_rate, reparto, accounts(nombre)')
+    .order('id'))
 
   if (error) {
     console.error('Error leyendo transacciones para auditoría:', error.message)
@@ -214,8 +241,18 @@ export default async function handler(req, res) {
     if (hallazgos.length > 0) reportePorUsuario.push({ userId, hallazgos })
   }
 
+  // Qué de todo esto ya se avisó en mails anteriores (ver api/_lib/hallazgosAuditoria.js).
+  // Si la memoria no se puede leer, se manda todo como antes: mejor repetido que perdido.
+  const actuales = reportePorUsuario.flatMap(({ userId, hallazgos }) => hallazgos.map(texto => ({ userId, texto })))
+  const { data: avisadas, error: errorMemoria } = await leerTodo(() => supabaseAdmin
+    .from('auditoria_hallazgos').select('clave').order('clave'))
+  if (errorMemoria) console.error('Auditoría: no se pudo leer qué se avisó antes:', errorMemoria.message)
+  const comparacion = errorMemoria ? null : compararConAvisados(actuales, (avisadas || []).map(a => a.clave))
+  const aMandar = comparacion ? agruparPorUsuario(comparacion.nuevos) : reportePorUsuario
+  const hayQueMandar = comparacion ? (comparacion.primeraVez || comparacion.nuevos.length > 0) : true
+
   let emails = {}
-  if (reportePorUsuario.length > 0) {
+  if (hayQueMandar && aMandar.length > 0) {
     // Paginado: listUsers trae como máximo 1000 por página — sin este loop, los
     // usuarios más allá del #1000 quedaban con su UUID crudo en vez del mail.
     const allUsers = []
@@ -230,18 +267,30 @@ export default async function handler(req, res) {
 
   const notifyEmail = process.env.NOTIFY_EMAIL
   const resendKey = process.env.RESEND_API_KEY
-  if (notifyEmail && resendKey) {
-    const html = reportePorUsuario.length === 0
-      ? `<p style="font-family: sans-serif; font-size: 14px;">Sin hallazgos en esta auditoría. Se revisaron ${porUsuario.size} usuarios.</p>`
-      : `<div style="font-family: sans-serif; font-size: 14px;">
-          ${reportePorUsuario.map(({ userId, hallazgos }) => `
-            <p style="margin:16px 0 4px 0"><strong>${emails[userId] || userId}</strong></p>
-            <ul style="margin:4px 0">${hallazgos.map(h => `<li>${h}</li>`).join('')}</ul>
-          `).join('')}
-        </div>`
-
+  let mailOk = true
+  if (notifyEmail && resendKey && hayQueMandar) {
+    const p = (texto) => `<p style="margin:4px 0">${texto}</p>`
+    const lista = aMandar.map(({ userId, hallazgos }) => `
+            <p style="margin:16px 0 4px 0"><strong>${esc(emails[userId] || userId)}</strong></p>
+            <ul style="margin:4px 0">${hallazgos.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
+          `).join('')
+    let asunto
+    let cuerpo
+    if (!comparacion) {
+      asunto = `🔍 Auditoría automática — ${aMandar.length} usuario(s) con hallazgos`
+      cuerpo = p('No se pudo leer qué hallazgos ya te había mandado, así que va la lista completa.') + lista
+    } else if (comparacion.primeraVez) {
+      asunto = '🔍 Auditoría automática: desde ahora, solo lo nuevo'
+      cuerpo = p(`Quedaron anotados los ${comparacion.siguen} hallazgo(s) que ya te venía mandando todos los viernes.`) +
+        p('A partir de ahora te escribo solo si aparece algo nuevo. Si algo se arregla y después vuelve a pasar, también te aviso.')
+    } else {
+      asunto = `🔍 Auditoría automática — ${comparacion.nuevos.length} hallazgo(s) nuevo(s)`
+      cuerpo = lista +
+        (comparacion.siguen > 0 ? p(`<span style="color:#75757a">Además siguen abiertos ${comparacion.siguen} que ya te mandé (no se repiten).</span>`) : '') +
+        (comparacion.resueltas.length > 0 ? p(`<span style="color:#75757a">Se resolvieron ${comparacion.resueltas.length} desde el último aviso.</span>`) : '')
+    }
     try {
-      await fetch('https://api.resend.com/emails', {
+      const respuesta = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${resendKey}`,
@@ -250,16 +299,38 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           from: "Mom's Assist <onboarding@resend.dev>",
           to: notifyEmail,
-          subject: reportePorUsuario.length === 0
-            ? '✅ Auditoría automática — sin hallazgos'
-            : `🔍 Auditoría automática — ${reportePorUsuario.length} usuario(s) con hallazgos`,
-          html,
+          subject: asunto,
+          html: `<div style="font-family: sans-serif; font-size: 14px;">${cuerpo}</div>`,
         })
       })
+      mailOk = respuesta.ok
+      if (!mailOk) console.error('Error enviando email de auditoría:', respuesta.status, await respuesta.text())
     } catch (e) {
+      mailOk = false
       console.error('Error enviando email de auditoría:', e.message)
     }
   }
 
-  return res.status(200).json({ usuariosRevisados: porUsuario.size, usuariosConHallazgos: reportePorUsuario.length })
+  // Se anota lo avisado solo si el mail salió: si falló, lo nuevo sigue siendo nuevo
+  // y va en el próximo.
+  if (comparacion && mailOk) {
+    const ahoraISO = new Date().toISOString()
+    const filas = comparacion.vigentes.map(h => ({ clave: h.clave, user_id: h.userId, texto: h.texto, visto_ultimo: ahoraISO }))
+    if (comparacion.primeraVez) filas.push({ clave: CLAVE_INICIO, user_id: null, texto: 'Inicio de la memoria del mail de auditoría', visto_ultimo: ahoraISO })
+    for (const tanda of enTandas(filas)) {
+      const { error: e } = await supabaseAdmin.from('auditoria_hallazgos').upsert(tanda, { onConflict: 'clave' })
+      if (e) console.error('Auditoría: no se pudo anotar lo avisado:', e.message)
+    }
+    for (const tanda of enTandas(comparacion.resueltas)) {
+      const { error: e } = await supabaseAdmin.from('auditoria_hallazgos').delete().in('clave', tanda)
+      if (e) console.error('Auditoría: no se pudo borrar lo resuelto:', e.message)
+    }
+  }
+
+  return res.status(200).json({
+    usuariosRevisados: porUsuario.size,
+    usuariosConHallazgos: reportePorUsuario.length,
+    nuevos: comparacion ? comparacion.nuevos.length : null,
+    mailEnviado: hayQueMandar && !!notifyEmail && !!resendKey && mailOk,
+  })
 }

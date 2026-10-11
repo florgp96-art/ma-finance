@@ -420,7 +420,7 @@ Sin la columna no se muestra nada de esto y el resto de la app sigue igual (ver
 
 ---
 
-### h) Arreglos de seguridad de la auditoría de octubre de 2026 — **sin correr**
+### h) Arreglos de seguridad de la auditoría de octubre de 2026 (ya corrida el 11 de octubre de 2026)
 
 `supabase/migrations/20261010000000_auditoria_seguridad.sql` (se puede correr más de una
 vez, entero). El detalle de cada punto está en `docs/AUDITORIA-2026-10.md`:
@@ -433,6 +433,10 @@ vez, entero). El detalle de cada punto está en `docs/AUDITORIA-2026-10.md`:
 - Cinco índices.
 
 Se probó entera en la base real dentro de una transacción que se deshizo.
+
+`supabase/migrations/20261011000000_auditoria_hallazgos.sql` (ya corrida el 11 de octubre
+de 2026): tabla `auditoria_hallazgos`, la memoria del mail de los viernes
+(`api/cron-auditoria.js`), para mandar solo lo nuevo.
 
 ### b) Rate limit compartido — **esta es la que más conviene**
 
