@@ -27,7 +27,7 @@ Leyenda: 🔴 crítico · 🟠 alto · 🟡 medio · 🔵 bajo. ✅ arreglado en
 | 13 | La app pesa 623 kB comprimida y se carga entera al abrir | 🟡 | ✅ |
 | 14 | `xlsx` 0.18.5 tiene fallas conocidas al abrir Excel ajenos | 🟡 | ⏳ |
 | 15 | No hay CI: Vercel despliega sin correr los tests | 🟡 | ✅ |
-| 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ✅ mínimo 8 · ⏳ filtradas (panel) |
+| 16 | Contraseñas: mínimo 6 caracteres y sin control de filtradas | 🟡 | ✅ mínimo 8 · filtradas: solo plan Pro |
 | 17 | El mail de auditoría de los viernes repetía todo y revisaba solo 1.000 movimientos | 🟡 | ✅ |
 | 18 | Detalles menores (lista abajo) | 🔵 | varios |
 
@@ -206,7 +206,8 @@ No existe `.github/workflows`. Vercel despliega `master` sin correr los tests, y
 
 ## 🟡 16. Contraseñas (⏳, se cambia en el panel)
 
-- ⏳ La protección contra contraseñas filtradas (HaveIBeenPwned) está desactivada. Se activa en el panel: Supabase → Authentication → Policies/Passwords.
+- La protección contra contraseñas filtradas (HaveIBeenPwned, en Authentication → Attack Protection) **solo existe en el plan Pro de Supabase**. El proyecto está en el plan gratis y no se puede activar (probado el 11/10). Si algún día se pasa a Pro, conviene prenderla.
+- ⏳ Poner el mínimo de 8 caracteres también en Supabase: Authentication → Sign In / Providers → Email → Minimum password length.
 - ✅ Las contraseñas nuevas piden 8 caracteres (registro, olvidé mi contraseña y cambio de contraseña). Las que ya existen siguen andando.
 
 ---
