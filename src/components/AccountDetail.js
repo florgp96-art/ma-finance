@@ -584,6 +584,16 @@ export const compararStatements = (s1, s2) =>
   (saldoDeclaradoDe(s1) - saldoDeclaradoDe(s2)) ||
   String(s1.id).localeCompare(String(s2.id))
 
+// Qué campo de un resumen dibuja "Total facturado por resumen" en cada moneda: lo
+// consumido en el período (consumo_*, ver consumoDelResumen) cuando se guardó al
+// importar el PDF, y si no el total a pagar, como siempre — resúmenes viejos, meses
+// cargados a mano o un PDF sin saldo anterior. El total a pagar baja con los pagos
+// adelantados; lo consumido no. El lápiz de esa lista pisa este mismo campo, así lo
+// que se corrige es lo que se ve, y corregir lo consumido no toca lo que falta pagar.
+export const campoFacturado = (s, moneda) => moneda === 'USD'
+  ? (s.consumo_dolares != null ? 'consumo_dolares' : 'total_dolares')
+  : (s.consumo_pesos != null ? 'consumo_pesos' : 'total_resumen')
+
 // Resúmenes REALES de tarjeta de crédito que todavía tienen saldo pendiente
 // (el mismo criterio que "A pagar": solo el último resumen de cada cuenta, y
 // solo mientras le quede algo por pagar en alguna moneda — ver esVisible más
@@ -1790,8 +1800,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       // antes acá se elegía uno solo y el otro se descartaba en silencio. Se
       // guardan los dos; "total"/"moneda" quedan para la barra del gráfico
       // (ARS con preferencia, como antes) y la lista de abajo muestra ambos.
-      const montoArs = Number(s.total_resumen) || 0
-      const montoUsd = Number(s.total_dolares) || 0
+      const montoArs = Number(s[campoFacturado(s, 'ARS')]) || 0
+      const montoUsd = Number(s[campoFacturado(s, 'USD')]) || 0
       const prev = map.get(mes) || { mes, total: 0, moneda: 'ARS', totalArs: 0, totalUsd: 0, statementIds: [], resumenes: [] }
       if (montoArs >= prev.totalArs) prev.totalArs = montoArs
       if (montoUsd >= prev.totalUsd) prev.totalUsd = montoUsd
@@ -1818,25 +1828,21 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // ese mes, el valor nuevo se guarda en el primero y el resto se deja en 0
   // en las dos monedas, para que la barra muestre justo lo tipeado y no se
   // dupliquen los números. El nombre del mes (periodo) se renombra en TODOS
-  // los resúmenes del grupo, para que sigan agrupados juntos.
+  // los resúmenes del grupo, para que sigan agrupados juntos. Los campos que se
+  // pisan son los que dibuja la barra de cada resumen (ver campoFacturado).
   const guardarTotalFacturadoMes = async (barMes) => {
     const valor = parseMonto(editBarValor)
     if (valor === null || valor < 0) return
     const periodo = editBarPeriodo.trim()
     if (!periodo) return
-    const [primero, ...resto] = barMes.statementIds
-    const campoMonto = editBarMoneda === 'USD' ? 'total_dolares' : 'total_resumen'
-    const otroCampo = editBarMoneda === 'USD' ? 'total_resumen' : 'total_dolares'
-    const updates = [
-      supabase.from('statements').update({ periodo, [campoMonto]: valor, [otroCampo]: 0 }).eq('id', primero),
-      ...resto.map(id => supabase.from('statements').update({ periodo, total_resumen: 0, total_dolares: 0 }).eq('id', id)),
-    ]
-    await Promise.all(updates)
-    setStatements(prev => prev.map(s => {
-      if (s.id === primero) return { ...s, periodo, [campoMonto]: valor, [otroCampo]: 0 }
-      if (resto.includes(s.id)) return { ...s, periodo, total_resumen: 0, total_dolares: 0 }
-      return s
-    }))
+    const [primero, ...resto] = barMes.resumenes
+    const otraMoneda = editBarMoneda === 'USD' ? 'ARS' : 'USD'
+    const cambios = new Map([
+      [primero.id, { periodo, [campoFacturado(primero, editBarMoneda)]: valor, [campoFacturado(primero, otraMoneda)]: 0 }],
+      ...resto.map(s => [s.id, { periodo, [campoFacturado(s, 'ARS')]: 0, [campoFacturado(s, 'USD')]: 0 }]),
+    ])
+    await Promise.all([...cambios].map(([id, campos]) => supabase.from('statements').update(campos).eq('id', id)))
+    setStatements(prev => prev.map(s => cambios.has(s.id) ? { ...s, ...cambios.get(s.id) } : s))
     setEditBarMes(null)
   }
 
@@ -4333,7 +4339,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
         <div style={styles.chartSection}>
           <h3 style={{ ...styles.chartTitle, display: 'flex', alignItems: 'center' }}>
             📊 Total facturado por resumen
-            <InfoTooltip darkMode={darkMode} text="Histórico completo, un mes por barra. Con el lápiz de la lista de abajo se puede corregir el monto, el nombre del mes y la moneda (ARS o USD) de cada uno, o agregar un mes nuevo a mano sin necesidad de cargar un PDF." />
+            <InfoTooltip darkMode={darkMode} text="Histórico completo, un mes por barra: lo que consumiste en cada resumen (compras, cuotas e impuestos), aunque hayas pagado una parte por adelantado. Con el lápiz de la lista de abajo se puede corregir el monto, el nombre del mes y la moneda (ARS o USD) de cada uno, o agregar un mes nuevo a mano sin necesidad de cargar un PDF." />
           </h3>
           {barData.length > 0 && (
             <ResponsiveContainer width="100%" height={220}>
@@ -4406,8 +4412,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                         <span>
-                          $ {formatMonto(Number(r.total_resumen) || 0)}
-                          {r.total_dolares ? ` + U$S ${formatMontoFull(Number(r.total_dolares))}` : ''}
+                          $ {formatMonto(Number(r[campoFacturado(r, 'ARS')]) || 0)}
+                          {Number(r[campoFacturado(r, 'USD')]) ? ` + U$S ${formatMontoFull(Number(r[campoFacturado(r, 'USD')]))}` : ''}
                         </span>
                         {confirmDeleteResumen === r.id ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

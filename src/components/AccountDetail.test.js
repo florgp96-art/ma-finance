@@ -2,7 +2,7 @@
 // (que viven en Vercel). Acá solo se prueban helpers puros, así que se mockea.
 jest.mock('../lib/supabase', () => ({ supabase: {} }))
 
-const { cicloAbiertoDe, repartirPagos, compararStatements, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto, desdePrimerMovimiento } = require('./AccountDetail')
+const { cicloAbiertoDe, repartirPagos, compararStatements, campoFacturado, calcularStatementsPendientes, saleDeLaVistaAlCambiarDeCuenta, enTramoDelCiclo, totalConSigno, compararPorMonto, desdePrimerMovimiento } = require('./AccountDetail')
 
 describe('repartirPagos — un pago llega hasta cubrir el total, y sigue de largo', () => {
   test('el pago que sobra de un resumen paga el ciclo que sigue', () => {
@@ -113,6 +113,24 @@ describe('cicloAbiertoDe — el dato del PDF se vuelve viejo y lo manual le gana
     expect(cicloAbiertoDe({ proximo_cierre: '2026-07-01' }, '2026-07-30')).toEqual({
       cierre: '2026-08-30', vencimiento: null, origen: 'estimado',
     })
+  })
+})
+
+describe('campoFacturado — qué dibuja "Total facturado por resumen"', () => {
+  test('lo consumido cuando el PDF lo dejó guardado, no lo que quedó por pagar', () => {
+    const octubre = { total_resumen: 1015590.12, total_dolares: 203.9, consumo_pesos: 1990885.27, consumo_dolares: 203.9 }
+    expect(campoFacturado(octubre, 'ARS')).toBe('consumo_pesos')
+    expect(campoFacturado(octubre, 'USD')).toBe('consumo_dolares')
+  })
+
+  test('sin consumo guardado (resumen viejo o mes a mano) sigue el total, moneda por moneda', () => {
+    expect(campoFacturado({ total_resumen: 900000 }, 'ARS')).toBe('total_resumen')
+    expect(campoFacturado({ total_resumen: 900000, consumo_pesos: null }, 'ARS')).toBe('total_resumen')
+    expect(campoFacturado({ consumo_pesos: 950000, consumo_dolares: null, total_dolares: 12 }, 'USD')).toBe('total_dolares')
+  })
+
+  test('un consumo de 0 es un dato, no un faltante', () => {
+    expect(campoFacturado({ total_resumen: -5000, consumo_pesos: 0 }, 'ARS')).toBe('consumo_pesos')
   })
 })
 

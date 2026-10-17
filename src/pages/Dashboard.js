@@ -9,7 +9,7 @@ import { sentidoDelExtracto } from '../lib/saldos'
 import { pareceCambioDeMoneda } from '../lib/cambioMoneda'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { ESTADOS_FACTURACION, hayColumnaFacturacion } from '../lib/facturacion'
-import { controlDeLectura, lineasDelControl } from '../lib/controlLectura'
+import { controlDeLectura, consumoDelResumen, lineasDelControl } from '../lib/controlLectura'
 import { cuotasFuturasCargadas, cuotasParaCrear, stripCuotaSuffix } from '../lib/cuotas'
 import AccountDetail, { getLast6Months, desdePrimerMovimiento, mesLabel, formatMontoFull, formatFecha, cierreDe, subcategoriasDeIngreso, resolveCategoryColor, resolveCategoryIcon, tcDeMovimiento, tcEURDeMovimiento, derivarPorcionesGasto, InfoTooltip, calcularStatementsPendientes, diasRestantesDe, rotuloLabel } from '../components/AccountDetail'
 import HijoDetail from '../components/HijoDetail'
@@ -2908,14 +2908,19 @@ export default function Dashboard() {
         proximo_cierre: parseFechaArgentina(statementData.proximo_cierre),
         proximo_vencimiento: parseFechaArgentina(statementData.proximo_vencimiento),
       }
+      // Lo consumido en el período, sin el saldo anterior ni los pagos: es lo que
+      // muestra "Total facturado por resumen" (ver consumoDelResumen). Sale de la
+      // lectura entera, no solo de las filas tildadas: es un dato del resumen.
+      const consumo = consumoDelResumen(statementData)
+      const camposConsumo = { consumo_pesos: consumo.ARS, consumo_dolares: consumo.USD }
       let { data: statement, error: errStmt } = esResumenCerrado
-        ? await supabase.from('statements').insert({ ...camposStatement, ...camposProximoCiclo }).select().single()
+        ? await supabase.from('statements').insert({ ...camposStatement, ...camposProximoCiclo, ...camposConsumo }).select().single()
         : { data: null, error: null }
-      // Si las columnas del próximo ciclo todavía no existen en la base (la migración
-      // se corre aparte), se reintenta sin ellas: que falte un dato opcional no puede
-      // hacer que la importación entera falle.
-      if (errStmt && /proximo_(cierre|vencimiento)/.test(errStmt.message || '')) {
-        console.warn('statements sin columnas de próximo ciclo — se guarda sin ellas')
+      // Si las columnas opcionales todavía no existen en la base (la migración se corre
+      // aparte), se reintenta sin ellas: que falte un dato opcional no puede hacer que
+      // la importación entera falle.
+      if (errStmt && /proximo_(cierre|vencimiento)|consumo_(pesos|dolares)/.test(errStmt.message || '')) {
+        console.warn('statements sin columnas de próximo ciclo o de consumo — se guarda sin ellas')
         const retry = await supabase.from('statements').insert(camposStatement).select().single()
         statement = retry.data
         errStmt = retry.error

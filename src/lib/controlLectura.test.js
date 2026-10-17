@@ -1,4 +1,4 @@
-import { controlDeLectura, lineasDelControl } from './controlLectura'
+import { controlDeLectura, consumoDelResumen, lineasDelControl } from './controlLectura'
 
 const tx = (monto, tipo, extra = {}) => ({ monto, tipo, moneda: 'ARS', ...extra })
 
@@ -96,4 +96,44 @@ test('extracto: cada moneda con sus propios saldos', () => {
     transacciones: [tx(100, 'gasto', { moneda: 'USD' })],
   })
   expect(control.monedas.map(m => [m.moneda, m.cuadra])).toEqual([['USD', true]])
+})
+
+describe('consumoDelResumen — lo gastado en el período, no lo que quedó por pagar', () => {
+  test('los pagos adelantados no bajan lo consumido', () => {
+    // Caso real: Visa que cierra el 15/10/26. Saldo anterior $ 1.069.530,02, pagos por
+    // $ 2.044.825,17 ($ 1.000.000 adelantados), $ 1.015.590,12 a pagar.
+    const resumen = {
+      tipo_documento: 'tarjeta', total_pesos: 1015590.12, saldo_anterior_pesos: 1069530.02,
+      total_dolares: 203.9, saldo_anterior_dolares: 54.41,
+      transacciones: [
+        tx(844825.17, 'neutro'), tx(200000, 'neutro'), tx(1000000, 'neutro'),
+        tx(54.41, 'neutro', { moneda: 'USD' }),
+        tx(2016278.65, 'gasto'), tx(25393.38, 'ingreso'),
+        tx(203.9, 'gasto', { moneda: 'USD' }),
+      ],
+    }
+    expect(controlDeLectura(resumen).cuadra).toBe(true)
+    expect(consumoDelResumen(resumen)).toEqual({ ARS: 1990885.27, USD: 203.9 })
+  })
+
+  test('un consumo que un alias pasó a neutro no se cuenta como pago', () => {
+    const resumen = {
+      tipo_documento: 'tarjeta', total_pesos: 150000, saldo_anterior_pesos: 100000,
+      transacciones: [tx(100000, 'neutro'), tx(50000, 'neutro', { sentido: 'sale' }), tx(100000, 'gasto')],
+    }
+    expect(consumoDelResumen(resumen).ARS).toBe(150000)
+  })
+
+  test('sin saldo anterior no se despeja: null', () => {
+    expect(consumoDelResumen({
+      tipo_documento: 'tarjeta', total_pesos: 150000, total_dolares: 10,
+      transacciones: [tx(150000, 'gasto')],
+    })).toEqual({ ARS: null, USD: null })
+  })
+
+  test('solo en resúmenes de tarjeta', () => {
+    expect(consumoDelResumen({ tipo_documento: 'banco', saldo_inicial_pesos: 0, saldo_final_pesos: 10 }))
+      .toEqual({ ARS: null, USD: null })
+    expect(consumoDelResumen(null)).toEqual({ ARS: null, USD: null })
+  })
 })
