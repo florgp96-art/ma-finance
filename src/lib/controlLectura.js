@@ -92,6 +92,32 @@ export const controlDeLectura = (resultado) => {
   return { tipo: 'tarjeta', aplica: monedas.length > 0, cuadra: monedas.length ? monedas.every(m => m.cuadra) : null, monedas }
 }
 
+// Lo que se consumió en el período de un resumen de tarjeta, por moneda: compras,
+// cuotas, impuestos y cargos, menos devoluciones. No es el total a pagar: ese arrastra
+// el saldo del resumen anterior y ya viene con los pagos restados, así que un pago
+// adelantado lo baja aunque se haya gastado lo mismo. Caso real: Visa de octubre,
+// $ 1.015.590 a pagar después de adelantar $ 1.000.000, con $ 1.990.885 consumidos.
+//
+// Se despeja de la misma cuenta del control, con los números que imprime el banco
+// (no con la suma de las compras leídas, que es lo que el control verifica):
+//   consumo = total a pagar − saldo anterior + pagos
+// Sin saldo anterior no hay de dónde despejarlo: null, y se sigue usando el total.
+export const consumoDelResumen = (resultado) => {
+  const consumo = { ARS: null, USD: null }
+  if (resultado?.tipo_documento !== 'tarjeta') return consumo
+  const transacciones = Array.isArray(resultado.transacciones) ? resultado.transacciones : []
+  for (const campos of MONEDAS) {
+    const total = numero(resultado[campos.total])
+    const saldoAnterior = numero(resultado[campos.saldoAnterior])
+    if (total === null || saldoAnterior === null) continue
+    const pagos = transacciones
+      .filter(t => (t.moneda || 'ARS') === campos.moneda && ladoDe(t) === 'pago')
+      .reduce((s, t) => s + Math.abs(Number(t.monto) || 0), 0)
+    consumo[campos.moneda] = Math.round((total - saldoAnterior + pagos) * 100) / 100
+  }
+  return consumo
+}
+
 const SIMBOLO = { ARS: '$', USD: 'U$S' }
 const formato = (n, moneda) => `${SIMBOLO[moneda] || moneda} ${new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: moneda === 'ARS' ? 0 : 2, maximumFractionDigits: 2,
