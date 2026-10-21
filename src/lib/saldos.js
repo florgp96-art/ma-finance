@@ -263,6 +263,91 @@ export const saldoDeCuenta = ({ anclas, transactions, accounts, accountId, moned
   }
 }
 
+// Orden cronológico de los movimientos: la fecha y, entre los del mismo día, el orden en
+// que se cargaron. Sin created_at decide el id, para que dos filas del mismo día no
+// cambien de lugar según cómo las devolvió la base.
+export const compararCronologico = (a, b) =>
+  norm(a?.fecha).localeCompare(norm(b?.fecha)) ||
+  String(a?.created_at || '').localeCompare(String(b?.created_at || '')) ||
+  String(a?.id ?? '').localeCompare(String(b?.id ?? ''))
+
+// EVOLUCIÓN DEL SALDO, movimiento por movimiento.
+//
+// La card muestra un solo número, y cuando da raro (negativo, por ejemplo) no dice qué
+// lo llevó ahí. Esto es el MISMO cálculo que saldoDeCuenta pero paso a paso: cada
+// movimiento que cuenta, en orden cronológico, con el saldo que quedó después. Tiene
+// que terminar exactamente en el número de la card; si no, en vez de ayudar a
+// encontrar el error sería un error más.
+export const evolucionDelSaldo = ({ anclas, transactions, accounts, accountId, moneda = 'ARS' }) => {
+  const ancla = ultimaAncla(anclas, accountId, moneda)
+  if (!ancla) return null
+  const ordenados = [
+    ...movimientosDesdeAncla(transactions, accountId, moneda, ancla).map(tx => ({ tx, signo: signoEnSaldo(tx), pagoDeTarjeta: false })),
+    ...pagosDeTarjetaDesde({ transactions, accounts, accountId, moneda, desde: ancla }).map(tx => ({ tx, signo: -1, pagoDeTarjeta: true })),
+  ].sort((a, b) => compararCronologico(a.tx, b.tx))
+  let acumulado = Number(ancla.saldo) || 0
+  const pasos = ordenados.map(paso => {
+    const monto = Math.abs(Number(paso.tx.monto) || 0)
+    const saldoAntes = redondear(acumulado)
+    acumulado += paso.signo * monto
+    return { ...paso, monto, saldoAntes, saldo: redondear(acumulado) }
+  })
+  return { ancla, moneda, pasos, saldo: redondear(acumulado) }
+}
+
+// La evolución de cada moneda en la que la cuenta tiene un saldo cargado.
+export const evolucionesDelSaldo = ({ anclas, transactions, accounts, accountId }) => {
+  const monedas = [...new Set((anclas || [])
+    .filter(a => a.account_id === accountId)
+    .map(a => a.moneda || 'ARS'))].sort()
+  return monedas
+    .map(moneda => evolucionDelSaldo({ anclas, transactions, accounts, accountId, moneda }))
+    .filter(Boolean)
+}
+
+// Lo que mueve el saldo y NO está entre dos filas de la tabla de movimientos.
+//
+// La tabla no muestra todo lo que cuenta para el saldo: los neutros y los pagos de
+// tarjeta van en otra lista, lo sin identificar en otra, y los filtros (mes, búsqueda,
+// columna) y el "Ver más" esconden el resto. Si la columna Saldo saltara de una fila a
+// la otra sin explicación, no habría forma de seguirla. Esto junta esos movimientos en
+// tramos, para mostrarlos entre las filas.
+//
+// `filas` va en orden cronológico, cada una como { key, ids } (un gasto dividido entre
+// hijos es una sola fila con varios movimientos). Devuelve:
+//   antes:   key de la fila → tramos que van justo antes de ella. El primero de cada
+//            moneda trae el ancla: es donde arranca la cuenta.
+//   alFinal: lo posterior a la última fila, que es lo que lleva al saldo de hoy.
+// Cada tramo dice su saldo al terminar, que es el que había justo antes de la fila.
+export const tramosOcultos = (filas, evoluciones) => {
+  const antes = new Map()
+  const alFinal = []
+  const visibles = new Set((filas || []).flatMap(f => f.ids))
+  for (const evo of evoluciones || []) {
+    const posicion = new Map(evo.pasos.map((p, i) => [p.tx.id, i]))
+    const saldoTrasPaso = (i) => i < 0 ? redondear(evo.ancla.saldo) : evo.pasos[i].saldo
+    const tramo = (key, desde, hasta, ancla) => {
+      const pasos = evo.pasos.slice(desde, hasta).filter(p => !visibles.has(p.tx.id))
+      const neto = redondear(pasos.reduce((s, p) => s + p.signo * p.monto, 0))
+      return { key, moneda: evo.moneda, ancla, pasos, neto, saldo: saldoTrasPaso(hasta - 1) }
+    }
+    let ultimo = -1
+    for (const fila of filas || []) {
+      const posiciones = fila.ids.map(id => posicion.get(id)).filter(i => i !== undefined)
+      if (posiciones.length === 0) continue
+      const primera = Math.min(...posiciones)
+      const t = tramo(`${evo.moneda}-antes-${fila.key}`, ultimo + 1, Math.max(primera, ultimo + 1), ultimo === -1 ? evo.ancla : null)
+      if (t.ancla || t.pasos.length > 0) antes.set(fila.key, [...(antes.get(fila.key) || []), t])
+      ultimo = Math.max(ultimo, ...posiciones)
+    }
+    // Ninguna fila visible cuenta en esta moneda: no hay entre qué filas ubicar nada.
+    if (ultimo === -1) continue
+    const resto = tramo(`${evo.moneda}-final`, ultimo + 1, evo.pasos.length, null)
+    if (resto.pasos.length > 0) alFinal.push(resto)
+  }
+  return { antes, alFinal }
+}
+
 // Lo que el usuario dice que tiene, contra lo que la app venía calculando.
 // Es el número más útil de todo esto: si no es cero, hay movimientos sin cargar
 // (desvío negativo: gastaste algo que no está) o cargados de más (positivo).

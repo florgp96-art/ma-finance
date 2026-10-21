@@ -21,7 +21,7 @@ export { tieneSaldo } from '../lib/saldos'
 // Card de saldo de una cuenta: cuánta plata hay, calculada desde el último saldo
 // que cargó el usuario más lo que pasó después. Ver src/lib/saldos.js para el
 // porqué del modelo de anclas.
-export default function SaldoCuenta({ account, accounts, transactions, darkMode, styles, onSaved }) {
+export default function SaldoCuenta({ account, accounts, transactions, darkMode, styles, onSaved, onAnclas }) {
   const sem = semaforo(darkMode)
   const muted = darkMode ? 'var(--m-9a8a9a)' : '#75757a'
   const [anclas, setAnclas] = useState([])
@@ -66,6 +66,10 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   }, [account?.id])
 
   useEffect(() => { fetchAnclas() }, [fetchAnclas])
+
+  // La columna Saldo de la tabla de movimientos parte de las mismas anclas: se le
+  // pasan en vez de pedirlas dos veces (y de que una quede vieja al cargar un saldo).
+  useEffect(() => { onAnclas?.(anclas) }, [anclas, onAnclas])
 
   // Los pagos de tarjeta vienen de otra consulta que las transacciones de la cuenta:
   // deduplicar por id antes de sumar nada.

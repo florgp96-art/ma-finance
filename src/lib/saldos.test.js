@@ -2,6 +2,7 @@ const {
   signoEnSaldo, enLaCuenta, ultimaAncla, saldoDeCuenta, desvioDeAncla, pagosDeTarjetaDesde,
   saldoTotal, tieneSaldo, monedaDeLaCuenta, sentidoPorTipo, sentidoDelExtracto,
   pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde,
+  compararCronologico, evolucionDelSaldo, evolucionesDelSaldo, tramosOcultos,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -704,5 +705,123 @@ describe('pagos de tarjeta que se listan en la cuenta que los paga', () => {
   test('el saldo de la caja en dólares resta los pagos en dólares', () => {
     const anclas = [{ id: 'a1', account_id: CU, moneda: 'USD', fecha: '2026-09-16', saldo: 303.49 }]
     expect(saldoDeCuenta({ anclas, transactions: todos, accounts, accountId: CU, moneda: 'USD' }).saldo).toBe(279.89)
+  })
+})
+
+// La columna Saldo de la tabla de movimientos: el mismo cálculo que la card, paso a
+// paso, para poder ver en qué movimiento la cuenta se fue a negativo.
+describe('evolución del saldo movimiento por movimiento', () => {
+  const CARD = 'visa'
+  const cuentas = [
+    { id: CA, tipo: 'debito', nombre: 'Caja de ahorro' },
+    { id: CARD, tipo: 'credito', nombre: 'Visa', cuenta_pago_id: CA },
+  ]
+  const a = ancla('2026-09-10', 100000, { created_at: '2026-09-10T10:00:00Z' })
+  const movs = [
+    mov('2026-09-12', 30000, 'gasto', { id: 'g1', created_at: '2026-09-12T09:00:00Z' }),
+    mov('2026-09-15', 50000, 'ingreso', { id: 'i1', created_at: '2026-09-15T09:00:00Z' }),
+    mov('2026-09-20', 20000, 'neutro', { id: 'n1', nombre: 'Transferencia a cuenta propia', created_at: '2026-09-20T09:00:00Z' }),
+    { id: 'p1', account_id: CARD, tipo: 'neutro', fecha: '2026-09-18', monto: 150000, moneda: 'ARS', nombre: 'Pago Visa', created_at: '2026-09-18T09:00:00Z' },
+    // Ya estaba adentro del saldo: anterior al ancla.
+    mov('2026-09-01', 999999, 'gasto', { id: 'viejo', created_at: '2026-09-01T09:00:00Z' }),
+    // Todavía no movió plata.
+    mov('2026-09-21', 5000, 'gasto', { id: 'pend', pendiente: true, created_at: '2026-09-21T09:00:00Z' }),
+  ]
+  const evo = evolucionDelSaldo({ anclas: [a], transactions: movs, accounts: cuentas, accountId: CA })
+
+  test('va en orden cronológico y con el saldo que quedó después de cada uno', () => {
+    expect(evo.pasos.map(p => [p.tx.id, p.saldoAntes, p.saldo])).toEqual([
+      ['g1', 100000, 70000],
+      ['i1', 70000, 120000],
+      ['p1', 120000, -30000],
+      ['n1', -30000, -50000],
+    ])
+  })
+
+  test('el pago de tarjeta se marca como tal, porque vive en otra cuenta', () => {
+    expect(evo.pasos.find(p => p.tx.id === 'p1').pagoDeTarjeta).toBe(true)
+    expect(evo.pasos.find(p => p.tx.id === 'n1').pagoDeTarjeta).toBe(false)
+  })
+
+  test('termina exactamente en el saldo de la card', () => {
+    const card = saldoDeCuenta({ anclas: [a], transactions: movs, accounts: cuentas, accountId: CA })
+    expect(evo.saldo).toBe(card.saldo)
+    expect(evo.pasos).toHaveLength(card.cantidadMovimientos)
+  })
+
+  test('lo anterior al ancla y lo pendiente no aparecen', () => {
+    const ids = evo.pasos.map(p => p.tx.id)
+    expect(ids).not.toContain('viejo')
+    expect(ids).not.toContain('pend')
+  })
+
+  test('sin ancla no hay evolución', () => {
+    expect(evolucionDelSaldo({ anclas: [], transactions: movs, accountId: CA })).toBeNull()
+  })
+
+  test('una evolución por moneda con saldo cargado', () => {
+    const anclaUsd = ancla('2026-09-10', 300, { id: 'a-usd', moneda: 'USD' })
+    const evos = evolucionesDelSaldo({ anclas: [a, anclaUsd], transactions: movs, accounts: cuentas, accountId: CA })
+    expect(evos.map(e => e.moneda)).toEqual(['ARS', 'USD'])
+    expect(evos[1].pasos).toEqual([])
+    expect(evos[1].saldo).toBe(300)
+  })
+
+  test('del mismo día, primero lo que se cargó antes', () => {
+    const x = { fecha: '2026-09-12', created_at: '2026-09-12T10:00:00Z', id: 'b' }
+    const y = { fecha: '2026-09-12', created_at: '2026-09-12T09:00:00Z', id: 'c' }
+    expect([x, y].sort(compararCronologico).map(t => t.id)).toEqual(['c', 'b'])
+    // Sin created_at, decide el id: el resultado no depende del orden de llegada.
+    expect([{ fecha: '2026-09-12', id: 'z' }, { fecha: '2026-09-12', id: 'a' }].sort(compararCronologico).map(t => t.id)).toEqual(['a', 'z'])
+  })
+
+  describe('tramosOcultos — lo que mueve el saldo entre dos filas de la tabla', () => {
+    // La tabla muestra solo el gasto y el ingreso: el pago de tarjeta y el neutro
+    // están en otras listas.
+    const filas = [{ key: 'g1', ids: ['g1'] }, { key: 'i1', ids: ['i1'] }]
+
+    test('antes de la primera fila va el ancla, que es donde arranca la cuenta', () => {
+      const { antes } = tramosOcultos(filas, [evo])
+      const [inicio] = antes.get('g1')
+      expect(inicio.ancla).toBe(a)
+      expect(inicio.pasos).toEqual([])
+      expect(inicio.saldo).toBe(100000)
+    })
+
+    test('lo que no se ve después de la última fila lleva al saldo de hoy', () => {
+      const { alFinal } = tramosOcultos(filas, [evo])
+      expect(alFinal).toHaveLength(1)
+      expect(alFinal[0].pasos.map(p => p.tx.id)).toEqual(['p1', 'n1'])
+      expect(alFinal[0].neto).toBe(-170000)
+      expect(alFinal[0].saldo).toBe(-50000)
+    })
+
+    test('entre dos filas, lo que no se ve explica el salto', () => {
+      const { antes } = tramosOcultos([{ key: 'g1', ids: ['g1'] }, { key: 'n1', ids: ['n1'] }], [evo])
+      const [entre] = antes.get('n1')
+      expect(entre.pasos.map(p => p.tx.id)).toEqual(['i1', 'p1'])
+      expect(entre.neto).toBe(-100000)
+      expect(entre.saldo).toBe(-30000)
+    })
+
+    test('con un filtro de mes, lo anterior queda en el tramo del ancla', () => {
+      const { antes } = tramosOcultos([{ key: 'n1', ids: ['n1'] }], [evo])
+      const [inicio] = antes.get('n1')
+      expect(inicio.ancla).toBe(a)
+      expect(inicio.pasos.map(p => p.tx.id)).toEqual(['g1', 'i1', 'p1'])
+      expect(inicio.saldo).toBe(-30000)
+    })
+
+    test('un gasto dividido es una sola fila con varios movimientos', () => {
+      const { antes, alFinal } = tramosOcultos([{ key: 'grupo', ids: ['g1', 'i1'] }], [evo])
+      expect(antes.get('grupo')[0].pasos).toEqual([])
+      expect(alFinal[0].pasos.map(p => p.tx.id)).toEqual(['p1', 'n1'])
+    })
+
+    test('si ninguna fila cuenta para el saldo, no hay nada que intercalar', () => {
+      const { antes, alFinal } = tramosOcultos([{ key: 'viejo', ids: ['viejo'] }], [evo])
+      expect(antes.size).toBe(0)
+      expect(alFinal).toEqual([])
+    })
   })
 })
