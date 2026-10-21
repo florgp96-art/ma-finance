@@ -6,7 +6,7 @@ import { semaforo } from '../theme'
 import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta, parseMonto, montoParaEditar } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 import SaldoCuenta, { tieneSaldo } from './SaldoCuenta'
-import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
+import { sentidoPorTipo, pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde, evolucionesDelSaldo, tramosOcultos, compararCronologico } from '../lib/saldos'
 import { hayColumnaSentido } from '../lib/columnaSentido'
 import { subcategoriasParaElegir } from '../lib/perfil'
 import { repartoDelPeriodo, nombreDelMes, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
@@ -915,7 +915,6 @@ function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, 
   const [filaExpandida, setFilaExpandida] = useState(null)
   const [tablaRef, tablaWidth] = useContainerWidth()
   const colVisible = columnasVisibles(tablaWidth)
-  const numColsTabla = 4 + (colVisible.categoria ? 1 : 0) + (colVisible.cuenta ? 1 : 0) + (colVisible.subcategoria ? 1 : 0) + (colVisible.cuotas ? 1 : 0)
   // Anchos fijos (px) de las columnas cuyo contenido no depende del ancho de
   // pantalla ("23/07", "6/6", "$ 45.678", una flechita o un par de íconos) —
   // el resto del ancho medido de la tabla se reparte por peso entre nombre y
@@ -944,13 +943,6 @@ function AccountDetail({ tieneAuto, account, accounts, allAccounts, refreshKey, 
   const FECHA_PX = anchoHolgado ? 82 : (hayFechasDeOtroAnio ? 76 : (tablaWidth >= 500 ? 70 : 62))
   const CUOTAS_PX = anchoHolgado ? 78 : 54
   const MONTO_PX = 112, EXPAND_PX = 28
-  // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
-  // cuenta como "Mastercard Preferred" son tan largos como una categoría —
-  // se cortaban con "..." mientras sobraba aire en las demás columnas.
-  const anchosTextoPral = repartirAnchoTexto(
-    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (colVisible.cuotas ? CUOTAS_PX : 0),
-    colVisible, { nombre: 1.5, categoria: 1.4, cuenta: 1.3, subcategoria: 1.3 }
-  )
   const anchosTextoNeutros = repartirAnchoTexto(
     tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX,
     colVisible, { nombre: 1.5, categoria: 1.4, subcategoria: 1.2, cuenta: 1.3 }
@@ -1013,6 +1005,15 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // Viven en la cuenta de la tarjeta, no acá: se traen aparte y solo se listan en
   // "Movimientos neutros". No entran en `transactions`, que es solo lo de esta cuenta.
   const [pagosTarjetaDesdeAca, setPagosTarjetaDesdeAca] = useState([])
+  // Saldos cargados de la cuenta (los trae SaldoCuenta), para la columna Saldo de la
+  // tabla, y qué tramos de "movimientos que no se ven" están desplegados.
+  const [anclasCuenta, setAnclasCuenta] = useState([])
+  const [tramosAbiertos, setTramosAbiertos] = useState(() => new Set())
+  const toggleTramo = (key) => setTramosAbiertos(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
   // La tabla de movimientos se corta a los primeros MOVIMIENTOS_VISIBLES, con un
   // botón para ver el resto: con 100+ movimientos había que scrollear la lista
   // entera para llegar a cualquier cosa.
@@ -1760,9 +1761,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   const sortTx = useCallback((list) => {
     return [...list].sort((a, b) => {
       if (sortKey === 'monto') return compararPorMonto(a, b, sortDir)
+      // Los del mismo día, en el orden en que se cargaron: es el orden en que la
+      // columna Saldo los va sumando. Sin desempate quedaban en el que devolvía la
+      // base, y el saldo de dos filas del mismo día podía verse al revés.
+      if (sortKey === 'fecha') return sortDir === 'asc' ? compararCronologico(a, b) : compararCronologico(b, a)
       let valA, valB
-      if (sortKey === 'fecha') { valA = a.fecha; valB = b.fecha }
-      else if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
+      if (sortKey === 'nombre') { valA = (a.nombre || a.detalle || '').toLowerCase(); valB = (b.nombre || b.detalle || '').toLowerCase() }
       else if (sortKey === 'categoria') { valA = etiquetaCategoria(a).toLowerCase(); valB = etiquetaCategoria(b).toLowerCase() }
       else if (sortKey === 'subcategoria') { valA = (a.subcategories?.nombre || '').toLowerCase(); valB = (b.subcategories?.nombre || '').toLowerCase() }
       else if (sortKey === 'cuotas') { valA = a.cuotas_total || 1; valB = b.cuotas_total || 1 }
@@ -2283,6 +2287,74 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
 
   const { txFiltradas, txNeutras, sinIdentificar, identificadas, identificadasSinFiltroCol, filasTabla } = tablaMemo
 
+  // COLUMNA SALDO: cuánto quedaba en la cuenta después de cada movimiento, para poder
+  // ver en cuál se fue a negativo. Sale de evolucionDelSaldo, el mismo cálculo que la
+  // card, así que la última fila termina en el mismo número.
+  // Solo con la tabla ordenada por fecha (ordenada por monto o nombre, un acumulado no
+  // quiere decir nada), en una cuenta con saldo cargado y con lugar para una columna
+  // más: computadora o iPad, no el celular.
+  const evolucionesSaldo = useMemo(() => {
+    if (allAccounts || !tieneSaldo(account) || anclasCuenta.length === 0) return []
+    // Los pagos de tarjeta viven en la cuenta de la tarjeta y se traen aparte.
+    const ids = new Set(transactions.map(t => t.id))
+    const movimientos = [...transactions, ...pagosTarjetaDesdeAca.filter(t => !ids.has(t.id))]
+    return evolucionesDelSaldo({ anclas: anclasCuenta, transactions: movimientos, accounts, accountId: account.id })
+  }, [allAccounts, account, anclasCuenta, transactions, pagosTarjetaDesdeAca, accounts])
+  const pasoSaldoPorTx = useMemo(() => {
+    const porId = new Map()
+    evolucionesSaldo.forEach(evo => evo.pasos.forEach(p => porId.set(p.tx.id, p)))
+    return porId
+  }, [evolucionesSaldo])
+  const SALDO_PX = 120
+  const verSaldo = sortKey === 'fecha' && evolucionesSaldo.length > 0 && tablaWidth >= 420
+  // La columna Saldo le gana el lugar a las opcionales (categoría, cuenta...): se
+  // agregan como si la tabla fuera SALDO_PX más angosta.
+  const colVisiblePral = verSaldo ? columnasVisibles(tablaWidth - SALDO_PX) : colVisible
+  const numColsTabla = 4 + (verSaldo ? 1 : 0) + (colVisiblePral.categoria ? 1 : 0) + (colVisiblePral.cuenta ? 1 : 0) + (colVisiblePral.subcategoria ? 1 : 0) + (colVisiblePral.cuotas ? 1 : 0)
+  // cuenta pesaba 0.8 (la porción más chica de las cuatro) aunque nombres de
+  // cuenta como "Mastercard Preferred" son tan largos como una categoría —
+  // se cortaban con "..." mientras sobraba aire en las demás columnas.
+  const anchosTextoPral = repartirAnchoTexto(
+    tablaWidth - FECHA_PX - MONTO_PX - EXPAND_PX - (verSaldo ? SALDO_PX : 0) - (colVisiblePral.cuotas ? CUOTAS_PX : 0),
+    colVisiblePral, { nombre: 1.5, categoria: 1.4, cuenta: 1.3, subcategoria: 1.3 }
+  )
+
+  // Qué decir del saldo en una fila: cuánto quedó después del movimiento (del último,
+  // en un gasto dividido) o, si no lo cambia, por qué. En el iPad no hay hover para
+  // leer el title de la celda, así que lo mismo se ve al desplegar la fila.
+  const infoSaldo = (txs) => {
+    const pasos = txs.map(t => pasoSaldoPorTx.get(t.id)).filter(Boolean)
+      .sort((a, b) => compararCronologico(a.tx, b.tx))
+    if (pasos.length > 0) {
+      const primero = pasos[0], ultimo = pasos[pasos.length - 1]
+      const simbolo = monedaSymbol(ultimo.tx.moneda)
+      return {
+        saldo: ultimo.saldo, simbolo,
+        detalle: `${totalConSigno(primero.saldoAntes, simbolo, false)} → ${totalConSigno(ultimo.saldo, simbolo, false)}`,
+      }
+    }
+    const tx = txs[0]
+    const moneda = tx?.moneda || 'ARS'
+    const evo = evolucionesSaldo.find(e => e.moneda === moneda)
+    const detalle = tx?.pendiente
+      ? `${tx.tipo === 'ingreso' ? 'A cobrar' : 'A pagar'}: todavía no movió plata, no cambia el saldo.`
+      : !evo
+        ? `No cargaste un saldo en ${monedaSymbol(moneda)} para esta cuenta.`
+        : `Ya está adentro del saldo que cargaste el ${formatFechaCorta(evo.ancla.fecha)}: no lo cambia.`
+    return { saldo: null, simbolo: monedaSymbol(moneda), detalle }
+  }
+
+  const celdaSaldo = (txs) => {
+    const { saldo, simbolo, detalle } = infoSaldo(txs)
+    return (
+      <td title={detalle} style={{ ...styles.td, textAlign: 'right', whiteSpace: 'nowrap', wordBreak: 'normal',
+        fontWeight: saldo === null ? '400' : '500',
+        color: saldo === null ? muted : saldo < 0 ? sem.negativo : styles.td.color }}>
+        {saldo === null ? '—' : totalConSigno(saldo, simbolo, false)}
+      </td>
+    )
+  }
+
   // Fila de movimiento con columnas progresivas (fecha/nombre/monto siempre
   // visibles; categoría → cuenta → subcategoría → cuotas se agregan con más
   // ancho disponible, ver colVisible) y expandible: al clickear, una fila de
@@ -2344,7 +2416,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               <span style={{ fontSize: '11px', color: '#4a9e7a', marginLeft: '6px', fontWeight: '600' }}>🧾 Facturado</span>
             )}
           </td>
-          {colVisible.categoria && (
+          {colVisiblePral.categoria && (
             <td style={ellipsisCell}>
               {esIngresoTx ? (
                 <span title={ingresoLabel} style={{ backgroundColor: darkMode ? 'var(--m-3a2f4a)' : 'var(--m-ede8f4)', color: darkMode ? 'var(--m-c8b4e8)' : 'var(--m-5c4f5c)', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
@@ -2357,13 +2429,13 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               )}
             </td>
           )}
-          {colVisible.cuenta && (
+          {colVisiblePral.cuenta && (
             <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{tx.accounts?.nombre || '—'}</span></td>
           )}
-          {colVisible.subcategoria && (
+          {colVisiblePral.subcategoria && (
             <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{esIngresoTx ? '' : (tx.subcategories?.nombre || '—')}</span></td>
           )}
-          {colVisible.cuotas && (
+          {colVisiblePral.cuotas && (
             <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{esIngresoTx ? '—' : (tx.cuotas_total > 1 ? `${tx.cuota_numero}/${tx.cuotas_total}` : '—')}</td>
           )}
           {/* Verde los ingresos y rojo los gastos, el mismo criterio que el signo
@@ -2373,6 +2445,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             title={tcTooltipDe(tx, tcMap, tipoCambio)}>
             {tx.tipo === 'ingreso' ? '+' : '-'}{monedaSymbol(tx.moneda)} {formatMontoFull(tx.monto)}
           </td>
+          {verSaldo && celdaSaldo([tx])}
           <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>{expandido ? '▾' : '▸'}</td>
         </tr>
         {expandido && (
@@ -2424,6 +2497,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <p style={detailLabel}>Moneda</p>
                   <p style={detailValue}>{tx.moneda || 'ARS'}</p>
                 </div>
+                {verSaldo && (
+                  <div>
+                    <p style={detailLabel}>Saldo</p>
+                    <p style={detailValue}>{infoSaldo([tx]).detalle}</p>
+                  </div>
+                )}
                 {verCobroFacturacion && (tx.tipo === 'ingreso' || tx.tipo === 'gasto') && (
                   <div>
                     <p style={detailLabel}>Estado</p>
@@ -2523,26 +2602,27 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
             🔀 {grupo.txs.length}{grupo.hijos.length > 0 ? ` · ${grupo.hijos.join(', ')}` : ''}
           </span>
         </td>
-        {colVisible.categoria && (
+        {colVisiblePral.categoria && (
           <td style={ellipsisCell}>
             <span title={repTx.categories?.nombre || ''} style={{ backgroundColor: (resolveColor(repTx.categories?.nombre) || '#E0E0E0'), color: '#3a3a3c', padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: '500' }}>
               {resolveIcon(repTx.categories?.nombre || '')} {repTx.categories?.nombre || '—'}
             </span>
           </td>
         )}
-        {colVisible.cuenta && (
+        {colVisiblePral.cuenta && (
           <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{repTx.accounts?.nombre || '—'}</span></td>
         )}
-        {colVisible.subcategoria && (
+        {colVisiblePral.subcategoria && (
           <td style={ellipsisCell}><span style={{fontSize:'12px', color: muted}}>{repTx.subcategories?.nombre || '—'}</span></td>
         )}
-        {colVisible.cuotas && (
+        {colVisiblePral.cuotas && (
           <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal' }}>{repTx.cuotas_total > 1 ? `${repTx.cuota_numero}/${repTx.cuotas_total}` : '—'}</td>
         )}
         <td style={{...styles.td, textAlign:'right', fontWeight:'600', whiteSpace: 'nowrap', wordBreak: 'normal',
           color: sem.negativo}}>
           -{monedaSymbol(repTx.moneda)} {formatMontoFull(grupo.total)}
         </td>
+        {verSaldo && celdaSaldo(grupo.txs)}
         <td style={{ ...styles.td, textAlign: 'center', width: '28px', padding: '10px 4px', color: darkMode ? 'var(--m-8a7a8a)' : '#75757a' }}>▸</td>
       </tr>
     )
@@ -2904,6 +2984,71 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   const filasTablaVisibles = (hayMasMovimientos && !verTodosMovimientos)
     ? filasTabla.slice(0, MOVIMIENTOS_VISIBLES)
     : filasTabla
+
+  // Lo que cuenta para el saldo y no se ve en la tabla (neutros, pagos de tarjeta, sin
+  // identificar, filtrado o detrás de "Ver más"), agrupado entre las filas donde pasó.
+  // Sin esto la columna Saldo saltaría de una fila a la otra sin explicación.
+  const keyDeFila = (fila) => fila.tipo === 'single' ? fila.tx.id : fila.grupo.key
+  const tramosSaldo = (() => {
+    if (!verSaldo) return null
+    const filas = filasTablaVisibles.map(f => ({
+      key: keyDeFila(f), ids: f.tipo === 'single' ? [f.tx.id] : f.grupo.txs.map(t => t.id),
+    }))
+    return tramosOcultos(sortDir === 'asc' ? filas : filas.reverse(), evolucionesSaldo)
+  })()
+
+  const etiquetaPasoOculto = (p) => p.pagoDeTarjeta ? `Pago de ${p.tx.accounts?.nombre || 'tarjeta'}`
+    : p.tx.tipo === 'neutro' ? 'Neutro'
+    : (p.tx.estado === 'a_identificar' || p.tx.categories?.nombre === 'A Identificar') ? 'Sin identificar'
+    : null
+
+  // Una fila por tramo con el neto y el saldo al terminar; al tocarla se despliega
+  // cada movimiento con su saldo, en el mismo sentido que la tabla.
+  const renderTramosSaldo = (tramos) => (tramos || []).map(tramo => {
+    const n = tramo.pasos.length
+    const abierto = n > 0 && tramosAbiertos.has(tramo.key)
+    const simbolo = monedaSymbol(tramo.moneda)
+    const fondo = darkMode ? 'var(--m-242024)' : 'var(--m-f7f5f8)'
+    const celdaNum = (color) => ({ ...styles.td, textAlign: 'right', whiteSpace: 'nowrap', wordBreak: 'normal', fontWeight: '500', color })
+    const colorSaldo = (saldo) => saldo < 0 ? sem.negativo : styles.td.color
+    const ocultos = `${n} movimiento${n === 1 ? '' : 's'} que no se ve${n === 1 ? '' : 'n'} en la tabla`
+    const texto = tramo.ancla
+      ? `Saldo que cargaste el ${formatFechaCorta(tramo.ancla.fecha)}: ${totalConSigno(Number(tramo.ancla.saldo), simbolo, false)}${n > 0 ? ` · después, ${ocultos}` : ''}`
+      : ocultos
+    const pasos = sortDir === 'asc' ? tramo.pasos : [...tramo.pasos].reverse()
+    return (
+      <React.Fragment key={tramo.key}>
+        <tr style={{ ...styles.tr, backgroundColor: fondo, cursor: n > 0 ? 'pointer' : 'default' }}
+          onClick={n > 0 ? () => toggleTramo(tramo.key) : undefined}>
+          {/* Sin "...": en el iPad no hay hover para leer el resto, y es donde dice
+              de qué saldo arranca la cuenta. */}
+          <td colSpan={numColsTabla - 3} style={{ ...styles.td, fontSize: '12px', color: muted }}>
+            {n > 0 && (abierto ? '▾ ' : '▸ ')}{texto}
+          </td>
+          <td style={celdaNum(tramo.neto >= 0 ? sem.positivo : sem.negativo)}>{n > 0 ? totalConSigno(tramo.neto, simbolo) : ''}</td>
+          <td style={celdaNum(colorSaldo(tramo.saldo))}>{totalConSigno(tramo.saldo, simbolo, false)}</td>
+          <td style={styles.td} />
+        </tr>
+        {abierto && pasos.map(p => {
+          const etiqueta = etiquetaPasoOculto(p)
+          return (
+            <tr key={`${tramo.key}-${p.tx.id}`} style={{ ...styles.tr, backgroundColor: fondo }}>
+              <td style={{ ...styles.td, whiteSpace: 'nowrap', wordBreak: 'normal', fontSize: '12px' }}>{formatFechaCorta(p.tx.fecha)}</td>
+              <td colSpan={numColsTabla - 4} style={{ ...ellipsisCell, fontSize: '12px' }} title={p.tx.nombre || p.tx.detalle}>
+                {p.tx.nombre || p.tx.detalle || '—'}
+                {etiqueta && <span style={{ fontSize: '11px', color: muted, marginLeft: '6px' }}>· {etiqueta}</span>}
+              </td>
+              <td style={{ ...celdaNum(p.signo > 0 ? sem.positivo : sem.negativo), fontSize: '12px' }}>
+                {p.signo > 0 ? '+' : '-'}{simbolo} {formatMontoFull(p.monto)}
+              </td>
+              <td style={{ ...celdaNum(colorSaldo(p.saldo)), fontSize: '12px' }}>{totalConSigno(p.saldo, simbolo, false)}</td>
+              <td style={styles.td} />
+            </tr>
+          )
+        })}
+      </React.Fragment>
+    )
+  })
 
   // Contar transacciones de cada extracto, ordenados por mes descendente — por
   // vínculo real (statement_id, el mismo campo que liga reconciliarSueltas y que ya
@@ -4015,7 +4160,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       {!allAccounts && tieneSaldo(account) && (
         <div style={{ maxWidth: isMobile ? '100%' : '340px', marginBottom: '24px' }}>
           <SaldoCuenta account={account} accounts={accounts} transactions={transactions}
-            darkMode={darkMode} styles={styles} onSaved={onAccountsChanged} />
+            darkMode={darkMode} styles={styles} onSaved={onAccountsChanged} onAnclas={setAnclasCuenta} />
         </div>
       )}
 
@@ -4793,27 +4938,49 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
           <colgroup>
             <col style={{ width: `${FECHA_PX}px` }} />
             <col style={{ width: `${anchosTextoPral.nombre}px` }} />
-            {colVisible.categoria && <col style={{ width: `${anchosTextoPral.categoria}px` }} />}
-            {colVisible.cuenta && <col style={{ width: `${anchosTextoPral.cuenta}px` }} />}
-            {colVisible.subcategoria && <col style={{ width: `${anchosTextoPral.subcategoria}px` }} />}
-            {colVisible.cuotas && <col style={{ width: `${CUOTAS_PX}px` }} />}
+            {colVisiblePral.categoria && <col style={{ width: `${anchosTextoPral.categoria}px` }} />}
+            {colVisiblePral.cuenta && <col style={{ width: `${anchosTextoPral.cuenta}px` }} />}
+            {colVisiblePral.subcategoria && <col style={{ width: `${anchosTextoPral.subcategoria}px` }} />}
+            {colVisiblePral.cuotas && <col style={{ width: `${CUOTAS_PX}px` }} />}
             <col style={{ width: `${MONTO_PX}px` }} />
+            {verSaldo && <col style={{ width: `${SALDO_PX}px` }} />}
             <col style={{ width: `${EXPAND_PX}px` }} />
           </colgroup>
           <thead>
             <tr>
               {thSortable('Fecha', 'fecha')}
               {thFiltrable('Nombre', 'nombre')}
-              {colVisible.categoria && thFiltrable('Categoría', 'categoria')}
-              {colVisible.cuenta && thFiltrable('Cuenta', 'cuenta')}
-              {colVisible.subcategoria && thFiltrable('Subcategoría', 'subcategoria')}
-              {colVisible.cuotas && thFiltrable('Cuotas', 'cuotas')}
+              {colVisiblePral.categoria && thFiltrable('Categoría', 'categoria')}
+              {colVisiblePral.cuenta && thFiltrable('Cuenta', 'cuenta')}
+              {colVisiblePral.subcategoria && thFiltrable('Subcategoría', 'subcategoria')}
+              {colVisiblePral.cuotas && thFiltrable('Cuotas', 'cuotas')}
               {thFiltrable('Monto', 'monto', 'right', 'moneda')}
+              {verSaldo && (
+                <th style={{ ...styles.th, textAlign: 'right' }}
+                  title="Cuánto quedó en la cuenta después de cada movimiento, a partir del último saldo que cargaste. Las filas grises son movimientos que cuentan para el saldo pero no se ven en la tabla (neutros, pagos de tarjeta, sin identificar o filtrados): tocalas para ver cuáles son.">
+                  Saldo
+                </th>
+              )}
               <th style={styles.th}></th>
             </tr>
           </thead>
           <tbody>
-            {filasTablaVisibles.map(fila => fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido))}
+            {/* Los tramos que van "antes" de una fila son anteriores en el tiempo: con
+                la tabla de la más nueva a la más vieja, se dibujan debajo de ella. */}
+            {tramosSaldo && sortDir === 'desc' && renderTramosSaldo(tramosSaldo.alFinal)}
+            {filasTablaVisibles.map(fila => {
+              const filaJsx = fila.tipo === 'single' ? renderTxRow(fila.tx) : renderFilaGrupo(fila.grupo, fila.expandido)
+              const tramos = tramosSaldo?.antes.get(keyDeFila(fila))
+              if (!tramos) return filaJsx
+              return (
+                <React.Fragment key={`con-tramos-${keyDeFila(fila)}`}>
+                  {sortDir === 'asc' && renderTramosSaldo(tramos)}
+                  {filaJsx}
+                  {sortDir === 'desc' && renderTramosSaldo(tramos)}
+                </React.Fragment>
+              )
+            })}
+            {tramosSaldo && sortDir === 'asc' && renderTramosSaldo(tramosSaldo.alFinal)}
           </tbody>
           {/* Los totales son de todos los movimientos que pasan los filtros, no
               solo de las filas visibles — el corte de mobile no los cambia, si no
