@@ -37,6 +37,8 @@ Este archivo tiene dos partes:
   Vercel lo despliega solo, sin que nadie tenga que hacer nada.
 - **Es una PWA:** se puede "agregar a la pantalla de inicio" del celular y se
   comporta como una app.
+- **En español o en inglés:** el selector ES | EN de arriba cambia el idioma al
+  instante, y un link con `?lang=en` abre la app directamente en inglés.
 
 ### Respuesta técnica (si el que pregunta es programador)
 

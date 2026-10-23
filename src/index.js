@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { aplicarTemaAlDocumento, aplicarModoAlDocumento } from './theme';
+import { aplicarIdiomaAlDocumento } from './i18n/idioma';
 
 // El tema lo elige el usuario (no el sistema operativo), así que el CSS no lo
 // puede deducir con prefers-color-scheme. Se copia a un atributo del <html>
@@ -11,6 +12,8 @@ import { aplicarTemaAlDocumento, aplicarModoAlDocumento } from './theme';
 // del navegador en el login, sobre todo— sepan en qué tema están.
 aplicarTemaAlDocumento();
 aplicarModoAlDocumento();
+// En inglés, la traducción se pone encima de lo que dibuje React (ver i18n/).
+aplicarIdiomaAlDocumento();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

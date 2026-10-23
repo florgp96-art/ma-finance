@@ -24,6 +24,7 @@ import { leerLiquidaciones, crearLiquidacion, nuevoId as nuevoIdLiquidacion } fr
 import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
 import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
+import SelectorIdioma from '../components/SelectorIdioma'
 import { parseMonto, hoyLocal, mesLocal, normalizarMoneda } from '../lib/formato'
 import { importarModulo } from '../lib/cargaDiferida'
 import { prepararImagen } from '../lib/imagen'
@@ -4146,8 +4147,9 @@ export default function Dashboard() {
               {!sinLogo && (
                 <img src={logoDelModo(modo)} alt="MAF" style={{ ...styles.logoImg, height: isMobile ? '60px' : isTablet ? '75px' : '160px', position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: isMobile ? '12px' : isTablet ? '8px' : '20px', pointerEvents: 'none', filter: darkMode ? 'invert(1)' : 'none' }} />
               )}
-              {/* Derecha: luna + config (desktop) + cerrar sesión */}
+              {/* Derecha: idioma + luna + config (desktop) + cerrar sesión */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', zIndex: 1 }}>
+                <SelectorIdioma darkMode={darkMode} />
                 <button onClick={() => { const next = !darkMode; setDarkMode(next); localStorage.setItem('darkmode_ma', next); aplicarTemaAlDocumento(next); const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', next ? '#1C1A1C' : '#F0EDEC') }} title={darkMode ? 'Modo claro' : 'Modo oscuro'} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', opacity: 0.7, marginTop: '2px' }}>
                   {darkMode ? '☀️' : '🌙'}
                  </button>
