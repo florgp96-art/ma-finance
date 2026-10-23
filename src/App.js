@@ -1,8 +1,9 @@
 import React, { Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { paleta, leerDarkMode, FONT } from './theme'
 import { lazyConRecarga } from './lib/cargaDiferida'
+import SelectorIdioma from './components/SelectorIdioma'
 
 // Cada pantalla se descarga cuando hace falta: quien entra al login no baja el
 // Dashboard (gráficos incluidos), y al revés.
@@ -31,6 +32,14 @@ function Cargando() {
   )
 }
 
+// En el Dashboard el selector de idioma va en el header; en el resto de las
+// pantallas (login, registro, onboarding) flota arriba a la derecha.
+function IdiomaFueraDelDashboard() {
+  const { pathname } = useLocation()
+  if (pathname.startsWith('/dashboard')) return null
+  return <SelectorIdioma flotante darkMode={leerDarkMode()} />
+}
+
 function App() {
   const { user, loading, passwordRecovery, clearPasswordRecovery } = useAuth()
 
@@ -42,6 +51,7 @@ function App() {
   if (user && passwordRecovery) {
     return (
       <Suspense fallback={<Cargando />}>
+        <SelectorIdioma flotante darkMode={leerDarkMode()} />
         <ResetPassword onDone={clearPasswordRecovery} />
       </Suspense>
     )
@@ -49,6 +59,7 @@ function App() {
 
   return (
     <Router>
+      <IdiomaFueraDelDashboard />
       <Suspense fallback={<Cargando />}>
         <Routes>
           <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
