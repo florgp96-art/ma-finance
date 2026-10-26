@@ -4326,7 +4326,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>$ {formatMonto(totalIngresosARS)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance ARS</p>
-                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}$ {formatMonto(b)}</p> })()}
+                  {(() => { const b = totalIngresosARS - totalARS; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : '−'}$ {formatMonto(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
