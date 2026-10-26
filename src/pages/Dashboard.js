@@ -25,7 +25,8 @@ import { NOMBRE_NUEVA } from '../lib/liquidacion'
 import { normalizarConfigReparto, conTrabajo, porcentajesValidos } from '../lib/repartoSocios'
 import SelectorTrabajo, { porcentajesDesdeTexto } from '../components/SelectorTrabajo'
 import SelectorIdioma from '../components/SelectorIdioma'
-import { parseMonto, hoyLocal, mesLocal, normalizarMoneda } from '../lib/formato'
+import { parseMonto, hoyLocal, mesLocal, normalizarMoneda, simboloMoneda } from '../lib/formato'
+import { eurosPorTipoDeDolar, euroPorMes } from '../lib/cotizaciones'
 import { importarModulo } from '../lib/cargaDiferida'
 import { prepararImagen } from '../lib/imagen'
 import { subcategoriasParaElegir } from '../lib/perfil'
@@ -385,7 +386,8 @@ export default function Dashboard() {
   // sola vez, misma lógica, para que solo se recalculen cuando cambian las
   // cotizaciones cargadas o el tipo de dólar elegido.
   const tcMap = useMemo(() => Object.fromEntries(exchangeRates.filter(r => r.tipo === tcTipo).map(r => [r.periodo, r.valor])), [exchangeRates, tcTipo])
-  const tcMapEUR = useMemo(() => Object.fromEntries(exchangeRates.filter(r => r.tipo === 'euro').map(r => [r.periodo, r.valor])), [exchangeRates])
+  // El euro de cada mes en el mismo tipo que el dólar elegido (ver lib/cotizaciones).
+  const tcMapEUR = useMemo(() => euroPorMes(exchangeRates, tcTipo), [exchangeRates, tcTipo])
   const guardarTipoCambioManual = (valor) => {
     setTcManual(valor)
     if (currentUserId) { try { localStorage.setItem(`tc_manual_${currentUserId}`, JSON.stringify(valor)) } catch {} }
@@ -720,9 +722,13 @@ export default function Dashboard() {
     if (rate) { setTipoCambio(String(rate.valor)); localStorage.setItem('tc_ma', String(rate.valor)) }
   }, [exchangeRates, dolarRates, tcTipo])
 
+  // El euro va en el mismo tipo que el dólar elegido (blue, MEP, tarjeta u oficial,
+  // ver eurosPorTipoDeDolar). Si la consulta en vivo falló, el guardado este mes; si
+  // tampoco hay, queda el último que se vio en este dispositivo.
   useEffect(() => {
-    if (dolarRates.eur) { setTipoCambioEUR(String(dolarRates.eur)); localStorage.setItem('tc_eur', String(dolarRates.eur)) }
-  }, [dolarRates])
+    const valor = dolarRates[`eur_${tcTipo}`] || dolarRates.eur || tcMapEUR[mesLocal()]
+    if (valor) { setTipoCambioEUR(String(valor)); localStorage.setItem('tc_eur', String(valor)) }
+  }, [dolarRates, tcTipo, tcMapEUR])
 
   useEffect(() => {
     // exchange_rates y dolarapi.com no dependen del usuario logueado — se
@@ -1173,14 +1179,19 @@ export default function Dashboard() {
         if (resEur.ok) {
           const eur = await resEur.json()
           const avg = (eur.compra != null && eur.venta != null) ? Math.round((eur.compra + eur.venta) / 2) : (eur.venta || eur.compra || 0)
-          if (avg > 0) {
-            map.eur = avg
-            const mesActual = mesLocal()
-            supabase.from('exchange_rates').upsert({ periodo: mesActual, tipo: 'euro', valor: avg }, { onConflict: 'periodo,tipo' }).then(({ error }) => { if (!error) fetchExchangeRates() })
-          }
+          if (avg > 0) map.eur = avg
         }
       } catch {}
+      Object.assign(map, eurosPorTipoDeDolar(map))
       setDolarRates(map)
+      // El euro oficial del mes queda guardado para convertir después los movimientos
+      // de este mes con su propio TC. Es lo único que las políticas de exchange_rates
+      // le dejan escribir al navegador: los dólares y el euro de cada tipo de dólar los
+      // guarda el cron diario (api/_lib/cotizacionesDelMes.js).
+      if (map.eur > 0) {
+        supabase.from('exchange_rates').upsert({ periodo: mesLocal(), tipo: 'euro', valor: map.eur }, { onConflict: 'periodo,tipo' })
+          .then(({ error }) => { if (!error) fetchExchangeRates() })
+      }
     } catch {}
     setCotizacionesIntentadas(true)
   }
@@ -1559,7 +1570,7 @@ export default function Dashboard() {
       // sin avisar (ver comentario de fetchAllTxPages más arriba).
       const existentes = await fetchAllTxPages(() =>
         supabase.from('transactions')
-          .select('id, fecha, monto, detalle, account_id').in('account_id', uniqueAccountIds)
+          .select('id, fecha, monto, moneda, detalle, account_id').in('account_id', uniqueAccountIds)
           .order('fecha', { ascending: false }).order('id', { ascending: true })
       )
 
@@ -1571,9 +1582,12 @@ export default function Dashboard() {
 
       for (const item of rowsWithAccounts) {
         const { row, acc } = item
+        // Mismo monto en otra moneda no es el mismo movimiento (€ 50 no es $ 50).
+        const mismaMoneda = (e) => (e.moneda || 'ARS') === (row.moneda || 'ARS')
         const exactMatch = existentes?.find(e =>
           e.account_id === acc.id &&
           e.fecha === row.fecha &&
+          mismaMoneda(e) &&
           Math.abs(Number(e.monto) - row.monto) < 0.01 &&
           (e.detalle || '').toLowerCase() === (row.notas || row.descripcion || '').toLowerCase()
         )
@@ -1582,6 +1596,7 @@ export default function Dashboard() {
         const sameAmountDate = existentes?.find(e =>
           e.account_id === acc.id &&
           e.fecha === row.fecha &&
+          mismaMoneda(e) &&
           Math.abs(Number(e.monto) - row.monto) < 0.01
         )
         if (sameAmountDate) { potentialDupes.push({ ...item, existing: sameAmountDate }); continue }
@@ -3481,7 +3496,7 @@ export default function Dashboard() {
                             {data.items.map((it, ii) => (
                               <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#6e6e73', padding: '2px 0' }}>
                                 <span style={{ flex: 1, minWidth: 0 }}>{it.nombre} ({it.cuotaNum}/{it.cuotasTotal}) · {it.cuenta}</span>
-                                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{it.moneda === 'USD' ? 'U$S' : '$'} {fmt(it.monto)}</span>
+                                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{simboloMoneda(it.moneda)} {fmt(it.monto)}</span>
                               </div>
                             ))}
                           </div>
@@ -3943,7 +3958,7 @@ export default function Dashboard() {
           })
           const pendientes = vencList.filter(v => !v.pagado)
 
-          const eurValor = dolarRates.eur || (tipoCambioEUR ? parseFloat(tipoCambioEUR) : null)
+          const eurValor = tipoCambioEUR ? parseFloat(tipoCambioEUR) : null
           const fmtMonto = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v))
           const manualActivo = tcManual?.enabled && tcManual?.valor
           const monedasTituloStyle = { fontSize: '10px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a', ...rotuloLabel, fontWeight: 700 }
@@ -3989,6 +4004,12 @@ export default function Dashboard() {
                   <div style={{ marginTop: '6px' }}>
                     <p style={{ margin: 0, fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>€1 = <strong style={{ color: darkMode ? '#F0EDEC' : '#1d1d1f', fontSize: '15px' }}>$ {fmtMonto(eurValor)}</strong></p>
                     {dolarRates.eur && <p style={{ margin: '2px 0 0', fontSize: '9px', color: sem.teal }}>● en vivo · prom.</p>}
+                    {tcTipo !== 'oficial' && dolarRates[`eur_${tcTipo}`] && (
+                      <p style={{ margin: '2px 0 0', fontSize: '9px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}
+                        title="El euro solo tiene cotización oficial: se lleva al tipo de dólar elegido con el mismo salto que hay entre ese dólar y el oficial.">
+                        {`Cruce con el dólar ${tiposLabel[tcTipo].toLowerCase()}`}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p style={{ margin: '6px 0 0', fontSize: '11px', color: darkMode ? 'var(--m-9a8a9a)' : '#75757a' }}>{cotizacionesIntentadas ? 'No se pudo consultar la cotización' : 'Cargando...'}</p>
@@ -4494,11 +4515,11 @@ export default function Dashboard() {
                 )}
 
                 {dashboardTab === 'caja' && (
-                  <CashView userEmail={userEmail} accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcManual={tcManual} customIcons={customIcons} cuentasAhorro={cuentasAhorro} />
+                  <CashView userEmail={userEmail} accounts={accounts} refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcMap={tcMap} tcMapEUR={tcMapEUR} tcManual={tcManual} customIcons={customIcons} cuentasAhorro={cuentasAhorro} />
                 )}
 
                 {dashboardTab === 'apagar' && (
-                  <AccountDetail repartoSocios={repartoSocios} onCambiarRepartoSocios={cambiarRepartoSocios} tieneAuto={tieneAuto} accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
+                  <AccountDetail repartoSocios={repartoSocios} onCambiarRepartoSocios={cambiarRepartoSocios} tieneAuto={tieneAuto} accounts={accounts} allAccounts soloAPagar refreshKey={refreshKey} darkMode={darkMode} tipoCambio={tipoCambioEfectivo} tipoCambioEUR={tipoCambioEUR} tcMapEUR={tcMapEUR} tcManual={tcManual} onTransactionsLoaded={setAccountTransactions} onStatementsLoaded={setDashboardStatements} customIcons={customIcons} onAccountsChanged={fetchAccounts} userEmail={userEmail} />
                 )}
 
                 {dashboardTab === 'hijos' && childrenDB.length > 0 && (
@@ -5338,7 +5359,7 @@ export default function Dashboard() {
                           const esPos = statementData?.tipo_documento === 'banco' ? (t.tipo === 'ingreso' || (t.tipo === 'neutro' && t.sentido === 'entra')) : t.es_credito
                           return (
                             <p style={{ ...styles.transactionMonto, color: esPos ? sem.positivo : undefined }}>
-                              {esPos ? '+' : '-'} {t.moneda === 'USD' ? 'U$S' : t.moneda === 'EUR' ? '€' : '$'} {formatMonto(Math.abs(t.monto))}
+                              {esPos ? '+' : '-'} {simboloMoneda(t.moneda)} {formatMonto(Math.abs(t.monto))}
                             </p>
                           )
                         })()}
@@ -5560,12 +5581,12 @@ export default function Dashboard() {
                         <div>
                           <p style={{ fontSize: '10px', color: txtTerciario, margin: '0 0 4px 0', ...rotuloLabel }}>Ya existe</p>
                           <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.existing.detalle || item.existing.nombre || '—'}</p>
-                          <p style={{ fontSize: '11px', color: txtTerciario, margin: 0 }}>{item.existing.fecha} · $ {Number(item.existing.monto).toLocaleString('es-AR')}</p>
+                          <p style={{ fontSize: '11px', color: txtTerciario, margin: 0 }}>{item.existing.fecha} · {simboloMoneda(item.existing.moneda)} {Number(item.existing.monto).toLocaleString('es-AR')}</p>
                         </div>
                         <div>
                           <p style={{ fontSize: '10px', color: txtTerciario, margin: '0 0 4px 0', ...rotuloLabel }}>En el Excel</p>
                           <p style={{ fontSize: '12px', color: darkMode ? '#F0EDEC' : '#1d1d1f', margin: '0 0 2px 0', fontWeight: '500' }}>{item.row.notas || item.row.descripcion || '—'}</p>
-                          <p style={{ fontSize: '11px', color: txtTerciario, margin: 0 }}>{item.row.fecha} · {item.row.moneda === 'USD' ? 'U$S' : '$'} {Number(item.row.monto).toLocaleString('es-AR')}</p>
+                          <p style={{ fontSize: '11px', color: txtTerciario, margin: 0 }}>{item.row.fecha} · {simboloMoneda(item.row.moneda)} {Number(item.row.monto).toLocaleString('es-AR')}</p>
                         </div>
                       </div>
                     </div>
@@ -5761,7 +5782,7 @@ export default function Dashboard() {
                             }
                           </td>
                           <td style={{ padding: '7px 10px', fontWeight: '600', whiteSpace: 'nowrap', color: darkMode ? '#F0EDEC' : '#2d2d2d' }}>
-                            {row.moneda === 'USD' ? 'U$S' : '$'} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
+                            {simboloMoneda(row.moneda)} {new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2 }).format(row.monto)}
                           </td>
                           <td style={{ padding: '7px 10px' }}>
                             <select

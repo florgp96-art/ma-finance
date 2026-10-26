@@ -3,6 +3,7 @@ const {
   saldoTotal, tieneSaldo, monedaDeLaCuenta, sentidoPorTipo, sentidoDelExtracto,
   pagosDeTarjetaDeLaCuenta, esTarjetaQueSePagaDesde,
   compararCronologico, evolucionDelSaldo, evolucionesDelSaldo, tramosOcultos,
+  movidoSinSaldo, avisoMovidoSinSaldo,
 } = require('./saldos')
 
 const CA = 'caja-ahorro'
@@ -823,5 +824,46 @@ describe('evolución del saldo movimiento por movimiento', () => {
       expect(antes.size).toBe(0)
       expect(alFinal).toEqual([])
     })
+  })
+})
+
+describe('plata movida en una moneda sin saldo cargado', () => {
+  const USD = 'caja-usd'
+  const ARQ = 'arq'
+  const cuentas = [
+    { id: USD, nombre: 'Caja de Ahorro USD Galicia', tipo: 'debito' },
+    { id: ARQ, nombre: 'ARQ', tipo: 'debito' },
+  ]
+  const anclas = [
+    { id: 'u1', account_id: USD, moneda: 'USD', fecha: '2026-09-16', saldo: 303.49 },
+    { id: 'q1', account_id: ARQ, moneda: 'EUR', fecha: '2026-10-04', saldo: 0 },
+  ]
+  // Caso real: los pesos de un cambio de € 280 entraron a la caja en dólares, y en ARQ
+  // entraron y volvieron a salir U$S 10,94.
+  const transactions = [
+    { id: 'c1', account_id: USD, tipo: 'neutro', sentido: 'entra', fecha: '2026-10-19', monto: 508656.14, moneda: 'ARS' },
+    { id: 'i1', account_id: ARQ, tipo: 'ingreso', fecha: '2026-10-08', monto: 10.94, moneda: 'USD' },
+    { id: 'c2', account_id: ARQ, tipo: 'neutro', sentido: 'sale', fecha: '2026-10-09', monto: 10.94, moneda: 'USD' },
+    { id: 'g1', account_id: ARQ, tipo: 'gasto', fecha: '2026-10-14', monto: 3.7, moneda: 'EUR' },
+  ]
+
+  test('saldoTotal la devuelve aparte y no la suma a ningún total', () => {
+    const r = saldoTotal({ anclas, transactions, accounts: cuentas })
+    expect(r.porMoneda.map(p => p.moneda)).toEqual(['EUR', 'USD'])
+    expect(r.monedasSinSaldo).toEqual([
+      { account_id: USD, nombre: 'Caja de Ahorro USD Galicia', moneda: 'ARS', neto: 508656.14 },
+    ])
+  })
+
+  test('lo que entra y vuelve a salir no avisa, y lo posterior a "hasta" no cuenta', () => {
+    expect(movidoSinSaldo({ transactions, cuenta: cuentas[1], monedas: ['EUR'] })).toEqual([])
+    expect(movidoSinSaldo({ transactions, cuenta: cuentas[0], monedas: ['USD'], hasta: '2026-10-18' })).toEqual([])
+  })
+
+  test('el aviso dice cuánto, en qué moneda y si entró o salió', () => {
+    expect(avisoMovidoSinSaldo({ nombre: 'Caja de Ahorro USD Galicia', moneda: 'ARS', neto: 508656.14 }))
+      .toBe('No incluye $ 508.656 que entraron a Caja de Ahorro USD Galicia: esa cuenta no tiene saldo cargado en pesos.')
+    expect(avisoMovidoSinSaldo({ nombre: 'Efectivo', moneda: 'EUR', neto: -48 }))
+      .toBe('No incluye € 48 que salieron de Efectivo: esa cuenta no tiene saldo cargado en euros.')
   })
 })

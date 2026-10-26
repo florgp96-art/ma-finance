@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { semaforo } from '../theme'
-import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde } from '../lib/saldos'
+import { saldoDeCuenta, desvioDeAncla, monedaDeLaCuenta, esTarjetaQueSePagaDesde, movidoSinSaldo, avisoMovidoSinSaldo } from '../lib/saldos'
 import { formatMonto, formatMontoFull, formatFecha, parseMonto, hoyLocal } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -94,6 +94,11 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
   const saldos = useMemo(() => monedasConDatos
     .map(m => saldoDeCuenta({ anclas, transactions: movimientos, accounts, accountId: account.id, moneda: m }))
     .filter(Boolean), [monedasConDatos, anclas, movimientos, accounts, account.id])
+  // Plata movida en una moneda sin saldo cargado: no suma a ningún saldo (ver
+  // movidoSinSaldo). Solo con algún saldo cargado: sin ninguno, la card ya pide uno.
+  const movidoAfuera = useMemo(() => (anclas.length > 0
+    ? movidoSinSaldo({ transactions: movimientos, cuenta: account, monedas: monedasConDatos })
+    : []), [anclas, movimientos, account, monedasConDatos])
 
   const guardar = async () => {
     const saldoNum = parseSaldo(valor)
@@ -188,6 +193,12 @@ export default function SaldoCuenta({ account, accounts, transactions, darkMode,
       {saldos.map((s, i) => (
         <p key={s.moneda} style={{ ...styles.summaryValue, marginBottom: '2px', marginTop: i === 0 ? '2px' : '6px' }}>
           {fmt(s.saldo, s.moneda)}
+        </p>
+      ))}
+
+      {movidoAfuera.map(m => (
+        <p key={m.moneda} style={{ fontSize: '11px', color: muted, margin: '8px 0 0', textAlign: 'center' }}>
+          {avisoMovidoSinSaldo(m)}
         </p>
       ))}
 

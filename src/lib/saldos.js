@@ -27,6 +27,9 @@
 //     sería una segunda fuente para el mismo número.
 //   - "Ingresos": no es una cuenta donde viva plata, es una vista que junta todos
 //     los ingresos sin importar en qué cuenta están.
+
+import { formatMonto, simboloMoneda } from './formato'
+
 export const tieneSaldo = (account) =>
   Boolean(account?.tipo) && account.tipo !== 'credito' && account.tipo !== 'ingreso'
 
@@ -371,6 +374,7 @@ export const saldoTotal = ({ anclas, transactions, accounts, hasta = null }) => 
   const porMoneda = new Map()
   const detalle = []
   const sinSaldoCargado = []
+  const monedasSinSaldo = []
   for (const cuenta of (accounts || []).filter(tieneSaldo)) {
     const monedas = [...new Set((anclas || [])
       .filter(a => a.account_id === cuenta.id)
@@ -382,6 +386,7 @@ export const saldoTotal = ({ anclas, transactions, accounts, hasta = null }) => 
       porMoneda.set(moneda, redondear((porMoneda.get(moneda) || 0) + s.saldo))
       detalle.push({ account_id: cuenta.id, nombre: cuenta.nombre, moneda, saldo: s.saldo })
     }
+    monedasSinSaldo.push(...movidoSinSaldo({ transactions, cuenta, monedas, hasta }))
   }
   return {
     porMoneda: [...porMoneda.entries()]
@@ -389,7 +394,29 @@ export const saldoTotal = ({ anclas, transactions, accounts, hasta = null }) => 
       .sort((a, b) => a.moneda.localeCompare(b.moneda)),
     detalle,
     sinSaldoCargado,
+    monedasSinSaldo,
   }
+}
+
+// Plata que se movió en una cuenta en una moneda que esa cuenta no tiene saldo
+// cargado. No se puede sumar (no hay desde dónde contar), pero tampoco puede
+// desaparecer sin aviso: caso real, los pesos de un cambio de € 280 entraron a la
+// caja de ahorro en dólares, que solo tenía saldo en U$S, y "Plata que tenés" los
+// dejaba afuera como si el total estuviera completo. Lo que entra y vuelve a salir
+// (comprar y vender U$S 10,94 en la misma cuenta) no cambia nada y no avisa.
+export const movidoSinSaldo = ({ transactions, cuenta, monedas, hasta = null }) => {
+  const neto = new Map()
+  for (const t of transactions || []) {
+    if (t.account_id !== cuenta.id) continue
+    if (hasta && norm(t.fecha) > hasta) continue
+    const moneda = t.moneda || 'ARS'
+    if (monedas.includes(moneda)) continue
+    neto.set(moneda, (neto.get(moneda) || 0) + signoEnSaldo(t) * (Number(t.monto) || 0))
+  }
+  return [...neto.entries()]
+    .filter(([, monto]) => Math.round(monto * 100) !== 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([moneda, monto]) => ({ account_id: cuenta.id, nombre: cuenta.nombre, moneda, neto: redondear(monto) }))
 }
 
 // ¿En qué moneda opera esta cuenta? Sirve para no arrancar el formulario de saldo en
@@ -415,4 +442,15 @@ export const monedaDeLaCuenta = ({ account, transactions }) => {
   if (/\busd\b|d[oó]lar|u\$s/.test(nombre)) return 'USD'
   if (/\beur\b|euro/.test(nombre)) return 'EUR'
   return 'ARS'
+}
+
+const NOMBRE_DE_MONEDA = { ARS: 'pesos', USD: 'dólares', EUR: 'euros' }
+
+// El aviso de movidoSinSaldo, igual en "Plata que tenés" y en la card de la cuenta.
+export const avisoMovidoSinSaldo = ({ nombre, moneda, neto }) => {
+  const monto = `${simboloMoneda(moneda)} ${formatMonto(Math.abs(neto))}`
+  const enMoneda = NOMBRE_DE_MONEDA[moneda] || moneda
+  return neto > 0
+    ? `No incluye ${monto} que entraron a ${nombre}: esa cuenta no tiene saldo cargado en ${enMoneda}.`
+    : `No incluye ${monto} que salieron de ${nombre}: esa cuenta no tiene saldo cargado en ${enMoneda}.`
 }

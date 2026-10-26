@@ -164,7 +164,8 @@ function HijoDetail({ hijoNombre, hijoId, darkMode, tipoCambio, tcMap, tipoCambi
   const toggleMes = (m) =>
     setSelectedMeses(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
 
-  const tc = parseFloat(tipoCambio) || 1
+  // Sin TC, 0 (igual que el euro): con 1, U$S 100 sumaban $ 100 a los totales en pesos.
+  const tc = parseFloat(tipoCambio) || 0
   const tcEUR = parseFloat(tipoCambioEUR) || 0
 
   // Filtro por mes, totales, datos del bubble chart y cuota alimentaria — memoizados
