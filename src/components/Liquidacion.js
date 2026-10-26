@@ -132,10 +132,14 @@ function SelectorMoneda({ valor, onCambiar, ...resto }) {
   )
 }
 const ETIQUETA_MODALIDAD = { horas: 'Por hora', mensual: 'Monto mensual', unico: 'Trabajo único' }
+// La moneda es de la liquidación entera y los meses cerrados no guardan la suya:
+// cambiarla con meses cerrados los pasaba a la moneda nueva ($ 176.000 cerrados en
+// pesos se volvían € 176.000). Para otra moneda, otra liquidación.
+const AVISO_MONEDA_CON_CERRADOS = 'Ya tiene meses cerrados en esta moneda: para cobrar o pagar en otra, creá una liquidación nueva.'
 
 // Nombre, tipo y modalidad de la liquidación, y borrarla. Se abre con el lápiz del
 // título, y solo al crear una nueva (que todavía se llama "Nueva liquidación").
-function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onBorrar, onCerrar }) {
+function EditarLiquidacion({ liquidacion, cantidadMeses, conMesesCerrados, estilos, onGuardar, onBorrar, onCerrar }) {
   const { c, input, botonChico, rotuloCampo, caja, sem } = estilos
   const [nombre, setNombre] = useState(liquidacion.nombre)
   const [tipo, setTipo] = useState(liquidacion.tipo)
@@ -195,7 +199,9 @@ function EditarLiquidacion({ liquidacion, cantidadMeses, estilos, onGuardar, onB
       {conMoneda && (
         <label style={{ ...rotuloCampo, marginTop: '8px' }}>
           Moneda
-          <SelectorMoneda valor={moneda} onCambiar={setMoneda} style={{ ...input, padding: '8px' }} />
+          <SelectorMoneda valor={moneda} onCambiar={setMoneda} disabled={conMesesCerrados}
+            title={conMesesCerrados ? AVISO_MONEDA_CON_CERRADOS : undefined} style={{ ...input, padding: '8px' }} />
+          {conMesesCerrados && <span style={{ fontSize: '12px', color: c.textSecondary, fontWeight: 400 }}>{AVISO_MONEDA_CON_CERRADOS}</span>}
         </label>
       )}
       {error && <p role="alert" style={{ fontSize: '12px', color: sem.negativo, margin: '8px 0 0' }}>{error}</p>}
@@ -537,7 +543,7 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
       </div>
 
       {editando && liquidacion && (
-        <EditarLiquidacion liquidacion={liquidacion} cantidadMeses={meses.length}
+        <EditarLiquidacion liquidacion={liquidacion} cantidadMeses={meses.length} conMesesCerrados={historial.meses.length > 0}
           estilos={{ c, input, botonChico, rotuloCampo, caja, sem }}
           onGuardar={guardarLiquidacion} onBorrar={borrarLiquidacion} onCerrar={() => setEditando(false)} />
       )}
@@ -598,7 +604,8 @@ function Liquidacion({ userId, liquidacion, editarAlAbrir = false, darkMode, sty
                     style={{ ...input, minWidth: 0, padding: '8px' }} />
                   {/* Sin la columna (migración sin correr) no hay dónde guardarla. */}
                   {'moneda' in (liquidacion || {}) && (
-                    <SelectorMoneda valor={moneda} onCambiar={cambiarMoneda} disabled={soloLectura} style={{ ...input, padding: '8px', paddingRight: '32px' }} />
+                    <SelectorMoneda valor={moneda} onCambiar={cambiarMoneda} disabled={soloLectura || historial.meses.length > 0}
+                      title={historial.meses.length > 0 ? AVISO_MONEDA_CON_CERRADOS : undefined} style={{ ...input, padding: '8px', paddingRight: '32px' }} />
                   )}
                 </div>
               </label>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, desdePrimerMovimiento, InfoTooltip, rotuloLabel, calcularStatementsPendientes } from './AccountDetail'
+import { formatMonto, formatMontoFull, formatFecha, normFecha, mesLabel, cierreDe, getLast6Months, desdePrimerMovimiento, InfoTooltip, rotuloLabel, calcularStatementsPendientes, tcDeMovimiento, tcEURDeMovimiento } from './AccountDetail'
 import { cuotasFuturasCargadas } from '../lib/cuotas'
-import { saldoTotal } from '../lib/saldos'
+import { saldoTotal, avisoMovidoSinSaldo } from '../lib/saldos'
 import { semaforo } from '../theme'
 import { descuentaPercepcionesEnDolares } from '../config/features'
 
@@ -65,7 +65,7 @@ const statementDelPago = (pago, statements) => {
 
 const SIMBOLO_MONEDA = { ARS: '$', USD: 'U$S', EUR: '€' }
 
-function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcManual, cuentasAhorro, userEmail }) {
+function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, tcMap, tcMapEUR, tcManual, cuentasAhorro, userEmail }) {
   const [transactions, setTransactions] = useState([])
   const [statements, setStatements] = useState([])
   const [anclas, setAnclas] = useState([])
@@ -117,11 +117,13 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
 
   const accountTipoById = useMemo(() => new Map((accounts || []).map(a => [a.id, a.tipo])), [accounts])
   const accountNombreById = new Map((accounts || []).map(a => [a.id, a.nombre]))
-  const tc = parseFloat(tipoCambio) || 0
-  const tcE = parseFloat(tipoCambioEUR) || 0
-  // Antes un movimiento en EUR se sumaba tal cual (como si fuera ARS 1 a 1) en
-  // vez de convertirse — ahora usa el TC vigente de euro, igual que el dólar.
-  const aArs = useCallback((t) => t.moneda === 'USD' ? Number(t.monto) * tc : t.moneda === 'EUR' ? Number(t.monto) * tcE : Number(t.monto), [tc, tcE])
+  // Cada movimiento en dólares o euros, con el TC de su mes (el vigente si es de este
+  // mes), igual que la tabla de movimientos y el resto de la app. Antes todos los meses
+  // usaban el TC de hoy: un gasto en euros de julio daba un número acá y otro en la
+  // tabla. Sin TC, 0 — y sinTC lo cuenta para avisar que el total quedó corto.
+  const tcDe = useCallback((t) => (t.moneda === 'USD' ? tcDeMovimiento(t, tcMap, tipoCambio)
+    : t.moneda === 'EUR' ? tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR) : 1), [tcMap, tipoCambio, tcMapEUR, tipoCambioEUR])
+  const aArs = useCallback((t) => Number(t.monto) * tcDe(t), [tcDe])
 
   const mesesDisponibles = useMemo(() => [...new Set([
     ...transactions.map(t => normFecha(t.fecha).slice(0, 7)).filter(Boolean),
@@ -190,7 +192,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       const balanceArs = totalIngresosArs - totalPagadoArs
       const balanceUsd = totalIngresosUsd - totalPagadoUsd
       const balanceEur = totalIngresosEur - totalPagadoEur
-      return { pagos, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, totalIngresosArs, totalIngresosUsd, totalIngresosEur, balanceArs, balanceUsd, balanceEur, balance: totalIngresos - totalPagado }
+      const sinTC = [...todos, ...ingresos].filter(t => !(tcDe(t) > 0)).length
+      return { sinTC, pagos, debitosAutomaticos, transferencias, suscripciones, efectivo, ingresos, totalPagado, totalPagadoArs, totalPagadoUsd, totalPagadoEur, totalIngresos, totalIngresosArs, totalIngresosUsd, totalIngresosEur, balanceArs, balanceUsd, balanceEur, balance: totalIngresos - totalPagado }
     }
 
     const actual = desgloseDelMes(selectedMonth)
@@ -263,7 +266,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
     }))
 
     return { actual, pagosPorCuenta, cuotas, historial, totalDisponible, ahorrosPorMoneda, ahorrosDuplicados }
-  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, anclas, cuentasAhorro, tipoCambio, userEmail])
+  }, [transactions, statements, accounts, accountTipoById, selectedMonth, aArs, tcDe, anclas, cuentasAhorro, tipoCambio, userEmail])
 
   // Color de línea del historial con buen contraste en los dos modos — en dark, el
   // gris-violeta "primario" (#8C7B8C) queda muy apagado sobre el panel oscuro, así
@@ -360,8 +363,8 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
             Total unificado
             {(actual.totalPagadoUsd > 0 || actual.totalPagadoEur > 0) && (
               <InfoTooltip darkMode={darkMode} text={
-                (tc > 0 || actual.totalPagadoEur === 0) && (tcE > 0 || actual.totalPagadoUsd === 0)
-                  ? `Monedas extranjeras convertidas al TC ${tcManual?.enabled ? 'manual' : 'automático'} vigente`
+                actual.sinTC === 0
+                  ? `Monedas extranjeras convertidas al TC de cada mes${esMesEnCurso && tcManual?.enabled ? ' (el manual para el dólar de este mes)' : ''}`
                   : 'Falta un tipo de cambio configurado — las monedas extranjeras no se están sumando acá.'
               } />
             )}
@@ -446,6 +449,11 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
                 No incluye {totalDisponible.sinSaldoCargado.map(c => c.nombre).join(', ')}: {totalDisponible.sinSaldoCargado.length === 1 ? 'todavía no le cargaste' : 'todavía no les cargaste'} el saldo.
               </p>
             )}
+            {totalDisponible.monedasSinSaldo.map(m => (
+              <p key={`${m.account_id}-${m.moneda}`} style={{ margin: '6px 0 0', fontSize: '11px', color: muted }}>
+                {avisoMovidoSinSaldo(m)}
+              </p>
+            ))}
           </div>
         )}
 
@@ -516,7 +524,7 @@ function CashView({ accounts, refreshKey, darkMode, tipoCambio, tipoCambioEUR, t
       <div style={seccion}>
         <p style={{ ...label, display: 'flex', alignItems: 'center' }}>
           Total pagado por mes
-          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC vigente) · últimos 6 meses, desde el primero con movimientos" />
+          <InfoTooltip darkMode={darkMode} text="ARS (monedas extranjeras convertidas al TC de cada mes) · últimos 6 meses, desde el primero con movimientos" />
         </p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={historial} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>

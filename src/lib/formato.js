@@ -30,6 +30,11 @@ export const normalizarMoneda = (moneda) => {
   return 'ARS'
 }
 
+// Símbolo de cada moneda para mostrar un importe. Lo que no es dólar ni euro es
+// peso: varias pantallas armaban `moneda === 'USD' ? 'U$S' : '$'` y un gasto en
+// euros salía con signo de pesos.
+export const simboloMoneda = (moneda) => (moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$')
+
 // Fecha corta para las tablas de movimientos. Se omite el año SOLO si es del año
 // en curso: mezclado con movimientos viejos, "28/06" no dice de qué año es (y en
 // una lista con cosas de 2023 y de hoy eso es directamente confuso). En ese caso

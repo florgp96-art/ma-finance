@@ -110,7 +110,7 @@ const enLugarDeCodigo = (camino) => {
     if (padre.type === 'ObjectProperty' && actual.key === 'value') {
       return PROPIEDADES_DE_CODIGO.has(padre.key.name || padre.key.value)
     }
-    if (padre.type === 'CallExpression' && actual.key === 'arguments') {
+    if (padre.type === 'CallExpression' && actual.listKey === 'arguments') {
       return LLAMADAS_DE_CODIGO.test(nombreDeLlamada(padre.callee))
     }
     if (padre.type === 'BinaryExpression' && ['===', '!==', '==', '!='].includes(padre.operator)) return true

@@ -62,7 +62,8 @@ Detalles que suelen preguntar:
 - Toda llamada a `api/` valida el token del usuario contra Supabase antes de
   hacer nada, y tiene límite de pedidos por usuario (`api/_lib/rateLimit.js`).
 - Hay dos tareas programadas (crons de Vercel, declaradas en `vercel.json`):
-  reclasificación diaria a las 3 AM y auditoría semanal los sábados a la 1 AM.
+  reclasificación diaria a las 3 AM (que de paso guarda las cotizaciones del dólar
+  y del euro del mes) y auditoría semanal los sábados a la 1 AM.
 - Sin tests automatizados más allá del test de ejemplo de Create React App.
 
 ---

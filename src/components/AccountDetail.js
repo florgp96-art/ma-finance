@@ -429,6 +429,12 @@ export const repartirAnchoTexto = (disponible, colVisible, pesos) => {
 }
 
 const monedaSymbol = (moneda) => moneda === 'USD' ? 'U$S' : moneda === 'EUR' ? '€' : '$'
+// "$ 1.500.000 + U$S 11 + € 3.335": cada moneda con su signo, sin las que dan cero.
+const montosPorMoneda = ({ ars = 0, usd = 0, eur = 0 }) => [
+  ars > 0 ? `$ ${formatMonto(ars)}` : null,
+  usd > 0 ? `U$S ${formatMonto(usd)}` : null,
+  eur > 0 ? `€ ${formatMonto(eur)}` : null,
+].filter(Boolean).join(' + ')
 
 // Ordenar la tabla por Monto: primero todo lo negativo junto (los gastos) y después todo
 // lo positivo (los ingresos) — al revés en descendente. Adentro de cada bloque, separado
@@ -3125,6 +3131,17 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // decir cosas distintas.
   const movimientosDelTramo = (accountId, desde, hasta) => transactions.filter(t =>
     enTramoDelCiclo(t, { accountId, desde, hasta, hoy: hoyISO, statementIdsFacturados: statementIdsConTarjetaPropia }))
+  // Lo que no es dólar va a la columna de pesos de "A pagar": el euro, convertido con
+  // el TC de su mes. Antes entraba crudo, y una compra de € 8,45 con la tarjeta sumaba
+  // $ 8,45 al resumen abierto. Sin TC del euro no suma (y avisa por consola) en vez
+  // de inventar pesos.
+  const montoEnPesos = (t) => {
+    const monto = Number(t.monto) || 0
+    if (t.moneda !== 'EUR') return monto
+    const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
+    if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('A pagar: sin TC para convertir movimiento EUR', t.id, t.fecha); return 0 }
+    return monto * tcTx
+  }
   // Movimientos ya cargados (ej. por Excel) que todavía no pertenecen a ningún resumen
   // cerrado: se muestran como un "ciclo actual" para ver cuánto se debe antes de que
   // llegue el PDF del banco. Solo cuentan los posteriores al último resumen ya cerrado
@@ -3159,7 +3176,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     if (!ultimoReal) {
       const pagos = transactions.filter(t => t.account_id === a.id && t.tipo === 'neutro' &&
         (!ultimoCierre || normFecha(t.fecha) > ultimoCierre))
-      sobranteArs = pagos.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      sobranteArs = pagos.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + montoEnPesos(t), 0)
       sobranteUsd = pagos.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
     }
 
@@ -3167,7 +3184,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     // fin de mes para las cuotas, ver enTramoDelCiclo).
     const tramo = (desde, hasta, extra) => {
       const compras = movimientosDelTramo(a.id, desde, hasta)
-      const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
+      const total = compras.filter(t => t.moneda !== 'USD').reduce((sum, t) => sum + montoEnPesos(t), 0)
       const totalUsd = compras.filter(t => t.moneda === 'USD').reduce((sum, t) => sum + Number(t.monto), 0)
       return {
         account_id: a.id, periodo: null, fecha_vencimiento: null, fecha_hasta: null,
@@ -3347,15 +3364,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   statementsAPagar.forEach(s => {
     totalBrutoAPagarGeneral += itemsPorStatement(s)
       .filter(t => t.tipo !== 'ingreso' && t.tipo !== 'neutro' && t.moneda !== 'USD')
-      .reduce((s2, t) => {
-        const monto = Number(t.monto) || 0
-        if (t.moneda === 'EUR') {
-          const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
-          if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('totalBrutoAPagarGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return s2 }
-          return s2 + monto * tcTx
-        }
-        return s2 + monto
-      }, 0)
+      .reduce((s2, t) => s2 + montoEnPesos(t), 0)
   })
   const montoPagadoGeneral = Math.max(0, totalBrutoAPagarGeneral - totalAPagarGeneral)
   // La barra de "Pagado" no es solo tarjetas: suma también los gastos fijos
@@ -3397,11 +3406,15 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   const ingresosEsteMes = transactions.filter(t => t.tipo === 'ingreso' && t.fecha >= primerDiaMesActual && t.fecha <= hoyISO)
   const ingresosPorCategoriaMes = Object.values(ingresosEsteMes.reduce((acc, t) => {
     const nombre = t.tag || t.subcategories?.nombre || t.categories?.nombre || 'Sin categoría'
-    if (!acc[nombre]) acc[nombre] = { nombre, ars: 0, usd: 0, unificado: 0 }
+    if (!acc[nombre]) acc[nombre] = { nombre, ars: 0, usd: 0, eur: 0, unificado: 0 }
     if (t.moneda === 'USD') {
       const tc = tcDeMovimiento(t, tcMap, tipoCambio) || tcEfectivo
       acc[nombre].usd += Number(t.monto)
       acc[nombre].unificado += Number(t.monto) * tc
+    } else if (t.moneda === 'EUR') {
+      // Antes caía en la rama de pesos: € 3.335 cobrados se leían "$ 3.335".
+      acc[nombre].eur += Number(t.monto)
+      acc[nombre].unificado += montoEnPesos(t)
     } else {
       acc[nombre].ars += Number(t.monto)
       acc[nombre].unificado += Number(t.monto)
@@ -3423,13 +3436,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
   // EUR no tiene bucket propio (a diferencia de USD): se convierte a su
   // equivalente en ARS con el TC del movimiento y entra al mapa de pesos —
   // si no, quedaba sumado crudo en el mapa de ARS (ej. € 50 como "$ 50").
-  const montoARSEquiv = (t) => {
-    const monto = Number(t.monto) || 0
-    if (t.moneda !== 'EUR') return monto
-    const tcTx = tcEURDeMovimiento(t, tcMapEUR, tipoCambioEUR)
-    if (tcTx <= 0) { if (process.env.NODE_ENV !== 'production') console.warn('categoriasResumenGeneral: sin TC para convertir movimiento EUR', t.id, t.fecha); return 0 }
-    return monto * tcTx
-  }
+  const montoARSEquiv = montoEnPesos
   const [categoriasResumenGeneral, categoriasResumenGeneralUsd, hijosPorCategoriaGeneral, hijosPorCategoriaGeneralUsd] = soloAPagar
     ? (() => {
         const map = {}, mapUsd = {}, hijoMap = {}, hijoMapUsd = {}
@@ -4010,9 +4017,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                       {resolveCategoryIcon(c.nombre, { customIcons, isIncome: true })} {c.nombre}
                     </span>
                     <span style={{ fontWeight: '600', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {c.ars > 0 ? `$ ${formatMonto(c.ars)}` : ''}
-                      {c.ars > 0 && c.usd > 0 ? ' + ' : ''}
-                      {c.usd > 0 ? `U$S ${formatMonto(c.usd)} (total ≈ $ ${formatMonto(c.unificado)})` : ''}
+                      {montosPorMoneda(c)}
+                      {c.usd > 0 || c.eur > 0 ? ` (total ≈ $ ${formatMonto(c.unificado)})` : ''}
                     </span>
                   </div>
                 ))}
@@ -4021,8 +4027,8 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                 <span>Total</span>
                 <span>
                   {(() => {
-                    const t = ingresosPorCategoriaMes.reduce((acc, c) => ({ ars: acc.ars + c.ars, usd: acc.usd + c.usd, unificado: acc.unificado + c.unificado }), { ars: 0, usd: 0, unificado: 0 })
-                    return <>$ {formatMonto(t.ars)}{t.usd > 0 ? ` + U$S ${formatMonto(t.usd)}` : ''}{t.usd > 0 ? ` (≈ $ ${formatMonto(t.unificado)})` : ''}</>
+                    const t = ingresosPorCategoriaMes.reduce((acc, c) => ({ ars: acc.ars + c.ars, usd: acc.usd + c.usd, eur: acc.eur + c.eur, unificado: acc.unificado + c.unificado }), { ars: 0, usd: 0, eur: 0, unificado: 0 })
+                    return <>{montosPorMoneda(t) || '$ 0'}{t.usd > 0 || t.eur > 0 ? ` (≈ $ ${formatMonto(t.unificado)})` : ''}</>
                   })()}
                 </span>
               </div>
@@ -4335,7 +4341,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>U$S {formatMontoFull(totalIngresosUSD)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance USD</p>
-                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}U$S {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosUSD - totalUSD; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : '−'}U$S {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -4350,7 +4356,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
                   <p style={{ ...styles.summaryValue, fontSize: isMobile ? '14px' : '18px' }}>€ {formatMontoFull(totalIngresosEUR)}</p>
                   {divider}
                   <p style={styles.summaryLabel}>Balance EUR</p>
-                  {(() => { const b = totalIngresosEUR - totalEUR; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : ''}€ {formatMontoFull(Math.abs(b))}</p> })()}
+                  {(() => { const b = totalIngresosEUR - totalEUR; return <p style={{ ...styles.summaryValue, fontSize: isMobile ? '16px' : '22px', color: b >= 0 ? sem.positivo : sem.negativo }}>{b >= 0 ? '+' : '−'}€ {formatMontoFull(Math.abs(b))}</p> })()}
                 </>}
               </div>
             )}
@@ -4491,7 +4497,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
               <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                 <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#6e6e73' }} />
                 <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} tickFormatter={v => formatMonto(v)} width={80} />
-                <Tooltip formatter={(v, n, props) => [`${props.payload.moneda === 'USD' ? 'U$S' : '$'} ${formatMontoFull(v)}`, 'Total']} />
+                <Tooltip formatter={(v, n, props) => [`${monedaSymbol(props.payload.moneda)} ${formatMontoFull(v)}`, 'Total']} />
                 <Bar dataKey="total" fill={BAR_COLOR} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

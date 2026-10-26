@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit } from './_lib/rateLimit.js'
 import { secretsMatch } from './_lib/secretsMatch.js'
+import { guardarCotizacionesDelMes } from './_lib/cotizacionesDelMes.js'
 
 // PostgREST devuelve como máximo 1000 filas por consulta: sin paginar, cada noche se
 // miraban solo los primeros 1000 movimientos sin identificar.
@@ -32,6 +33,11 @@ export default async function handler(req, res) {
     process.env.REACT_APP_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
+
+  // Va primero porque la reclasificación sale antes cuando no hay nada que hacer, y
+  // aparte: si dolarapi no contesta, la reclasificación sigue igual.
+  const cotizaciones = await guardarCotizacionesDelMes(supabase).catch(e => ({ guardadas: 0, error: e.message }))
+  if (cotizaciones.error) console.error('cron-reclasificar: no se guardaron las cotizaciones del mes:', cotizaciones.error)
 
   // Los "contexto_*" son marcadores (ej. "contexto_hijo") con un category_id
   // ajeno, no reglas de clasificación reales — el resto de la app (Dashboard.js,
