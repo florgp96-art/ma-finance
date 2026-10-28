@@ -67,6 +67,55 @@ const plantillaDeCodigo = (txt) => {
   return /px\b|var\(|rgba?\(|calc\(|\.eq\.|\.in\.|\.is\.|^\/|https?:|solid|translate|#[0-9a-f]{3}/i.test(txt)
 }
 
+// Cómo deja React el texto de un JSX: las líneas se recortan y se unen con un espacio
+// (el mismo criterio que cleanJSXElementLiteralChild de Babel).
+const textoDeJSX = (crudo) => {
+  const lineas = crudo.split(/\r\n|\n|\r/)
+  let ultimaConTexto = 0
+  lineas.forEach((l, i) => { if (/[^ \t]/.test(l)) ultimaConTexto = i })
+  let salida = ''
+  lineas.forEach((linea, i) => {
+    let l = linea.replace(/\t/g, ' ')
+    if (i > 0) l = l.replace(/^[ ]+/, '')
+    if (i < lineas.length - 1) l = l.replace(/[ ]+$/, '')
+    if (l) salida += i === ultimaConTexto ? l : `${l} `
+  })
+  return salida
+}
+
+const CLAVES_SIN_NODOS = new Set(['loc', 'start', 'end', 'leadingComments', 'trailingComments', 'innerComments', 'extra'])
+const contieneJSX = (n) => {
+  if (!n || typeof n !== 'object') return false
+  if (n.type === 'JSXElement' || n.type === 'JSXFragment') return true
+  return Object.keys(n).some(k => !CLAVES_SIN_NODOS.has(k) &&
+    (Array.isArray(n[k]) ? n[k].some(contieneJSX) : (n[k] && typeof n[k].type === 'string' && contieneJSX(n[k]))))
+}
+
+// La frase entera de un elemento que mezcla texto con partes variables
+// (<span>Plata que tenés{hoy ? ' hoy' : ' al cierre'}</span>): React la deja en
+// varios nodos de texto seguidos, y la traducción la arma entera (ver traducirGrupo
+// en traduccionEnVivo.js). Si adentro hay otro elemento, no son nodos seguidos.
+const frasesDeJSX = (hijos) => {
+  const partes = []
+  let variables = 0
+  let conTexto = false
+  for (const h of hijos) {
+    if (h.type === 'JSXText') {
+      const t = textoDeJSX(h.value)
+      if (t) { partes.push(t); if (conLetras(t)) conTexto = true }
+    } else if (h.type === 'JSXExpressionContainer') {
+      if (h.expression.type === 'JSXEmptyExpression') continue
+      if (contieneJSX(h.expression)) return null
+      partes.push(`{${variables++}}`)
+    } else {
+      return null
+    }
+  }
+  if (!conTexto || variables === 0) return null
+  const texto = partes.join('')
+  return plantillaDeCodigo(texto) ? null : texto
+}
+
 const nombreDeLlamada = (n) => {
   if (!n) return ''
   if (n.type === 'Identifier') return n.name
@@ -152,9 +201,21 @@ const textosDeLaApp = (raiz = path.join(__dirname, '..')) => {
         const v = camino.node.value
         if (conLetras(v) && pareceCodigo(v) !== true) agregar(v, relativo)
       },
+      JSXElement(camino) {
+        const frase = frasesDeJSX(camino.node.children)
+        if (frase) agregar(frase, relativo)
+      },
+      JSXFragment(camino) {
+        const frase = frasesDeJSX(camino.node.children)
+        if (frase) agregar(frase, relativo)
+      },
       StringLiteral(camino) {
         if (camino.parentPath.isBinaryExpression({ operator: '+' }) || enLugarDeCodigo(camino)) return
-        if (pareceCodigo(camino.node.value) === false) agregar(camino.node.value, relativo)
+        const v = camino.node.value
+        const codigo = pareceCodigo(v)
+        // Con espacios en los bordes (' hoy', ' de ') es un pedazo de frase, no un
+        // identificador: los identificadores no llevan espacios.
+        if (codigo === false || (codigo === 'minuscula' && /^\s|\s$/.test(v))) agregar(v, relativo)
       },
       TemplateLiteral(camino) {
         if (!camino.parentPath.isBinaryExpression({ operator: '+' })) agregarPlantilla(camino, relativo)

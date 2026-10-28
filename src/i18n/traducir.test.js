@@ -14,6 +14,10 @@ const traducir = crearTraductor({
   '{0} movimiento{1} que no se ve{2} en la tabla': '{0} transaction{1} not shown in the table',
   'Probá de nuevo.': 'Try again.',
   '{0} {1}': 'no debería usarse: no tiene texto fijo',
+  '{0} de {1}': '{0} of {1}',
+  'De {0}': 'By {0}',
+  'Pago': 'Payment',
+  'falta el PDF': 'PDF missing',
 })
 
 describe('crearTraductor', () => {
@@ -54,7 +58,24 @@ describe('crearTraductor', () => {
   test('oraciones pegadas se traducen de a una', () => {
     expect(traducir('12 transacciones importadas. 3 omitidas. Se agregaron 2 cuotas futuras.'))
       .toBe('12 transactions imported. 3 skipped. 2 future installments added.')
-    expect(traducir('No se encontró la cuenta. Probá de nuevo.')).toBe('No se encontró la cuenta. Try again.')
+  })
+
+  test('entre una frase mitad y mitad y una entera en español, la entera', () => {
+    expect(traducir('No se encontró la cuenta. Probá de nuevo.')).toBeNull()
+    // "cuotas" es una palabra de la app que quedó sin traducir dentro del hueco.
+    expect(traducir('Error al guardar: faltan cuotas')).toBeNull()
+  })
+
+  test('una plantilla sin palabras propias no traduce a medias lo que escribió el usuario', () => {
+    expect(traducir('3 de 10')).toBe('3 of 10')
+    expect(traducir('Pago de expensas')).toBeNull()
+    expect(traducir('Pago de tarjeta de crédito')).toBeNull()
+    expect(traducir('De Flor')).toBe('By Flor')
+    expect(traducir('De paseo por ahí')).toBeNull()
+  })
+
+  test('un texto armado con puntos medios se traduce tramo por tramo', () => {
+    expect(traducir('💳 Mastercard · Octubre 2026 · falta el PDF')).toBe('💳 Mastercard · October 2026 · PDF missing')
   })
 
   test('un mensaje de varias líneas se traduce línea por línea', () => {
