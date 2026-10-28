@@ -12,6 +12,10 @@ const DICCIONARIO = {
   'Mostrar más': 'Show more',
   '¿Eliminar este gasto?': 'Delete this expense?',
   'Luz': 'Electricity',
+  'Contanos qué pasó': 'Tell us what happened',
+  'Plata que tenés{0}': 'Money you have{0}',
+  'hoy': 'today',
+  'al cierre del mes': 'at month-end',
 }
 
 // El MutationObserver avisa en una microtarea: hay que dejarlo correr.
@@ -27,10 +31,21 @@ function Pantalla() {
       <p data-testid="cuotas">Tenés {cuotas} cuotas pendientes</p>
       <button onClick={() => { setGuardando(true); setCuotas(4) }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
       <input placeholder="Buscar…" defaultValue="Guardar" />
-      <textarea defaultValue="Guardar" />
+      <textarea defaultValue="Guardar" placeholder="Contanos qué pasó" />
       <span translate="no" data-testid="nombre">Luz</span>
       <button onClick={() => setMas(true)}>Mostrar más</button>
       {mas && <p>Guardar</p>}
+    </div>
+  )
+}
+
+// React deja la frase en dos nodos de texto: "Plata que tenés" y " hoy".
+function Saldo() {
+  const [hoy, setHoy] = useState(true)
+  return (
+    <div>
+      <p data-testid="saldo">Plata que tenés{hoy ? ' hoy' : ' al cierre del mes'}</p>
+      <button onClick={() => setHoy(false)}>Mes anterior</button>
     </div>
   )
 }
@@ -64,6 +79,7 @@ describe('traducción en vivo', () => {
     activarTraduccion(DICCIONARIO)
     expect(document.querySelector('input').value).toBe('Guardar')
     expect(document.querySelector('textarea').value).toBe('Guardar')
+    expect(document.querySelector('textarea').placeholder).toBe('Tell us what happened')
     expect(screen.getByTestId('nombre').textContent).toBe('Luz')
   })
 
@@ -79,6 +95,20 @@ describe('traducción en vivo', () => {
     expect(screen.getByText('Guardando...')).toBeTruthy()
     expect(screen.getByTestId('cuotas').textContent).toBe('Tenés 4 cuotas pendientes')
     expect(screen.getByPlaceholderText('Buscar…')).toBeTruthy()
+    expect(screen.getByPlaceholderText('Contanos qué pasó')).toBeTruthy()
+  })
+
+  test('una frase partida en varios nodos se traduce entera, también cuando React cambia un pedazo', async () => {
+    render(<Saldo />)
+    activarTraduccion(DICCIONARIO)
+    expect(screen.getByTestId('saldo').textContent).toBe('Money you have today')
+
+    fireEvent.click(screen.getByText('Mes anterior'))
+    await esperarObservador()
+    expect(screen.getByTestId('saldo').textContent).toBe('Money you have at month-end')
+
+    desactivarTraduccion()
+    expect(screen.getByTestId('saldo').textContent).toBe('Plata que tenés al cierre del mes')
   })
 
   test('traduce los mensajes de confirm y alert', () => {

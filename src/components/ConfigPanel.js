@@ -853,7 +853,7 @@ const ConfigPanel = forwardRef(function ConfigPanel({
                   <tbody>
                     {(userAliases || []).map(a => (
                       <tr key={a.id} style={{ borderBottom: `1px solid ${darkMode ? 'var(--m-3a333a)' : 'var(--m-ede8ec)'}` }}>
-                        <td style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
+                        <td translate="no" style={{ padding: '8px', fontFamily: 'monospace', color: txt, fontWeight: '600', fontSize: '12px' }}>{a.alias}</td>
                         <td style={{ padding: '8px' }}>
                           <span style={{ backgroundColor: a.tipo === 'hijo' ? (darkMode ? '#1B3A1B' : '#E8F5E9') : a.tipo === 'split' ? (darkMode ? '#1B3A2E' : '#E0F2EA') : a.tipo === 'cuenta' ? (darkMode ? '#1A2D3A' : '#E3F2FD') : a.tipo === 'neutro' ? (darkMode ? '#3A2E1B' : '#FFF3E0') : (darkMode ? 'var(--m-2d1f2d)' : 'var(--m-f3e5f5)'), color: p, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{a.tipo === 'split' ? 'dividir' : a.tipo}</span>
                         </td>
