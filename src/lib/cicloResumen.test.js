@@ -1,4 +1,4 @@
-const { buscarMismoCiclo, periodoSinRepetir, correrPeriodo, diasEntre } = require('./cicloResumen')
+const { buscarMismoCiclo, periodoSinRepetir, correrPeriodo, diasEntre, mesesDeCuotas } = require('./cicloResumen')
 
 const resumen = (id, periodo, cierre) => ({ id, periodo, cierre })
 
@@ -103,5 +103,31 @@ describe('correrPeriodo / diasEntre', () => {
     expect(diasEntre('2026-10-01', '2026-10-29')).toBe(28)
     expect(diasEntre('2026-10-29', '2026-10-01')).toBe(28)
     expect(diasEntre('2026-03-28', '2026-03-30')).toBe(2)
+  })
+})
+
+describe('mesesDeCuotas', () => {
+  test('cada resumen factura las cuotas del mes en que cierra', () => {
+    expect(mesesDeCuotas(['2026-07-30', '2026-08-27', '2026-09-24'])).toEqual(['2026-07', '2026-08', '2026-09'])
+  })
+
+  // El caso real de la Mastercard: 27/08, 01/10 y 29/10. Las cuotas de septiembre son
+  // del resumen que cerró el 01/10, y las de octubre del que cerró el 29/10.
+  test('con dos cierres en el mismo mes, el primero se queda con el mes anterior', () => {
+    expect(mesesDeCuotas(['2026-08-27', '2026-10-01', '2026-10-29'])).toEqual(['2026-08', '2026-09', '2026-10'])
+  })
+
+  test('el último resumen conserva siempre su mes', () => {
+    const meses = mesesDeCuotas(['2026-10-01', '2026-10-29'])
+    expect(meses[meses.length - 1]).toBe('2026-10')
+  })
+
+  test('cruza el cambio de año', () => {
+    expect(mesesDeCuotas(['2027-01-02', '2027-01-29'])).toEqual(['2026-12', '2027-01'])
+  })
+
+  test('sin cierres, nada', () => {
+    expect(mesesDeCuotas([])).toEqual([])
+    expect(mesesDeCuotas(null)).toEqual([])
   })
 })
