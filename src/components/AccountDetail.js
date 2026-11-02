@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } fr
 import { supabase } from '../lib/supabase'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { esAlquilerOExpensas, addMeses, esCuota, cuotaEnCiclo } from '../lib/cuotas'
+import { mesesDeCuotas } from '../lib/cicloResumen'
 import { semaforo } from '../theme'
 import { formatMonto, formatMontoFull, formatFecha, formatFechaCorta, parseMonto, montoParaEditar } from '../lib/formato'
 import { InfoTooltip } from './InfoTooltip'
@@ -1216,7 +1217,12 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     statementsPorCuenta.forEach((list, accountId) => {
       const porCierre = new Map()
       ;[...list].sort(compararStatements).forEach(st => porCierre.set(cierreDe(st), { id: st.id, cierre: cierreDe(st) }))
-      cierresPorCuenta.set(accountId, [...porCierre.values()])
+      const destinos = [...porCierre.values()]
+      // El mes de cuotas de cada resumen (ver mesesDeCuotas): el de su cierre, salvo
+      // cuando la tarjeta cerró dos veces en el mismo mes.
+      const meses = mesesDeCuotas(destinos.map(d => d.cierre))
+      destinos.forEach((d, i) => { d.mesCuotas = meses[i] })
+      cierresPorCuenta.set(accountId, destinos)
     })
     const ventanaDe = (accountId, cierre) => {
       const list = cierresPorCuenta.get(accountId) || []
@@ -1227,14 +1233,18 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     // Una cuota se carga con una fecha derivada (mismo día que la compra original, mes
     // corrido según el número de cuota) que no coincide con la fecha real de
     // facturación de ningún resumen puntual — para cuotas se compara el MES contra el
-    // mes de cierre del resumen, nunca el día ni la ventana de días de los demás
-    // movimientos. La regla vive en cuotaEnCiclo (lib/cuotas.js), compartida con
-    // enTramoDelCiclo: acá la ventana es un solo mes, así que el desde es el mes
-    // anterior al del cierre.
-    const perteneceAlCierre = (t, cierre, desde) => {
-      if (esCuota(t)) return cuotaEnCiclo(t, addMeses(cierre, -1), cierre)
+    // mes de cuotas del resumen (el de su cierre, ver mesesDeCuotas), nunca el día ni
+    // la ventana de días de los demás movimientos. La regla vive en cuotaEnCiclo
+    // (lib/cuotas.js), compartida con enTramoDelCiclo: acá la ventana es un solo mes,
+    // así que el desde es el mes anterior.
+    // `destino` es una entrada de cierresPorCuenta: { id, cierre, mesCuotas }.
+    const perteneceAlCierre = (t, destino, desde) => {
+      if (esCuota(t)) {
+        const mes = `${destino.mesCuotas}-01`
+        return cuotaEnCiclo(t, addMeses(mes, -1), mes)
+      }
       const fecha = normFecha(t.fecha)
-      return cierre >= fecha && fecha > desde
+      return destino.cierre >= fecha && fecha > desde
     }
 
     // Un pago o reintegro suelto (tipo "neutro" o "ingreso") en la cuenta de una tarjeta
@@ -1247,7 +1257,7 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
     txs.forEach(t => {
       if (t.statement_id || !t.fecha || esPagoOReintegro(t)) return
       const candidatos = cierresPorCuenta.get(t.account_id)
-      const destino = candidatos && candidatos.find(c => perteneceAlCierre(t, c.cierre, ventanaDe(t.account_id, c.cierre)))
+      const destino = candidatos && candidatos.find(c => perteneceAlCierre(t, c, ventanaDe(t.account_id, c.cierre)))
       if (!destino) return
       if (!grupos.has(destino.id)) grupos.set(destino.id, [])
       grupos.get(destino.id).push(t)
@@ -1268,8 +1278,10 @@ const [equivMoneda, setEquivMoneda] = useState('ARS')
       if (!st) { if (cuentasEnScope.has(t.account_id)) desligar.push(t); return }
       const cierre = cierreDe(st)
       if (!cierre) return
+      const destino = (cierresPorCuenta.get(t.account_id) || []).find(c => c.cierre === cierre)
+      if (!destino) return
       const desde = ventanaDe(t.account_id, cierre)
-      if (!perteneceAlCierre(t, cierre, desde)) desligar.push(t)
+      if (!perteneceAlCierre(t, destino, desde)) desligar.push(t)
     })
 
     if (grupos.size === 0 && desligar.length === 0) return

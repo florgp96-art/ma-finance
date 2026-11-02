@@ -92,3 +92,29 @@ export const periodoSinRepetir = (nuevo, previos) => {
   }
   return sinCambios
 }
+
+// "2026-10" → "2026-09".
+const mesAnterior = (anioMes) => {
+  const [anio, mes] = anioMes.split('-').map(Number)
+  const total = anio * 12 + (mes - 1) - 1
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+// De qué mes son las cuotas que factura cada resumen, para los cierres de una cuenta
+// ordenados de menor a mayor (YYYY-MM-DD). Por convención es el mes de cierre (ver
+// cuotaEnCiclo en lib/cuotas.js): la cuota de agosto la factura el resumen que cierra
+// en agosto.
+//
+// Cuando la tarjeta cierra dos veces en el mismo mes —01/10 y 29/10—, el primero es el
+// que factura las cuotas del mes anterior: en septiembre no cerró ninguno. Sin esto,
+// las cuotas de septiembre no tenían resumen y las de octubre se las disputaban los
+// dos. El último resumen conserva siempre su mes: el ciclo abierto arranca de ahí.
+export const mesesDeCuotas = (cierresOrdenados) => {
+  const meses = []
+  for (let i = (cierresOrdenados || []).length - 1; i >= 0; i--) {
+    const mes = String(cierresOrdenados[i]).slice(0, 7)
+    const siguiente = meses[0]
+    meses.unshift(siguiente && mes >= siguiente ? mesAnterior(siguiente) : mes)
+  }
+  return meses
+}
